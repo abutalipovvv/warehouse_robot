@@ -1,0 +1,195 @@
+include "trp1.inc"
+
+
+
+define floorplan model
+(
+  # sombre, sensible, artistic
+  color "gray30"
+
+  # most maps will need a bounding box
+  boundary 1
+
+  gui_nose 0
+  gui_move 0
+  gui_grid 0
+  gui_outline 0
+  gripper_return 0
+  fiducial_return 0
+  laser_return 1
+)
+
+resolution 0.05
+interval_sim 100  # simulation timestep in milliseconds
+
+window
+(
+  size [ 635.000 666.000 ] # in pixels
+  scale 36.995   # pixels per meter
+  center [ -0.040  -0.274 ]
+  rotate [ 0  0 ]
+
+  show_data 1              # 1=on 0=off
+)
+
+floorplan
+(
+  name "id19_map"
+  bitmap "bitmaps/id19_map.pgm"
+#  size [ 41.600 20.000 2.000 ]
+  size [ 225.000 137.500 2.000 ]
+  pose [  0.000  0.000 0.000 0.000 ]
+)
+
+define cube model
+(
+  size [0.500 0.500 0.500]
+  gui_nose 0
+)
+
+define odom_calib model
+(
+  size [0.200 0.200 0.500]
+  gui_nose 0
+)
+
+
+define dock model
+(
+	size [0.071 0.441 0.500]
+	block
+        (
+         points 4
+         point[0] [0 0]
+	 point[1] [0.0707 0.0707]
+	 point[2] [0.0707 0.3707]
+	 point[3] [0 0.4414]
+         z [0 1]
+        )
+)
+
+define dock3 model
+(
+	size [0.071 0.441 0.500]
+	block
+        (
+         points 7
+            point[0] [0 0.0707]
+	        point[1] [0.0707 0.0707]
+            point[2] [0.0707 0.1707]
+            point[3] [0.01 0.2207]
+            point[4] [0.0707 0.2707]
+	        point[5] [0.0707 0.3707]
+	        point[6] [0 0.3707]
+         z [0 1]
+        )
+)
+
+define dock4 model
+(
+	size [0.1 0.33 0.500]
+	block
+        (
+         points 7
+            point[0] [0 0]
+	        point[1] [0.1 0]
+            point[2] [0.1 0.10]
+            point[3] [0.01 0.18]
+            point[4] [0.1 0.26]
+	        point[5] [0.1 0.36]
+	        point[6] [0 0.36]
+         z [0 1]
+        )
+)
+
+define holder1 model
+(
+	#size [0.96 1.2 0.500]
+	block
+        (
+         points 12
+            point[0] [0 0.04]
+            point[1] [0.93 0.04]
+	        point[2] [0.96 -0.025]
+            point[3] [0.96 0.125]
+            point[4] [0.93 0.06]
+            point[5] [0.1 0.06]
+            point[6] [0.1 0.99]
+            point[7] [0.93 0.99]
+            point[8] [0.96 0.925]	        
+            point[9] [0.96 1.075]
+            point[10] [0.93 1.01] 
+	        point[11] [0 1.01]
+         z [0 1]
+        )
+)
+
+define holder2 model
+(
+	size [0.95 1.16 0.500]
+
+	block
+        (
+         points 6
+            point[0] [0 0.96]
+            point[1] [0.95 0.96]
+            point[2] [0.95 1.09]	        
+            point[3] [0.93 1.09]
+            point[4] [0.93 0.98] 
+	        point[5] [0 0.98]
+         z [0 1]
+        )
+
+	block
+        (
+         points 6
+            point[0] [0 0.04]
+            point[1] [0.93 0.04]
+	        point[2] [0.93 -0.07]
+            point[3] [0.95 -0.07]
+            point[4] [0.95 0.06]
+            point[5] [0 0.06]
+         z [0 1]
+        )
+
+)
+
+define holder3 model
+(
+	size [0.90 1.00 0.500]
+
+	block
+        (
+         points 12
+            point[0] [0.0 0.96]
+            point[1] [0.95 0.96]
+            point[2] [0.95 1.09]	        
+            point[3] [0.93 1.09]
+            point[4] [0.93 0.98] 
+	        point[5] [0.02 0.98]
+            point[6] [0.02 0.04]
+            point[7] [0.93 0.04]
+	        point[8] [0.93 -0.07]
+            point[9] [0.95 -0.07]
+            point[10] [0.95 0.06]
+            point[11] [0.0 0.06]
+         z [0 1]
+        )
+
+)
+
+
+
+#adding blocks
+cube( pose [ 2.000 4.000 0.000 0.000 ] color "green")
+odom_calib( pose [ 3.000 5.000 0.000 0.000 ] color "blue")
+
+#holder3( pose [ -6.500 -0.30 0.000 0.000 ] color "blue")
+dock4( pose [ -1.31 -4.1800 0.000 -1.18 ] color "yellow")
+
+# throw in a robot
+trp1
+(
+  pose [ -8.0 37.0 0.000 100.0 ]
+  name "trp1"
+)

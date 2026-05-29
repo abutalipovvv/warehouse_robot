@@ -1,0 +1,89 @@
+version: "3"
+x-basic: &basic
+  ipc: host
+  stdin_open: true
+  network_mode: host
+  tty: true
+  privileged: true
+  environment:
+    DISPLAY:
+    XAUTHORITY: "/root/.Xauthority"
+    QT_X11_NO_MITSHM: "1"
+    XDG_RUNTIME_DIR:
+  volumes:
+    - /tmp/.X11-unix:/tmp/.X11-unix:rw
+    - $HOME/.Xauthority:/root/.Xauthority
+    - ../easy_full_ws/src:/root/easy_full_ws/src
+    - ../workspace/src:/root/ws/src
+    - ./tmux.conf:/root/.tmux.conf
+    # - ../workspace/src/from_repos:/rmf_demos_ws/src
+
+x-server: &server
+  ipc: host
+  stdin_open: true
+  network_mode: host
+  tty: true
+  privileged: true
+  volumes:
+    - ../workspace/src:/root/ws/src
+    - ./tmux.conf:/root/.tmux.conf
+
+x-gui_env: &env_gui
+  DISPLAY:
+  XAUTHORITY: "/root/.Xauthority"
+  QT_X11_NO_MITSHM: "1"
+  XDG_RUNTIME_DIR:
+
+x-gpu: &nvidia
+  <<: *basic
+  deploy:
+    resources:
+      reservations:
+        devices:
+          - driver: nvidia
+            count: all
+            capabilities:
+              - gpu
+              - graphics
+              - utility # nvidia-smi
+              - compute # CUDA. Required to avoid "CUDA version: N/A"
+              - video # NVDEC/NVENC
+
+services:
+  ros_base:
+    #build : docker build -t local-ros-base:dev --build-arg ROS_DISTRO=jazzy -f Dockerfile-ros-base ..
+    image: local-ros-base:dev
+    profiles: [ 'build' ]
+  
+  stage_simulator:
+    #build : docker build -t local-stage-simulator:dev --build-arg BASE_IMG=local-ros-base:dev --build-arg ROS_DISTRO=jazzy -f Dockerfile-stage-simulator .. --no-cache
+    image: local-stage-simulator:dev
+    container_name: stage_simulator
+    working_dir: /root/stage_ws
+    command:
+      - /bin/bash
+      - /root/stage_ws/start-stage.sh
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile-stage-simulator
+      args:
+        BASE_IMG: local-ros-base:dev
+        ROS_DISTRO: jazzy
+    environment:
+      DISPLAY: ${DISPLAY}
+      XAUTHORITY: "/root/.Xauthority"
+      QT_X11_NO_MITSHM: "1"
+      XDG_RUNTIME_DIR:
+      RMW_IMPLEMENTATION: rmw_cyclonedds_cpp
+      CYCLONEDDS_URI: file:///cyclonedds.xml
+      ROS_DOMAIN_ID: 0
+    volumes:
+      - ./start-stage.sh:/root/stage_ws/start-stage.sh
+      - ../stage_simulator/src/:/root/stage_ws/src
+      - ./cyclonedds.xml:/cyclonedds.xml
+    ipc: host
+    stdin_open: true
+    network_mode: host
+    tty: true
+    privileged: true
+

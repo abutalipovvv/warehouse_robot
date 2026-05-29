@@ -1,0 +1,71 @@
+ARG ROS_DISTRO=jazzy
+ARG BASE_IMG=docker.enterar.com/teleworker/docker_group/docker:ros_base
+FROM ${BASE_IMG}
+
+SHELL ["/bin/bash", "-lc"]
+
+ARG ROS_DISTRO
+ARG BASE_IMG
+ARG STAGE_WS=/root/stage_ws
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN . /etc/os-release && \
+    case "${ROS_DISTRO}:${VERSION_CODENAME}" in \
+      humble:jammy|jazzy:noble) ;; \
+      *) echo "ROS_DISTRO=${ROS_DISTRO} is incompatible with Ubuntu ${VERSION_CODENAME} in base image ${BASE_IMG}" >&2; exit 1 ;; \
+    esac
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    git \
+    gstreamer1.0-libav \
+    gstreamer1.0-plugins-bad \
+    gstreamer1.0-plugins-base \
+    gstreamer1.0-plugins-good \
+    gstreamer1.0-plugins-ugly \
+    gstreamer1.0-tools \
+    gstreamer1.0-rtsp \
+    libfltk1.3-dev \
+    libgl1-mesa-dev \
+    libglu1-mesa-dev \
+    libjpeg-dev \
+    libltdl-dev \
+    libpng-dev \
+    libtool \
+    libtool-bin \
+    novnc \
+    python3-rosdep \
+    python3-colcon-common-extensions \
+    python3-vcstool \
+    ros-dev-tools \
+    ros-${ROS_DISTRO}-ackermann-msgs \
+    ros-${ROS_DISTRO}-joint-state-publisher \
+    websockify \
+    x11vnc \
+    xvfb \
+    && rm -rf /var/lib/apt/lists/*
+
+
+RUN rosdep init 2>/dev/null || true
+RUN rosdep update
+
+WORKDIR ${STAGE_WS}
+RUN mkdir -p ${STAGE_WS}/src
+COPY stage_simulator/src/ ${STAGE_WS}/src/
+
+RUN apt-get update && \
+    source /opt/ros/${ROS_DISTRO}/setup.bash && \
+    rosdep install --from-paths ${STAGE_WS}/src --ignore-src -r -y && \
+    rm -rf /var/lib/apt/lists/*
+
+RUN source /opt/ros/${ROS_DISTRO}/setup.bash && \
+    colcon build --symlink-install --packages-select stage && \
+    source ${STAGE_WS}/install/setup.bash && \
+    colcon build --symlink-install --packages-select trp1_description && \
+    source ${STAGE_WS}/install/setup.bash && \
+    colcon build --symlink-install --packages-skip stage 
+
+RUN echo "source /opt/ros/${ROS_DISTRO}/setup.bash" >> /root/.bashrc && \
+    echo "[ -f ${STAGE_WS}/install/setup.bash ] && source ${STAGE_WS}/install/setup.bash" >> /root/.bashrc
+
+ENTRYPOINT ["/ros_entrypoint.sh"]

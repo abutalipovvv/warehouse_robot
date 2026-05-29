@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Route Demo</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="shell">
+    <aside class="panel">
+      <h1 id="mapTitle">Route Demo</h1>
+      <p class="subtitle">
+        Демо визуализация LM-графа поверх карты. Маршрут строится через A* и
+        подсвечивается синим, а робот едет строго от LM к LM.
+      </p>
+
+      <div class="controls">
+        <label>
+          Start LM
+          <select id="startSelect"></select>
+        </label>
+        <label>
+          Goal LM
+          <select id="goalSelect"></select>
+        </label>
+        <button id="planButton" class="primary" type="button">Plan A* Route</button>
+        <button id="driveButton" class="secondary" type="button">Drive Along Path</button>
+        <button id="stopButton" class="warning" type="button">Stop</button>
+        <button id="obstacleModeButton" class="secondary" type="button">Add Obstacles: Off</button>
+        <button id="clearObstaclesButton" class="secondary" type="button">Clear Obstacles</button>
+        <div class="control-grid">
+          <label>
+            Robot W, m
+            <input id="robotWidthInput" type="number" value="0.55" min="0.10" max="2.00" step="0.01" />
+          </label>
+          <label>
+            Robot L, m
+            <input id="robotLengthInput" type="number" value="0.70" min="0.10" max="2.50" step="0.01" />
+          </label>
+          <label>
+            Lookahead, m
+            <input id="lookaheadInput" type="number" value="0.80" min="0.10" max="3.00" step="0.05" />
+          </label>
+          <label>
+            Speed, m/s
+            <input id="speedInput" type="number" value="0.35" min="0.02" max="1.50" step="0.01" />
+          </label>
+        </div>
+      </div>
+
+      <div class="stats">
+        <div class="card">
+          <div class="card-title">Route Length</div>
+          <div class="metric" id="routeLength">0.00 m</div>
+        </div>
+        <div class="card">
+          <div class="card-title">Visited LM</div>
+          <ul id="routeList" class="route-list"></ul>
+        </div>
+        <div class="card">
+          <div class="card-title">Status</div>
+          <div id="statusText">Ready.</div>
+        </div>
+      </div>
+
+      <div class="legend">
+        <div class="legend-row"><span class="swatch edge"></span> All graph edges</div>
+        <div class="legend-row"><span class="swatch route"></span> A* shortest route</div>
+        <div class="legend-row"><span class="swatch start"></span> Start LM</div>
+        <div class="legend-row"><span class="swatch goal"></span> Goal LM</div>
+        <div class="legend-row"><span class="swatch robot"></span> Robot position</div>
+        <div class="legend-row"><span class="swatch obstacle"></span> Lidar obstacle point</div>
+        <div class="legend-row"><span class="swatch lookahead"></span> Swept footprint check</div>
+      </div>
+    </aside>
+
+    <main class="viewer">
+      <div class="viewer-toolbar">
+        <button id="zoomInButton" type="button">Zoom In</button>
+        <button id="zoomOutButton" type="button">Zoom Out</button>
+        <button id="resetViewButton" type="button">Reset</button>
+      </div>
+      <svg id="mapSvg">
+        <g id="viewport">
+          <image id="mapImage" preserveAspectRatio="none"></image>
+          <g id="graphLayer"></g>
+          <g id="pathLayer"></g>
+          <g id="lookaheadLayer"></g>
+          <g id="obstacleLayer"></g>
+          <g id="pointLayer"></g>
+          <g id="robotLayer"></g>
+        </g>
+      </svg>
+    </main>
+  </div>
+
+  <script src="demo-data.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
