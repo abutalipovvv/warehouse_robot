@@ -163,7 +163,6 @@ class WarehouseMapLoader:
             if start not in landmarks or goal not in landmarks:
                 continue
 
-            geometry = geometries.get((start, goal))
             edges.append(
                 GraphEdge(
                     from_name=start,
@@ -172,7 +171,7 @@ class WarehouseMapLoader:
                     kind=str(item.get("kind", "unknown")),
                     edge_type=str(item.get("type", "unknown")),
                     world_points=(landmarks[start].to_point(), landmarks[goal].to_point()),
-                    geometry=geometry,
+                    geometry=geometries.get((start, goal)),
                 )
             )
         return edges

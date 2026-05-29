@@ -7,10 +7,16 @@ endif()
 
 # find dependencies
 find_package(ament_cmake REQUIRED)
+find_package(ament_cmake_python REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(urdf REQUIRED)
 find_package(xacro REQUIRED)
 find_package(std_msgs REQUIRED)
+
+ament_python_install_package(
+  route_core
+  PACKAGE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../../route_core
+)
 
 install(DIRECTORY
   config

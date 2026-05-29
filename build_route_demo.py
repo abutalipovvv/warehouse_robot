@@ -63,7 +63,7 @@ def main() -> None:
     if args.open:
         print(f"Opened in browser: {output_path.resolve().as_uri()}")
     else:
-        print(f"Open manually: xdg-open {output_path}")
+        print(f"Open manually: {output_path.resolve()}")
         print("Or rerun with --open")
 
 

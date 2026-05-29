@@ -8,9 +8,9 @@ import subprocess
 import sys
 import webbrowser
 
-from .map_loader import WarehouseMapLoader
-from .models import DemoPayload, Landmark
-from .routing import AStarRouter
+from route_core import Landmark, LmRoutePlanner, WarehouseMapLoader
+
+from .models import DemoPayload
 from .web_builder import RouteDemoSiteBuilder
 
 
@@ -35,13 +35,14 @@ class RouteDemoApplication:
             requested_goal=options.goal,
         )
 
-        router = AStarRouter(loaded_map.landmarks, loaded_map.edges)
-        router.find_route(default_start, default_goal)
+        route_planner = LmRoutePlanner(loaded_map.landmarks, loaded_map.edges)
+        route_planner.find_route(default_start, default_goal)
 
         payload = DemoPayload(
             map_metadata=loaded_map.map_metadata,
             landmarks=[loaded_map.landmarks[name] for name in sorted(loaded_map.landmarks)],
             edges=loaded_map.edges,
+            route_catalog=route_planner.build_route_catalog(),
             default_start=default_start,
             default_goal=default_goal,
         )
