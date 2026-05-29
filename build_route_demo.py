@@ -171,6 +171,7 @@ def load_edges(path: Path, lms: Dict[str, Dict[str, float]]) -> List[Dict[str, o
     if not isinstance(payload, list):
         raise ValueError(f"Unexpected edge file format: {path}")
 
+    geometries = load_graph_geometries(path.parent / "graphs.yaml")
     edges: List[Dict[str, object]] = []
     for item in payload:
         start = str(item["from"])
@@ -193,7 +194,62 @@ def load_edges(path: Path, lms: Dict[str, Dict[str, float]]) -> List[Dict[str, o
                 ],
             }
         )
+        geometry = geometries.get((start, goal))
+        if geometry:
+            edges[-1].update(geometry)
     return edges
+
+
+def load_graph_geometries(path: Path) -> Dict[Tuple[str, str], Dict[str, object]]:
+    if not path.exists():
+        return {}
+
+    payload = read_yaml(path)
+    if not isinstance(payload, dict):
+        return {}
+
+    primitives = payload.get("primitives", [])
+    if not isinstance(primitives, list):
+        return {}
+
+    geometries: Dict[Tuple[str, str], Dict[str, object]] = {}
+    for primitive in primitives:
+        if not isinstance(primitive, dict) or primitive.get("kind") != "curve":
+            continue
+
+        curve = primitive.get("curve")
+        if not isinstance(curve, dict):
+            continue
+
+        start_name = curve.get("start_name")
+        end_name = curve.get("end_name")
+        if not start_name or not end_name:
+            continue
+
+        point_keys = ("start", "control1", "control2", "end")
+        try:
+            control_points = [
+                {
+                    "x": float(curve[key]["x"]),
+                    "y": float(curve[key]["y"]),
+                }
+                for key in point_keys
+            ]
+        except (KeyError, TypeError, ValueError):
+            continue
+
+        geometry = {
+            "geometry": "bezier",
+            "control_points": control_points,
+            "curve_type": str(primitive.get("curve_type", "Bezier")),
+        }
+        geometries[(str(start_name), str(end_name))] = geometry
+        geometries[(str(end_name), str(start_name))] = {
+            **geometry,
+            "control_points": list(reversed(control_points)),
+        }
+
+    return geometries
 
 
 def world_distance(a: Dict[str, float], b: Dict[str, float]) -> float:
@@ -330,6 +386,10 @@ def build_demo_html(
       --start: #1e8e3e;
       --goal: #d9480f;
       --robot: #0b7285;
+      --footprint: rgba(11, 114, 133, 0.24);
+      --blocked: #c92a2a;
+      --obstacle: #5f3dc4;
+      --lookahead: rgba(201, 42, 42, 0.18);
       --shadow: 0 18px 40px rgba(48, 54, 61, 0.12);
     }}
 
@@ -389,6 +449,7 @@ def build_demo_html(
     }}
 
     select,
+    input,
     button {{
       width: 100%;
       border-radius: 14px;
@@ -397,6 +458,16 @@ def build_demo_html(
       font: inherit;
       background: #fffdf9;
       color: var(--ink);
+    }}
+
+    input[type="number"] {{
+      appearance: textfield;
+    }}
+
+    .control-grid {{
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
     }}
 
     button {{
@@ -418,6 +489,12 @@ def build_demo_html(
 
     button.secondary {{
       background: linear-gradient(135deg, #f7f2e7, #efe8d8);
+    }}
+
+    button.warning {{
+      background: #fff5f5;
+      color: var(--blocked);
+      border-color: rgba(201, 42, 42, 0.22);
     }}
 
     .stats {{
@@ -562,6 +639,27 @@ def build_demo_html(
         </label>
         <button id="planButton" class="primary" type="button">Plan A* Route</button>
         <button id="driveButton" class="secondary" type="button">Drive Along Path</button>
+        <button id="stopButton" class="warning" type="button">Stop</button>
+        <button id="obstacleModeButton" class="secondary" type="button">Add Obstacles: Off</button>
+        <button id="clearObstaclesButton" class="secondary" type="button">Clear Obstacles</button>
+        <div class="control-grid">
+          <label>
+            Robot W, m
+            <input id="robotWidthInput" type="number" value="0.55" min="0.10" max="2.00" step="0.01" />
+          </label>
+          <label>
+            Robot L, m
+            <input id="robotLengthInput" type="number" value="0.70" min="0.10" max="2.50" step="0.01" />
+          </label>
+          <label>
+            Lookahead, m
+            <input id="lookaheadInput" type="number" value="0.80" min="0.10" max="3.00" step="0.05" />
+          </label>
+          <label>
+            Speed, m/s
+            <input id="speedInput" type="number" value="0.35" min="0.02" max="1.50" step="0.01" />
+          </label>
+        </div>
       </div>
 
       <div class="stats">
@@ -585,6 +683,8 @@ def build_demo_html(
         <div class="legend-row"><span class="swatch" style="background: var(--start);"></span> Start LM</div>
         <div class="legend-row"><span class="swatch" style="background: var(--goal);"></span> Goal LM</div>
         <div class="legend-row"><span class="swatch" style="background: var(--robot);"></span> Robot position</div>
+        <div class="legend-row"><span class="swatch" style="background: var(--obstacle);"></span> Lidar obstacle point</div>
+        <div class="legend-row"><span class="swatch" style="background: var(--lookahead);"></span> Swept footprint check</div>
       </div>
     </aside>
 
@@ -599,6 +699,8 @@ def build_demo_html(
           <image id="mapImage" x="{view_padding}" y="{view_padding}" width="{map_width}" height="{map_height}" href="" preserveAspectRatio="none"></image>
           <g id="graphLayer"></g>
           <g id="pathLayer"></g>
+          <g id="lookaheadLayer"></g>
+          <g id="obstacleLayer"></g>
           <g id="pointLayer"></g>
           <g id="robotLayer"></g>
         </g>
@@ -613,6 +715,8 @@ def build_demo_html(
     const viewport = document.getElementById("viewport");
     const graphLayer = document.getElementById("graphLayer");
     const pathLayer = document.getElementById("pathLayer");
+    const lookaheadLayer = document.getElementById("lookaheadLayer");
+    const obstacleLayer = document.getElementById("obstacleLayer");
     const pointLayer = document.getElementById("pointLayer");
     const robotLayer = document.getElementById("robotLayer");
     const routeLength = document.getElementById("routeLength");
@@ -622,6 +726,13 @@ def build_demo_html(
     const goalSelect = document.getElementById("goalSelect");
     const planButton = document.getElementById("planButton");
     const driveButton = document.getElementById("driveButton");
+    const stopButton = document.getElementById("stopButton");
+    const obstacleModeButton = document.getElementById("obstacleModeButton");
+    const clearObstaclesButton = document.getElementById("clearObstaclesButton");
+    const robotWidthInput = document.getElementById("robotWidthInput");
+    const robotLengthInput = document.getElementById("robotLengthInput");
+    const lookaheadInput = document.getElementById("lookaheadInput");
+    const speedInput = document.getElementById("speedInput");
     const zoomInButton = document.getElementById("zoomInButton");
     const zoomOutButton = document.getElementById("zoomOutButton");
     const resetViewButton = document.getElementById("resetViewButton");
@@ -629,6 +740,7 @@ def build_demo_html(
 
     const nodeByName = new Map();
     const adjacency = new Map();
+    const edgeByKey = new Map();
     const scaleState = {{ zoom: 1, panX: 0, panY: 0 }};
     const baseView = {{
       width: DEMO_DATA.map.viewWidth,
@@ -636,8 +748,12 @@ def build_demo_html(
     }};
 
     let currentPath = [];
+    let currentTrajectory = [];
     let animationFrame = null;
-    let robotDot = null;
+    let robotShape = null;
+    let obstacleMode = false;
+    let obstacles = [];
+    let simulation = null;
 
     mapImage.setAttribute("href", DEMO_DATA.map.imageDataUrl);
 
@@ -645,6 +761,21 @@ def build_demo_html(
       const px = DEMO_DATA.map.viewPadding + ((point.x - DEMO_DATA.map.origin[0]) / DEMO_DATA.map.resolution);
       const py = DEMO_DATA.map.viewPadding + (DEMO_DATA.map.height - 1) - ((point.y - DEMO_DATA.map.origin[1]) / DEMO_DATA.map.resolution);
       return {{ x: px, y: py }};
+    }}
+
+    function pixelToWorld(point) {{
+      const x = ((point.x - DEMO_DATA.map.viewPadding) * DEMO_DATA.map.resolution) + DEMO_DATA.map.origin[0];
+      const y = ((DEMO_DATA.map.height - 1) - (point.y - DEMO_DATA.map.viewPadding)) * DEMO_DATA.map.resolution + DEMO_DATA.map.origin[1];
+      return {{ x, y }};
+    }}
+
+    function eventToWorld(event) {{
+      const ctm = viewport.getScreenCTM();
+      if (!ctm) {{
+        return null;
+      }}
+      const point = new DOMPoint(event.clientX, event.clientY).matrixTransform(ctm.inverse());
+      return pixelToWorld(point);
     }}
 
     function distWorld(a, b) {{
@@ -667,9 +798,11 @@ def build_demo_html(
       }}
 
       for (const edge of DEMO_DATA.edges) {{
+        edgeByKey.set(`${{edge.from}}|${{edge.to}}`, edge);
         ensureAdjacency(edge.from).push({{
           to: edge.to,
           length: edge.length,
+          edge,
         }});
       }}
     }}
@@ -712,17 +845,30 @@ def build_demo_html(
 
         const start = worldToPixel(nodeByName.get(edge.from));
         const goal = worldToPixel(nodeByName.get(edge.to));
-        graphLayer.appendChild(
-          createSvgElement("line", {{
-            x1: start.x,
-            y1: start.y,
-            x2: goal.x,
-            y2: goal.y,
-            stroke: "var(--edge)",
-            "stroke-width": 2,
-            "stroke-linecap": "round",
-          }})
-        );
+        if (edge.geometry === "bezier" && edge.control_points && edge.control_points.length === 4) {{
+          const cp = edge.control_points.map(worldToPixel);
+          graphLayer.appendChild(
+            createSvgElement("path", {{
+              d: `M ${{cp[0].x}} ${{cp[0].y}} C ${{cp[1].x}} ${{cp[1].y}}, ${{cp[2].x}} ${{cp[2].y}}, ${{cp[3].x}} ${{cp[3].y}}`,
+              fill: "none",
+              stroke: "var(--edge)",
+              "stroke-width": 2,
+              "stroke-linecap": "round",
+            }})
+          );
+        }} else {{
+          graphLayer.appendChild(
+            createSvgElement("line", {{
+              x1: start.x,
+              y1: start.y,
+              x2: goal.x,
+              y2: goal.y,
+              stroke: "var(--edge)",
+              "stroke-width": 2,
+              "stroke-linecap": "round",
+            }})
+          );
+        }}
       }}
     }}
 
@@ -824,15 +970,115 @@ def build_demo_html(
       }}
     }}
 
+    function getEdge(fromName, toName) {{
+      return edgeByKey.get(`${{fromName}}|${{toName}}`) || null;
+    }}
+
+    function cubicBezier(points, t) {{
+      const u = 1 - t;
+      const tt = t * t;
+      const uu = u * u;
+      const uuu = uu * u;
+      const ttt = tt * t;
+      return {{
+        x: (uuu * points[0].x) + (3 * uu * t * points[1].x) + (3 * u * tt * points[2].x) + (ttt * points[3].x),
+        y: (uuu * points[0].y) + (3 * uu * t * points[1].y) + (3 * u * tt * points[2].y) + (ttt * points[3].y),
+      }};
+    }}
+
+    function cubicBezierDerivative(points, t) {{
+      const u = 1 - t;
+      return {{
+        x: (3 * u * u * (points[1].x - points[0].x)) + (6 * u * t * (points[2].x - points[1].x)) + (3 * t * t * (points[3].x - points[2].x)),
+        y: (3 * u * u * (points[1].y - points[0].y)) + (6 * u * t * (points[2].y - points[1].y)) + (3 * t * t * (points[3].y - points[2].y)),
+      }};
+    }}
+
+    function sampleLine(start, goal, edgeId, spacing) {{
+      const length = Math.max(spacing, distWorld(start, goal));
+      const steps = Math.max(2, Math.ceil(length / spacing));
+      const yaw = Math.atan2(goal.y - start.y, goal.x - start.x);
+      const samples = [];
+      for (let i = 0; i <= steps; i += 1) {{
+        const t = i / steps;
+        samples.push({{
+          x: start.x + ((goal.x - start.x) * t),
+          y: start.y + ((goal.y - start.y) * t),
+          yaw,
+          edgeId,
+        }});
+      }}
+      return samples;
+    }}
+
+    function sampleBezier(points, edgeId, spacing) {{
+      const roughLength = points.reduce((total, point, index) => {{
+        if (index === 0) {{
+          return 0;
+        }}
+        return total + distWorld(points[index - 1], point);
+      }}, 0);
+      const steps = Math.max(12, Math.ceil(roughLength / spacing));
+      const samples = [];
+      for (let i = 0; i <= steps; i += 1) {{
+        const t = i / steps;
+        const point = cubicBezier(points, t);
+        const tangent = cubicBezierDerivative(points, t);
+        samples.push({{
+          x: point.x,
+          y: point.y,
+          yaw: Math.atan2(tangent.y, tangent.x),
+          edgeId,
+        }});
+      }}
+      return samples;
+    }}
+
+    function buildTrajectory(route) {{
+      if (!route || route.nodes.length < 2) {{
+        return [];
+      }}
+
+      const spacing = 0.05;
+      const trajectory = [];
+      for (let i = 0; i < route.nodes.length - 1; i += 1) {{
+        const fromName = route.nodes[i];
+        const toName = route.nodes[i + 1];
+        const edge = getEdge(fromName, toName);
+        const edgeId = `${{fromName}}->${{toName}}`;
+        let samples;
+        if (edge && edge.geometry === "bezier" && edge.control_points && edge.control_points.length === 4) {{
+          samples = sampleBezier(edge.control_points, edgeId, spacing);
+        }} else {{
+          samples = sampleLine(nodeByName.get(fromName), nodeByName.get(toName), edgeId, spacing);
+        }}
+
+        if (trajectory.length > 0) {{
+          samples = samples.slice(1);
+        }}
+        trajectory.push(...samples);
+      }}
+
+      let distance = 0;
+      for (let i = 0; i < trajectory.length; i += 1) {{
+        if (i > 0) {{
+          distance += distWorld(trajectory[i - 1], trajectory[i]);
+        }}
+        trajectory[i].s = distance;
+        trajectory[i].targetSpeed = Number(speedInput.value) || 0.35;
+      }}
+      return trajectory;
+    }}
+
     function drawRoute(route) {{
       pathLayer.innerHTML = "";
-      if (!route || route.nodes.length < 2) {{
+      currentTrajectory = buildTrajectory(route);
+      if (!route || route.nodes.length < 2 || currentTrajectory.length < 2) {{
         return;
       }}
 
-      const points = route.nodes.map((name) => {{
-        const lm = nodeByName.get(name);
-        const pos = worldToPixel(lm);
+      const points = currentTrajectory.map((pose) => {{
+        const pos = worldToPixel(pose);
         return `${{pos.x}},${{pos.y}}`;
       }});
 
@@ -854,95 +1100,244 @@ def build_demo_html(
         cancelAnimationFrame(animationFrame);
         animationFrame = null;
       }}
+      simulation = null;
+      lookaheadLayer.innerHTML = "";
     }}
 
-    function drawRobotAt(name) {{
+    function robotConfig() {{
+      return {{
+        width: Math.max(0.1, Number(robotWidthInput.value) || 0.55),
+        length: Math.max(0.1, Number(robotLengthInput.value) || 0.70),
+        lookahead: Math.max(0.1, Number(lookaheadInput.value) || 0.8),
+      }};
+    }}
+
+    function footprintCorners(pose) {{
+      const cfg = robotConfig();
+      const halfLength = cfg.length / 2;
+      const halfWidth = cfg.width / 2;
+      const cos = Math.cos(pose.yaw);
+      const sin = Math.sin(pose.yaw);
+      return [
+        {{ x: halfLength, y: halfWidth }},
+        {{ x: halfLength, y: -halfWidth }},
+        {{ x: -halfLength, y: -halfWidth }},
+        {{ x: -halfLength, y: halfWidth }},
+      ].map((corner) => ({{
+        x: pose.x + (corner.x * cos) - (corner.y * sin),
+        y: pose.y + (corner.x * sin) + (corner.y * cos),
+      }}));
+    }}
+
+    function drawFootprint(pose, attrs = {{}}) {{
+      const points = footprintCorners(pose)
+        .map(worldToPixel)
+        .map((point) => `${{point.x}},${{point.y}}`)
+        .join(" ");
+      return createSvgElement("polygon", {{
+        points,
+        fill: attrs.fill || "var(--footprint)",
+        stroke: attrs.stroke || "var(--robot)",
+        "stroke-width": attrs.strokeWidth || 2,
+        "stroke-linejoin": "round",
+        opacity: attrs.opacity || 1,
+      }});
+    }}
+
+    function drawRobotPose(pose, blocked = false) {{
       robotLayer.innerHTML = "";
-      const lm = nodeByName.get(name);
-      if (!lm) {{
-        robotDot = null;
+      if (!pose) {{
+        robotShape = null;
         return;
       }}
 
-      const pos = worldToPixel(lm);
-      robotDot = createSvgElement("circle", {{
-        cx: pos.x,
-        cy: pos.y,
-        r: 9,
-        fill: "var(--robot)",
-        stroke: "white",
-        "stroke-width": 3,
+      robotShape = drawFootprint(pose, {{
+        fill: blocked ? "rgba(201, 42, 42, 0.25)" : "var(--footprint)",
+        stroke: blocked ? "var(--blocked)" : "var(--robot)",
+        strokeWidth: 2.5,
       }});
-      robotLayer.appendChild(robotDot);
+      robotLayer.appendChild(robotShape);
+
+      const nose = worldToPixel({{
+        x: pose.x + Math.cos(pose.yaw) * (robotConfig().length / 2),
+        y: pose.y + Math.sin(pose.yaw) * (robotConfig().length / 2),
+      }});
+      const center = worldToPixel(pose);
+      robotLayer.appendChild(createSvgElement("line", {{
+        x1: center.x,
+        y1: center.y,
+        x2: nose.x,
+        y2: nose.y,
+        stroke: blocked ? "var(--blocked)" : "var(--robot)",
+        "stroke-width": 3,
+        "stroke-linecap": "round",
+      }}));
+      robotLayer.appendChild(createSvgElement("circle", {{
+        cx: center.x,
+        cy: center.y,
+        r: 3.5,
+        fill: blocked ? "var(--blocked)" : "var(--robot)",
+      }}));
     }}
 
-    function setRobotPixel(x, y) {{
-      if (!robotDot) {{
-        robotDot = createSvgElement("circle", {{
-          cx: x,
-          cy: y,
-          r: 9,
-          fill: "var(--robot)",
+    function drawRobotAt(name) {{
+      const lm = nodeByName.get(name);
+      if (!lm) {{
+        drawRobotPose(null);
+        return;
+      }}
+      const nextLm = currentPath.length > 1 ? nodeByName.get(currentPath[1]) : null;
+      const yaw = nextLm ? Math.atan2(nextLm.y - lm.y, nextLm.x - lm.x) : 0;
+      drawRobotPose({{ x: lm.x, y: lm.y, yaw }});
+    }}
+
+    function drawObstacles() {{
+      obstacleLayer.innerHTML = "";
+      obstacles.forEach((obstacle, index) => {{
+        const pos = worldToPixel(obstacle);
+        obstacleLayer.appendChild(createSvgElement("circle", {{
+          cx: pos.x,
+          cy: pos.y,
+          r: Math.max(4, obstacle.radius / DEMO_DATA.map.resolution),
+          fill: "var(--obstacle)",
           stroke: "white",
-          "stroke-width": 3,
-        }});
-        robotLayer.appendChild(robotDot);
+          "stroke-width": 2,
+          opacity: 0.88,
+          "data-index": index,
+        }}));
+      }});
+    }}
+
+    function obstacleHitsPose(obstacle, pose) {{
+      const cfg = robotConfig();
+      const cos = Math.cos(pose.yaw);
+      const sin = Math.sin(pose.yaw);
+      const dx = obstacle.x - pose.x;
+      const dy = obstacle.y - pose.y;
+      const localX = (dx * cos) + (dy * sin);
+      const localY = (-dx * sin) + (dy * cos);
+      const radius = obstacle.radius || 0.08;
+      return (
+        Math.abs(localX) <= (cfg.length / 2) + radius &&
+        Math.abs(localY) <= (cfg.width / 2) + radius
+      );
+    }}
+
+    function drawLookahead(poses, blocked) {{
+      lookaheadLayer.innerHTML = "";
+      for (let i = 0; i < poses.length; i += Math.max(1, Math.floor(poses.length / 8))) {{
+        lookaheadLayer.appendChild(drawFootprint(poses[i], {{
+          fill: blocked ? "var(--lookahead)" : "rgba(11, 114, 133, 0.08)",
+          stroke: blocked ? "var(--blocked)" : "rgba(11, 114, 133, 0.22)",
+          strokeWidth: 1,
+          opacity: 0.8,
+        }}));
+      }}
+    }}
+
+    function collisionAhead(trajectory, index) {{
+      const cfg = robotConfig();
+      const startDistance = trajectory[index].s;
+      const poses = [];
+      for (let i = index; i < trajectory.length; i += 1) {{
+        const pose = trajectory[i];
+        if (pose.s - startDistance > cfg.lookahead) {{
+          break;
+        }}
+        poses.push(pose);
+        for (const obstacle of obstacles) {{
+          if (obstacleHitsPose(obstacle, pose)) {{
+            drawLookahead(poses, true);
+            return {{ blocked: true, obstacle, poses }};
+          }}
+        }}
+      }}
+      drawLookahead(poses, false);
+      return {{ blocked: false, obstacle: null, poses }};
+    }}
+
+    function poseAtDistance(trajectory, distance) {{
+      if (distance <= 0) {{
+        return trajectory[0];
+      }}
+      const last = trajectory[trajectory.length - 1];
+      if (distance >= last.s) {{
+        return last;
       }}
 
-      robotDot.setAttribute("cx", String(x));
-      robotDot.setAttribute("cy", String(y));
+      let index = 0;
+      while (index < trajectory.length - 2 && trajectory[index + 1].s < distance) {{
+        index += 1;
+      }}
+
+      const start = trajectory[index];
+      const goal = trajectory[index + 1];
+      const span = Math.max(0.0001, goal.s - start.s);
+      const t = (distance - start.s) / span;
+      return {{
+        x: start.x + ((goal.x - start.x) * t),
+        y: start.y + ((goal.y - start.y) * t),
+        yaw: start.yaw + ((goal.yaw - start.yaw) * t),
+        s: distance,
+        edgeId: start.edgeId,
+      }};
     }}
 
     function animateRoute(route) {{
-      if (!route || route.nodes.length < 2) {{
+      const trajectory = currentTrajectory.length ? currentTrajectory : buildTrajectory(route);
+      if (!route || route.nodes.length < 2 || trajectory.length < 2) {{
         statusText.textContent = "Route is empty.";
         return;
       }}
 
       stopAnimation();
-      const speedMetersPerSec = 0.7;
-      const segments = [];
-
-      for (let i = 0; i < route.nodes.length - 1; i += 1) {{
-        const start = nodeByName.get(route.nodes[i]);
-        const goal = nodeByName.get(route.nodes[i + 1]);
-        const worldLen = distWorld(start, goal);
-        segments.push({{
-          startPx: worldToPixel(start),
-          goalPx: worldToPixel(goal),
-          durationMs: Math.max(150, (worldLen / speedMetersPerSec) * 1000),
-          startName: route.nodes[i],
-          goalName: route.nodes[i + 1],
-        }});
-      }}
-
-      let segmentIndex = 0;
-      let segmentStartTs = null;
+      const speedMetersPerSec = Math.max(0.02, Number(speedInput.value) || 0.35);
+      simulation = {{
+        trajectory,
+        index: 0,
+        s: 0,
+        lastTs: null,
+        paused: false,
+      }};
       statusText.textContent = `Driving from ${{route.nodes[0]}} to ${{route.nodes[route.nodes.length - 1]}}`;
 
       function step(ts) {{
-        if (segmentIndex >= segments.length) {{
-          statusText.textContent = `Arrived at ${{route.nodes[route.nodes.length - 1]}}`;
-          drawRobotAt(route.nodes[route.nodes.length - 1]);
-          animationFrame = null;
+        if (!simulation) {{
           return;
         }}
 
-        const segment = segments[segmentIndex];
-        if (segmentStartTs === null) {{
-          segmentStartTs = ts;
+        if (simulation.s >= trajectory[trajectory.length - 1].s) {{
+          statusText.textContent = `Arrived at ${{route.nodes[route.nodes.length - 1]}}`;
+          drawRobotPose(trajectory[trajectory.length - 1]);
+          animationFrame = null;
+          simulation = null;
+          lookaheadLayer.innerHTML = "";
+          return;
         }}
 
-        const progress = Math.min(1, (ts - segmentStartTs) / segment.durationMs);
-        const x = segment.startPx.x + ((segment.goalPx.x - segment.startPx.x) * progress);
-        const y = segment.startPx.y + ((segment.goalPx.y - segment.startPx.y) * progress);
-        setRobotPixel(x, y);
-
-        if (progress >= 1) {{
-          segmentIndex += 1;
-          segmentStartTs = ts;
+        const check = collisionAhead(trajectory, simulation.index);
+        if (check.blocked) {{
+          statusText.textContent = "WAIT_BLOCKED: obstacle intersects swept footprint.";
+          drawRobotPose(poseAtDistance(trajectory, simulation.s), true);
+          simulation.lastTs = ts;
+          animationFrame = requestAnimationFrame(step);
+          return;
         }}
 
+        if (simulation.lastTs === null) {{
+          simulation.lastTs = ts;
+        }}
+
+        const dt = Math.min(0.08, Math.max(0, (ts - simulation.lastTs) / 1000));
+        simulation.s = Math.min(trajectory[trajectory.length - 1].s, simulation.s + (speedMetersPerSec * dt));
+        while (simulation.index < trajectory.length - 2 && trajectory[simulation.index + 1].s < simulation.s) {{
+          simulation.index += 1;
+        }}
+
+        simulation.lastTs = ts;
+        const pose = poseAtDistance(trajectory, simulation.s);
+        drawRobotPose(pose);
+        statusText.textContent = `Driving ${{trajectory[simulation.index].edgeId}}`;
         animationFrame = requestAnimationFrame(step);
       }}
 
@@ -990,8 +1385,15 @@ def build_demo_html(
       let active = false;
       let lastX = 0;
       let lastY = 0;
+      let downX = 0;
+      let downY = 0;
 
       svg.addEventListener("pointerdown", (event) => {{
+        downX = event.clientX;
+        downY = event.clientY;
+        if (obstacleMode) {{
+          return;
+        }}
         active = true;
         lastX = event.clientX;
         lastY = event.clientY;
@@ -1010,6 +1412,18 @@ def build_demo_html(
       }});
 
       function stop(event) {{
+        if (obstacleMode && event) {{
+          const moved = Math.hypot(event.clientX - downX, event.clientY - downY);
+          if (moved < 6) {{
+            const world = eventToWorld(event);
+            if (world) {{
+              obstacles.push({{ x: world.x, y: world.y, radius: 0.08 }});
+              drawObstacles();
+              statusText.textContent = "Obstacle point added. Drive will stop if footprint hits it.";
+            }}
+          }}
+          return;
+        }}
         active = false;
         if (event && svg.hasPointerCapture(event.pointerId)) {{
           svg.releasePointerCapture(event.pointerId);
@@ -1045,6 +1459,31 @@ def build_demo_html(
         route.length += heuristic(route.nodes[i], route.nodes[i + 1]);
       }}
       animateRoute(route);
+    }});
+    stopButton.addEventListener("click", () => {{
+      stopAnimation();
+      statusText.textContent = "Stopped.";
+      if (currentTrajectory.length) {{
+        drawRobotPose(currentTrajectory[0]);
+      }}
+    }});
+    obstacleModeButton.addEventListener("click", () => {{
+      obstacleMode = !obstacleMode;
+      obstacleModeButton.textContent = `Add Obstacles: ${{obstacleMode ? "On" : "Off"}}`;
+      statusText.textContent = obstacleMode ? "Click the map to add lidar obstacle points." : "Obstacle edit mode off.";
+    }});
+    clearObstaclesButton.addEventListener("click", () => {{
+      obstacles = [];
+      drawObstacles();
+      lookaheadLayer.innerHTML = "";
+      statusText.textContent = "Obstacles cleared.";
+    }});
+    robotWidthInput.addEventListener("change", () => drawRobotAt(startSelect.value));
+    robotLengthInput.addEventListener("change", () => drawRobotAt(startSelect.value));
+    lookaheadInput.addEventListener("change", () => lookaheadLayer.innerHTML = "");
+    speedInput.addEventListener("change", () => {{
+      const route = currentPath.length ? {{ nodes: currentPath.slice(), length: 0 }} : null;
+      currentTrajectory = buildTrajectory(route);
     }});
     startSelect.addEventListener("change", planRoute);
     goalSelect.addEventListener("change", planRoute);
@@ -1086,7 +1525,7 @@ def main() -> None:
         resolution=float(ros_map["resolution"]),
         origin=ros_map["origin"],
         lms=lms,
-        edges=unique_edges(edges),
+        edges=edges,
         default_start=start,
         default_goal=goal,
     )
