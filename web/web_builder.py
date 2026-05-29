@@ -9,7 +9,7 @@ from .models import DemoPayload
 
 class RouteDemoSiteBuilder:
     def __init__(self, template_dir: Path | None = None) -> None:
-        self.template_dir = template_dir or (Path(__file__).resolve().parent / "web")
+        self.template_dir = template_dir or (Path(__file__).resolve().parent / "static")
 
     def build(
         self,
@@ -28,14 +28,14 @@ class RouteDemoSiteBuilder:
             "<\\/script>",
         )
         (output_dir / "demo-data.js").write_text(
-            f"window.ROUTE_DEMO_DATA = {payload_json};\n",
+            f"window.WAREHOUSE_WEB_DATA = {payload_json};\n",
             encoding="utf-8",
         )
         return output_dir / "index.html"
 
     def _resolve_output_dir(self, map_dir: Path, output: Path | None) -> Path:
         if output is None:
-            return map_dir / "route_demo_web"
+            return map_dir / "web"
 
         resolved = output.resolve()
         if resolved.suffix:

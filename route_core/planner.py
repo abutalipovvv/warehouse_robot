@@ -4,12 +4,25 @@ import heapq
 import math
 
 from .models import GraphEdge, Landmark, PlannedRoute, WorldPoint
+from .params import load_route_params
 
 
 class LmRoutePlanner:
-    def __init__(self, landmarks: dict[str, Landmark], edges: list[GraphEdge]) -> None:
+    def __init__(
+        self,
+        landmarks: dict[str, Landmark],
+        edges: list[GraphEdge],
+        params: dict[str, object] | None = None,
+    ) -> None:
         self.landmarks = landmarks
         self.edges = edges
+        self.params = params or load_route_params()
+        planner_params = self.params.get("planner", {})
+        if not isinstance(planner_params, dict):
+            planner_params = {}
+        self.default_sample_distance = float(
+            planner_params.get("trajectory_sample_distance", 0.05)
+        )
         self._adjacency = self._build_adjacency()
         self._edge_by_key = {
             (edge.from_name, edge.to_name): edge
@@ -75,8 +88,9 @@ class LmRoutePlanner:
     def sample_route(
         self,
         route: PlannedRoute,
-        sample_distance: float,
+        sample_distance: float | None = None,
     ) -> list[dict[str, float | str]]:
+        sample_distance = sample_distance or self.default_sample_distance
         if not route.nodes:
             return []
         if not route.edges:

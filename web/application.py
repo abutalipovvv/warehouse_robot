@@ -8,7 +8,7 @@ import subprocess
 import sys
 import webbrowser
 
-from route_core import Landmark, LmRoutePlanner, WarehouseMapLoader
+from route_core import Landmark, LmRoutePlanner, WarehouseMapLoader, load_route_params
 
 from .models import DemoPayload
 from .web_builder import RouteDemoSiteBuilder
@@ -20,6 +20,7 @@ class RouteDemoOptions:
     start: str | None = None
     goal: str | None = None
     output: Path | None = None
+    params: Path | None = None
     open_browser: bool = False
 
 
@@ -34,8 +35,9 @@ class RouteDemoApplication:
             requested_start=options.start,
             requested_goal=options.goal,
         )
+        params = load_route_params(options.params, create=True)
 
-        route_planner = LmRoutePlanner(loaded_map.landmarks, loaded_map.edges)
+        route_planner = LmRoutePlanner(loaded_map.landmarks, loaded_map.edges, params=params)
         route_planner.find_route(default_start, default_goal)
 
         payload = DemoPayload(
@@ -45,6 +47,7 @@ class RouteDemoApplication:
             route_catalog=route_planner.build_route_catalog(),
             default_start=default_start,
             default_goal=default_goal,
+            params=params,
         )
         index_path = self.site_builder.build(
             payload=payload,

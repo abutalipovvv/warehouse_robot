@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Sequence
+from typing import Any, Sequence
 
 from route_core.models import GraphEdge, Landmark, MapMetadata
 
@@ -14,6 +14,7 @@ class DemoPayload:
     route_catalog: dict[str, dict[str, object]]
     default_start: str
     default_goal: str
+    params: dict[str, Any]
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -24,4 +25,5 @@ class DemoPayload:
             "routes": dict(self.route_catalog),
             "defaultStart": self.default_start,
             "defaultGoal": self.default_goal,
+            "params": self.params,
         }

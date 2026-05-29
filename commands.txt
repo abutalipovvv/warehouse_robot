@@ -2,4 +2,4 @@ cd ~/warehouse_robot/nav2
 source /opt/ros/jazzy/setup.bash
 colcon build --packages-select nav2
 source install/setup.bash
-ros2 launch nav2 nav2_launch.py enable_lm_route:=true
+ros2 launch nav2 nav2_launch.py

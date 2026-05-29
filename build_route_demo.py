@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Build a route demo site for LM graph visualization and A* routing.
+Build a web simulator for LM graph visualization and strict route following.
 
 Example:
   python build_route_demo.py --map-dir maps_out/22.05.26_smap.smap --start LM91 --goal LM323
@@ -11,12 +11,12 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from route_demo import RouteDemoApplication, RouteDemoOptions
+from web import RouteDemoApplication, RouteDemoOptions
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Build an interactive route demo for a warehouse map."
+        description="Build an interactive web route simulator for a warehouse map."
     )
     parser.add_argument(
         "--map-dir",
@@ -38,7 +38,13 @@ def parse_args() -> argparse.Namespace:
         "--output",
         default=None,
         type=Path,
-        help="Output directory. Default: <map-dir>/route_demo_web",
+        help="Output directory. Default: <map-dir>/web",
+    )
+    parser.add_argument(
+        "--params",
+        default=None,
+        type=Path,
+        help="Path to params.yaml. Default: project params.yaml",
     )
     parser.add_argument(
         "--open",
@@ -56,10 +62,11 @@ def main() -> None:
             start=args.start,
             goal=args.goal,
             output=args.output,
+            params=args.params,
             open_browser=args.open,
         )
     )
-    print(f"Built route demo: {output_path}")
+    print(f"Built web simulator: {output_path}")
     if args.open:
         print(f"Opened in browser: {output_path.resolve().as_uri()}")
     else:
