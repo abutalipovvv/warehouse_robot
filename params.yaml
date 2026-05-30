@@ -51,7 +51,10 @@ manual:
   prediction_step: 0.1
 fleet:
   reservation_time_step_sec: 1.0
+  reservation_horizon_sec: 8.0
   wait_time_sec: 1.0
+  wait_cost: 6
+  replan_interval_sec: 1.0
   cbs_low_level_max_time: 160
   cbs_max_high_level_nodes: 2000
   cbs_max_planning_time_sec: 5.0

@@ -5,4 +5,10 @@ source install/setup.bash
 ros2 launch nav2 nav2_launch.py
 
 
+.\run_web.bat
+
+.\run_web.bat --map-dir map_data/maps_out/22.05.26_smap.smap
+
 py serve_web.py --map-dir maps_out/22.05.26_smap.smap --open
+
+& "$env:LOCALAPPDATA\Python\bin\python.exe" serve_web.py --open

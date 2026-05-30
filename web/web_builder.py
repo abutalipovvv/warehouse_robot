@@ -21,7 +21,10 @@ class RouteDemoSiteBuilder:
         output_dir.mkdir(parents=True, exist_ok=True)
 
         for asset_name in ("index.html", "styles.css", "app.js"):
-            shutil.copyfile(self.template_dir / asset_name, output_dir / asset_name)
+            source_path = self.template_dir / asset_name
+            target_path = output_dir / asset_name
+            if source_path.resolve() != target_path.resolve():
+                shutil.copyfile(source_path, target_path)
 
         payload_json = json.dumps(payload.to_dict(), ensure_ascii=False).replace(
             "</script>",
@@ -35,7 +38,7 @@ class RouteDemoSiteBuilder:
 
     def _resolve_output_dir(self, map_dir: Path, output: Path | None) -> Path:
         if output is None:
-            return map_dir / "web"
+            return self.template_dir
 
         resolved = output.resolve()
         if resolved.suffix:

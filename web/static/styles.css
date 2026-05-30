@@ -755,6 +755,36 @@ label {
   pointer-events: none;
 }
 
+.robot-status-bg {
+  stroke: rgba(255, 255, 255, 0.86);
+  stroke-width: 1.4px;
+  pointer-events: none;
+}
+
+.robot-status-bg.info {
+  fill: rgba(31, 111, 235, 0.88);
+}
+
+.robot-status-bg.warn {
+  fill: rgba(217, 85, 33, 0.90);
+}
+
+.robot-status-bg.error {
+  fill: rgba(201, 42, 42, 0.90);
+}
+
+.robot-status-bg.neutral {
+  fill: rgba(36, 48, 65, 0.82);
+}
+
+.robot-status-label {
+  fill: #ffffff;
+  font-size: 10px;
+  font-weight: 850;
+  text-anchor: middle;
+  pointer-events: none;
+}
+
 @media (max-width: 1120px) {
   .topbar {
     height: auto;

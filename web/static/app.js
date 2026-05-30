@@ -560,18 +560,34 @@
           fill = "var(--goal)";
           radius = 7;
         }
+        if (navigateMode) {
+          radius = Math.max(radius, 7);
+        }
 
         const group = this.createSvgElement("g", {
           class: navigateMode ? "lm-hit armed" : "lm-hit",
           "data-lm": lm.name,
           opacity: navigateMode ? 1 : 0.88,
         });
+        if (navigateMode) {
+          group.appendChild(
+            this.createSvgElement("circle", {
+              cx: pos.x,
+              cy: pos.y,
+              r: 18,
+              fill: "transparent",
+              stroke: "transparent",
+            })
+          );
+        }
         group.appendChild(
           this.createSvgElement("circle", {
             cx: pos.x,
             cy: pos.y,
             r: radius,
             fill,
+            stroke: navigateMode ? "#111827" : "none",
+            "stroke-width": navigateMode ? 1.2 : 0,
           })
         );
         const label = this.createSvgElement("text", {
@@ -847,7 +863,75 @@
         });
         label.textContent = robot.name;
         this.dom.robotLayer.appendChild(label);
+
+        const badgeText = this.robotBadgeText(robot);
+        if (badgeText) {
+          const badgeWidth = Math.min(150, Math.max(64, badgeText.length * 6.3 + 14));
+          this.dom.robotLayer.appendChild(
+            this.createSvgElement("rect", {
+              x: center.x - (badgeWidth / 2),
+              y: center.y + 23,
+              width: badgeWidth,
+              height: 18,
+              rx: 5,
+              class: `robot-status-bg ${this.robotBadgeTone(robot)}`,
+            })
+          );
+          const statusLabel = this.createSvgElement("text", {
+            x: center.x,
+            y: center.y + 36,
+            class: "robot-status-label",
+          });
+          statusLabel.textContent = badgeText;
+          this.dom.robotLayer.appendChild(statusLabel);
+        }
       }
+    }
+
+    robotBadgeText(robot) {
+      const status = String(robot.status || "");
+      const reason = String(robot.reason || "");
+      const routeNote = String(robot.routeNote || "");
+      if (status === "WAITING") {
+        return `WAITING: ${this.shortReason(reason || routeNote || "blocked")}`;
+      }
+      if (status === "BLOCKED" || status === "ERROR") {
+        return `BLOCKED: ${this.shortReason(reason || routeNote || "blocked")}`;
+      }
+      if (status === "PLANNING") {
+        return "PLANNING";
+      }
+      if (routeNote && routeNote !== "planner accepted" && routeNote !== "moving") {
+        return this.shortReason(routeNote);
+      }
+      return "";
+    }
+
+    robotBadgeTone(robot) {
+      const text = this.robotBadgeText(robot);
+      if (text.startsWith("BLOCKED")) {
+        return "error";
+      }
+      if (text.startsWith("WAITING") || text.startsWith("FALLBACK")) {
+        return "warn";
+      }
+      if (text.startsWith("REPLAN") || text.startsWith("DETOUR")) {
+        return "info";
+      }
+      return "neutral";
+    }
+
+    shortReason(value) {
+      return String(value || "")
+        .replace("map occupancy under footprint", "map")
+        .replace("obstacle area under footprint", "obstacle area")
+        .replace("point obstacle hits footprint", "obstacle")
+        .replace("robot footprint conflict with", "robot")
+        .replace("yield to", "yield")
+        .replace("occupied by", "occupied")
+        .replace("planner accepted", "")
+        .slice(0, 24)
+        .trim();
     }
 
     hexToRgba(hex, alpha) {
@@ -2080,13 +2164,15 @@
       this.currentPose = this.initialRobotPose();
       this.navigatePointerDown = null;
       this.suppressNextNavigateClick = false;
+      this.pendingTargetRobotName = "";
       this.fleetRobots = [];
       this.activeRobotName = "";
-      this.fleetAnimationFrame = null;
-      this.fleetPlanStartTs = null;
       this.fleetElapsed = 0;
       this.fleetPlan = null;
       this.fleetEvents = [];
+      this.fleetStatePollTimer = null;
+      this.fleetWorldSyncTimer = null;
+      this.fleetListSignature = "";
       this.manualKeys = new Set();
       this.manualAnimationFrame = null;
       this.manualLastTs = null;
@@ -2134,6 +2220,7 @@
         tabButtons: Array.from(document.querySelectorAll(".tab-button")),
         tabPages: Array.from(document.querySelectorAll(".tab-page")),
         navigateButton: document.getElementById("navigateButton"),
+        cancelOrderButton: document.getElementById("cancelOrderButton"),
         obstacleModeButton: document.getElementById("obstacleModeButton"),
         obstacleAreaModeButton: document.getElementById("obstacleAreaModeButton"),
         stopButton: document.getElementById("stopButton"),
@@ -2197,8 +2284,11 @@
       this.applyParams(await this.loadRuntimeParams());
       this.robotModelEditor.init();
       this.populateFleetSpawnSelect();
+      await this.loadInitialFleetState();
       this.initializeFleet();
       this.attachEvents();
+      this.startFleetStatePolling();
+      this.scheduleWorldSync(0);
       this.updatePlannerParams();
       this.renderAll();
       this.setStatus("Ready.");
@@ -2214,6 +2304,7 @@
         button.addEventListener("click", () => this.setActiveTab(button.dataset.tab));
       }
       this.dom.navigateButton.addEventListener("click", () => this.toggleNavigateMode());
+      this.dom.cancelOrderButton.addEventListener("click", () => this.cancelActiveOrder());
       this.dom.mapSvg.addEventListener("pointerdown", (event) => this.handleNavigatePointerDown(event), true);
       this.dom.mapSvg.addEventListener("pointerup", (event) => this.handleNavigatePointerUp(event), true);
       this.dom.mapSvg.addEventListener("click", (event) => this.handleMapNavigateClick(event));
@@ -2234,7 +2325,14 @@
       this.dom.onRouteToleranceInput.addEventListener("change", () => this.updatePlannerParams());
       this.dom.sampleDistanceInput.addEventListener("change", () => this.updatePlannerParams());
       this.dom.lookaheadInput.addEventListener("change", () => this.renderFleetRobots());
-      this.dom.collisionMarginInput.addEventListener("change", () => this.renderFleetRobots());
+      this.dom.lookaheadInput.addEventListener("change", () => this.scheduleWorldSync(0));
+      this.dom.collisionMarginInput.addEventListener("change", () => {
+        this.renderFleetRobots();
+        this.scheduleWorldSync(0);
+      });
+      this.dom.speedInput.addEventListener("change", () => this.scheduleWorldSync(0));
+      this.dom.stopDistanceInput.addEventListener("change", () => this.scheduleWorldSync(0));
+      this.dom.manualStepInput.addEventListener("change", () => this.scheduleWorldSync(0));
       this.attachManualEvents();
     }
 
@@ -2259,6 +2357,9 @@
 
     initializeFleet() {
       if (this.fleetRobots.length) {
+        if (!this.activeRobotName) {
+          this.setActiveRobot(this.fleetRobots[0].name);
+        }
         return;
       }
       const startLm = demoData.defaultStart || (this.graphModel.landmarks[0] ? this.graphModel.landmarks[0].name : "");
@@ -2268,6 +2369,19 @@
       }
       this.addFleetRobot("robot1", startLm);
       this.dom.fleetRobotNameInput.value = this.nextFleetRobotName();
+    }
+
+    async loadInitialFleetState() {
+      try {
+        const response = await fetch("/api/fleet/state", { cache: "no-store" });
+        if (!response.ok) {
+          return;
+        }
+        const state = await response.json();
+        this.applyBackendFleetState(state);
+      } catch (_) {
+        // Static file mode has no fleet backend.
+      }
     }
 
     nextFleetRobotName() {
@@ -2292,23 +2406,30 @@
     }
 
     addFleetRobot(name, spawnLm) {
-      const pose = this.poseAtLandmark(spawnLm);
-      const robot = {
+      const robot = this.createFleetRobot(name, spawnLm);
+      this.fleetRobots.push(robot);
+      this.setActiveRobot(name);
+      this.syncFleetRobotToBackend(robot);
+    }
+
+    createFleetRobot(name, spawnLm, pose = null) {
+      const resolvedPose = pose || this.poseAtLandmark(spawnLm);
+      return {
         name,
         spawnLm,
         currentLm: spawnLm,
         targetName: "",
         status: "IDLE",
         color: this.robotColor(this.fleetRobots.length),
-        pose,
+        pose: resolvedPose,
         mission: null,
         trajectory: [],
         routeClock: 0,
         startElapsed: 0,
         lastFleetElapsed: null,
+        reason: "",
+        routeNote: "",
       };
-      this.fleetRobots.push(robot);
-      this.setActiveRobot(name);
     }
 
     robotColor(index) {
@@ -2344,6 +2465,7 @@
       this.drawActiveFleetRoute(this.currentFleetElapsed());
       this.updateTelemetry();
       this.logFleet(`active ${robot.name} status=${robot.status}`);
+      this.renderLandmarks();
     }
 
     activeRobot() {
@@ -2371,7 +2493,9 @@
         const title = document.createElement("strong");
         title.textContent = robot.name;
         const details = document.createElement("span");
-        details.textContent = `${robot.currentLm || "route"} -> ${robot.targetName || "-"}`;
+        const reasonText = this.renderer.robotBadgeText(robot);
+        const reason = reasonText ? ` - ${reasonText}` : "";
+        details.textContent = `${robot.currentLm || "route"} -> ${robot.targetName || "-"}${reason}`;
         info.appendChild(title);
         info.appendChild(details);
         button.appendChild(info);
@@ -2417,6 +2541,7 @@
       this.updateActiveRobotPanel();
       this.setStatus(`Removed ${name}.`);
       this.logFleet(`removed ${name}`, "warn");
+      this.postFleetCommand("/api/fleet/robots/remove", { name });
     }
 
     updateActiveRobotPanel() {
@@ -2454,6 +2579,275 @@
         this.renderer.drawFleetRobots(this.fleetRobots, this.activeRobotName);
       } else {
         this.renderer.drawRobotPose(this.currentPose);
+      }
+    }
+
+    async postFleetCommand(path, payload) {
+      try {
+        const response = await fetch(path, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+        const result = await response.json();
+        if (result.fleetState) {
+          this.mergeBackendFleetEvents(result.fleetState.events || []);
+          if (this.manualAnimationFrame === null) {
+            this.applyBackendFleetState(result.fleetState);
+          }
+        } else if (result.state) {
+          this.mergeBackendFleetEvents(result.state.events || []);
+          if (this.manualAnimationFrame === null) {
+            this.applyBackendFleetState(result.state);
+          }
+        }
+        return result;
+      } catch (error) {
+        this.logFleet(`fleet API ${path} failed: ${error.message || error}`, "warn");
+        return null;
+      }
+    }
+
+    syncFleetRobotToBackend(robot) {
+      if (!robot) {
+        return;
+      }
+      this.postFleetCommand("/api/fleet/robots", {
+        name: robot.name,
+        currentLm: robot.currentLm || robot.spawnLm,
+        targetLm: robot.targetName || "",
+        status: robot.status || "IDLE",
+      });
+    }
+
+    updateFleetRobotBackend(robot) {
+      if (!robot) {
+        return;
+      }
+      const payload = {
+        name: robot.name,
+        currentLm: robot.currentLm || "",
+        targetLm: robot.targetName || "",
+        status: robot.status || "IDLE",
+        pose: robot.pose || null,
+      };
+      this.postFleetCommand("/api/fleet/robots/update", {
+        ...payload,
+      });
+    }
+
+    mergeBackendFleetEvents(events) {
+      if (!Array.isArray(events) || !events.length) {
+        return;
+      }
+      const known = new Set(this.fleetEvents.map((event) => `${event.stamp}:${event.message}`));
+      for (const event of events.slice(-10)) {
+        const stamp = event.stamp ? new Date(event.stamp * 1000).toLocaleTimeString([], { hour12: false }) : "";
+        const message = `backend: ${event.message || ""}`;
+        const key = `${stamp}:${message}`;
+        if (known.has(key)) {
+          continue;
+        }
+        known.add(key);
+        this.fleetEvents.unshift({
+          stamp,
+          message,
+          level: event.level || "info",
+        });
+      }
+      this.fleetEvents = this.fleetEvents.slice(0, 40);
+      this.renderFleetLog();
+    }
+
+    startFleetStatePolling() {
+      if (this.fleetStatePollTimer !== null) {
+        clearInterval(this.fleetStatePollTimer);
+      }
+      this.fetchFleetTick(true);
+      this.fleetStatePollTimer = setInterval(() => this.fetchFleetTick(true), 80);
+    }
+
+    async fetchFleetTick(silent = false) {
+      if (this.manualAnimationFrame !== null) {
+        return;
+      }
+      try {
+        const response = await fetch("/api/fleet/tick", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ clientElapsed: this.currentFleetElapsed() }),
+        });
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+        const state = await response.json();
+        this.applyBackendFleetState(state);
+      } catch (error) {
+        if (!silent) {
+          this.logFleet(`fleet tick failed: ${error.message || error}`, "warn");
+        }
+      }
+    }
+
+    scheduleWorldSync(delay = 120) {
+      if (this.fleetWorldSyncTimer !== null) {
+        clearTimeout(this.fleetWorldSyncTimer);
+      }
+      this.fleetWorldSyncTimer = window.setTimeout(() => {
+        this.fleetWorldSyncTimer = null;
+        this.syncWorldToBackend();
+      }, delay);
+    }
+
+    async syncWorldToBackend() {
+      const payload = {
+        obstacles: this.obstacles,
+        obstacleAreas: this.obstacleAreas,
+        params: this.collectParams(),
+      };
+      try {
+        const response = await fetch("/api/fleet/world", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+        const result = await response.json();
+        if (result.state) {
+          this.applyBackendFleetState(result.state);
+        }
+      } catch (_) {
+        // Static file mode has no fleet backend.
+      }
+    }
+
+    applyBackendFleetState(state) {
+      if (!state || !Array.isArray(state.robots)) {
+        return;
+      }
+      this.mergeBackendFleetEvents(state.events || []);
+      if (Array.isArray(state.obstacles)) {
+        this.obstacles = state.obstacles.map((item) => ({
+          x: Number(item.x || 0),
+          y: Number(item.y || 0),
+          radius: Number(item.radius || 0.08),
+        }));
+        this.drawObstacleState();
+      }
+      if (Array.isArray(state.obstacleAreas)) {
+        this.obstacleAreas = state.obstacleAreas.map((item) => ({
+          x1: Number(item.x1 || 0),
+          y1: Number(item.y1 || 0),
+          x2: Number(item.x2 || 0),
+          y2: Number(item.y2 || 0),
+        }));
+        this.drawObstacleState();
+      }
+      let poseChanged = false;
+      let listChanged = false;
+      for (const backendRobot of state.robots) {
+        if (!backendRobot || !backendRobot.name) {
+          continue;
+        }
+        let robot = this.fleetRobots.find((item) => item.name === backendRobot.name);
+        if (!robot) {
+          const lmName = backendRobot.currentLm || demoData.defaultStart;
+          const pose = backendRobot.pose ? {
+            x: Number(backendRobot.pose.x || 0),
+            y: Number(backendRobot.pose.y || 0),
+            yaw: Number(backendRobot.pose.yaw || 0),
+          } : null;
+          robot = this.createFleetRobot(backendRobot.name, lmName, pose);
+          this.fleetRobots.push(robot);
+          if (!this.activeRobotName) {
+            this.activeRobotName = robot.name;
+          }
+          listChanged = true;
+          poseChanged = true;
+        }
+        if (!robot) {
+          continue;
+        }
+        const currentLm = backendRobot.currentLm || robot.currentLm;
+        const targetName = backendRobot.targetLm || backendRobot.targetName || robot.targetName || "";
+        const status = backendRobot.status || robot.status;
+        const reason = Object.prototype.hasOwnProperty.call(backendRobot, "reason")
+          ? (backendRobot.reason || "")
+          : (robot.reason || "");
+        const routeNote = Object.prototype.hasOwnProperty.call(backendRobot, "routeNote")
+          ? (backendRobot.routeNote || "")
+          : (robot.routeNote || "");
+        if (
+          robot.currentLm !== currentLm ||
+          robot.targetName !== targetName ||
+          robot.status !== status ||
+          robot.reason !== reason ||
+          robot.routeNote !== routeNote
+        ) {
+          listChanged = true;
+        }
+        robot.currentLm = currentLm;
+        robot.targetName = targetName;
+        robot.status = status;
+        robot.reason = reason;
+        robot.routeNote = routeNote;
+        if (Array.isArray(backendRobot.planNodes) && backendRobot.planNodes.length) {
+          robot.planNodes = backendRobot.planNodes;
+        }
+        if (Array.isArray(backendRobot.trajectory) && backendRobot.trajectory.length) {
+          robot.trajectory = backendRobot.trajectory;
+        }
+        if (Number.isFinite(Number(backendRobot.routeClock))) {
+          robot.routeClock = Number(backendRobot.routeClock);
+        }
+        if (backendRobot.pose) {
+          const nextPose = {
+            x: Number(backendRobot.pose.x),
+            y: Number(backendRobot.pose.y),
+            yaw: Number(backendRobot.pose.yaw || 0),
+          };
+          if (
+            !robot.pose ||
+            Math.abs(Number(robot.pose.x) - nextPose.x) > 0.001 ||
+            Math.abs(Number(robot.pose.y) - nextPose.y) > 0.001 ||
+            Math.abs(Number(robot.pose.yaw || 0) - nextPose.yaw) > 0.001
+          ) {
+            poseChanged = true;
+          }
+          robot.pose = nextPose;
+        }
+        if (robot.status === "ARRIVED" || robot.status === "IDLE") {
+          robot.trajectory = [];
+          robot.planNodes = [];
+          robot.routeClock = 0;
+        }
+      }
+      const signature = this.fleetRobots
+        .map((robot) => `${robot.name}|${robot.currentLm}|${robot.targetName}|${robot.status}|${robot.reason || ""}|${robot.routeNote || ""}`)
+        .join(";");
+      if (signature !== this.fleetListSignature) {
+        listChanged = true;
+        this.fleetListSignature = signature;
+      }
+      if (poseChanged || listChanged) {
+        const active = this.activeRobot();
+        if (active) {
+          this.currentPose = { ...active.pose };
+          this.state.targetName = active.targetName || "";
+          this.dom.targetText.textContent = active.targetName || "-";
+        }
+        if (listChanged) {
+          this.renderFleetList();
+        }
+        this.drawActiveFleetRoute(this.currentFleetElapsed());
+        this.renderFleetRobots();
+        this.updateActiveRobotPanel();
+        this.updateTelemetry();
       }
     }
 
@@ -2519,8 +2913,9 @@
       }
       this.simulator.stop(false);
       this.stopFleetSimulation(false);
+      this.postFleetCommand("/api/fleet/robots/stop", {});
       for (const robot of this.fleetRobots) {
-        if (robot.status === "MOVING" || robot.status === "WAITING" || robot.status === "PLANNING") {
+        if (robot.status === "MOVING" || robot.status === "WAITING" || robot.status === "PLANNING" || robot.status === "BLOCKED") {
           robot.status = robot.name === this.activeRobotName ? "MANUAL" : "IDLE";
           robot.trajectory = [];
           robot.planNodes = [];
@@ -2530,6 +2925,7 @@
       this.currentMission = null;
       this.state.targetName = "";
       this.state.navigateMode = false;
+      this.pendingTargetRobotName = "";
       this.state.obstacleMode = false;
       this.state.obstacleAreaMode = false;
       this.obstacleAreaPreview = null;
@@ -2585,6 +2981,7 @@
           const robot = this.activeRobot();
           if (robot) {
             robot.status = "IDLE";
+            this.updateFleetRobotBackend(robot);
           }
           this.renderFleetRobots();
           this.renderFleetList();
@@ -2610,29 +3007,39 @@
       const collision = moving
         ? this.collisionService.checkPoses(prediction, this.obstacles, this.obstacleAreas)
         : { blocked: false, count: 0 };
+      const currentCollision = moving
+        ? this.collisionService.checkPoses([this.currentPose], this.obstacles, this.obstacleAreas)
+        : { blocked: false, count: 0 };
+      const blockingCollision = collision.blocked && !currentCollision.blocked;
 
-      this.renderer.drawLookahead(prediction, collision.blocked);
-      if (collision.blocked) {
+      this.renderer.drawLookahead(prediction, blockingCollision);
+      if (blockingCollision) {
         this.setMode("MANUAL_BLOCKED");
         this.setStatus(`Manual blocked: predicted footprint hits map/obstacle (${collision.count}).`);
         const robot = this.activeRobot();
         if (robot) {
+          const statusChanged = robot.status !== "BLOCKED";
           robot.status = "BLOCKED";
+          this.renderFleetRobots();
+          if (statusChanged) {
+            this.renderFleetList();
+          }
         }
-        this.renderFleetRobots();
-        this.renderFleetList();
       } else {
         const pose = moving ? this.integratePose(this.currentPose, twist.linear, twist.angular, dt) : this.currentPose;
         this.setRobotPose(pose);
         this.setMode("MANUAL");
-        this.setStatus("Manual control active.");
+        this.setStatus(currentCollision.blocked ? "Manual control active: leaving occupied footprint." : "Manual control active.");
         const robot = this.activeRobot();
         if (robot) {
+          const statusChanged = robot.status !== "MANUAL";
           robot.status = "MANUAL";
           robot.currentLm = "";
+          this.renderFleetRobots();
+          if (statusChanged) {
+            this.renderFleetList();
+          }
         }
-        this.renderFleetRobots();
-        this.renderFleetList();
       }
 
       this.manualAnimationFrame = requestAnimationFrame((nextTs) => this.stepManualControl(nextTs));
@@ -2671,6 +3078,7 @@
       this.missionPlanner.lmTolerance = Math.max(0, Number(this.dom.nearestToleranceInput.value) || 0);
       this.missionPlanner.sampleDistance = Math.max(0.01, Number(this.dom.sampleDistanceInput.value) || 0.05);
       this.missionPlanner.onRouteTolerance = Math.max(0, Number(this.dom.onRouteToleranceInput.value) || 0);
+      this.scheduleWorldSync(0);
     }
 
     async loadRuntimeParams() {
@@ -2721,6 +3129,7 @@
       if (params.robot_model) {
         this.robotModelEditor.setModel(params.robot_model);
       }
+      this.scheduleWorldSync(0);
     }
 
     setInputValue(input, value) {
@@ -2820,9 +3229,11 @@
           throw new Error(`HTTP ${response.status}`);
         }
         this.data.params = params;
+        this.scheduleWorldSync(0);
         this.setStatus("Saved params.yaml.");
       } catch (_) {
         localStorage.setItem("warehouse_robot_params", JSON.stringify(params));
+        this.scheduleWorldSync(0);
         this.setStatus("Saved in browser only. Run serve_web.py to write params.yaml.");
       }
     }
@@ -2832,6 +3243,7 @@
       if (this.currentPose) {
         this.renderFleetRobots();
       }
+      this.scheduleWorldSync();
     }
 
     initialRobotPose() {
@@ -2866,9 +3278,32 @@
       this.dom.statusText.textContent = text;
     }
 
+    targetSelectionActive() {
+      return Boolean(this.pendingTargetRobotName);
+    }
+
+    targetSelectionRobot() {
+      if (!this.pendingTargetRobotName) {
+        return null;
+      }
+      return this.fleetRobots.find((robot) => robot.name === this.pendingTargetRobotName) || null;
+    }
+
     toggleNavigateMode() {
-      this.state.navigateMode = !this.state.navigateMode;
-      if (this.state.navigateMode) {
+      if (this.targetSelectionActive()) {
+        this.pendingTargetRobotName = "";
+        this.state.navigateMode = false;
+      } else {
+        const robot = this.activeRobot();
+        if (!robot) {
+          this.setStatus("Select a robot first.");
+          this.logFleet("navigate ignored: no active robot", "warn");
+          return;
+        }
+        this.pendingTargetRobotName = robot.name;
+        this.state.navigateMode = true;
+      }
+      if (this.targetSelectionActive()) {
         this.state.obstacleMode = false;
         this.state.obstacleAreaMode = false;
         this.obstacleAreaPreview = null;
@@ -2876,14 +3311,16 @@
       this.syncModeButtons();
       this.drawObstacleState();
       this.renderLandmarks();
-      this.setStatus(this.state.navigateMode ? "Navigate armed: select an LM." : "Navigate canceled.");
-      this.logFleet(this.state.navigateMode ? `navigate armed for ${this.activeRobotName || "-"}` : "navigate canceled");
+      const targetRobot = this.targetSelectionRobot();
+      this.setStatus(targetRobot ? `Navigate armed for ${targetRobot.name}: select an LM.` : "Navigate canceled.");
+      this.logFleet(targetRobot ? `navigate armed for ${targetRobot.name}` : "navigate canceled");
     }
 
     toggleObstacleMode() {
       this.state.obstacleMode = !this.state.obstacleMode;
       if (this.state.obstacleMode) {
         this.state.navigateMode = false;
+        this.pendingTargetRobotName = "";
         this.state.obstacleAreaMode = false;
         this.obstacleAreaPreview = null;
       }
@@ -2897,6 +3334,7 @@
       this.state.obstacleAreaMode = !this.state.obstacleAreaMode;
       if (this.state.obstacleAreaMode) {
         this.state.navigateMode = false;
+        this.pendingTargetRobotName = "";
         this.state.obstacleMode = false;
       } else {
         this.obstacleAreaPreview = null;
@@ -2908,8 +3346,10 @@
     }
 
     syncModeButtons() {
-      this.dom.navigateButton.classList.toggle("active", this.state.navigateMode);
-      this.dom.navigateButton.textContent = this.state.navigateMode ? "Select Target LM" : "Navigate To LM";
+      const armed = this.targetSelectionActive();
+      this.state.navigateMode = armed;
+      this.dom.navigateButton.classList.toggle("active", armed);
+      this.dom.navigateButton.textContent = armed ? `Select LM: ${this.pendingTargetRobotName}` : "Navigate To LM";
       this.dom.obstacleModeButton.classList.toggle("active", this.state.obstacleMode);
       this.dom.obstacleAreaModeButton.classList.toggle("active", this.state.obstacleAreaMode);
     }
@@ -2922,19 +3362,23 @@
       if (this.state.obstacleMode || this.state.obstacleAreaMode) {
         return;
       }
-      if (!this.state.navigateMode) {
+      const targetRobot = this.targetSelectionRobot();
+      if (!targetRobot) {
         this.setStatus("Press Navigate To LM first, then select an LM.");
         this.logFleet(`ignored ${lmName}: navigate mode is off`, "warn");
         return;
       }
+      const robotName = targetRobot.name;
+      this.pendingTargetRobotName = "";
       this.state.navigateMode = false;
       this.syncModeButtons();
-      this.logFleet(`selected ${lmName} for ${this.activeRobotName || "-"}`);
-      this.startNavigation(lmName);
+      this.renderLandmarks();
+      this.logFleet(`selected ${lmName} for ${robotName}`);
+      this.startNavigation(lmName, robotName);
     }
 
     handleNavigatePointerDown(event) {
-      if (!this.state.navigateMode || this.state.obstacleMode || this.state.obstacleAreaMode) {
+      if (!this.targetSelectionActive() || this.state.obstacleMode || this.state.obstacleAreaMode) {
         this.navigatePointerDown = null;
         return;
       }
@@ -2945,7 +3389,7 @@
     }
 
     handleNavigatePointerUp(event) {
-      if (!this.state.navigateMode || this.state.obstacleMode || this.state.obstacleAreaMode) {
+      if (!this.targetSelectionActive() || this.state.obstacleMode || this.state.obstacleAreaMode) {
         return;
       }
       const down = this.navigatePointerDown;
@@ -2973,7 +3417,7 @@
         this.suppressNextNavigateClick = false;
         return;
       }
-      if (!this.state.navigateMode || this.state.obstacleMode || this.state.obstacleAreaMode) {
+      if (!this.targetSelectionActive() || this.state.obstacleMode || this.state.obstacleAreaMode) {
         return;
       }
       this.selectNavigateTargetFromEvent(event);
@@ -3001,8 +3445,10 @@
       return true;
     }
 
-    async startNavigation(targetName) {
-      const robot = this.activeRobot();
+    async startNavigation(targetName, robotName = "") {
+      const robot = robotName
+        ? this.fleetRobots.find((item) => item.name === robotName)
+        : this.activeRobot();
       if (robot) {
         if (!this.robotHasActiveTrajectory(robot)) {
           robot.trajectory = [];
@@ -3011,40 +3457,54 @@
         }
         robot.targetName = targetName;
         robot.status = "PLANNING";
-        this.state.targetName = targetName;
+        if (robot.name === this.activeRobotName) {
+          this.state.targetName = targetName;
+          this.dom.targetText.textContent = targetName;
+        }
         this.renderLandmarks();
         this.renderFleetList();
         this.updateActiveRobotPanel();
         this.logFleet(`planning ${robot.name}: ${this.startLmForRobot(robot)} -> ${targetName}`);
         try {
-          const planned = await this.planFleet();
+          const planned = await this.planFleet(robot.name);
           if (planned) {
             return;
           }
         } catch (error) {
           this.setStatus("Fleet backend unavailable, using local single-robot plan.");
           this.logFleet(`fleet backend error: ${error.message || error}`, "error");
+          if (robot.name !== this.activeRobotName) {
+            robot.status = "BLOCKED";
+            this.renderFleetList();
+            this.updateActiveRobotPanel();
+            return;
+          }
         }
       }
       this.startSingleNavigation(targetName);
     }
 
-    async planFleet() {
-      const requestRobots = this.fleetRobots
-        .filter((robot) => robot.targetName && robot.status === "PLANNING");
+    async planFleet(robotName = "") {
+      const selectedRobot = robotName
+        ? this.fleetRobots.find((robot) => robot.name === robotName)
+        : this.activeRobot();
+      const requestRobots = selectedRobot && selectedRobot.targetName
+        ? [selectedRobot]
+        : [];
       const requests = requestRobots.map((robot) => ({
         name: robot.name,
         startLm: this.startLmForRobot(robot),
         goalLm: robot.targetName,
+        startPose: robot.pose ? { ...robot.pose } : null,
       }));
 
       if (!requests.length) {
-        this.logFleet("planner skipped: no PLANNING robots", "warn");
+        this.logFleet("planner skipped: no active fleet orders", "warn");
         return false;
       }
 
       this.logFleet(`fleet request: ${requests.map((item) => `${item.name}:${item.startLm}->${item.goalLm}`).join(", ")}`);
-      const response = await fetch("/api/fleet/plan", {
+      const response = await fetch("/api/fleet/orders", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -3059,6 +3519,10 @@
       }
 
       const result = await response.json();
+      if (result.fleetState) {
+        this.mergeBackendFleetEvents(result.fleetState.events || []);
+        this.applyBackendFleetState(result.fleetState);
+      }
       if (!result.ok || !Array.isArray(result.plans)) {
         for (const robot of requestRobots) {
           robot.status = "BLOCKED";
@@ -3072,26 +3536,34 @@
       }
 
       this.logFleet(`planner accepted: ${result.plans.length} plan(s), reason=${result.debug ? result.debug.reason : "ok"}`);
-      this.startFleetSimulation(result);
+      this.startBackendFleetDisplay(result);
       return true;
     }
 
     startLmForRobot(robot) {
-      if (!this.robotHasActiveTrajectory(robot) && robot.currentLm && this.graphModel.nodeByName.has(robot.currentLm)) {
+      if (!robot) {
+        return demoData.defaultStart;
+      }
+      const currentLm = this.graphModel.nodeByName.get(robot.currentLm);
+      if (currentLm && robot.pose) {
+        const distance = Math.hypot(Number(robot.pose.x) - currentLm.x, Number(robot.pose.y) - currentLm.y);
+        if (distance <= 0.08) {
+          return robot.currentLm;
+        }
+      } else if (!robot.pose && currentLm) {
         return robot.currentLm;
+      }
+      if (!robot.pose) {
+        return demoData.defaultStart;
       }
       const nearest = this.graphModel.nearestLandmark(robot.pose, this.geometry);
       return nearest.landmark ? nearest.landmark.name : demoData.defaultStart;
     }
 
-    startFleetSimulation(result) {
+    startBackendFleetDisplay(result) {
       this.simulator.stop(false);
       this.stopManualControl(false);
-      const alreadyRunning = this.fleetAnimationFrame !== null;
-      const baseElapsed = alreadyRunning ? this.currentFleetElapsed() : 0;
-      if (!alreadyRunning) {
-        this.stopFleetSimulation(false);
-      }
+      this.stopFleetSimulation(false);
       this.fleetPlan = result;
 
       const planByRobot = new Map(result.plans.map((plan) => [plan.robot, plan]));
@@ -3101,20 +3573,20 @@
         if (!plan) {
           continue;
         }
-        const scheduled = this.scheduleFleetTrajectory(robot, plan.trajectory || [], baseElapsed);
-        if (!scheduled.trajectory.length) {
+        const trajectory = plan.trajectory || [];
+        if (!trajectory.length) {
           robot.status = "BLOCKED";
           continue;
         }
-        robot.status = scheduled.delay > 0.01 ? "WAITING" : "MOVING";
+        robot.status = "MOVING";
         robot.currentLm = plan.startLm;
         robot.targetName = plan.goalLm;
-        robot.trajectory = scheduled.trajectory;
+        robot.trajectory = trajectory;
         robot.routeClock = 0;
-        robot.startElapsed = baseElapsed + scheduled.delay;
-        robot.lastFleetElapsed = baseElapsed;
+        robot.startElapsed = 0;
+        robot.lastFleetElapsed = 0;
         robot.planNodes = plan.nodes || [];
-        this.logFleet(`scheduled ${robot.name}: ${(plan.nodes || []).join(" -> ")}`);
+        this.logFleet(`backend scheduled ${robot.name}: ${(plan.nodes || []).join(" -> ")}`);
         scheduledCount += 1;
       }
 
@@ -3132,30 +3604,10 @@
       this.setStatus(`Fleet MAPF: ${result.debug.reason}, robots=${result.plans.length}.`);
       this.dom.routeLength.textContent = "-";
       this.renderer.updateRouteList(this.activeRobot() ? (this.activeRobot().planNodes || []) : []);
-      if (!alreadyRunning) {
-        this.fleetPlanStartTs = null;
-        this.fleetAnimationFrame = requestAnimationFrame((ts) => this.stepFleetSimulation(ts));
-      }
       this.renderFleetList();
       this.updateActiveRobotPanel();
       this.drawActiveFleetRoute(this.currentFleetElapsed());
-    }
-
-    scheduleFleetTrajectory(robot, trajectory, baseElapsed) {
-      if (!trajectory.length) {
-        return { trajectory: [], delay: 0 };
-      }
-      return { trajectory, delay: 0 };
-    }
-
-    robotFootprintsOverlap(firstPose, secondPose) {
-      if (!firstPose || !secondPose) {
-        return false;
-      }
-      const first = this.renderer.footprintCorners(firstPose);
-      const second = this.renderer.footprintCorners(secondPose);
-      const margin = Math.max(0.03, Number(this.dom.collisionMarginInput.value) || 0);
-      return this.polygonsOverlap(first, second, margin);
+      this.fetchFleetTick(true);
     }
 
     robotHasActiveTrajectory(robot) {
@@ -3167,99 +3619,7 @@
       );
     }
 
-    fleetCollisionAhead(robot, routeClock, elapsed) {
-      if (!robot || !robot.trajectory || !robot.trajectory.length) {
-        return false;
-      }
-      const finalClock = Number(robot.trajectory[robot.trajectory.length - 1].t || 0);
-      const speed = this.selectedSpeed();
-      const lookaheadTime = Math.max(0.25, Math.min(0.65, 0.35 / Math.max(speed, 0.05)));
-      const sampleStep = Math.max(0.04, Math.min(0.12, Number(this.dom.manualStepInput.value) || 0.08));
-
-      for (let offset = 0; offset <= lookaheadTime + 0.0001; offset += sampleStep) {
-        const candidateClock = Math.min(finalClock, routeClock + offset);
-        const candidatePose = this.poseAtTimedTrajectory(robot.trajectory, candidateClock);
-        for (const other of this.fleetRobots) {
-          if (other.name === robot.name || !other.pose) {
-            continue;
-          }
-          const otherPose = this.predictedFleetPose(other, elapsed + offset);
-          if (this.robotFootprintsOverlap(candidatePose, otherPose)) {
-            return true;
-          }
-        }
-      }
-      return false;
-    }
-
-    predictedFleetPose(robot, elapsed) {
-      if (!this.robotHasActiveTrajectory(robot)) {
-        return robot.pose;
-      }
-      const first = robot.trajectory[0];
-      const startElapsed = Number(robot.startElapsed || 0);
-      if (elapsed < startElapsed) {
-        return {
-          x: Number(first.x),
-          y: Number(first.y),
-          yaw: Number(first.yaw || robot.pose.yaw || 0),
-        };
-      }
-      const finalClock = Number(robot.trajectory[robot.trajectory.length - 1].t || 0);
-      const currentElapsed = this.currentFleetElapsed();
-      const ahead = robot.status === "MOVING" ? Math.max(0, elapsed - currentElapsed) : 0;
-      const clock = Math.min(finalClock, Number(robot.routeClock || 0) + ahead);
-      return this.poseAtTimedTrajectory(robot.trajectory, clock);
-    }
-
-    polygonsOverlap(first, second, margin) {
-      const axes = [...this.polygonAxes(first), ...this.polygonAxes(second)];
-      for (const axis of axes) {
-        const firstProjection = this.projectPolygon(first, axis);
-        const secondProjection = this.projectPolygon(second, axis);
-        if (
-          firstProjection.max + margin < secondProjection.min ||
-          secondProjection.max + margin < firstProjection.min
-        ) {
-          return false;
-        }
-      }
-      return true;
-    }
-
-    polygonAxes(polygon) {
-      const axes = [];
-      for (let index = 0; index < polygon.length; index += 1) {
-        const start = polygon[index];
-        const end = polygon[(index + 1) % polygon.length];
-        const dx = end.x - start.x;
-        const dy = end.y - start.y;
-        const length = Math.hypot(dx, dy);
-        if (length <= 0.000001) {
-          continue;
-        }
-        axes.push({ x: -dy / length, y: dx / length });
-      }
-      return axes;
-    }
-
-    projectPolygon(polygon, axis) {
-      let min = Number.POSITIVE_INFINITY;
-      let max = Number.NEGATIVE_INFINITY;
-      for (const point of polygon) {
-        const value = (point.x * axis.x) + (point.y * axis.y);
-        min = Math.min(min, value);
-        max = Math.max(max, value);
-      }
-      return { min, max };
-    }
-
     stopFleetSimulation(clearRoute = true) {
-      if (this.fleetAnimationFrame !== null) {
-        cancelAnimationFrame(this.fleetAnimationFrame);
-        this.fleetAnimationFrame = null;
-      }
-      this.fleetPlanStartTs = null;
       this.fleetElapsed = 0;
       if (clearRoute) {
         this.fleetPlan = null;
@@ -3268,106 +3628,11 @@
     }
 
     currentFleetElapsed() {
-      return Math.max(0, this.fleetElapsed || 0);
-    }
-
-    stepFleetSimulation(ts) {
-      if (!this.fleetPlan) {
-        this.stopFleetSimulation();
-        return;
-      }
-      if (this.fleetPlanStartTs === null) {
-        this.fleetPlanStartTs = ts;
-      }
-      const elapsed = Math.max(0, (ts - this.fleetPlanStartTs) / 1000);
-      const previousElapsed = Number.isFinite(this.fleetElapsed) ? this.fleetElapsed : elapsed;
-      const frameDt = Math.min(0.12, Math.max(0, elapsed - previousElapsed));
-      this.fleetElapsed = elapsed;
-      let activeMoves = 0;
-      let fleetListDirty = false;
-
-      for (const robot of this.fleetRobots) {
-        if (!this.robotHasActiveTrajectory(robot)) {
-          continue;
-        }
-        const first = robot.trajectory[0];
-        const startElapsed = Number(robot.startElapsed || 0);
-        if (elapsed < startElapsed) {
-          robot.pose = {
-            x: Number(first.x),
-            y: Number(first.y),
-            yaw: Number(first.yaw || robot.pose.yaw || 0),
-          };
-          robot.routeClock = 0;
-          robot.lastFleetElapsed = elapsed;
-          if (robot.status !== "WAITING") {
-            robot.status = "WAITING";
-            fleetListDirty = true;
-          }
-          activeMoves += 1;
-          continue;
-        }
-        const last = robot.trajectory[robot.trajectory.length - 1];
-        const finalClock = Number(last.t || 0);
-        const nextClock = Math.min(finalClock, Number(robot.routeClock || 0) + frameDt);
-        if (this.fleetCollisionAhead(robot, nextClock, elapsed)) {
-          if (robot.status !== "WAITING") {
-            robot.status = "WAITING";
-            this.logFleet(`${robot.name} waiting: footprint conflict ahead`, "warn");
-            fleetListDirty = true;
-          }
-          robot.lastFleetElapsed = elapsed;
-          activeMoves += 1;
-          continue;
-        }
-        if (robot.status !== "MOVING") {
-          robot.status = "MOVING";
-          this.logFleet(`${robot.name} moving`);
-          fleetListDirty = true;
-        }
-        robot.routeClock = nextClock;
-        robot.lastFleetElapsed = elapsed;
-        robot.pose = this.poseAtTimedTrajectory(robot.trajectory, robot.routeClock);
-        if (robot.routeClock >= finalClock) {
-          robot.pose = {
-            x: Number(last.x),
-            y: Number(last.y),
-            yaw: Number(last.yaw || robot.pose.yaw || 0),
-          };
-          robot.currentLm = robot.targetName || robot.currentLm;
-          robot.targetName = "";
-          robot.status = "ARRIVED";
-          robot.trajectory = [];
-          robot.planNodes = [];
-          robot.routeClock = 0;
-          this.logFleet(`${robot.name} arrived at ${robot.currentLm}`);
-          fleetListDirty = true;
-        } else {
-          activeMoves += 1;
-        }
-      }
-
       const active = this.activeRobot();
-      if (active) {
-        this.currentPose = { ...active.pose };
+      if (active && Number.isFinite(Number(active.routeClock))) {
+        return Math.max(0, Number(active.routeClock));
       }
-      this.drawActiveFleetRoute(elapsed);
-      this.renderFleetRobots();
-      this.updateTelemetry();
-      if (fleetListDirty) {
-        this.renderFleetList();
-        this.updateActiveRobotPanel();
-      }
-
-      if (activeMoves <= 0) {
-        this.fleetAnimationFrame = null;
-        this.renderFleetList();
-        this.updateActiveRobotPanel();
-        this.setMode("ARRIVED");
-        this.setStatus("Fleet tasks completed.");
-        return;
-      }
-      this.fleetAnimationFrame = requestAnimationFrame((nextTs) => this.stepFleetSimulation(nextTs));
+      return Math.max(0, this.fleetElapsed || 0);
     }
 
     poseAtTimedTrajectory(trajectory, elapsed) {
@@ -3394,7 +3659,7 @@
       };
     }
 
-    drawActiveFleetRoute(elapsed) {
+    drawActiveFleetRoute(_elapsed) {
       const robot = this.activeRobot();
       if (!robot || !this.robotHasActiveTrajectory(robot) || !robot.trajectory || robot.trajectory.length < 2) {
         this.renderer.drawRoute([]);
@@ -3478,10 +3743,11 @@
       this.updateActiveRobotPanel();
     }
 
-    stopRobot() {
+    async stopRobot() {
       this.simulator.stop();
       this.stopManualControl(false);
       this.stopFleetSimulation();
+      await this.postFleetCommand("/api/fleet/robots/stop", {});
       for (const robot of this.fleetRobots) {
         if (robot.status === "MOVING" || robot.status === "WAITING" || robot.status === "PLANNING") {
           robot.status = "IDLE";
@@ -3492,6 +3758,9 @@
       }
       this.currentMission = null;
       this.setMode("IDLE");
+      this.pendingTargetRobotName = "";
+      this.state.navigateMode = false;
+      this.syncModeButtons();
       this.setStatus("Stopped.");
       this.dom.routeLength.textContent = "0.00 m";
       this.renderer.updateRouteList([]);
@@ -3502,12 +3771,49 @@
       this.updateActiveRobotPanel();
     }
 
-    resetRobot() {
+    async cancelActiveOrder() {
+      const active = this.activeRobot();
+      if (!active) {
+        this.setStatus("Select a robot first.");
+        return;
+      }
+      this.simulator.stop();
+      this.stopManualControl(false);
+      this.stopFleetSimulation();
+      await this.postFleetCommand("/api/fleet/robots/stop", { name: active.name });
+      active.targetName = "";
+      active.status = "IDLE";
+      active.trajectory = [];
+      active.planNodes = [];
+      active.routeClock = 0;
+      this.currentMission = null;
+      this.state.targetName = "";
+      this.pendingTargetRobotName = "";
+      this.state.navigateMode = false;
+      this.syncModeButtons();
+      this.dom.targetText.textContent = "-";
+      this.dom.routeLength.textContent = "0.00 m";
+      this.renderer.updateRouteList([]);
+      this.renderer.drawRoute([]);
+      this.renderer.clearLookahead();
+      this.renderFleetRobots();
+      this.renderFleetList();
+      this.updateActiveRobotPanel();
+      this.setMode("IDLE");
+      this.setStatus(`Order canceled for ${active.name}.`);
+      this.logFleet(`order canceled for ${active.name}`, "warn");
+    }
+
+    async resetRobot() {
       this.simulator.stop();
       this.stopManualControl(false);
       this.stopFleetSimulation();
       const active = this.activeRobot();
       if (active) {
+        await this.postFleetCommand("/api/fleet/robots/reset", {
+          name: active.name,
+          spawnLm: active.spawnLm,
+        });
         active.pose = this.poseAtLandmark(active.spawnLm);
         active.currentLm = active.spawnLm;
         active.targetName = "";
@@ -3536,6 +3842,7 @@
     addObstacle(obstacle) {
       this.obstacles.push(obstacle);
       this.drawObstacleState();
+      this.scheduleWorldSync(0);
       this.setStatus("Obstacle added.");
     }
 
@@ -3543,6 +3850,7 @@
       this.obstacleAreaPreview = null;
       this.obstacleAreas.push(area);
       this.drawObstacleState();
+      this.scheduleWorldSync(0);
       this.setStatus("Obstacle area added.");
     }
 
@@ -3561,6 +3869,7 @@
       this.obstacleAreaPreview = null;
       this.drawObstacleState();
       this.renderer.clearLookahead();
+      this.scheduleWorldSync(0);
       this.setStatus("Obstacles cleared.");
     }
 
@@ -3576,6 +3885,7 @@
         robot.trajectory = [];
         robot.planNodes = [];
         robot.routeClock = 0;
+        this.updateFleetRobotBackend(robot);
       }
       this.setMode("ARRIVED");
       this.setStatus(`Arrived at ${this.state.targetName || "target"}.`);
