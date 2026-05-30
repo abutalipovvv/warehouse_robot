@@ -48,6 +48,13 @@ DEFAULT_ROUTE_PARAMS: dict[str, Any] = {
         "prediction_time": 1.00,
         "prediction_step": 0.10,
     },
+    "fleet": {
+        "reservation_time_step_sec": 1.00,
+        "wait_time_sec": 1.00,
+        "cbs_low_level_max_time": 160,
+        "cbs_max_high_level_nodes": 2000,
+        "cbs_max_planning_time_sec": 5.00,
+    },
 }
 
 

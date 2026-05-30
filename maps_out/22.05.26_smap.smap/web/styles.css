@@ -243,6 +243,14 @@ h1 {
   background: linear-gradient(180deg, #f8fafc, #e6ebf1);
 }
 
+#graphLayer,
+#routeLayer,
+#lookaheadLayer,
+#obstacleLayer,
+#robotLayer {
+  pointer-events: none;
+}
+
 .side-panel {
   min-height: 0;
   display: grid;
@@ -252,7 +260,7 @@ h1 {
 
 .tab-strip {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 6px;
   padding: 6px;
   border-radius: 8px;
@@ -342,6 +350,141 @@ label {
 .field-list {
   display: grid;
   gap: 10px;
+}
+
+.fleet-add-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr 42px;
+  align-items: end;
+  gap: 8px;
+}
+
+.fleet-add-row label {
+  margin: 0;
+}
+
+.fleet-add-row select {
+  width: 100%;
+  height: 36px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  padding: 0 10px;
+  background: var(--surface);
+  color: var(--ink);
+}
+
+.fleet-add-row button {
+  padding: 0;
+  font-size: 22px;
+}
+
+.fleet-list {
+  display: grid;
+  gap: 8px;
+}
+
+.fleet-robot {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 34px;
+  align-items: center;
+  gap: 8px;
+  border-radius: 8px;
+  padding: 4px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.fleet-robot.active {
+  color: var(--ink);
+  background: rgba(31, 111, 235, 0.10);
+  border-color: rgba(31, 111, 235, 0.42);
+  box-shadow: none;
+}
+
+.fleet-robot-main {
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  min-width: 0;
+  min-height: 42px;
+  text-align: left;
+  border: 0;
+  background: transparent;
+  padding: 5px;
+}
+
+.fleet-robot-main:hover {
+  border: 0;
+}
+
+.fleet-robot-color {
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(0, 0, 0, 0.18);
+}
+
+.fleet-robot-name {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.fleet-robot-name strong,
+.fleet-robot-name span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fleet-robot-name span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.fleet-robot-state {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.fleet-remove-button {
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  color: var(--blocked);
+  font-size: 20px;
+  line-height: 1;
+}
+
+.fleet-event-log {
+  display: grid;
+  gap: 4px;
+  max-height: 155px;
+  overflow: auto;
+  padding: 8px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: #f8fafc;
+  color: #334155;
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.fleet-event-log div {
+  overflow-wrap: anywhere;
+}
+
+.fleet-event-log .warn {
+  color: #9a3412;
+}
+
+.fleet-event-log .error {
+  color: var(--blocked);
 }
 
 .param-list label {
@@ -599,6 +742,17 @@ label {
 .lm-hit.armed:hover circle {
   stroke: #111827;
   stroke-width: 2;
+}
+
+.robot-name-label {
+  fill: #243041;
+  font-size: 6px;
+  text-anchor: middle;
+  font-weight: 800;
+  paint-order: stroke;
+  stroke: rgba(255, 255, 255, 0.95);
+  stroke-width: 3px;
+  pointer-events: none;
 }
 
 @media (max-width: 1120px) {

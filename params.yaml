@@ -30,7 +30,7 @@ robot_model:
       label: WR
       color: '#2f3a4a'
 navigation:
-  route_speed: 0.35
+  route_speed: 1.35
   footprint_lookahead: 0.8
   collision_margin: 0.04
   stop_distance: 0.4
@@ -45,7 +45,13 @@ localization:
   allowed_lateral_error: 0.02
   allowed_yaw_error_deg: 1
 manual:
-  linear_speed: 0.25
-  angular_speed: 0.9
-  prediction_time: 1.0
+  linear_speed: 0.5
+  angular_speed: 1.8
+  prediction_time: 1
   prediction_step: 0.1
+fleet:
+  reservation_time_step_sec: 1.0
+  wait_time_sec: 1.0
+  cbs_low_level_max_time: 160
+  cbs_max_high_level_nodes: 2000
+  cbs_max_planning_time_sec: 5.0

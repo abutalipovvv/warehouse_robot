@@ -57,12 +57,55 @@
 
       <aside class="side-panel">
         <nav class="tab-strip" aria-label="Simulator settings">
-          <button class="tab-button active" type="button" data-tab="mission">Mission</button>
+          <button class="tab-button active" type="button" data-tab="fleet">Fleet</button>
+          <button class="tab-button" type="button" data-tab="mission">Mission</button>
           <button class="tab-button" type="button" data-tab="robot">Robot Model</button>
           <button class="tab-button" type="button" data-tab="params">Params</button>
         </nav>
 
-        <section id="tabMission" class="tab-page active">
+        <section id="tabFleet" class="tab-page active">
+          <section class="panel-block">
+            <div class="block-title">Add Robot</div>
+            <div class="fleet-add-row">
+              <label>
+                Name
+                <input id="fleetRobotNameInput" type="text" value="robot2" />
+              </label>
+              <label>
+                Spawn LM
+                <select id="fleetSpawnLmSelect"></select>
+              </label>
+              <button id="addFleetRobotButton" class="primary" type="button">+</button>
+            </div>
+          </section>
+
+          <section class="panel-block">
+            <div class="block-title">Robots</div>
+            <div id="fleetRobotList" class="fleet-list"></div>
+          </section>
+
+          <section class="panel-block">
+            <div class="block-title">Active Robot</div>
+            <div class="state-grid">
+              <div>
+                <span>Name</span>
+                <strong id="activeRobotText">-</strong>
+              </div>
+              <div>
+                <span>Task</span>
+                <strong id="activeRobotTaskText">-</strong>
+              </div>
+            </div>
+          </section>
+
+          <section class="panel-block">
+            <div class="block-title">Fleet Planner</div>
+            <div id="fleetPlanDebug" class="mono">MAPF: idle</div>
+            <div id="fleetEventLog" class="fleet-event-log mono"></div>
+          </section>
+        </section>
+
+        <section id="tabMission" class="tab-page">
           <section class="panel-block">
             <div class="block-title">Mission</div>
             <div class="state-grid">

@@ -795,6 +795,75 @@
       }
     }
 
+    drawFleetRobots(robots, activeName = "") {
+      this.dom.robotLayer.innerHTML = "";
+      for (const robot of robots) {
+        if (!robot.pose) {
+          continue;
+        }
+        const active = robot.name === activeName;
+        const blocked = robot.status === "BLOCKED" || robot.status === "ERROR";
+        this.dom.robotLayer.appendChild(
+          this.drawFootprint(robot.pose, {
+            fill: blocked ? "rgba(201, 42, 42, 0.25)" : this.hexToRgba(robot.color, active ? 0.30 : 0.18),
+            stroke: blocked ? "var(--blocked)" : robot.color,
+            strokeWidth: active ? 3.2 : 2.2,
+            opacity: active ? 1 : 0.82,
+          })
+        );
+
+        const center = this.geometry.worldToPixel(robot.pose);
+        const cfg = this.robotConfig();
+        const frontX = Math.max(...cfg.footprint.map((point) => point.x), 0.1);
+        const nose = this.geometry.worldToPixel({
+          x: robot.pose.x + Math.cos(robot.pose.yaw) * frontX,
+          y: robot.pose.y + Math.sin(robot.pose.yaw) * frontX,
+        });
+        this.dom.robotLayer.appendChild(
+          this.createSvgElement("line", {
+            x1: center.x,
+            y1: center.y,
+            x2: nose.x,
+            y2: nose.y,
+            stroke: blocked ? "var(--blocked)" : robot.color,
+            "stroke-width": active ? 3.2 : 2.2,
+            "stroke-linecap": "round",
+          })
+        );
+        this.dom.robotLayer.appendChild(
+          this.createSvgElement("circle", {
+            cx: center.x,
+            cy: center.y,
+            r: active ? 4.5 : 3.5,
+            fill: blocked ? "var(--blocked)" : robot.color,
+            stroke: "#ffffff",
+            "stroke-width": 1.5,
+          })
+        );
+        const label = this.createSvgElement("text", {
+          x: center.x,
+          y: center.y + 18,
+          class: "robot-name-label",
+        });
+        label.textContent = robot.name;
+        this.dom.robotLayer.appendChild(label);
+      }
+    }
+
+    hexToRgba(hex, alpha) {
+      const clean = String(hex || "#0b7285").replace("#", "");
+      const value = clean.length === 3
+        ? clean.split("").map((item) => item + item).join("")
+        : clean;
+      const red = parseInt(value.slice(0, 2), 16);
+      const green = parseInt(value.slice(2, 4), 16);
+      const blue = parseInt(value.slice(4, 6), 16);
+      if ([red, green, blue].some((item) => Number.isNaN(item))) {
+        return `rgba(11, 114, 133, ${alpha})`;
+      }
+      return `rgba(${red}, ${green}, ${blue}, ${alpha})`;
+    }
+
     drawObstacles(obstacles, obstacleAreas = [], previewArea = null) {
       this.dom.obstacleLayer.innerHTML = "";
       for (const area of obstacleAreas) {
@@ -893,8 +962,10 @@
           resolve(false);
           return;
         }
+        const timeoutId = window.setTimeout(() => resolve(false), 1500);
         const image = new Image();
         image.onload = () => {
+          window.clearTimeout(timeoutId);
           const canvas = document.createElement("canvas");
           canvas.width = this.mapData.width;
           canvas.height = this.mapData.height;
@@ -908,7 +979,10 @@
           this.ready = true;
           resolve(true);
         };
-        image.onerror = () => resolve(false);
+        image.onerror = () => {
+          window.clearTimeout(timeoutId);
+          resolve(false);
+        };
         image.src = this.mapData.imageDataUrl;
       });
     }
@@ -1895,6 +1969,9 @@
       this.dom.mapSvg.addEventListener("pointerdown", (event) => {
         downX = event.clientX;
         downY = event.clientY;
+        if (this.state.navigateMode) {
+          return;
+        }
         if (this.state.obstacleAreaMode) {
           const world = this.geometry.eventToWorld(event, this.dom.viewport);
           if (world) {
@@ -1904,7 +1981,8 @@
           }
           return;
         }
-        if (this.state.obstacleMode || event.target.closest("[data-lm]")) {
+        const lmTarget = event.target.closest && event.target.closest("[data-lm]");
+        if (this.state.obstacleMode || lmTarget) {
           return;
         }
         active = true;
@@ -2000,6 +2078,15 @@
       this.obstacleAreaPreview = null;
       this.currentMission = null;
       this.currentPose = this.initialRobotPose();
+      this.navigatePointerDown = null;
+      this.suppressNextNavigateClick = false;
+      this.fleetRobots = [];
+      this.activeRobotName = "";
+      this.fleetAnimationFrame = null;
+      this.fleetPlanStartTs = null;
+      this.fleetElapsed = 0;
+      this.fleetPlan = null;
+      this.fleetEvents = [];
       this.manualKeys = new Set();
       this.manualAnimationFrame = null;
       this.manualLastTs = null;
@@ -2089,6 +2176,14 @@
         manualAngularSpeedInput: document.getElementById("manualAngularSpeedInput"),
         manualLookaheadInput: document.getElementById("manualLookaheadInput"),
         manualStepInput: document.getElementById("manualStepInput"),
+        fleetRobotNameInput: document.getElementById("fleetRobotNameInput"),
+        fleetSpawnLmSelect: document.getElementById("fleetSpawnLmSelect"),
+        addFleetRobotButton: document.getElementById("addFleetRobotButton"),
+        fleetRobotList: document.getElementById("fleetRobotList"),
+        activeRobotText: document.getElementById("activeRobotText"),
+        activeRobotTaskText: document.getElementById("activeRobotTaskText"),
+        fleetPlanDebug: document.getElementById("fleetPlanDebug"),
+        fleetEventLog: document.getElementById("fleetEventLog"),
         saveConfirmOverlay: document.getElementById("saveConfirmOverlay"),
         saveConfirmYesButton: document.getElementById("saveConfirmYesButton"),
         saveConfirmNoButton: document.getElementById("saveConfirmNoButton"),
@@ -2098,14 +2193,20 @@
     async init() {
       this.renderer.initMap();
       this.renderer.drawGraph();
-      await this.occupancyChecker.readyPromise;
       this.viewport.enable();
       this.applyParams(await this.loadRuntimeParams());
       this.robotModelEditor.init();
+      this.populateFleetSpawnSelect();
+      this.initializeFleet();
       this.attachEvents();
       this.updatePlannerParams();
       this.renderAll();
       this.setStatus("Ready.");
+      this.occupancyChecker.readyPromise.then(() => {
+        if (this.state.mode === "IDLE") {
+          this.setStatus("Ready.");
+        }
+      });
     }
 
     attachEvents() {
@@ -2113,11 +2214,15 @@
         button.addEventListener("click", () => this.setActiveTab(button.dataset.tab));
       }
       this.dom.navigateButton.addEventListener("click", () => this.toggleNavigateMode());
+      this.dom.mapSvg.addEventListener("pointerdown", (event) => this.handleNavigatePointerDown(event), true);
+      this.dom.mapSvg.addEventListener("pointerup", (event) => this.handleNavigatePointerUp(event), true);
+      this.dom.mapSvg.addEventListener("click", (event) => this.handleMapNavigateClick(event));
       this.dom.obstacleModeButton.addEventListener("click", () => this.toggleObstacleMode());
       this.dom.obstacleAreaModeButton.addEventListener("click", () => this.toggleObstacleAreaMode());
       this.dom.stopButton.addEventListener("click", () => this.stopRobot());
       this.dom.resetRobotButton.addEventListener("click", () => this.resetRobot());
       this.dom.clearObstaclesButton.addEventListener("click", () => this.clearObstacles());
+      this.dom.addFleetRobotButton.addEventListener("click", () => this.addFleetRobotFromUi());
       this.dom.saveRobotParamsButton.addEventListener("click", () => this.confirmAndSaveParams());
       this.dom.saveParamsBottomButton.addEventListener("click", () => this.confirmAndSaveParams());
       this.dom.zoomInButton.addEventListener("click", () => this.viewport.zoom(1.2));
@@ -2128,9 +2233,228 @@
       this.dom.nearestToleranceInput.addEventListener("change", () => this.updatePlannerParams());
       this.dom.onRouteToleranceInput.addEventListener("change", () => this.updatePlannerParams());
       this.dom.sampleDistanceInput.addEventListener("change", () => this.updatePlannerParams());
-      this.dom.lookaheadInput.addEventListener("change", () => this.renderer.drawRobotPose(this.currentPose));
-      this.dom.collisionMarginInput.addEventListener("change", () => this.renderer.drawRobotPose(this.currentPose));
+      this.dom.lookaheadInput.addEventListener("change", () => this.renderFleetRobots());
+      this.dom.collisionMarginInput.addEventListener("change", () => this.renderFleetRobots());
       this.attachManualEvents();
+    }
+
+    populateFleetSpawnSelect() {
+      this.dom.fleetSpawnLmSelect.innerHTML = "";
+      const landmarks = this.graphModel.landmarks.length
+        ? this.graphModel.landmarks
+        : (demoData.lms || demoData.landmarks || []);
+      for (const lm of landmarks) {
+        const option = document.createElement("option");
+        option.value = lm.name;
+        option.textContent = lm.name;
+        if (lm.name === demoData.defaultStart) {
+          option.selected = true;
+        }
+        this.dom.fleetSpawnLmSelect.appendChild(option);
+      }
+      if (!this.dom.fleetSpawnLmSelect.value && landmarks[0]) {
+        this.dom.fleetSpawnLmSelect.value = landmarks[0].name;
+      }
+    }
+
+    initializeFleet() {
+      if (this.fleetRobots.length) {
+        return;
+      }
+      const startLm = demoData.defaultStart || (this.graphModel.landmarks[0] ? this.graphModel.landmarks[0].name : "");
+      if (!startLm) {
+        this.setStatus("No LM points found for fleet spawn.");
+        return;
+      }
+      this.addFleetRobot("robot1", startLm);
+      this.dom.fleetRobotNameInput.value = this.nextFleetRobotName();
+    }
+
+    nextFleetRobotName() {
+      let index = this.fleetRobots.length + 1;
+      while (this.fleetRobots.some((robot) => robot.name === `robot${index}`)) {
+        index += 1;
+      }
+      return `robot${index}`;
+    }
+
+    addFleetRobotFromUi() {
+      const name = this.dom.fleetRobotNameInput.value.trim() || this.nextFleetRobotName();
+      const spawnLm = this.dom.fleetSpawnLmSelect.value || demoData.defaultStart;
+      if (this.fleetRobots.some((robot) => robot.name === name)) {
+        this.setStatus(`Robot ${name} already exists.`);
+        return;
+      }
+      this.addFleetRobot(name, spawnLm);
+      this.dom.fleetRobotNameInput.value = this.nextFleetRobotName();
+      this.setStatus(`Added ${name} at ${spawnLm}.`);
+      this.logFleet(`added ${name} at ${spawnLm}`);
+    }
+
+    addFleetRobot(name, spawnLm) {
+      const pose = this.poseAtLandmark(spawnLm);
+      const robot = {
+        name,
+        spawnLm,
+        currentLm: spawnLm,
+        targetName: "",
+        status: "IDLE",
+        color: this.robotColor(this.fleetRobots.length),
+        pose,
+        mission: null,
+        trajectory: [],
+        routeClock: 0,
+        startElapsed: 0,
+        lastFleetElapsed: null,
+      };
+      this.fleetRobots.push(robot);
+      this.setActiveRobot(name);
+    }
+
+    robotColor(index) {
+      const colors = ["#0b7285", "#d95521", "#1f6feb", "#1a7f37", "#6f42c1", "#9b2c2c", "#57606a"];
+      return colors[index % colors.length];
+    }
+
+    poseAtLandmark(lmName) {
+      const lm = this.graphModel.nodeByName.get(lmName) || this.graphModel.landmarks[0];
+      const route = this.graphModel.getRoute(lm.name, demoData.defaultGoal);
+      let yaw = 0;
+      if (route && route.nodes.length > 1) {
+        const next = this.graphModel.nodeByName.get(route.nodes[1]);
+        if (next) {
+          yaw = Math.atan2(next.y - lm.y, next.x - lm.x);
+        }
+      }
+      return { x: lm.x, y: lm.y, yaw };
+    }
+
+    setActiveRobot(name) {
+      const robot = this.fleetRobots.find((item) => item.name === name);
+      if (!robot) {
+        return;
+      }
+      this.activeRobotName = robot.name;
+      this.currentPose = { ...robot.pose };
+      this.state.targetName = robot.targetName || "";
+      this.dom.targetText.textContent = robot.targetName || "-";
+      this.renderFleetList();
+      this.updateActiveRobotPanel();
+      this.renderFleetRobots();
+      this.drawActiveFleetRoute(this.currentFleetElapsed());
+      this.updateTelemetry();
+      this.logFleet(`active ${robot.name} status=${robot.status}`);
+    }
+
+    activeRobot() {
+      return this.fleetRobots.find((robot) => robot.name === this.activeRobotName) || null;
+    }
+
+    renderFleetList() {
+      this.dom.fleetRobotList.innerHTML = "";
+      for (const robot of this.fleetRobots) {
+        const row = document.createElement("div");
+        row.className = `fleet-robot ${robot.name === this.activeRobotName ? "active" : ""}`.trim();
+
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "fleet-robot-main";
+        button.addEventListener("click", () => this.setActiveRobot(robot.name));
+
+        const color = document.createElement("span");
+        color.className = "fleet-robot-color";
+        color.style.background = robot.color;
+        button.appendChild(color);
+
+        const info = document.createElement("span");
+        info.className = "fleet-robot-name";
+        const title = document.createElement("strong");
+        title.textContent = robot.name;
+        const details = document.createElement("span");
+        details.textContent = `${robot.currentLm || "route"} -> ${robot.targetName || "-"}`;
+        info.appendChild(title);
+        info.appendChild(details);
+        button.appendChild(info);
+
+        const state = document.createElement("span");
+        state.className = "fleet-robot-state";
+        state.textContent = robot.status;
+        button.appendChild(state);
+
+        const removeButton = document.createElement("button");
+        removeButton.type = "button";
+        removeButton.className = "fleet-remove-button";
+        removeButton.textContent = "-";
+        removeButton.title = `Remove ${robot.name}`;
+        removeButton.addEventListener("click", () => this.removeFleetRobot(robot.name));
+
+        row.appendChild(button);
+        row.appendChild(removeButton);
+        this.dom.fleetRobotList.appendChild(row);
+      }
+    }
+
+    removeFleetRobot(name) {
+      if (this.fleetRobots.length <= 1) {
+        this.setStatus("At least one robot must stay in the fleet.");
+        return;
+      }
+      const index = this.fleetRobots.findIndex((robot) => robot.name === name);
+      if (index < 0) {
+        return;
+      }
+      this.fleetRobots.splice(index, 1);
+      if (this.activeRobotName === name) {
+        const next = this.fleetRobots[Math.max(0, index - 1)] || this.fleetRobots[0];
+        this.activeRobotName = "";
+        if (next) {
+          this.setActiveRobot(next.name);
+        }
+      }
+      this.dom.fleetRobotNameInput.value = this.nextFleetRobotName();
+      this.renderFleetList();
+      this.renderFleetRobots();
+      this.updateActiveRobotPanel();
+      this.setStatus(`Removed ${name}.`);
+      this.logFleet(`removed ${name}`, "warn");
+    }
+
+    updateActiveRobotPanel() {
+      const robot = this.activeRobot();
+      this.dom.activeRobotText.textContent = robot ? robot.name : "-";
+      this.dom.activeRobotTaskText.textContent = robot && robot.targetName ? robot.targetName : "-";
+      this.dom.fleetPlanDebug.textContent = this.fleetPlan
+        ? `MAPF: ${this.fleetPlan.debug.reason}, conflicts=${this.fleetPlan.debug.conflictsResolved}`
+        : "MAPF: idle";
+    }
+
+    logFleet(message, level = "info") {
+      const now = new Date();
+      const stamp = now.toLocaleTimeString([], { hour12: false });
+      this.fleetEvents.unshift({ stamp, message, level });
+      this.fleetEvents = this.fleetEvents.slice(0, 40);
+      this.renderFleetLog();
+    }
+
+    renderFleetLog() {
+      if (!this.dom.fleetEventLog) {
+        return;
+      }
+      this.dom.fleetEventLog.innerHTML = "";
+      for (const item of this.fleetEvents) {
+        const row = document.createElement("div");
+        row.className = item.level || "info";
+        row.textContent = `${item.stamp} ${item.message}`;
+        this.dom.fleetEventLog.appendChild(row);
+      }
+    }
+
+    renderFleetRobots() {
+      if (this.fleetRobots.length) {
+        this.renderer.drawFleetRobots(this.fleetRobots, this.activeRobotName);
+      } else {
+        this.renderer.drawRobotPose(this.currentPose);
+      }
     }
 
     attachManualEvents() {
@@ -2194,6 +2518,15 @@
         return;
       }
       this.simulator.stop(false);
+      this.stopFleetSimulation(false);
+      for (const robot of this.fleetRobots) {
+        if (robot.status === "MOVING" || robot.status === "WAITING" || robot.status === "PLANNING") {
+          robot.status = robot.name === this.activeRobotName ? "MANUAL" : "IDLE";
+          robot.trajectory = [];
+          robot.planNodes = [];
+          robot.routeClock = 0;
+        }
+      }
       this.currentMission = null;
       this.state.targetName = "";
       this.state.navigateMode = false;
@@ -2249,7 +2582,12 @@
         if (this.state.mode === "MANUAL" || this.state.mode === "MANUAL_BLOCKED") {
           this.setMode("IDLE");
           this.setStatus("Manual control released.");
-          this.renderer.drawRobotPose(this.currentPose);
+          const robot = this.activeRobot();
+          if (robot) {
+            robot.status = "IDLE";
+          }
+          this.renderFleetRobots();
+          this.renderFleetList();
         }
         return;
       }
@@ -2277,13 +2615,24 @@
       if (collision.blocked) {
         this.setMode("MANUAL_BLOCKED");
         this.setStatus(`Manual blocked: predicted footprint hits map/obstacle (${collision.count}).`);
-        this.renderer.drawRobotPose(this.currentPose, true);
+        const robot = this.activeRobot();
+        if (robot) {
+          robot.status = "BLOCKED";
+        }
+        this.renderFleetRobots();
+        this.renderFleetList();
       } else {
         const pose = moving ? this.integratePose(this.currentPose, twist.linear, twist.angular, dt) : this.currentPose;
         this.setRobotPose(pose);
         this.setMode("MANUAL");
         this.setStatus("Manual control active.");
-        this.renderer.drawRobotPose(this.currentPose);
+        const robot = this.activeRobot();
+        if (robot) {
+          robot.status = "MANUAL";
+          robot.currentLm = "";
+        }
+        this.renderFleetRobots();
+        this.renderFleetList();
       }
 
       this.manualAnimationFrame = requestAnimationFrame((nextTs) => this.stepManualControl(nextTs));
@@ -2345,6 +2694,8 @@
     }
 
     applyParams(params) {
+      params = params || {};
+      this.data.params = params || {};
       const navigation = params.navigation || {};
       const planner = params.planner || {};
       const localization = params.localization || {};
@@ -2405,6 +2756,7 @@
           prediction_time: Number(this.dom.manualLookaheadInput.value),
           prediction_step: Number(this.dom.manualStepInput.value),
         },
+        fleet: (this.data.params && this.data.params.fleet) || {},
       };
     }
 
@@ -2478,7 +2830,7 @@
     handleRobotModelChange(model) {
       this.renderer.setRobotModel(model);
       if (this.currentPose) {
-        this.renderer.drawRobotPose(this.currentPose);
+        this.renderFleetRobots();
       }
     }
 
@@ -2498,6 +2850,10 @@
         return;
       }
       this.currentPose = { x: pose.x, y: pose.y, yaw: pose.yaw };
+      const robot = this.activeRobot();
+      if (robot) {
+        robot.pose = { ...this.currentPose };
+      }
       this.updateTelemetry();
     }
 
@@ -2521,6 +2877,7 @@
       this.drawObstacleState();
       this.renderLandmarks();
       this.setStatus(this.state.navigateMode ? "Navigate armed: select an LM." : "Navigate canceled.");
+      this.logFleet(this.state.navigateMode ? `navigate armed for ${this.activeRobotName || "-"}` : "navigate canceled");
     }
 
     toggleObstacleMode() {
@@ -2558,30 +2915,552 @@
     }
 
     handleLandmarkClick(lmName) {
+      if (this.suppressNextNavigateClick) {
+        this.suppressNextNavigateClick = false;
+        return;
+      }
       if (this.state.obstacleMode || this.state.obstacleAreaMode) {
         return;
       }
       if (!this.state.navigateMode) {
         this.setStatus("Press Navigate To LM first, then select an LM.");
+        this.logFleet(`ignored ${lmName}: navigate mode is off`, "warn");
         return;
       }
       this.state.navigateMode = false;
       this.syncModeButtons();
+      this.logFleet(`selected ${lmName} for ${this.activeRobotName || "-"}`);
       this.startNavigation(lmName);
     }
 
-    startNavigation(targetName) {
+    handleNavigatePointerDown(event) {
+      if (!this.state.navigateMode || this.state.obstacleMode || this.state.obstacleAreaMode) {
+        this.navigatePointerDown = null;
+        return;
+      }
+      this.navigatePointerDown = {
+        x: event.clientX,
+        y: event.clientY,
+      };
+    }
+
+    handleNavigatePointerUp(event) {
+      if (!this.state.navigateMode || this.state.obstacleMode || this.state.obstacleAreaMode) {
+        return;
+      }
+      const down = this.navigatePointerDown;
+      this.navigatePointerDown = null;
+      if (down) {
+        const moved = Math.hypot(event.clientX - down.x, event.clientY - down.y);
+        if (moved > 10) {
+          this.logFleet(`navigate click ignored: pointer moved ${moved.toFixed(0)}px`, "warn");
+          return;
+        }
+      }
+      const selected = this.selectNavigateTargetFromEvent(event);
+      if (selected) {
+        this.suppressNextNavigateClick = true;
+        window.setTimeout(() => {
+          this.suppressNextNavigateClick = false;
+        }, 250);
+        event.preventDefault();
+        event.stopPropagation();
+      }
+    }
+
+    handleMapNavigateClick(event) {
+      if (this.suppressNextNavigateClick) {
+        this.suppressNextNavigateClick = false;
+        return;
+      }
+      if (!this.state.navigateMode || this.state.obstacleMode || this.state.obstacleAreaMode) {
+        return;
+      }
+      this.selectNavigateTargetFromEvent(event);
+    }
+
+    selectNavigateTargetFromEvent(event) {
+      const world = this.geometry.eventToWorld(event, this.dom.viewport);
+      if (!world) {
+        this.logFleet("map click ignored: cannot convert click to map coordinates", "warn");
+        return false;
+      }
+      const nearest = this.graphModel.nearestLandmark(world, this.geometry);
+      if (!nearest.landmark) {
+        this.logFleet("map click ignored: no LM found", "warn");
+        return false;
+      }
+      const maxClickDistance = 1.20;
+      if (nearest.distance > maxClickDistance) {
+        this.setStatus("Navigate armed: click closer to an LM.");
+        this.logFleet(`click too far from LM: nearest ${nearest.landmark.name}, d=${nearest.distance.toFixed(2)}m`, "warn");
+        return false;
+      }
+      this.logFleet(`map click -> nearest ${nearest.landmark.name}, d=${nearest.distance.toFixed(2)}m`);
+      this.handleLandmarkClick(nearest.landmark.name);
+      return true;
+    }
+
+    async startNavigation(targetName) {
+      const robot = this.activeRobot();
+      if (robot) {
+        if (!this.robotHasActiveTrajectory(robot)) {
+          robot.trajectory = [];
+          robot.planNodes = [];
+          robot.routeClock = 0;
+        }
+        robot.targetName = targetName;
+        robot.status = "PLANNING";
+        this.state.targetName = targetName;
+        this.renderLandmarks();
+        this.renderFleetList();
+        this.updateActiveRobotPanel();
+        this.logFleet(`planning ${robot.name}: ${this.startLmForRobot(robot)} -> ${targetName}`);
+        try {
+          const planned = await this.planFleet();
+          if (planned) {
+            return;
+          }
+        } catch (error) {
+          this.setStatus("Fleet backend unavailable, using local single-robot plan.");
+          this.logFleet(`fleet backend error: ${error.message || error}`, "error");
+        }
+      }
+      this.startSingleNavigation(targetName);
+    }
+
+    async planFleet() {
+      const requestRobots = this.fleetRobots
+        .filter((robot) => robot.targetName && robot.status === "PLANNING");
+      const requests = requestRobots.map((robot) => ({
+        name: robot.name,
+        startLm: this.startLmForRobot(robot),
+        goalLm: robot.targetName,
+      }));
+
+      if (!requests.length) {
+        this.logFleet("planner skipped: no PLANNING robots", "warn");
+        return false;
+      }
+
+      this.logFleet(`fleet request: ${requests.map((item) => `${item.name}:${item.startLm}->${item.goalLm}`).join(", ")}`);
+      const response = await fetch("/api/fleet/plan", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          speed: this.selectedSpeed(),
+          robots: requests,
+          blocked_lms: [],
+        }),
+      });
+      if (!response.ok) {
+        this.logFleet(`fleet HTTP error ${response.status}`, "error");
+        throw new Error(`HTTP ${response.status}`);
+      }
+
+      const result = await response.json();
+      if (!result.ok || !Array.isArray(result.plans)) {
+        for (const robot of requestRobots) {
+          robot.status = "BLOCKED";
+        }
+        this.renderFleetList();
+        this.updateActiveRobotPanel();
+        this.setMode("ERROR_ROUTE");
+        this.setStatus(`Fleet plan failed: ${result.debug ? result.debug.reason : "unknown"}.`);
+        this.logFleet(`planner rejected: ${result.debug ? result.debug.reason : "unknown"}`, "error");
+        return true;
+      }
+
+      this.logFleet(`planner accepted: ${result.plans.length} plan(s), reason=${result.debug ? result.debug.reason : "ok"}`);
+      this.startFleetSimulation(result);
+      return true;
+    }
+
+    startLmForRobot(robot) {
+      if (!this.robotHasActiveTrajectory(robot) && robot.currentLm && this.graphModel.nodeByName.has(robot.currentLm)) {
+        return robot.currentLm;
+      }
+      const nearest = this.graphModel.nearestLandmark(robot.pose, this.geometry);
+      return nearest.landmark ? nearest.landmark.name : demoData.defaultStart;
+    }
+
+    startFleetSimulation(result) {
+      this.simulator.stop(false);
+      this.stopManualControl(false);
+      const alreadyRunning = this.fleetAnimationFrame !== null;
+      const baseElapsed = alreadyRunning ? this.currentFleetElapsed() : 0;
+      if (!alreadyRunning) {
+        this.stopFleetSimulation(false);
+      }
+      this.fleetPlan = result;
+
+      const planByRobot = new Map(result.plans.map((plan) => [plan.robot, plan]));
+      let scheduledCount = 0;
+      for (const robot of this.fleetRobots) {
+        const plan = planByRobot.get(robot.name);
+        if (!plan) {
+          continue;
+        }
+        const scheduled = this.scheduleFleetTrajectory(robot, plan.trajectory || [], baseElapsed);
+        if (!scheduled.trajectory.length) {
+          robot.status = "BLOCKED";
+          continue;
+        }
+        robot.status = scheduled.delay > 0.01 ? "WAITING" : "MOVING";
+        robot.currentLm = plan.startLm;
+        robot.targetName = plan.goalLm;
+        robot.trajectory = scheduled.trajectory;
+        robot.routeClock = 0;
+        robot.startElapsed = baseElapsed + scheduled.delay;
+        robot.lastFleetElapsed = baseElapsed;
+        robot.planNodes = plan.nodes || [];
+        this.logFleet(`scheduled ${robot.name}: ${(plan.nodes || []).join(" -> ")}`);
+        scheduledCount += 1;
+      }
+
+      if (scheduledCount <= 0) {
+        this.setMode("ERROR_BLOCKED");
+        this.setStatus("Fleet blocked: no safe time window for the selected robot.");
+        this.logFleet("scheduler rejected: no safe trajectory window", "error");
+        this.renderFleetList();
+        this.updateActiveRobotPanel();
+        this.renderFleetRobots();
+        return;
+      }
+
+      this.setMode("FLEET_PLAN");
+      this.setStatus(`Fleet MAPF: ${result.debug.reason}, robots=${result.plans.length}.`);
+      this.dom.routeLength.textContent = "-";
+      this.renderer.updateRouteList(this.activeRobot() ? (this.activeRobot().planNodes || []) : []);
+      if (!alreadyRunning) {
+        this.fleetPlanStartTs = null;
+        this.fleetAnimationFrame = requestAnimationFrame((ts) => this.stepFleetSimulation(ts));
+      }
+      this.renderFleetList();
+      this.updateActiveRobotPanel();
+      this.drawActiveFleetRoute(this.currentFleetElapsed());
+    }
+
+    scheduleFleetTrajectory(robot, trajectory, baseElapsed) {
+      if (!trajectory.length) {
+        return { trajectory: [], delay: 0 };
+      }
+      return { trajectory, delay: 0 };
+    }
+
+    robotFootprintsOverlap(firstPose, secondPose) {
+      if (!firstPose || !secondPose) {
+        return false;
+      }
+      const first = this.renderer.footprintCorners(firstPose);
+      const second = this.renderer.footprintCorners(secondPose);
+      const margin = Math.max(0.03, Number(this.dom.collisionMarginInput.value) || 0);
+      return this.polygonsOverlap(first, second, margin);
+    }
+
+    robotHasActiveTrajectory(robot) {
+      return (
+        robot &&
+        robot.trajectory &&
+        robot.trajectory.length &&
+        (robot.status === "MOVING" || robot.status === "WAITING")
+      );
+    }
+
+    fleetCollisionAhead(robot, routeClock, elapsed) {
+      if (!robot || !robot.trajectory || !robot.trajectory.length) {
+        return false;
+      }
+      const finalClock = Number(robot.trajectory[robot.trajectory.length - 1].t || 0);
+      const speed = this.selectedSpeed();
+      const lookaheadTime = Math.max(0.25, Math.min(0.65, 0.35 / Math.max(speed, 0.05)));
+      const sampleStep = Math.max(0.04, Math.min(0.12, Number(this.dom.manualStepInput.value) || 0.08));
+
+      for (let offset = 0; offset <= lookaheadTime + 0.0001; offset += sampleStep) {
+        const candidateClock = Math.min(finalClock, routeClock + offset);
+        const candidatePose = this.poseAtTimedTrajectory(robot.trajectory, candidateClock);
+        for (const other of this.fleetRobots) {
+          if (other.name === robot.name || !other.pose) {
+            continue;
+          }
+          const otherPose = this.predictedFleetPose(other, elapsed + offset);
+          if (this.robotFootprintsOverlap(candidatePose, otherPose)) {
+            return true;
+          }
+        }
+      }
+      return false;
+    }
+
+    predictedFleetPose(robot, elapsed) {
+      if (!this.robotHasActiveTrajectory(robot)) {
+        return robot.pose;
+      }
+      const first = robot.trajectory[0];
+      const startElapsed = Number(robot.startElapsed || 0);
+      if (elapsed < startElapsed) {
+        return {
+          x: Number(first.x),
+          y: Number(first.y),
+          yaw: Number(first.yaw || robot.pose.yaw || 0),
+        };
+      }
+      const finalClock = Number(robot.trajectory[robot.trajectory.length - 1].t || 0);
+      const currentElapsed = this.currentFleetElapsed();
+      const ahead = robot.status === "MOVING" ? Math.max(0, elapsed - currentElapsed) : 0;
+      const clock = Math.min(finalClock, Number(robot.routeClock || 0) + ahead);
+      return this.poseAtTimedTrajectory(robot.trajectory, clock);
+    }
+
+    polygonsOverlap(first, second, margin) {
+      const axes = [...this.polygonAxes(first), ...this.polygonAxes(second)];
+      for (const axis of axes) {
+        const firstProjection = this.projectPolygon(first, axis);
+        const secondProjection = this.projectPolygon(second, axis);
+        if (
+          firstProjection.max + margin < secondProjection.min ||
+          secondProjection.max + margin < firstProjection.min
+        ) {
+          return false;
+        }
+      }
+      return true;
+    }
+
+    polygonAxes(polygon) {
+      const axes = [];
+      for (let index = 0; index < polygon.length; index += 1) {
+        const start = polygon[index];
+        const end = polygon[(index + 1) % polygon.length];
+        const dx = end.x - start.x;
+        const dy = end.y - start.y;
+        const length = Math.hypot(dx, dy);
+        if (length <= 0.000001) {
+          continue;
+        }
+        axes.push({ x: -dy / length, y: dx / length });
+      }
+      return axes;
+    }
+
+    projectPolygon(polygon, axis) {
+      let min = Number.POSITIVE_INFINITY;
+      let max = Number.NEGATIVE_INFINITY;
+      for (const point of polygon) {
+        const value = (point.x * axis.x) + (point.y * axis.y);
+        min = Math.min(min, value);
+        max = Math.max(max, value);
+      }
+      return { min, max };
+    }
+
+    stopFleetSimulation(clearRoute = true) {
+      if (this.fleetAnimationFrame !== null) {
+        cancelAnimationFrame(this.fleetAnimationFrame);
+        this.fleetAnimationFrame = null;
+      }
+      this.fleetPlanStartTs = null;
+      this.fleetElapsed = 0;
+      if (clearRoute) {
+        this.fleetPlan = null;
+        this.renderer.drawRoute([]);
+      }
+    }
+
+    currentFleetElapsed() {
+      return Math.max(0, this.fleetElapsed || 0);
+    }
+
+    stepFleetSimulation(ts) {
+      if (!this.fleetPlan) {
+        this.stopFleetSimulation();
+        return;
+      }
+      if (this.fleetPlanStartTs === null) {
+        this.fleetPlanStartTs = ts;
+      }
+      const elapsed = Math.max(0, (ts - this.fleetPlanStartTs) / 1000);
+      const previousElapsed = Number.isFinite(this.fleetElapsed) ? this.fleetElapsed : elapsed;
+      const frameDt = Math.min(0.12, Math.max(0, elapsed - previousElapsed));
+      this.fleetElapsed = elapsed;
+      let activeMoves = 0;
+      let fleetListDirty = false;
+
+      for (const robot of this.fleetRobots) {
+        if (!this.robotHasActiveTrajectory(robot)) {
+          continue;
+        }
+        const first = robot.trajectory[0];
+        const startElapsed = Number(robot.startElapsed || 0);
+        if (elapsed < startElapsed) {
+          robot.pose = {
+            x: Number(first.x),
+            y: Number(first.y),
+            yaw: Number(first.yaw || robot.pose.yaw || 0),
+          };
+          robot.routeClock = 0;
+          robot.lastFleetElapsed = elapsed;
+          if (robot.status !== "WAITING") {
+            robot.status = "WAITING";
+            fleetListDirty = true;
+          }
+          activeMoves += 1;
+          continue;
+        }
+        const last = robot.trajectory[robot.trajectory.length - 1];
+        const finalClock = Number(last.t || 0);
+        const nextClock = Math.min(finalClock, Number(robot.routeClock || 0) + frameDt);
+        if (this.fleetCollisionAhead(robot, nextClock, elapsed)) {
+          if (robot.status !== "WAITING") {
+            robot.status = "WAITING";
+            this.logFleet(`${robot.name} waiting: footprint conflict ahead`, "warn");
+            fleetListDirty = true;
+          }
+          robot.lastFleetElapsed = elapsed;
+          activeMoves += 1;
+          continue;
+        }
+        if (robot.status !== "MOVING") {
+          robot.status = "MOVING";
+          this.logFleet(`${robot.name} moving`);
+          fleetListDirty = true;
+        }
+        robot.routeClock = nextClock;
+        robot.lastFleetElapsed = elapsed;
+        robot.pose = this.poseAtTimedTrajectory(robot.trajectory, robot.routeClock);
+        if (robot.routeClock >= finalClock) {
+          robot.pose = {
+            x: Number(last.x),
+            y: Number(last.y),
+            yaw: Number(last.yaw || robot.pose.yaw || 0),
+          };
+          robot.currentLm = robot.targetName || robot.currentLm;
+          robot.targetName = "";
+          robot.status = "ARRIVED";
+          robot.trajectory = [];
+          robot.planNodes = [];
+          robot.routeClock = 0;
+          this.logFleet(`${robot.name} arrived at ${robot.currentLm}`);
+          fleetListDirty = true;
+        } else {
+          activeMoves += 1;
+        }
+      }
+
+      const active = this.activeRobot();
+      if (active) {
+        this.currentPose = { ...active.pose };
+      }
+      this.drawActiveFleetRoute(elapsed);
+      this.renderFleetRobots();
+      this.updateTelemetry();
+      if (fleetListDirty) {
+        this.renderFleetList();
+        this.updateActiveRobotPanel();
+      }
+
+      if (activeMoves <= 0) {
+        this.fleetAnimationFrame = null;
+        this.renderFleetList();
+        this.updateActiveRobotPanel();
+        this.setMode("ARRIVED");
+        this.setStatus("Fleet tasks completed.");
+        return;
+      }
+      this.fleetAnimationFrame = requestAnimationFrame((nextTs) => this.stepFleetSimulation(nextTs));
+    }
+
+    poseAtTimedTrajectory(trajectory, elapsed) {
+      if (trajectory.length === 1 || elapsed <= Number(trajectory[0].t || 0)) {
+        const first = trajectory[0];
+        return { x: Number(first.x), y: Number(first.y), yaw: Number(first.yaw || 0) };
+      }
+      const last = trajectory[trajectory.length - 1];
+      if (elapsed >= Number(last.t || 0)) {
+        return { x: Number(last.x), y: Number(last.y), yaw: Number(last.yaw || 0) };
+      }
+      let index = 0;
+      while (index < trajectory.length - 2 && Number(trajectory[index + 1].t || 0) < elapsed) {
+        index += 1;
+      }
+      const start = trajectory[index];
+      const goal = trajectory[index + 1];
+      const span = Math.max(0.0001, Number(goal.t || 0) - Number(start.t || 0));
+      const t = (elapsed - Number(start.t || 0)) / span;
+      return {
+        x: Number(start.x) + ((Number(goal.x) - Number(start.x)) * t),
+        y: Number(start.y) + ((Number(goal.y) - Number(start.y)) * t),
+        yaw: this.geometry.interpolateAngle(Number(start.yaw || 0), Number(goal.yaw || 0), t),
+      };
+    }
+
+    drawActiveFleetRoute(elapsed) {
+      const robot = this.activeRobot();
+      if (!robot || !this.robotHasActiveTrajectory(robot) || !robot.trajectory || robot.trajectory.length < 2) {
+        this.renderer.drawRoute([]);
+        return;
+      }
+      const path = this.pathFromTimedTrajectory(robot.trajectory);
+      const progress = this.distanceAtTimedTrajectory(path, robot.trajectory, Number(robot.routeClock || 0));
+      this.renderer.drawRoute(path, progress);
+      this.renderer.updateRouteList(robot.planNodes || []);
+    }
+
+    pathFromTimedTrajectory(trajectory) {
+      let distance = 0;
+      return trajectory.map((pose, index) => {
+        if (index > 0) {
+          const previous = trajectory[index - 1];
+          distance += Math.hypot(Number(pose.x) - Number(previous.x), Number(pose.y) - Number(previous.y));
+        }
+        return {
+          x: Number(pose.x),
+          y: Number(pose.y),
+          yaw: Number(pose.yaw || 0),
+          s: distance,
+          edgeId: String(pose.edgeId || ""),
+        };
+      });
+    }
+
+    distanceAtTimedTrajectory(path, trajectory, elapsed) {
+      if (!path.length || !trajectory.length) {
+        return 0;
+      }
+      if (elapsed <= Number(trajectory[0].t || 0)) {
+        return 0;
+      }
+      for (let index = 0; index < trajectory.length - 1; index += 1) {
+        const startT = Number(trajectory[index].t || 0);
+        const endT = Number(trajectory[index + 1].t || 0);
+        if (elapsed <= endT) {
+          const span = Math.max(0.0001, endT - startT);
+          const t = (elapsed - startT) / span;
+          return path[index].s + ((path[index + 1].s - path[index].s) * t);
+        }
+      }
+      return path[path.length - 1].s;
+    }
+
+    startSingleNavigation(targetName) {
       this.stopManualControl(false);
       this.updatePlannerParams();
       const mission = this.missionPlanner.buildMission(this.currentPose, targetName, this.selectedSpeed());
       if (!mission) {
         this.setMode("ERROR_ROUTE");
         this.setStatus(`No route to ${targetName}.`);
+        this.logFleet(`local planner failed: no route to ${targetName}`, "error");
         return;
       }
 
       this.currentMission = mission;
       this.state.targetName = targetName;
+      const robot = this.activeRobot();
+      if (robot) {
+        robot.targetName = targetName;
+        robot.status = "MOVING";
+        robot.currentLm = mission.nearestName || robot.currentLm;
+      }
       this.setMode("FOLLOW_ROUTE");
       this.dom.targetText.textContent = targetName;
       this.dom.routeLength.textContent = `${mission.length.toFixed(2)} m`;
@@ -2593,12 +3472,24 @@
       } else {
         this.setStatus(`Strict route: ${mission.nodes.join(" -> ")}`);
       }
+      this.logFleet(`local route: ${mission.nodes.join(" -> ")}`);
       this.simulator.start(mission, this.selectedSpeed(), this.obstacles, this.obstacleAreas);
+      this.renderFleetList();
+      this.updateActiveRobotPanel();
     }
 
     stopRobot() {
       this.simulator.stop();
       this.stopManualControl(false);
+      this.stopFleetSimulation();
+      for (const robot of this.fleetRobots) {
+        if (robot.status === "MOVING" || robot.status === "WAITING" || robot.status === "PLANNING") {
+          robot.status = "IDLE";
+          robot.trajectory = [];
+          robot.planNodes = [];
+          robot.routeClock = 0;
+        }
+      }
       this.currentMission = null;
       this.setMode("IDLE");
       this.setStatus("Stopped.");
@@ -2606,13 +3497,30 @@
       this.renderer.updateRouteList([]);
       this.renderer.drawRoute([]);
       this.renderer.clearLookahead();
-      this.renderer.drawRobotPose(this.currentPose);
+      this.renderFleetRobots();
+      this.renderFleetList();
+      this.updateActiveRobotPanel();
     }
 
     resetRobot() {
       this.simulator.stop();
       this.stopManualControl(false);
-      this.currentPose = this.initialRobotPose();
+      this.stopFleetSimulation();
+      const active = this.activeRobot();
+      if (active) {
+        active.pose = this.poseAtLandmark(active.spawnLm);
+        active.currentLm = active.spawnLm;
+        active.targetName = "";
+        active.status = "IDLE";
+        active.trajectory = [];
+        active.planNodes = [];
+        active.routeClock = 0;
+        active.startElapsed = 0;
+        active.lastFleetElapsed = null;
+        this.currentPose = { ...active.pose };
+      } else {
+        this.currentPose = this.initialRobotPose();
+      }
       this.currentMission = null;
       this.state.targetName = "";
       this.setMode("IDLE");
@@ -2660,20 +3568,40 @@
       if (pose) {
         this.setRobotPose(pose);
       }
+      const robot = this.activeRobot();
+      if (robot) {
+        robot.status = "ARRIVED";
+        robot.currentLm = robot.targetName || robot.currentLm;
+        robot.targetName = "";
+        robot.trajectory = [];
+        robot.planNodes = [];
+        robot.routeClock = 0;
+      }
       this.setMode("ARRIVED");
       this.setStatus(`Arrived at ${this.state.targetName || "target"}.`);
       this.renderer.clearLookahead();
+      this.renderFleetRobots();
+      this.renderFleetList();
+      this.updateActiveRobotPanel();
     }
 
     handleBlocked(count) {
       this.setMode("ERROR_BLOCKED");
       this.setStatus(`Blocked: predicted footprint hits map/obstacle (${count}).`);
+      const robot = this.activeRobot();
+      if (robot) {
+        robot.status = "BLOCKED";
+      }
+      this.renderFleetRobots();
+      this.renderFleetList();
     }
 
     renderAll() {
       this.renderLandmarks();
       this.drawObstacleState();
-      this.renderer.drawRobotPose(this.currentPose);
+      this.renderFleetRobots();
+      this.renderFleetList();
+      this.updateActiveRobotPanel();
       this.updateTelemetry();
     }
 
