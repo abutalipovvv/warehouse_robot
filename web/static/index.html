@@ -64,6 +64,75 @@
           <button class="tab-button" type="button" data-tab="params">Params</button>
         </nav>
 
+        <section class="panel-block edge-inspector-block">
+          <div class="block-title">Map Inspector</div>
+          <div id="edgeInspectorEmpty" class="edge-inspector-empty">Click an LM or graph edge</div>
+          <div id="lmInspectorContent" class="edge-inspector-grid hidden">
+            <div class="edge-inspector-main">
+              <span>LM</span>
+              <strong id="lmTitleText">-</strong>
+            </div>
+            <div>
+              <span>X</span>
+              <strong id="lmXText">-</strong>
+            </div>
+            <div>
+              <span>Y</span>
+              <strong id="lmYText">-</strong>
+            </div>
+            <div>
+              <span>Outgoing</span>
+              <strong id="lmOutgoingText">-</strong>
+            </div>
+            <div>
+              <span>Incoming</span>
+              <strong id="lmIncomingText">-</strong>
+            </div>
+            <div>
+              <span>Spin</span>
+              <strong id="lmSpinText">-</strong>
+            </div>
+            <div>
+              <span>ignoreDir</span>
+              <strong id="lmIgnoreDirText">-</strong>
+            </div>
+            <div class="edge-inspector-main">
+              <span>Connected</span>
+              <strong id="lmConnectionsText">-</strong>
+            </div>
+          </div>
+          <div id="edgeInspectorContent" class="edge-inspector-grid hidden">
+            <div class="edge-inspector-main">
+              <span>Edge</span>
+              <strong id="edgeTitleText">-</strong>
+            </div>
+            <div>
+              <span>Graph</span>
+              <strong id="edgeTrafficText">-</strong>
+            </div>
+            <div>
+              <span>Motion</span>
+              <strong id="edgeMotionText">-</strong>
+            </div>
+            <div>
+              <span>Length</span>
+              <strong id="edgeLengthText">-</strong>
+            </div>
+            <div>
+              <span>Kind</span>
+              <strong id="edgeKindText">-</strong>
+            </div>
+            <div>
+              <span>Move style</span>
+              <strong id="edgeMoveStyleText">-</strong>
+            </div>
+            <div class="edge-inspector-main">
+              <span>Reverse</span>
+              <strong id="edgeReverseText">-</strong>
+            </div>
+          </div>
+        </section>
+
         <section id="tabFleet" class="tab-page active">
           <section class="panel-block">
             <div class="block-title">Add Robot</div>
@@ -101,6 +170,12 @@
 
           <section class="panel-block">
             <div class="block-title">Fleet Planner</div>
+            <div class="fleet-plan-actions">
+              <button id="queueGoalButton" type="button">Queue Goal</button>
+              <button id="startFleetPlanButton" class="primary" type="button">Start Fleet Plan</button>
+              <button id="clearFleetQueueButton" type="button">Clear Queue</button>
+            </div>
+            <div id="fleetQueueList" class="fleet-queue-list">No queued goals</div>
             <div id="fleetPlanDebug" class="mono">MAPF: idle</div>
             <div id="fleetEventLog" class="fleet-event-log mono"></div>
           </section>

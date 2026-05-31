@@ -51,6 +51,8 @@ DEFAULT_ROUTE_PARAMS: dict[str, Any] = {
     "fleet": {
         "reservation_time_step_sec": 1.00,
         "reservation_horizon_sec": 8.00,
+        "reservation_safety_time_sec": 0.35,
+        "continuous_collision_step_sec": 0.10,
         "wait_time_sec": 1.00,
         "wait_cost": 6,
         "replan_interval_sec": 1.00,

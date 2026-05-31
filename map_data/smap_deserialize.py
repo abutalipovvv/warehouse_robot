@@ -407,17 +407,7 @@ def deserialize_smap(smap_path: Path, out_dir: Path) -> None:
         u = _nearest_lm_name(float(sx), float(sy), lm_index, max_radius_m=0.75)
         v = _nearest_lm_name(float(ex), float(ey), lm_index, max_radius_m=0.75)
 
-        oneway = _is_one_way(props)
-        rev = _reverse_one_way(props)
-
-        if oneway:
-            if rev:
-                _add_edge(v, u, p.get("length_m"), kind, typ, props)
-            else:
-                _add_edge(u, v, p.get("length_m"), kind, typ, props)
-        else:
-            _add_edge(u, v, p.get("length_m"), kind, typ, props)
-            _add_edge(v, u, p.get("length_m"), kind, typ, props)
+        _add_edge(u, v, p.get("length_m"), kind, typ, props)
 
     # --- curves ---
     for p in curve_primitives:
@@ -443,17 +433,7 @@ def deserialize_smap(smap_path: Path, out_dir: Path) -> None:
         if v is None:
             v = _nearest_lm_name(float(ex), float(ey), lm_index, max_radius_m=0.75)
 
-        oneway = _is_one_way(props)
-        rev = _reverse_one_way(props)
-
-        if oneway:
-            if rev:
-                _add_edge(v, u, p.get("length_m"), kind, typ, props)
-            else:
-                _add_edge(u, v, p.get("length_m"), kind, typ, props)
-        else:
-            _add_edge(u, v, p.get("length_m"), kind, typ, props)
-            _add_edge(v, u, p.get("length_m"), kind, typ, props)
+        _add_edge(u, v, p.get("length_m"), kind, typ, props)
 
     # dedupe by (from,to) keeping minimal length
     dedup: Dict[tuple, Dict[str, Any]] = {}

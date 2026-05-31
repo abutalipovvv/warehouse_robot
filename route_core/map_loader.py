@@ -142,6 +142,8 @@ class WarehouseMapLoader:
                 name=str(item["name"]),
                 x=float(item["x"]),
                 y=float(item["y"]),
+                properties=dict(item.get("properties") or {}),
+                ignore_dir=item.get("ignoreDir"),
             )
             landmarks[landmark.name] = landmark
         return landmarks
@@ -155,12 +157,17 @@ class WarehouseMapLoader:
         if not isinstance(payload, list):
             raise ValueError(f"Unexpected edge file format: {path}")
 
-        geometries = self._load_graph_geometries(path.parent / "graphs.yaml")
+        geometries, primitive_edges, primitive_properties = self._load_graph_geometries(
+            path.parent / "graphs.yaml",
+            landmarks,
+        )
         edges: list[GraphEdge] = []
         for item in payload:
             start = str(item["from"])
             goal = str(item["to"])
             if start not in landmarks or goal not in landmarks:
+                continue
+            if primitive_edges and (start, goal) not in primitive_edges:
                 continue
 
             edges.append(
@@ -172,42 +179,72 @@ class WarehouseMapLoader:
                     edge_type=str(item.get("type", "unknown")),
                     world_points=(landmarks[start].to_point(), landmarks[goal].to_point()),
                     geometry=geometries.get((start, goal)),
+                    properties=dict(
+                        primitive_properties.get((start, goal))
+                        or item.get("properties")
+                        or {}
+                    ),
                 )
             )
         return edges
 
-    def _load_graph_geometries(self, path: Path) -> dict[tuple[str, str], EdgeGeometry]:
+    def _load_graph_geometries(
+        self,
+        path: Path,
+        landmarks: dict[str, Landmark],
+    ) -> tuple[
+        dict[tuple[str, str], EdgeGeometry],
+        set[tuple[str, str]],
+        dict[tuple[str, str], dict[str, object]],
+    ]:
         if not path.exists():
-            return {}
+            return {}, set(), {}
 
         payload = self._read_yaml(path)
         if not isinstance(payload, dict):
-            return {}
+            return {}, set(), {}
 
         primitives = payload.get("primitives", [])
         if not isinstance(primitives, list):
-            return {}
+            return {}, set(), {}
 
         geometries: dict[tuple[str, str], EdgeGeometry] = {}
+        primitive_edges: set[tuple[str, str]] = set()
+        primitive_properties: dict[tuple[str, str], dict[str, object]] = {}
         for primitive in primitives:
-            if not isinstance(primitive, dict) or primitive.get("kind") != "curve":
+            if not isinstance(primitive, dict):
                 continue
 
-            curve = primitive.get("curve")
-            if not isinstance(curve, dict):
+            kind = str(primitive.get("kind", ""))
+            endpoint_payload = primitive.get("curve") if kind == "curve" else primitive
+            if not isinstance(endpoint_payload, dict):
                 continue
 
-            start_name = curve.get("start_name")
-            end_name = curve.get("end_name")
-            if not start_name or not end_name:
+            start_name = endpoint_payload.get("start_name")
+            end_name = endpoint_payload.get("end_name")
+            start_point = endpoint_payload.get("start")
+            end_point = endpoint_payload.get("end")
+            key = self._primitive_edge_key(
+                start_name=start_name,
+                end_name=end_name,
+                start_point=start_point,
+                end_point=end_point,
+                landmarks=landmarks,
+            )
+            if key is None:
+                continue
+            primitive_edges.add(key)
+            primitive_properties[key] = dict(primitive.get("properties") or {})
+
+            if kind != "curve":
                 continue
 
             point_keys = ("start", "control1", "control2", "end")
             try:
                 control_points = tuple(
                     WorldPoint(
-                        x=float(curve[key]["x"]),
-                        y=float(curve[key]["y"]),
+                        x=float(endpoint_payload[key]["x"]),
+                        y=float(endpoint_payload[key]["y"]),
                     )
                     for key in point_keys
                 )
@@ -219,11 +256,49 @@ class WarehouseMapLoader:
                 control_points=control_points,
                 curve_type=str(primitive.get("curve_type", "Bezier")),
             )
-            geometries[(str(start_name), str(end_name))] = geometry
-            geometries[(str(end_name), str(start_name))] = EdgeGeometry(
-                geometry=geometry.geometry,
-                control_points=tuple(reversed(control_points)),
-                curve_type=geometry.curve_type,
-            )
+            geometries[key] = geometry
 
-        return geometries
+        return geometries, primitive_edges, primitive_properties
+
+    def _primitive_edge_key(
+        self,
+        start_name: object,
+        end_name: object,
+        start_point: object,
+        end_point: object,
+        landmarks: dict[str, Landmark],
+    ) -> tuple[str, str] | None:
+        start_key = str(start_name) if start_name is not None else ""
+        end_key = str(end_name) if end_name is not None else ""
+        start = start_key if start_key in landmarks else ""
+        end = end_key if end_key in landmarks else ""
+        if not start:
+            start = self._nearest_landmark_name(start_point, landmarks)
+        if not end:
+            end = self._nearest_landmark_name(end_point, landmarks)
+        if not start or not end or start == end:
+            return None
+        return start, end
+
+    def _nearest_landmark_name(
+        self,
+        point: object,
+        landmarks: dict[str, Landmark],
+        max_radius_m: float = 0.75,
+    ) -> str:
+        if not isinstance(point, dict):
+            return ""
+        try:
+            x = float(point["x"])
+            y = float(point["y"])
+        except (KeyError, TypeError, ValueError):
+            return ""
+        best = min(
+            landmarks.values(),
+            key=lambda landmark: ((landmark.x - x) ** 2) + ((landmark.y - y) ** 2),
+            default=None,
+        )
+        if best is None:
+            return ""
+        distance = ((best.x - x) ** 2 + (best.y - y) ** 2) ** 0.5
+        return best.name if distance <= max_radius_m else ""

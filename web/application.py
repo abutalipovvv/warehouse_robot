@@ -38,7 +38,12 @@ class RouteDemoApplication:
         params = load_route_params(options.params, create=True)
 
         route_planner = LmRoutePlanner(loaded_map.landmarks, loaded_map.edges, params=params)
-        route_planner.find_route(default_start, default_goal)
+        try:
+            route_planner.find_route(default_start, default_goal)
+        except ValueError:
+            if options.goal is not None:
+                raise
+            default_goal = self._first_reachable_goal(route_planner, default_start) or default_start
 
         payload = DemoPayload(
             map_metadata=loaded_map.map_metadata,
@@ -78,6 +83,17 @@ class RouteDemoApplication:
             raise ValueError(f"Default goal LM does not exist: {goal}")
 
         return start, goal
+
+    def _first_reachable_goal(self, planner: LmRoutePlanner, start: str) -> str | None:
+        for goal in sorted(planner.landmarks):
+            if goal == start:
+                continue
+            try:
+                planner.find_route(start, goal)
+            except ValueError:
+                continue
+            return goal
+        return None
 
     def _open_in_browser(self, index_path: Path) -> None:
         resolved = index_path.resolve()

@@ -52,6 +52,14 @@ manual:
 fleet:
   reservation_time_step_sec: 1.0
   reservation_horizon_sec: 8.0
+  reservation_safety_time_sec: 0.35
+  reservation_detour_horizon_sec: 8.0
+  reserved_edge_detour_enabled: true
+  reserved_edge_hard_constraints_enabled: true
+  continuous_collision_step_sec: 0.1
+  batch_collision_horizon_sec: null
+  batch_wait_max_iterations: 60
+  stretch_motion_to_reservation_ticks: false
   wait_time_sec: 1.0
   wait_cost: 6
   replan_interval_sec: 1.0

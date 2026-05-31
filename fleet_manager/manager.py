@@ -411,7 +411,8 @@ class WebFleetManager:
         payload = payload or {}
         hard_blocked_lms = self._hard_blocked_lms(payload)
         blocked_edges = self._hard_blocked_edges(payload) | self._dynamic_blocked_edges()
-        reserved_vertices, reserved_edges = self._reserved_constraints(valid_requests)
+        reserved_edge_intervals = self._reserved_edge_intervals(valid_requests)
+        reserved_vertex_intervals = self._reserved_vertex_intervals(valid_requests)
         soft_blocked_lms = self._soft_blocked_lms(valid_requests, hard_blocked_lms)
         planner_payload = {
             **payload,
@@ -420,13 +421,26 @@ class WebFleetManager:
                 {"from": src, "to": dst}
                 for src, dst in sorted(blocked_edges)
             ],
-            "reserved_vertex_constraints": [
-                {"time": tick, "node": node}
-                for tick, node in reserved_vertices
+            "reserved_vertex_constraints": [],
+            "reserved_edge_constraints": [],
+            "reserved_vertex_intervals": [
+                {
+                    "node": node,
+                    "start": start,
+                    "end": end,
+                    "robot": robot_name,
+                }
+                for node, start, end, robot_name in reserved_vertex_intervals
             ],
-            "reserved_edge_constraints": [
-                {"time": tick, "from": src, "to": dst}
-                for tick, src, dst in reserved_edges
+            "reserved_edge_intervals": [
+                {
+                    "from": src,
+                    "to": dst,
+                    "start": start,
+                    "end": end,
+                    "robot": robot_name,
+                }
+                for src, dst, start, end, robot_name in reserved_edge_intervals
             ],
         }
 
@@ -441,6 +455,7 @@ class WebFleetManager:
                 debug = result.setdefault("debug", {})
                 debug["reason"] = f"{debug.get('reason', 'success')}:detour_soft_blocks"
                 debug["softBlockedLms"] = sorted(soft_blocked_lms)
+                result = self._apply_continuous_reservation_waits(result)
                 self._event(
                     "info",
                     f"planner detour around occupied LM(s): {', '.join(sorted(soft_blocked_lms))}",
@@ -459,18 +474,22 @@ class WebFleetManager:
                 debug["reason"] = f"{debug.get('reason', 'success')}:fallback_wait"
                 debug["softBlockedLms"] = sorted(soft_blocked_lms)
                 debug["softBlockFailure"] = failed_reason
+                result = self._apply_continuous_reservation_waits(result)
                 self._event(
                     "warn",
                     "planner found no detour; using original route and runtime waiting",
                 )
             return result
 
-        return self.planner.plan(
+        result = self.planner.plan(
             {
                 **planner_payload,
                 "blocked_lms": sorted(hard_blocked_lms),
             }
         )
+        if result.get("ok"):
+            result = self._apply_continuous_reservation_waits(result)
+        return result
 
     def _apply_planner_result(self, result: dict[str, Any], now: float | None = None) -> None:
         now = now or time()
@@ -508,17 +527,424 @@ class WebFleetManager:
         if not isinstance(debug, dict):
             return "planner accepted"
         reason = str(debug.get("reason", "") or "")
-        blocked_edges = debug.get("blockedEdges", [])
+        blocked_edges = debug.get("hardBlockedEdges") or debug.get("blockedEdges", [])
+        reserved_detour_edges = debug.get("reservedDetourEdges", [])
         reserved_edges = int(debug.get("reservedEdges", 0) or 0)
-        if "fallback_wait" in reason:
+        continuous_waits = int(debug.get("continuousWaits", 0) or 0)
+        if "fallback_wait" in reason or "reserved_interval_fallback_wait" in reason:
             return "FALLBACK_WAIT"
+        if "reserved_edge_detour" in reason:
+            return "DETOUR: reserved edge"
         if "detour_soft_blocks" in reason:
             return "DETOUR"
         if isinstance(blocked_edges, list) and blocked_edges:
             return "DETOUR: edge blocked"
-        if reserved_edges > 0:
+        if continuous_waits > 0:
+            return "WAIT: reserved corridor"
+        if reserved_edges > 0 or (isinstance(reserved_detour_edges, list) and reserved_detour_edges):
             return "DETOUR: reserved edge"
         return "planner accepted"
+
+    def _apply_continuous_reservation_waits(self, result: dict[str, Any]) -> dict[str, Any]:
+        plans = result.get("plans", [])
+        if not isinstance(plans, list) or not plans:
+            return result
+
+        total_wait = 0.0
+        total_conflicts = 0
+        wait_count = 0
+        unresolved_count = 0
+        planned_names = {
+            str(plan.get("robot", ""))
+            for plan in plans
+            if isinstance(plan, dict) and str(plan.get("robot", ""))
+        }
+        for plan in plans:
+            if not isinstance(plan, dict):
+                continue
+            robot_name = str(plan.get("robot", ""))
+            trajectory = [
+                item for item in plan.get("trajectory", [])
+                if isinstance(item, dict)
+            ]
+            if not robot_name or len(trajectory) < 2:
+                continue
+            trajectory, stats = self._schedule_trajectory_against_corridors(
+                robot_name,
+                trajectory,
+                ignore_robot_names=planned_names,
+            )
+            if stats["conflicts"] > 0:
+                plan["trajectory"] = trajectory
+                plan["arrivalTime"] = float(trajectory[-1].get("t", 0.0) or 0.0)
+                total_wait += stats["wait"]
+                total_conflicts += stats["conflicts"]
+                wait_count += stats["waits"]
+
+        batch_trajectory_stats = self._schedule_batch_trajectories(plans)
+        total_wait += batch_trajectory_stats["wait"]
+        total_conflicts += batch_trajectory_stats["conflicts"]
+        wait_count += batch_trajectory_stats["waits"]
+        unresolved_count += int(batch_trajectory_stats.get("unresolved", 0) or 0)
+
+        if total_conflicts > 0 or unresolved_count > 0:
+            debug = result.setdefault("debug", {})
+            debug["continuousConflicts"] = int(debug.get("continuousConflicts", 0) or 0) + total_conflicts
+            debug["continuousWaits"] = int(debug.get("continuousWaits", 0) or 0) + wait_count
+            debug["continuousWaitSec"] = round(float(debug.get("continuousWaitSec", 0.0) or 0.0) + total_wait, 3)
+            debug["continuousUnresolved"] = int(debug.get("continuousUnresolved", 0) or 0) + unresolved_count
+            if batch_trajectory_stats["conflicts"] > 0:
+                debug["batchContinuousConflicts"] = int(debug.get("batchContinuousConflicts", 0) or 0) + batch_trajectory_stats["conflicts"]
+                debug["batchContinuousWaits"] = int(debug.get("batchContinuousWaits", 0) or 0) + batch_trajectory_stats["waits"]
+                debug["batchContinuousWaitSec"] = round(float(debug.get("batchContinuousWaitSec", 0.0) or 0.0) + batch_trajectory_stats["wait"], 3)
+            debug["reason"] = f"{debug.get('reason', 'success')}:reserved_corridor_wait"
+            if unresolved_count > 0:
+                debug["reason"] = f"{debug.get('reason', 'success')}:continuous_conflict_unresolved"
+                result["ok"] = False
+                result["plans"] = []
+        return result
+
+    def _schedule_trajectory_against_corridors(
+        self,
+        robot_name: str,
+        trajectory: list[dict[str, Any]],
+        ignore_robot_names: set[str] | None = None,
+    ) -> tuple[list[dict[str, Any]], dict[str, float | int]]:
+        conflicts = 0
+        waits = 0
+        total_wait = 0.0
+        max_iterations = 10
+        ignored = ignore_robot_names or set()
+        for _ in range(max_iterations):
+            conflict = self._first_continuous_corridor_conflict(
+                robot_name,
+                trajectory,
+                ignore_robot_names=ignored,
+            )
+            if conflict is None:
+                break
+            conflicts += 1
+            wait_point = self._wait_insert_point(
+                trajectory,
+                max(0.0, float(conflict["time"]) - self._reservation_safety_time()),
+                clamp_to_edge_start=False,
+            )
+            wait_duration = self._wait_duration_for_conflict(
+                trajectory,
+                float(conflict["time"]),
+                str(conflict["other"]),
+            )
+            trajectory = self._insert_trajectory_wait(
+                trajectory,
+                wait_point["index"],
+                wait_duration,
+            )
+            waits += 1
+            total_wait += wait_duration
+            self._event(
+                "warn",
+                (
+                    f"{robot_name} reservation wait: t={float(conflict['time']):.2f}s "
+                    f"edge={conflict['edge']} other={conflict['other']} "
+                    f"wait={wait_duration:.2f}s"
+                ),
+            )
+        return trajectory, {"conflicts": conflicts, "waits": waits, "wait": total_wait}
+
+    def _schedule_batch_trajectories(
+        self,
+        plans: list[Any],
+    ) -> dict[str, float | int]:
+        scheduled = [
+            plan for plan in plans
+            if isinstance(plan, dict)
+            and str(plan.get("robot", ""))
+            and isinstance(plan.get("trajectory"), list)
+            and len(plan.get("trajectory", [])) >= 2
+        ]
+        if len(scheduled) < 2:
+            return {"conflicts": 0, "waits": 0, "wait": 0.0, "unresolved": 0}
+
+        conflicts = 0
+        waits = 0
+        total_wait = 0.0
+        max_iterations = self._batch_wait_max_iterations()
+        for _ in range(max_iterations):
+            conflict = self._first_batch_trajectory_conflict(scheduled)
+            if conflict is None:
+                break
+            waiting_plan = scheduled[int(conflict["waitIndex"])]
+            priority_plan = scheduled[int(conflict["priorityIndex"])]
+            trajectory = [
+                item for item in waiting_plan.get("trajectory", [])
+                if isinstance(item, dict)
+            ]
+            priority_trajectory = [
+                item for item in priority_plan.get("trajectory", [])
+                if isinstance(item, dict)
+            ]
+            if len(trajectory) < 2 or len(priority_trajectory) < 2:
+                break
+
+            wait_point = self._wait_insert_point(trajectory, float(conflict["time"]))
+            wait_duration = self._wait_duration_for_peer_conflict(
+                trajectory,
+                priority_trajectory,
+                float(conflict["time"]),
+            )
+            trajectory = self._insert_trajectory_wait(
+                trajectory,
+                int(wait_point["index"]),
+                wait_duration,
+            )
+            waiting_plan["trajectory"] = trajectory
+            waiting_plan["arrivalTime"] = float(trajectory[-1].get("t", 0.0) or 0.0)
+            conflicts += 1
+            waits += 1
+            total_wait += wait_duration
+            self._event(
+                "warn",
+                (
+                    f"{waiting_plan.get('robot')} batch reservation wait: "
+                    f"t={float(conflict['time']):.2f}s "
+                    f"edge={conflict['edge']} "
+                    f"priority={priority_plan.get('robot')} "
+                    f"wait={wait_duration:.2f}s"
+                ),
+            )
+        remaining_conflict = self._first_batch_trajectory_conflict(scheduled)
+        if remaining_conflict is not None:
+            self._event(
+                "error",
+                (
+                    "batch reservation unresolved: "
+                    f"t={float(remaining_conflict['time']):.2f}s "
+                    f"edge={remaining_conflict['edge']}"
+                ),
+            )
+            return {"conflicts": conflicts, "waits": waits, "wait": total_wait, "unresolved": 1}
+        return {"conflicts": conflicts, "waits": waits, "wait": total_wait, "unresolved": 0}
+
+    def _first_batch_trajectory_conflict(
+        self,
+        plans: list[dict[str, Any]],
+    ) -> dict[str, Any] | None:
+        step = self._continuous_collision_step()
+        final_time = 0.0
+        for plan in plans:
+            trajectory = plan.get("trajectory", [])
+            if isinstance(trajectory, list) and trajectory:
+                final_time = max(final_time, float(trajectory[-1].get("t", 0.0) or 0.0))
+        horizon = min(final_time, self._batch_collision_horizon(final_time))
+        t = 0.0
+        while t <= horizon + 0.000001:
+            for priority_index in range(len(plans)):
+                priority_trajectory = plans[priority_index].get("trajectory", [])
+                if not isinstance(priority_trajectory, list):
+                    continue
+                priority_pose = self._pose_at_trajectory(priority_trajectory, t)
+                if priority_pose is None:
+                    continue
+                for wait_index in range(priority_index + 1, len(plans)):
+                    waiting_trajectory = plans[wait_index].get("trajectory", [])
+                    if not isinstance(waiting_trajectory, list):
+                        continue
+                    waiting_pose = self._pose_at_trajectory(waiting_trajectory, t)
+                    if waiting_pose is None:
+                        continue
+                    if self.collision.footprints_overlap(priority_pose, waiting_pose):
+                        priority_edge = self._edge_id_at_trajectory(priority_trajectory, t) or "unknown"
+                        waiting_edge = self._edge_id_at_trajectory(waiting_trajectory, t) or "unknown"
+                        if waiting_edge.startswith("WAIT@") and not priority_edge.startswith("WAIT@"):
+                            return {
+                                "time": t,
+                                "priorityIndex": wait_index,
+                                "waitIndex": priority_index,
+                                "edge": priority_edge,
+                            }
+                        priority_entry = self._edge_start_time_at_trajectory(priority_trajectory, t)
+                        waiting_entry = self._edge_start_time_at_trajectory(waiting_trajectory, t)
+                        if priority_entry > waiting_entry + step:
+                            return {
+                                "time": t,
+                                "priorityIndex": wait_index,
+                                "waitIndex": priority_index,
+                                "edge": priority_edge,
+                            }
+                        return {
+                            "time": t,
+                            "priorityIndex": priority_index,
+                            "waitIndex": wait_index,
+                            "edge": waiting_edge,
+                        }
+            t += step
+        return None
+
+    def _edge_start_time_at_trajectory(
+        self,
+        trajectory: list[dict[str, Any]],
+        elapsed: float,
+    ) -> float:
+        if not trajectory:
+            return 0.0
+        segment_index = 0
+        for index in range(len(trajectory) - 1):
+            start_t = float(trajectory[index].get("t", 0.0) or 0.0)
+            end_t = float(trajectory[index + 1].get("t", 0.0) or 0.0)
+            if start_t <= elapsed <= end_t:
+                segment_index = index
+                break
+        edge_id = str(
+            trajectory[min(segment_index + 1, len(trajectory) - 1)].get("edgeId")
+            or trajectory[segment_index].get("edgeId")
+            or ""
+        )
+        insert_index = segment_index
+        while insert_index > 0:
+            previous_edge = str(trajectory[insert_index].get("edgeId", "") or "")
+            if previous_edge != edge_id:
+                break
+            insert_index -= 1
+        return float(trajectory[max(0, insert_index)].get("t", 0.0) or 0.0)
+
+    def _wait_duration_for_peer_conflict(
+        self,
+        trajectory: list[dict[str, Any]],
+        priority_trajectory: list[dict[str, Any]],
+        conflict_time: float,
+    ) -> float:
+        conflict_pose = self._pose_at_trajectory(trajectory, conflict_time)
+        if conflict_pose is None:
+            return self._reservation_safety_time()
+
+        step = self._continuous_collision_step()
+        safety = self._reservation_safety_time()
+        max_wait = max(2.0, self._reservation_horizon())
+        wait = 0.0
+        while wait <= max_wait + 0.000001:
+            priority_pose = self._pose_at_trajectory(priority_trajectory, conflict_time + wait)
+            if priority_pose is None or not self.collision.footprints_overlap(conflict_pose, priority_pose):
+                return max(safety, wait + safety)
+            wait += step
+        return max_wait + safety
+
+    def _first_continuous_corridor_conflict(
+        self,
+        robot_name: str,
+        trajectory: list[dict[str, Any]],
+        ignore_robot_names: set[str] | None = None,
+    ) -> dict[str, Any] | None:
+        final_time = float(trajectory[-1].get("t", 0.0) or 0.0)
+        step = self._continuous_collision_step()
+        horizon = min(final_time, self._reservation_horizon())
+        ignored = ignore_robot_names or set()
+        t = 0.0
+        while t <= horizon + 0.000001:
+            pose = self._pose_at_trajectory(trajectory, t)
+            if pose is None:
+                t += step
+                continue
+            for other in self.robots.values():
+                if other.name in ignored:
+                    continue
+                if other.name == robot_name or other.pose is None:
+                    continue
+                other_pose = self._predicted_robot_pose(other, t)
+                if other_pose is None:
+                    continue
+                if self.collision.footprints_overlap(pose, other_pose):
+                    edge = self._edge_id_at_trajectory(trajectory, t)
+                    return {
+                        "time": t,
+                        "other": other.name,
+                        "edge": edge or "unknown",
+                    }
+            t += step
+        return None
+
+    def _wait_duration_for_conflict(
+        self,
+        trajectory: list[dict[str, Any]],
+        conflict_time: float,
+        other_name: str,
+    ) -> float:
+        conflict_pose = self._pose_at_trajectory(trajectory, conflict_time)
+        other = self.robots.get(other_name)
+        if conflict_pose is None or other is None:
+            return self._reservation_safety_time()
+
+        step = self._continuous_collision_step()
+        safety = self._reservation_safety_time()
+        max_wait = max(2.0, self._reservation_horizon())
+        wait = 0.0
+        while wait <= max_wait + 0.000001:
+            other_pose = self._predicted_robot_pose(other, conflict_time + wait)
+            if other_pose is None or not self.collision.footprints_overlap(conflict_pose, other_pose):
+                return max(safety, wait + safety)
+            wait += step
+        return max_wait + safety
+
+    def _wait_insert_point(
+        self,
+        trajectory: list[dict[str, Any]],
+        conflict_time: float,
+        clamp_to_edge_start: bool = True,
+    ) -> dict[str, float | int]:
+        if conflict_time <= 0.0 or len(trajectory) <= 1:
+            return {"index": 0, "time": 0.0}
+        segment_index = 0
+        for index in range(len(trajectory) - 1):
+            start_t = float(trajectory[index].get("t", 0.0) or 0.0)
+            end_t = float(trajectory[index + 1].get("t", 0.0) or 0.0)
+            if start_t <= conflict_time <= end_t:
+                segment_index = index
+                break
+        if not clamp_to_edge_start:
+            return {
+                "index": max(0, segment_index),
+                "time": float(trajectory[max(0, segment_index)].get("t", 0.0) or 0.0),
+            }
+        edge_id = str(
+            trajectory[min(segment_index + 1, len(trajectory) - 1)].get("edgeId")
+            or trajectory[segment_index].get("edgeId")
+            or ""
+        )
+        insert_index = segment_index
+        while insert_index > 0:
+            previous_edge = str(trajectory[insert_index].get("edgeId", "") or "")
+            if previous_edge != edge_id:
+                break
+            insert_index -= 1
+        return {
+            "index": max(0, insert_index),
+            "time": float(trajectory[max(0, insert_index)].get("t", 0.0) or 0.0),
+        }
+
+    def _insert_trajectory_wait(
+        self,
+        trajectory: list[dict[str, Any]],
+        insert_index: int,
+        wait_duration: float,
+    ) -> list[dict[str, Any]]:
+        if wait_duration <= 0.0 or not trajectory:
+            return trajectory
+        insert_index = max(0, min(insert_index, len(trajectory) - 1))
+        wait_duration = max(0.0, wait_duration)
+        anchor = dict(trajectory[insert_index])
+        anchor_time = float(anchor.get("t", 0.0) or 0.0)
+        hold = {
+            **anchor,
+            "t": anchor_time + wait_duration,
+            "edgeId": f"WAIT@{anchor.get('edgeId', 'route')}",
+        }
+        shifted = [
+            {
+                **sample,
+                "t": float(sample.get("t", 0.0) or 0.0) + wait_duration,
+            }
+            for sample in trajectory[insert_index + 1:]
+        ]
+        return trajectory[: insert_index + 1] + [hold] + shifted
 
     def _dynamic_blocked_edges(self) -> set[tuple[str, str]]:
         if not self.obstacles and not self.obstacle_areas:
@@ -607,6 +1033,159 @@ class WebFleetManager:
                 offset += time_step
         return sorted(vertices), sorted(edges)
 
+    def _reserved_edge_intervals(
+        self,
+        requests: list[dict[str, Any]],
+    ) -> list[tuple[str, str, float, float, str]]:
+        request_names = {str(request.get("name", "")) for request in requests}
+        horizon = self._reservation_horizon()
+        safety = self._reservation_safety_time()
+        intervals: list[tuple[str, str, float, float, str]] = []
+        for robot in self.robots.values():
+            if robot.name in request_names:
+                continue
+            if robot.status not in {"MOVING", "WAITING"} or len(robot.trajectory) < 2:
+                continue
+            active_edge: tuple[str, str] | None = None
+            active_start = 0.0
+            active_end = 0.0
+
+            def flush_edge() -> None:
+                nonlocal active_edge, active_start, active_end
+                if active_edge is None:
+                    return
+                start_time = active_start - safety
+                end_time = active_end + safety
+                if end_time >= 0.0 and start_time <= horizon:
+                    src, dst = active_edge
+                    intervals.append(
+                        (
+                            src,
+                            dst,
+                            max(0.0, start_time),
+                            min(horizon, end_time),
+                            robot.name,
+                        )
+                    )
+                active_edge = None
+
+            for index in range(len(robot.trajectory) - 1):
+                start = robot.trajectory[index]
+                end = robot.trajectory[index + 1]
+                edge_id = str(end.get("edgeId") or start.get("edgeId") or "")
+                edge = self._parse_edge_id(edge_id)
+                if edge is None:
+                    flush_edge()
+                    continue
+                start_time = float(start.get("t", 0.0) or 0.0) - robot.route_clock
+                end_time = float(end.get("t", 0.0) or 0.0) - robot.route_clock
+                if edge != active_edge:
+                    flush_edge()
+                    active_edge = edge
+                    active_start = start_time
+                    active_end = end_time
+                else:
+                    active_end = end_time
+            flush_edge()
+        return intervals
+
+    def _reserved_vertex_intervals(
+        self,
+        requests: list[dict[str, Any]],
+    ) -> list[tuple[str, float, float, str]]:
+        request_names = {str(request.get("name", "")) for request in requests}
+        horizon = self._reservation_horizon()
+        safety = self._reservation_safety_time()
+        intervals: list[tuple[str, float, float, str]] = []
+
+        def add_interval(node: str, start: float, end: float, owner: str) -> None:
+            if node not in self.landmarks:
+                return
+            start_time = max(0.0, min(start, end))
+            end_time = min(horizon, max(start, end))
+            if end_time < 0.0 or start_time > horizon:
+                return
+            intervals.append((node, start_time, end_time, owner))
+
+        for robot in self.robots.values():
+            if robot.name in request_names:
+                continue
+
+            current_lm = self._nearest_lm_for_robot(robot)
+            if current_lm:
+                add_interval(current_lm, 0.0, safety * 2.0, robot.name)
+
+            if robot.status not in {"MOVING", "WAITING"} or len(robot.trajectory) < 2:
+                if current_lm:
+                    add_interval(current_lm, 0.0, horizon, robot.name)
+                continue
+
+            active_edge: tuple[str, str] | None = None
+            active_start = 0.0
+            active_end = 0.0
+
+            def flush_edge_vertices() -> None:
+                nonlocal active_edge
+                if active_edge is None:
+                    return
+                src, dst = active_edge
+                add_interval(src, active_start - safety, active_start + safety, robot.name)
+                add_interval(dst, active_end - safety, active_end + safety, robot.name)
+                active_edge = None
+
+            for index in range(len(robot.trajectory) - 1):
+                start = robot.trajectory[index]
+                end = robot.trajectory[index + 1]
+                start_time = float(start.get("t", 0.0) or 0.0) - robot.route_clock
+                end_time = float(end.get("t", 0.0) or 0.0) - robot.route_clock
+                if end_time < -safety or start_time > horizon + safety:
+                    continue
+
+                edge_id = str(end.get("edgeId") or start.get("edgeId") or "")
+                edge = self._parse_edge_id(edge_id)
+                if edge is not None:
+                    if edge != active_edge:
+                        flush_edge_vertices()
+                        active_edge = edge
+                        active_start = start_time
+                        active_end = end_time
+                    else:
+                        active_end = end_time
+                    continue
+
+                flush_edge_vertices()
+                wait_lm = self._lm_from_wait_segment(start, end)
+                if wait_lm:
+                    add_interval(wait_lm, start_time - safety, end_time + safety, robot.name)
+            flush_edge_vertices()
+
+            final_time = float(robot.trajectory[-1].get("t", 0.0) or 0.0) - robot.route_clock
+            final_lm = robot.target_lm if robot.target_lm in self.landmarks else self._nearest_lm_for_robot(robot)
+            if final_lm and final_time <= horizon:
+                add_interval(final_lm, final_time - safety, horizon, robot.name)
+        return intervals
+
+    def _lm_from_wait_segment(
+        self,
+        start: dict[str, Any],
+        end: dict[str, Any],
+    ) -> str:
+        for sample in (end, start):
+            lm = str(sample.get("lm") or "").strip()
+            if lm in self.landmarks:
+                return lm
+        edge_id = str(end.get("edgeId") or start.get("edgeId") or "")
+        if edge_id.startswith("WAIT@"):
+            edge_id = edge_id[5:]
+        if "->" in edge_id:
+            src, dst = edge_id.split("->", 1)
+            src = src.strip()
+            dst = dst.strip()
+            if src == dst and src in self.landmarks:
+                return src
+        pose = self._pose_from_sample(end)
+        return self._nearest_lm_for_pose(pose)
+
     def _reservation_time_step(self) -> float:
         fleet = self.params.get("fleet", {})
         if not isinstance(fleet, dict):
@@ -624,6 +1203,45 @@ class WebFleetManager:
             return max(1.0, float(fleet.get("reservation_horizon_sec", 8.0) or 8.0))
         except (TypeError, ValueError):
             return 8.0
+
+    def _reservation_safety_time(self) -> float:
+        fleet = self.params.get("fleet", {})
+        if not isinstance(fleet, dict):
+            return 0.35
+        try:
+            return max(0.05, float(fleet.get("reservation_safety_time_sec", 0.35) or 0.35))
+        except (TypeError, ValueError):
+            return 0.35
+
+    def _continuous_collision_step(self) -> float:
+        fleet = self.params.get("fleet", {})
+        if not isinstance(fleet, dict):
+            return 0.10
+        try:
+            return max(0.04, min(0.25, float(fleet.get("continuous_collision_step_sec", 0.10) or 0.10)))
+        except (TypeError, ValueError):
+            return 0.10
+
+    def _batch_collision_horizon(self, final_time: float) -> float:
+        fleet = self.params.get("fleet", {})
+        if not isinstance(fleet, dict):
+            return max(1.0, final_time)
+        raw_value = fleet.get("batch_collision_horizon_sec")
+        if raw_value is None:
+            return max(1.0, final_time)
+        try:
+            return max(1.0, float(raw_value))
+        except (TypeError, ValueError):
+            return max(1.0, final_time)
+
+    def _batch_wait_max_iterations(self) -> int:
+        fleet = self.params.get("fleet", {})
+        if not isinstance(fleet, dict):
+            return 60
+        try:
+            return max(1, int(fleet.get("batch_wait_max_iterations", 60) or 60))
+        except (TypeError, ValueError):
+            return 60
 
     def _nearest_lm_for_pose(self, pose: dict[str, float]) -> str:
         nearest = min(

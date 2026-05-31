@@ -78,7 +78,10 @@ class LmRoutePlanner:
         catalog: dict[str, dict[str, object]] = {}
         for start in names:
             for goal in names:
-                route = self.find_route(start, goal)
+                try:
+                    route = self.find_route(start, goal)
+                except ValueError:
+                    continue
                 catalog[self.route_key(start, goal)] = route.to_dict()
         return catalog
 
@@ -127,8 +130,9 @@ class LmRoutePlanner:
                 {
                     "x": point.x,
                     "y": point.y,
-                    "yaw": math.atan2(tangent.y, tangent.x),
+                    "yaw": self._motion_yaw(edge, math.atan2(tangent.y, tangent.x)),
                     "edgeId": edge_id,
+                    "motionDirection": edge.motion_direction_label(edge.motion_direction_code()),
                 }
             )
         return samples
@@ -148,12 +152,16 @@ class LmRoutePlanner:
 
         steps = max(1, math.ceil(length / sample_distance))
         yaw = math.atan2(dy, dx)
+        edge = self._edge_by_key.get(tuple(edge_id.split("->", 1))) if "->" in edge_id else None
+        if edge is not None:
+            yaw = self._motion_yaw(edge, yaw)
         return [
             {
                 "x": start.x + dx * (step / steps),
                 "y": start.y + dy * (step / steps),
                 "yaw": yaw,
                 "edgeId": edge_id,
+                "motionDirection": edge.motion_direction_label(edge.motion_direction_code()) if edge is not None else "not_specified",
             }
             for step in range(steps + 1)
         ]
@@ -195,6 +203,14 @@ class LmRoutePlanner:
         for edge in self.edges:
             adjacency.setdefault(edge.from_name, []).append(edge)
         return adjacency
+
+    def _motion_yaw(self, edge: GraphEdge, tangent_yaw: float) -> float:
+        if edge.motion_direction_code() == 1:
+            return self._normalize_angle(tangent_yaw + math.pi)
+        return tangent_yaw
+
+    def _normalize_angle(self, angle: float) -> float:
+        return (angle + math.pi) % (2.0 * math.pi) - math.pi
 
     def _world_distance(self, first: Landmark, second: Landmark) -> float:
         return math.hypot(second.x - first.x, second.y - first.y)

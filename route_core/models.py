@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Sequence
+from typing import Mapping, Sequence
 
 
 @dataclass(frozen=True)
@@ -19,12 +19,20 @@ class Landmark:
     name: str
     x: float
     y: float
+    properties: Mapping[str, object] = field(default_factory=dict)
+    ignore_dir: object | None = None
 
     def to_point(self) -> WorldPoint:
         return WorldPoint(x=self.x, y=self.y)
 
-    def to_dict(self) -> dict[str, float | str]:
-        return {"name": self.name, "x": self.x, "y": self.y}
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "name": self.name,
+            "x": self.x,
+            "y": self.y,
+            "properties": dict(self.properties),
+            "ignoreDir": self.ignore_dir,
+        }
 
 
 @dataclass(frozen=True)
@@ -50,8 +58,10 @@ class GraphEdge:
     edge_type: str
     world_points: Sequence[WorldPoint]
     geometry: EdgeGeometry | None = None
+    properties: Mapping[str, object] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, object]:
+        motion_code = self.motion_direction_code()
         payload: dict[str, object] = {
             "from": self.from_name,
             "to": self.to_name,
@@ -59,10 +69,27 @@ class GraphEdge:
             "kind": self.kind,
             "type": self.edge_type,
             "world_points": [point.to_dict() for point in self.world_points],
+            "properties": dict(self.properties),
+            "motionDirectionCode": motion_code,
+            "motionDirection": self.motion_direction_label(motion_code),
         }
         if self.geometry is not None:
             payload.update(self.geometry.to_dict())
         return payload
+
+    def motion_direction_code(self) -> int:
+        try:
+            return int(self.properties.get("direction", 2))
+        except (TypeError, ValueError):
+            return 2
+
+    @staticmethod
+    def motion_direction_label(code: int) -> str:
+        if code == 0:
+            return "forward"
+        if code == 1:
+            return "backward"
+        return "not_specified"
 
 
 @dataclass(frozen=True)

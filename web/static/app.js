@@ -263,16 +263,19 @@
       const edgeId = `${edge.from}->${edge.to}`;
       if (edge.geometry === "bezier" && edge.control_points && edge.control_points.length === 4) {
         return this.annotateDistances(
-          this.sampleBezier(edge.control_points, edgeId, this.sampleDistance),
+          this.applyEdgeMotionDirection(edge, this.sampleBezier(edge.control_points, edgeId, this.sampleDistance)),
           0
         );
       }
       return this.annotateDistances(
-        this.sampleLine(
-          this.graphModel.nodeByName.get(edge.from),
-          this.graphModel.nodeByName.get(edge.to),
-          edgeId,
-          this.sampleDistance
+        this.applyEdgeMotionDirection(
+          edge,
+          this.sampleLine(
+            this.graphModel.nodeByName.get(edge.from),
+            this.graphModel.nodeByName.get(edge.to),
+            edgeId,
+            this.sampleDistance
+          )
         ),
         0
       );
@@ -293,7 +296,11 @@
         const projected = {
           x: start.x + (dx * t),
           y: start.y + (dy * t),
-          yaw: Math.atan2(dy, dx),
+          yaw: this.geometry.interpolateAngle(
+            Number.isFinite(start.yaw) ? start.yaw : Math.atan2(dy, dx),
+            Number.isFinite(end.yaw) ? end.yaw : Math.atan2(dy, dx),
+            t
+          ),
           edgeId: start.edgeId,
           s: start.s + (Math.sqrt(lengthSq) * t),
         };
@@ -345,13 +352,16 @@
         let samples;
 
         if (edge && edge.geometry === "bezier" && edge.control_points && edge.control_points.length === 4) {
-          samples = this.sampleBezier(edge.control_points, edgeId, this.sampleDistance);
+          samples = this.applyEdgeMotionDirection(edge, this.sampleBezier(edge.control_points, edgeId, this.sampleDistance));
         } else {
-          samples = this.sampleLine(
-            this.graphModel.nodeByName.get(fromName),
-            this.graphModel.nodeByName.get(toName),
-            edgeId,
-            this.sampleDistance
+          samples = this.applyEdgeMotionDirection(
+            edge,
+            this.sampleLine(
+              this.graphModel.nodeByName.get(fromName),
+              this.graphModel.nodeByName.get(toName),
+              edgeId,
+              this.sampleDistance
+            )
           );
         }
 
@@ -406,6 +416,22 @@
       return samples;
     }
 
+    applyEdgeMotionDirection(edge, samples) {
+      if (!edge || !Array.isArray(samples)) {
+        return samples;
+      }
+      const code = Number(edge.motionDirectionCode ?? edge.motion_direction_code ?? (edge.properties && edge.properties.direction));
+      const label = code === 0 ? "forward" : (code === 1 ? "backward" : "not_specified");
+      if (code !== 1) {
+        return samples.map((sample) => ({ ...sample, motionDirection: label }));
+      }
+      return samples.map((sample) => ({
+        ...sample,
+        yaw: this.geometry.normalizeAngle(sample.yaw + Math.PI),
+        motionDirection: label,
+      }));
+    }
+
     annotateDistances(path, speed) {
       let distance = 0;
       for (let i = 0; i < path.length; i += 1) {
@@ -451,11 +477,12 @@
   }
 
   class Renderer {
-    constructor(dom, graphModel, geometry, onLmClick) {
+    constructor(dom, graphModel, geometry, onLmClick, onEdgeClick) {
       this.dom = dom;
       this.graphModel = graphModel;
       this.geometry = geometry;
       this.onLmClick = onLmClick;
+      this.onEdgeClick = onEdgeClick;
       this.robotModel = {
         footprint: [
           { x: 0.35, y: 0.275 },
@@ -504,53 +531,157 @@
       return element;
     }
 
-    drawGraph() {
+    drawGraph(selectedEdgeKey = "") {
       this.dom.graphLayer.innerHTML = "";
       const seen = new Set();
+      const defs = this.createSvgElement("defs", {});
+      const marker = this.createSvgElement("marker", {
+        id: "graphArrow",
+        markerWidth: 4,
+        markerHeight: 4,
+        refX: 3.7,
+        refY: 2,
+        orient: "auto",
+        markerUnits: "strokeWidth",
+      });
+      marker.appendChild(this.createSvgElement("path", {
+        d: "M 0 0 L 4 2 L 0 4 z",
+        fill: "#56616f",
+      }));
+      defs.appendChild(marker);
+      this.dom.graphLayer.appendChild(defs);
 
       for (const edge of this.graphModel.edges) {
         const key = [edge.from, edge.to].sort().join("|");
-        if (seen.has(key)) {
+        const edgeKey = `${edge.from}|${edge.to}`;
+        const reverseKey = `${edge.to}|${edge.from}`;
+        const reverse = this.graphModel.getEdge(edge.to, edge.from);
+        if (reverse && seen.has(key)) {
           continue;
         }
-        seen.add(key);
+        if (reverse) {
+          seen.add(key);
+        }
+        const selected = selectedEdgeKey === edgeKey || selectedEdgeKey === reverseKey;
+        const strokeAttrs = {
+          class: `graph-edge-visual${selected ? " selected" : ""}`,
+          stroke: selected ? "var(--goal)" : "var(--edge)",
+          "stroke-width": selected ? 3.2 : 2,
+          "stroke-linecap": "round",
+          opacity: selected ? 1 : 0.96,
+        };
 
         if (edge.geometry === "bezier" && edge.control_points && edge.control_points.length === 4) {
           const cp = edge.control_points.map((point) => this.geometry.worldToPixel(point));
+          const d = `M ${cp[0].x} ${cp[0].y} C ${cp[1].x} ${cp[1].y}, ${cp[2].x} ${cp[2].y}, ${cp[3].x} ${cp[3].y}`;
           this.dom.graphLayer.appendChild(
             this.createSvgElement("path", {
-              d: `M ${cp[0].x} ${cp[0].y} C ${cp[1].x} ${cp[1].y}, ${cp[2].x} ${cp[2].y}, ${cp[3].x} ${cp[3].y}`,
+              d,
               fill: "none",
-              stroke: "var(--edge)",
-              "stroke-width": 2,
-              "stroke-linecap": "round",
+              ...strokeAttrs,
             })
           );
+          if (!reverse) {
+            this.dom.graphLayer.appendChild(this.drawGraphDirectionArrow(edge));
+          }
+          this.dom.graphLayer.appendChild(this.drawGraphEdgeHit("path", { d }, edge, reverse));
           continue;
         }
 
         const start = this.geometry.worldToPixel(this.graphModel.nodeByName.get(edge.from));
         const goal = this.geometry.worldToPixel(this.graphModel.nodeByName.get(edge.to));
+        const lineAttrs = {
+          x1: start.x,
+          y1: start.y,
+          x2: goal.x,
+          y2: goal.y,
+        };
         this.dom.graphLayer.appendChild(
           this.createSvgElement("line", {
-            x1: start.x,
-            y1: start.y,
-            x2: goal.x,
-            y2: goal.y,
-            stroke: "var(--edge)",
-            "stroke-width": 2,
-            "stroke-linecap": "round",
+            ...lineAttrs,
+            ...strokeAttrs,
           })
         );
+        if (!reverse) {
+          this.dom.graphLayer.appendChild(this.drawGraphDirectionArrow(edge));
+        }
+        this.dom.graphLayer.appendChild(this.drawGraphEdgeHit("line", lineAttrs, edge, reverse));
       }
     }
 
-    drawLandmarks(nearestName, targetName, navigateMode) {
+    drawGraphDirectionArrow(edge) {
+      const segment = this.graphDirectionSegment(edge);
+      return this.createSvgElement("line", {
+        class: "graph-edge-arrow",
+        x1: segment.start.x,
+        y1: segment.start.y,
+        x2: segment.end.x,
+        y2: segment.end.y,
+        stroke: "#56616f",
+        "stroke-width": 1.35,
+        "stroke-linecap": "round",
+        "marker-end": "url(#graphArrow)",
+      });
+    }
+
+    drawGraphEdgeHit(tag, attrs, edge, reverse) {
+      const hit = this.createSvgElement(tag, {
+        ...attrs,
+        class: "graph-edge-hit",
+        "data-edge": `${edge.from}|${edge.to}`,
+      });
+      hit.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        if (this.onEdgeClick) {
+          this.onEdgeClick(edge, reverse || null);
+        }
+      });
+      return hit;
+    }
+
+    graphDirectionSegment(edge) {
+      let mid;
+      let tangent;
+      if (edge.geometry === "bezier" && edge.control_points && edge.control_points.length === 4) {
+        mid = this.geometry.cubicBezier(edge.control_points, 0.5);
+        tangent = this.geometry.cubicBezierDerivative(edge.control_points, 0.5);
+      } else {
+        const start = this.graphModel.nodeByName.get(edge.from);
+        const goal = this.graphModel.nodeByName.get(edge.to);
+        mid = {
+          x: start.x + ((goal.x - start.x) * 0.5),
+          y: start.y + ((goal.y - start.y) * 0.5),
+        };
+        tangent = {
+          x: goal.x - start.x,
+          y: goal.y - start.y,
+        };
+      }
+      const length = Math.max(0.0001, Math.hypot(tangent.x, tangent.y));
+      const ux = tangent.x / length;
+      const uy = tangent.y / length;
+      const half = 0.055;
+      return {
+        start: this.geometry.worldToPixel({
+          x: mid.x - (ux * half),
+          y: mid.y - (uy * half),
+        }),
+        end: this.geometry.worldToPixel({
+          x: mid.x + (ux * half),
+          y: mid.y + (uy * half),
+        }),
+      };
+    }
+
+    drawLandmarks(nearestName, targetName, navigateMode, selectedName = "") {
       this.dom.pointLayer.innerHTML = "";
       for (const lm of this.graphModel.landmarks) {
         const pos = this.geometry.worldToPixel(lm);
         let fill = "#9b2c2c";
         let radius = 4;
+        let stroke = "none";
+        let strokeWidth = 0;
 
         if (lm.name === nearestName) {
           fill = "var(--nearest)";
@@ -560,8 +691,15 @@
           fill = "var(--goal)";
           radius = 7;
         }
+        if (!navigateMode && lm.name === selectedName) {
+          radius = Math.max(radius, 7);
+          stroke = "#111827";
+          strokeWidth = 2;
+        }
         if (navigateMode) {
           radius = Math.max(radius, 7);
+          stroke = "#111827";
+          strokeWidth = 1.2;
         }
 
         const group = this.createSvgElement("g", {
@@ -586,8 +724,8 @@
             cy: pos.y,
             r: radius,
             fill,
-            stroke: navigateMode ? "#111827" : "none",
-            "stroke-width": navigateMode ? 1.2 : 0,
+            stroke,
+            "stroke-width": strokeWidth,
           })
         );
         const label = this.createSvgElement("text", {
@@ -864,27 +1002,6 @@
         label.textContent = robot.name;
         this.dom.robotLayer.appendChild(label);
 
-        const badgeText = this.robotBadgeText(robot);
-        if (badgeText) {
-          const badgeWidth = Math.min(150, Math.max(64, badgeText.length * 6.3 + 14));
-          this.dom.robotLayer.appendChild(
-            this.createSvgElement("rect", {
-              x: center.x - (badgeWidth / 2),
-              y: center.y + 23,
-              width: badgeWidth,
-              height: 18,
-              rx: 5,
-              class: `robot-status-bg ${this.robotBadgeTone(robot)}`,
-            })
-          );
-          const statusLabel = this.createSvgElement("text", {
-            x: center.x,
-            y: center.y + 36,
-            class: "robot-status-label",
-          });
-          statusLabel.textContent = badgeText;
-          this.dom.robotLayer.appendChild(statusLabel);
-        }
       }
     }
 
@@ -901,24 +1018,7 @@
       if (status === "PLANNING") {
         return "PLANNING";
       }
-      if (routeNote && routeNote !== "planner accepted" && routeNote !== "moving") {
-        return this.shortReason(routeNote);
-      }
       return "";
-    }
-
-    robotBadgeTone(robot) {
-      const text = this.robotBadgeText(robot);
-      if (text.startsWith("BLOCKED")) {
-        return "error";
-      }
-      if (text.startsWith("WAITING") || text.startsWith("FALLBACK")) {
-        return "warn";
-      }
-      if (text.startsWith("REPLAN") || text.startsWith("DETOUR")) {
-        return "info";
-      }
-      return "neutral";
     }
 
     shortReason(value) {
@@ -1997,13 +2097,14 @@
   }
 
   class ViewportController {
-    constructor(dom, geometry, state, onObstacleAdd, onObstacleAreaAdd, onObstacleAreaPreview) {
+    constructor(dom, geometry, state, onObstacleAdd, onObstacleAreaAdd, onObstacleAreaPreview, onEmptyMapClick) {
       this.dom = dom;
       this.geometry = geometry;
       this.state = state;
       this.onObstacleAdd = onObstacleAdd;
       this.onObstacleAreaAdd = onObstacleAreaAdd;
       this.onObstacleAreaPreview = onObstacleAreaPreview;
+      this.onEmptyMapClick = onEmptyMapClick;
       this.view = { zoom: 1, panX: 0, panY: 0, rotation: 0 };
       this.center = {
         x: demoData.map.viewWidth / 2,
@@ -2066,7 +2167,8 @@
           return;
         }
         const lmTarget = event.target.closest && event.target.closest("[data-lm]");
-        if (this.state.obstacleMode || lmTarget) {
+        const edgeTarget = event.target.closest && event.target.closest("[data-edge]");
+        if (this.state.obstacleMode || lmTarget || edgeTarget) {
           return;
         }
         active = true;
@@ -2128,6 +2230,12 @@
           return;
         }
 
+        if (active && event) {
+          const moved = Math.hypot(event.clientX - downX, event.clientY - downY);
+          if (moved < 6 && this.onEmptyMapClick) {
+            this.onEmptyMapClick();
+          }
+        }
         active = false;
         if (event && this.dom.mapSvg.hasPointerCapture(event.pointerId)) {
           this.dom.mapSvg.releasePointerCapture(event.pointerId);
@@ -2165,6 +2273,7 @@
       this.navigatePointerDown = null;
       this.suppressNextNavigateClick = false;
       this.pendingTargetRobotName = "";
+      this.pendingTargetAction = "";
       this.fleetRobots = [];
       this.activeRobotName = "";
       this.fleetElapsed = 0;
@@ -2173,6 +2282,11 @@
       this.fleetStatePollTimer = null;
       this.fleetWorldSyncTimer = null;
       this.fleetListSignature = "";
+      this.fleetQueueSequence = 0;
+      this.selectedEdge = null;
+      this.selectedEdgeKey = "";
+      this.selectedLandmark = null;
+      this.selectedLandmarkName = "";
       this.manualKeys = new Set();
       this.manualAnimationFrame = null;
       this.manualLastTs = null;
@@ -2180,7 +2294,8 @@
         this.dom,
         this.graphModel,
         this.geometry,
-        (lmName) => this.handleLandmarkClick(lmName)
+        (lmName) => this.handleLandmarkClick(lmName),
+        (edge, reverse) => this.handleGraphEdgeClick(edge, reverse)
       );
       this.robotModelEditor = new RobotModelEditor(
         this.dom,
@@ -2200,7 +2315,8 @@
         this.state,
         (obstacle) => this.addObstacle(obstacle),
         (area) => this.addObstacleArea(area),
-        (area) => this.previewObstacleArea(area)
+        (area) => this.previewObstacleArea(area),
+        () => this.clearMapSelection()
       );
     }
 
@@ -2267,6 +2383,28 @@
         fleetSpawnLmSelect: document.getElementById("fleetSpawnLmSelect"),
         addFleetRobotButton: document.getElementById("addFleetRobotButton"),
         fleetRobotList: document.getElementById("fleetRobotList"),
+        queueGoalButton: document.getElementById("queueGoalButton"),
+        startFleetPlanButton: document.getElementById("startFleetPlanButton"),
+        clearFleetQueueButton: document.getElementById("clearFleetQueueButton"),
+        fleetQueueList: document.getElementById("fleetQueueList"),
+        edgeInspectorEmpty: document.getElementById("edgeInspectorEmpty"),
+        edgeInspectorContent: document.getElementById("edgeInspectorContent"),
+        lmInspectorContent: document.getElementById("lmInspectorContent"),
+        lmTitleText: document.getElementById("lmTitleText"),
+        lmXText: document.getElementById("lmXText"),
+        lmYText: document.getElementById("lmYText"),
+        lmOutgoingText: document.getElementById("lmOutgoingText"),
+        lmIncomingText: document.getElementById("lmIncomingText"),
+        lmSpinText: document.getElementById("lmSpinText"),
+        lmIgnoreDirText: document.getElementById("lmIgnoreDirText"),
+        lmConnectionsText: document.getElementById("lmConnectionsText"),
+        edgeTitleText: document.getElementById("edgeTitleText"),
+        edgeTrafficText: document.getElementById("edgeTrafficText"),
+        edgeMotionText: document.getElementById("edgeMotionText"),
+        edgeLengthText: document.getElementById("edgeLengthText"),
+        edgeKindText: document.getElementById("edgeKindText"),
+        edgeMoveStyleText: document.getElementById("edgeMoveStyleText"),
+        edgeReverseText: document.getElementById("edgeReverseText"),
         activeRobotText: document.getElementById("activeRobotText"),
         activeRobotTaskText: document.getElementById("activeRobotTaskText"),
         fleetPlanDebug: document.getElementById("fleetPlanDebug"),
@@ -2314,6 +2452,9 @@
       this.dom.resetRobotButton.addEventListener("click", () => this.resetRobot());
       this.dom.clearObstaclesButton.addEventListener("click", () => this.clearObstacles());
       this.dom.addFleetRobotButton.addEventListener("click", () => this.addFleetRobotFromUi());
+      this.dom.queueGoalButton.addEventListener("click", () => this.toggleQueueGoalMode());
+      this.dom.startFleetPlanButton.addEventListener("click", () => this.startQueuedFleetPlan());
+      this.dom.clearFleetQueueButton.addEventListener("click", () => this.clearFleetQueue());
       this.dom.saveRobotParamsButton.addEventListener("click", () => this.confirmAndSaveParams());
       this.dom.saveParamsBottomButton.addEventListener("click", () => this.confirmAndSaveParams());
       this.dom.zoomInButton.addEventListener("click", () => this.viewport.zoom(1.2));
@@ -2419,6 +2560,8 @@
         spawnLm,
         currentLm: spawnLm,
         targetName: "",
+        queuedTargetName: "",
+        queuedAt: 0,
         status: "IDLE",
         color: this.robotColor(this.fleetRobots.length),
         pose: resolvedPose,
@@ -2472,6 +2615,137 @@
       return this.fleetRobots.find((robot) => robot.name === this.activeRobotName) || null;
     }
 
+    clearMapSelection() {
+      if (!this.selectedEdge && !this.selectedLandmark) {
+        return;
+      }
+      this.selectedEdge = null;
+      this.selectedEdgeKey = "";
+      this.selectedLandmark = null;
+      this.selectedLandmarkName = "";
+      this.renderer.drawGraph("");
+      this.renderLandmarks();
+      this.renderMapInspectorEmpty();
+      this.setStatus("Map selection cleared.");
+    }
+
+    renderMapInspectorEmpty() {
+      this.dom.edgeInspectorEmpty.classList.remove("hidden");
+      this.dom.edgeInspectorContent.classList.add("hidden");
+      this.dom.lmInspectorContent.classList.add("hidden");
+    }
+
+    handleGraphEdgeClick(edge, reverse = null) {
+      if (this.state.navigateMode || this.state.obstacleMode || this.state.obstacleAreaMode) {
+        return;
+      }
+      if (!edge) {
+        return;
+      }
+      let selected = edge;
+      if (reverse && this.selectedEdgeKey === `${edge.from}|${edge.to}`) {
+        selected = reverse;
+      }
+      this.selectedEdge = selected;
+      this.selectedEdgeKey = `${selected.from}|${selected.to}`;
+      this.selectedLandmark = null;
+      this.selectedLandmarkName = "";
+      this.renderer.drawGraph(this.selectedEdgeKey);
+      this.renderLandmarks();
+      this.renderEdgeInspector();
+      this.setStatus(`Selected edge ${selected.from} -> ${selected.to}.`);
+      this.logFleet(`edge selected: ${selected.from}->${selected.to}`);
+    }
+
+    renderEdgeInspector() {
+      const edge = this.selectedEdge;
+      const hasEdge = Boolean(edge);
+      this.dom.edgeInspectorEmpty.classList.toggle("hidden", hasEdge);
+      this.dom.edgeInspectorContent.classList.toggle("hidden", !hasEdge);
+      this.dom.lmInspectorContent.classList.add("hidden");
+      if (!edge) {
+        return;
+      }
+      const reverse = this.graphModel.getEdge(edge.to, edge.from);
+      const properties = edge.properties || {};
+      const motion = edge.motionDirection || this.motionDirectionLabel(properties.direction);
+      const reverseMotion = reverse
+        ? (reverse.motionDirection || this.motionDirectionLabel((reverse.properties || {}).direction))
+        : "";
+
+      this.dom.edgeTitleText.textContent = `${edge.from} -> ${edge.to}`;
+      this.dom.edgeTrafficText.textContent = reverse ? "Bidirectional" : "One-way";
+      this.dom.edgeMotionText.textContent = `${motion} (${this.propertyValue(properties.direction, "2")})`;
+      this.dom.edgeLengthText.textContent = `${Number(edge.length || 0).toFixed(3)} m`;
+      this.dom.edgeKindText.textContent = `${edge.kind || "-"} / ${edge.type || "-"}`;
+      this.dom.edgeMoveStyleText.textContent = this.propertyValue(properties.movestyle, "-");
+      this.dom.edgeReverseText.textContent = reverse
+        ? `${reverse.from} -> ${reverse.to}, ${reverseMotion}`
+        : "none";
+    }
+
+    handleLandmarkInspect(lmName) {
+      const landmark = this.graphModel.nodeByName.get(lmName);
+      if (!landmark) {
+        return;
+      }
+      this.selectedLandmark = landmark;
+      this.selectedLandmarkName = landmark.name;
+      this.selectedEdge = null;
+      this.selectedEdgeKey = "";
+      this.renderer.drawGraph("");
+      this.renderLandmarks();
+      this.renderLandmarkInspector();
+      this.setStatus(`Selected LM ${landmark.name}.`);
+      this.logFleet(`LM selected: ${landmark.name}`);
+    }
+
+    renderLandmarkInspector() {
+      const lm = this.selectedLandmark;
+      const hasLm = Boolean(lm);
+      this.dom.edgeInspectorEmpty.classList.toggle("hidden", hasLm);
+      this.dom.lmInspectorContent.classList.toggle("hidden", !hasLm);
+      this.dom.edgeInspectorContent.classList.add("hidden");
+      if (!lm) {
+        return;
+      }
+      const outgoing = this.graphModel.edges.filter((edge) => edge.from === lm.name);
+      const incoming = this.graphModel.edges.filter((edge) => edge.to === lm.name);
+      const connections = Array.from(new Set([
+        ...outgoing.map((edge) => `out:${edge.to}`),
+        ...incoming.map((edge) => `in:${edge.from}`),
+      ]));
+      const properties = lm.properties || {};
+
+      this.dom.lmTitleText.textContent = lm.name;
+      this.dom.lmXText.textContent = Number(lm.x || 0).toFixed(3);
+      this.dom.lmYText.textContent = Number(lm.y || 0).toFixed(3);
+      this.dom.lmOutgoingText.textContent = outgoing.length
+        ? `${outgoing.length}: ${outgoing.map((edge) => edge.to).slice(0, 5).join(", ")}${outgoing.length > 5 ? "..." : ""}`
+        : "0";
+      this.dom.lmIncomingText.textContent = incoming.length
+        ? `${incoming.length}: ${incoming.map((edge) => edge.from).slice(0, 5).join(", ")}${incoming.length > 5 ? "..." : ""}`
+        : "0";
+      this.dom.lmSpinText.textContent = this.propertyValue(properties.spin, "-");
+      this.dom.lmIgnoreDirText.textContent = this.propertyValue(lm.ignoreDir, "-");
+      this.dom.lmConnectionsText.textContent = connections.length ? connections.join(", ") : "none";
+    }
+
+    motionDirectionLabel(value) {
+      const code = Number(value);
+      if (code === 0) {
+        return "forward";
+      }
+      if (code === 1) {
+        return "backward";
+      }
+      return "not_specified";
+    }
+
+    propertyValue(value, fallback = "-") {
+      return value === undefined || value === null || value === "" ? fallback : String(value);
+    }
+
     renderFleetList() {
       this.dom.fleetRobotList.innerHTML = "";
       for (const robot of this.fleetRobots) {
@@ -2495,7 +2769,8 @@
         const details = document.createElement("span");
         const reasonText = this.renderer.robotBadgeText(robot);
         const reason = reasonText ? ` - ${reasonText}` : "";
-        details.textContent = `${robot.currentLm || "route"} -> ${robot.targetName || "-"}${reason}`;
+        const orderText = robot.targetName || (robot.queuedTargetName ? `queued ${robot.queuedTargetName}` : "-");
+        details.textContent = `${robot.currentLm || "route"} -> ${orderText}${reason}`;
         info.appendChild(title);
         info.appendChild(details);
         button.appendChild(info);
@@ -2516,6 +2791,7 @@
         row.appendChild(removeButton);
         this.dom.fleetRobotList.appendChild(row);
       }
+      this.renderFleetQueue();
     }
 
     removeFleetRobot(name) {
@@ -2547,10 +2823,42 @@
     updateActiveRobotPanel() {
       const robot = this.activeRobot();
       this.dom.activeRobotText.textContent = robot ? robot.name : "-";
-      this.dom.activeRobotTaskText.textContent = robot && robot.targetName ? robot.targetName : "-";
+      this.dom.activeRobotTaskText.textContent = robot && robot.targetName
+        ? robot.targetName
+        : (robot && robot.queuedTargetName ? `queued ${robot.queuedTargetName}` : "-");
       this.dom.fleetPlanDebug.textContent = this.fleetPlan
         ? `MAPF: ${this.fleetPlan.debug.reason}, conflicts=${this.fleetPlan.debug.conflictsResolved}`
         : "MAPF: idle";
+    }
+
+    queuedFleetRobots() {
+      return this.fleetRobots
+        .filter((robot) => robot.queuedTargetName)
+        .slice()
+        .sort((a, b) => (a.queuedAt || 0) - (b.queuedAt || 0));
+    }
+
+    renderFleetQueue() {
+      if (!this.dom.fleetQueueList) {
+        return;
+      }
+      const queued = this.queuedFleetRobots();
+      this.dom.fleetQueueList.innerHTML = "";
+      if (!queued.length) {
+        this.dom.fleetQueueList.textContent = "No queued goals";
+        return;
+      }
+      for (const robot of queued) {
+        const row = document.createElement("div");
+        row.className = "fleet-queue-item";
+        const name = document.createElement("span");
+        name.textContent = robot.name;
+        const goal = document.createElement("strong");
+        goal.textContent = robot.queuedTargetName;
+        row.appendChild(name);
+        row.appendChild(goal);
+        this.dom.fleetQueueList.appendChild(row);
+      }
     }
 
     logFleet(message, level = "info") {
@@ -2828,7 +3136,7 @@
         }
       }
       const signature = this.fleetRobots
-        .map((robot) => `${robot.name}|${robot.currentLm}|${robot.targetName}|${robot.status}|${robot.reason || ""}|${robot.routeNote || ""}`)
+        .map((robot) => `${robot.name}|${robot.currentLm}|${robot.targetName}|${robot.queuedTargetName || ""}|${robot.status}|${robot.reason || ""}|${robot.routeNote || ""}`)
         .join(";");
       if (signature !== this.fleetListSignature) {
         listChanged = true;
@@ -2926,6 +3234,7 @@
       this.state.targetName = "";
       this.state.navigateMode = false;
       this.pendingTargetRobotName = "";
+      this.pendingTargetAction = "";
       this.state.obstacleMode = false;
       this.state.obstacleAreaMode = false;
       this.obstacleAreaPreview = null;
@@ -3282,6 +3591,10 @@
       return Boolean(this.pendingTargetRobotName);
     }
 
+    targetSelectionLabel() {
+      return this.pendingTargetAction === "queue" ? "Queue Goal" : "Navigate";
+    }
+
     targetSelectionRobot() {
       if (!this.pendingTargetRobotName) {
         return null;
@@ -3290,8 +3603,9 @@
     }
 
     toggleNavigateMode() {
-      if (this.targetSelectionActive()) {
+      if (this.targetSelectionActive() && this.pendingTargetAction === "navigate") {
         this.pendingTargetRobotName = "";
+        this.pendingTargetAction = "";
         this.state.navigateMode = false;
       } else {
         const robot = this.activeRobot();
@@ -3301,6 +3615,7 @@
           return;
         }
         this.pendingTargetRobotName = robot.name;
+        this.pendingTargetAction = "navigate";
         this.state.navigateMode = true;
       }
       if (this.targetSelectionActive()) {
@@ -3316,11 +3631,39 @@
       this.logFleet(targetRobot ? `navigate armed for ${targetRobot.name}` : "navigate canceled");
     }
 
+    toggleQueueGoalMode() {
+      if (this.targetSelectionActive() && this.pendingTargetAction === "queue") {
+        this.pendingTargetRobotName = "";
+        this.pendingTargetAction = "";
+        this.state.navigateMode = false;
+      } else {
+        const robot = this.activeRobot();
+        if (!robot) {
+          this.setStatus("Select a robot first.");
+          this.logFleet("queue ignored: no active robot", "warn");
+          return;
+        }
+        this.pendingTargetRobotName = robot.name;
+        this.pendingTargetAction = "queue";
+        this.state.navigateMode = true;
+        this.state.obstacleMode = false;
+        this.state.obstacleAreaMode = false;
+        this.obstacleAreaPreview = null;
+      }
+      this.syncModeButtons();
+      this.drawObstacleState();
+      this.renderLandmarks();
+      const targetRobot = this.targetSelectionRobot();
+      this.setStatus(targetRobot ? `Queue armed for ${targetRobot.name}: select an LM.` : "Queue canceled.");
+      this.logFleet(targetRobot ? `queue armed for ${targetRobot.name}` : "queue canceled");
+    }
+
     toggleObstacleMode() {
       this.state.obstacleMode = !this.state.obstacleMode;
       if (this.state.obstacleMode) {
         this.state.navigateMode = false;
         this.pendingTargetRobotName = "";
+        this.pendingTargetAction = "";
         this.state.obstacleAreaMode = false;
         this.obstacleAreaPreview = null;
       }
@@ -3335,6 +3678,7 @@
       if (this.state.obstacleAreaMode) {
         this.state.navigateMode = false;
         this.pendingTargetRobotName = "";
+        this.pendingTargetAction = "";
         this.state.obstacleMode = false;
       } else {
         this.obstacleAreaPreview = null;
@@ -3348,8 +3692,12 @@
     syncModeButtons() {
       const armed = this.targetSelectionActive();
       this.state.navigateMode = armed;
-      this.dom.navigateButton.classList.toggle("active", armed);
-      this.dom.navigateButton.textContent = armed ? `Select LM: ${this.pendingTargetRobotName}` : "Navigate To LM";
+      const navigateArmed = armed && this.pendingTargetAction === "navigate";
+      const queueArmed = armed && this.pendingTargetAction === "queue";
+      this.dom.navigateButton.classList.toggle("active", navigateArmed);
+      this.dom.navigateButton.textContent = navigateArmed ? `Select LM: ${this.pendingTargetRobotName}` : "Navigate To LM";
+      this.dom.queueGoalButton.classList.toggle("active", queueArmed);
+      this.dom.queueGoalButton.textContent = queueArmed ? `Queue LM: ${this.pendingTargetRobotName}` : "Queue Goal";
       this.dom.obstacleModeButton.classList.toggle("active", this.state.obstacleMode);
       this.dom.obstacleAreaModeButton.classList.toggle("active", this.state.obstacleAreaMode);
     }
@@ -3364,17 +3712,22 @@
       }
       const targetRobot = this.targetSelectionRobot();
       if (!targetRobot) {
-        this.setStatus("Press Navigate To LM first, then select an LM.");
-        this.logFleet(`ignored ${lmName}: navigate mode is off`, "warn");
+        this.handleLandmarkInspect(lmName);
         return;
       }
       const robotName = targetRobot.name;
+      const action = this.pendingTargetAction || "navigate";
       this.pendingTargetRobotName = "";
+      this.pendingTargetAction = "";
       this.state.navigateMode = false;
       this.syncModeButtons();
       this.renderLandmarks();
-      this.logFleet(`selected ${lmName} for ${robotName}`);
-      this.startNavigation(lmName, robotName);
+      if (action === "queue") {
+        this.queueFleetGoal(robotName, lmName);
+      } else {
+        this.logFleet(`selected ${lmName} for ${robotName}`);
+        this.startNavigation(lmName, robotName);
+      }
     }
 
     handleNavigatePointerDown(event) {
@@ -3436,13 +3789,95 @@
       }
       const maxClickDistance = 1.20;
       if (nearest.distance > maxClickDistance) {
-        this.setStatus("Navigate armed: click closer to an LM.");
+        this.setStatus(`${this.targetSelectionLabel()} armed: click closer to an LM.`);
         this.logFleet(`click too far from LM: nearest ${nearest.landmark.name}, d=${nearest.distance.toFixed(2)}m`, "warn");
         return false;
       }
       this.logFleet(`map click -> nearest ${nearest.landmark.name}, d=${nearest.distance.toFixed(2)}m`);
       this.handleLandmarkClick(nearest.landmark.name);
       return true;
+    }
+
+    queueFleetGoal(robotName, targetName) {
+      const robot = this.fleetRobots.find((item) => item.name === robotName);
+      if (!robot) {
+        this.setStatus("Select a robot first.");
+        this.logFleet(`queue ignored: ${robotName || "robot"} not found`, "warn");
+        return;
+      }
+      robot.queuedTargetName = targetName;
+      robot.queuedAt = ++this.fleetQueueSequence;
+      this.setStatus(`Queued ${robot.name} -> ${targetName}.`);
+      this.logFleet(`queued ${robot.name}: ${this.startLmForRobot(robot)} -> ${targetName}`);
+      this.renderFleetList();
+      this.updateActiveRobotPanel();
+      this.renderLandmarks();
+    }
+
+    async startQueuedFleetPlan() {
+      const requestRobots = this.queuedFleetRobots();
+      if (!requestRobots.length) {
+        this.setStatus("Queue is empty.");
+        this.logFleet("fleet batch skipped: queue is empty", "warn");
+        return;
+      }
+      for (const robot of requestRobots) {
+        if (!this.robotHasActiveTrajectory(robot)) {
+          robot.trajectory = [];
+          robot.planNodes = [];
+          robot.routeClock = 0;
+        }
+        robot.targetName = robot.queuedTargetName;
+        robot.status = "PLANNING";
+      }
+      const active = this.activeRobot();
+      if (active) {
+        this.state.targetName = active.targetName || "";
+        this.dom.targetText.textContent = active.targetName || "-";
+      }
+      this.renderFleetList();
+      this.updateActiveRobotPanel();
+      this.renderLandmarks();
+      this.logFleet(`fleet batch request: ${requestRobots.map((robot) => `${robot.name}->${robot.queuedTargetName}`).join(", ")}`);
+      try {
+        const result = await this.planFleet("", requestRobots);
+        if (result && result.ok) {
+          const plannedNames = new Set((result.plans || []).map((plan) => plan.robot));
+          for (const robot of requestRobots) {
+            if (plannedNames.has(robot.name)) {
+              robot.queuedTargetName = "";
+              robot.queuedAt = 0;
+            }
+          }
+          this.renderFleetList();
+          this.updateActiveRobotPanel();
+        }
+      } catch (error) {
+        this.setStatus("Fleet backend unavailable.");
+        this.logFleet(`fleet batch error: ${error.message || error}`, "error");
+      }
+    }
+
+    clearFleetQueue() {
+      let count = 0;
+      for (const robot of this.fleetRobots) {
+        if (robot.queuedTargetName) {
+          count += 1;
+        }
+        robot.queuedTargetName = "";
+        robot.queuedAt = 0;
+      }
+      if (this.pendingTargetAction === "queue") {
+        this.pendingTargetRobotName = "";
+        this.pendingTargetAction = "";
+        this.state.navigateMode = false;
+        this.syncModeButtons();
+        this.renderLandmarks();
+      }
+      this.renderFleetList();
+      this.updateActiveRobotPanel();
+      this.setStatus(count ? "Fleet queue cleared." : "Fleet queue is empty.");
+      this.logFleet(count ? "fleet queue cleared" : "fleet queue already empty");
     }
 
     async startNavigation(targetName, robotName = "") {
@@ -3456,6 +3891,8 @@
           robot.routeClock = 0;
         }
         robot.targetName = targetName;
+        robot.queuedTargetName = "";
+        robot.queuedAt = 0;
         robot.status = "PLANNING";
         if (robot.name === this.activeRobotName) {
           this.state.targetName = targetName;
@@ -3484,13 +3921,15 @@
       this.startSingleNavigation(targetName);
     }
 
-    async planFleet(robotName = "") {
+    async planFleet(robotName = "", requestRobotsOverride = null) {
       const selectedRobot = robotName
         ? this.fleetRobots.find((robot) => robot.name === robotName)
         : this.activeRobot();
-      const requestRobots = selectedRobot && selectedRobot.targetName
+      const requestRobots = Array.isArray(requestRobotsOverride)
+        ? requestRobotsOverride.filter((robot) => robot && robot.targetName)
+        : (selectedRobot && selectedRobot.targetName
         ? [selectedRobot]
-        : [];
+        : []);
       const requests = requestRobots.map((robot) => ({
         name: robot.name,
         startLm: this.startLmForRobot(robot),
@@ -3500,7 +3939,7 @@
 
       if (!requests.length) {
         this.logFleet("planner skipped: no active fleet orders", "warn");
-        return false;
+        return null;
       }
 
       this.logFleet(`fleet request: ${requests.map((item) => `${item.name}:${item.startLm}->${item.goalLm}`).join(", ")}`);
@@ -3519,6 +3958,7 @@
       }
 
       const result = await response.json();
+      this.fleetPlan = result;
       if (result.fleetState) {
         this.mergeBackendFleetEvents(result.fleetState.events || []);
         this.applyBackendFleetState(result.fleetState);
@@ -3532,12 +3972,12 @@
         this.setMode("ERROR_ROUTE");
         this.setStatus(`Fleet plan failed: ${result.debug ? result.debug.reason : "unknown"}.`);
         this.logFleet(`planner rejected: ${result.debug ? result.debug.reason : "unknown"}`, "error");
-        return true;
+        return result;
       }
 
       this.logFleet(`planner accepted: ${result.plans.length} plan(s), reason=${result.debug ? result.debug.reason : "ok"}`);
       this.startBackendFleetDisplay(result);
-      return true;
+      return result;
     }
 
     startLmForRobot(robot) {
@@ -3749,6 +4189,8 @@
       this.stopFleetSimulation();
       await this.postFleetCommand("/api/fleet/robots/stop", {});
       for (const robot of this.fleetRobots) {
+        robot.queuedTargetName = "";
+        robot.queuedAt = 0;
         if (robot.status === "MOVING" || robot.status === "WAITING" || robot.status === "PLANNING") {
           robot.status = "IDLE";
           robot.trajectory = [];
@@ -3759,6 +4201,7 @@
       this.currentMission = null;
       this.setMode("IDLE");
       this.pendingTargetRobotName = "";
+      this.pendingTargetAction = "";
       this.state.navigateMode = false;
       this.syncModeButtons();
       this.setStatus("Stopped.");
@@ -3782,6 +4225,8 @@
       this.stopFleetSimulation();
       await this.postFleetCommand("/api/fleet/robots/stop", { name: active.name });
       active.targetName = "";
+      active.queuedTargetName = "";
+      active.queuedAt = 0;
       active.status = "IDLE";
       active.trajectory = [];
       active.planNodes = [];
@@ -3789,6 +4234,7 @@
       this.currentMission = null;
       this.state.targetName = "";
       this.pendingTargetRobotName = "";
+      this.pendingTargetAction = "";
       this.state.navigateMode = false;
       this.syncModeButtons();
       this.dom.targetText.textContent = "-";
@@ -3817,6 +4263,8 @@
         active.pose = this.poseAtLandmark(active.spawnLm);
         active.currentLm = active.spawnLm;
         active.targetName = "";
+        active.queuedTargetName = "";
+        active.queuedAt = 0;
         active.status = "IDLE";
         active.trajectory = [];
         active.planNodes = [];
@@ -3920,7 +4368,8 @@
       this.renderer.drawLandmarks(
         nearest.landmark ? nearest.landmark.name : "",
         this.state.targetName,
-        this.state.navigateMode
+        this.state.navigateMode,
+        this.selectedLandmarkName
       );
     }
 
