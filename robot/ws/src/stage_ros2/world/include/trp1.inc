@@ -7,7 +7,7 @@ define hokuyolaser ranger
     size [ 0.07 0.07 0.05 ]
     range [ 0.0  5.0 ]
     fov 270.0
-    samples 270
+    samples 271
     color_rgba [ 0 0 1 0.15 ]
   )
   model
@@ -32,7 +32,7 @@ define trp1_base position
   fiducial_return 1
 
   localization "odom"
-  odom_error [ 0.05 0.05 0.0 0.1 ]
+  odom_error [ 0.03 0.03 0.0 0.03 ]
 
   velocity_bounds [-1.0 1.0 0 0 0 0 -45.0 45.0]
   acceleration_bounds [-0.5 0.5 0 0 0 0 -45.0 45.0]

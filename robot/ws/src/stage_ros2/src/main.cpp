@@ -11,5 +11,9 @@ int main(int argc, char ** argv)
   std::thread t = std::thread([&node]() {rclcpp::spin(node);});
   node->world->Start();
   Stg::World::Run();
+  rclcpp::shutdown();
+  if (t.joinable()) {
+    t.join();
+  }
   return 0;
 }

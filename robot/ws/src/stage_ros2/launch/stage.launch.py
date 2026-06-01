@@ -27,7 +27,7 @@ def generate_launch_description():
 
     stage_world_arg = DeclareLaunchArgument(
         'world',
-        default_value=TextSubstitution(text='cave'),
+        default_value=TextSubstitution(text='22.05.26_smap'),
         description='World file relative to the project world file, without .world'
     )
 
@@ -45,6 +45,13 @@ def generate_launch_description():
         description='Use static transformations for sensor frames!'
     )
 
+    enable_gui = LaunchConfiguration('enable_gui')
+    enable_gui_arg = DeclareLaunchArgument(
+        'enable_gui',
+        default_value='true',
+        description='Run Stage with its GUI window enabled'
+    )
+
     one_tf_tree = LaunchConfiguration('one_tf_tree')
     one_tf_tree_arg = DeclareLaunchArgument(
         'one_tf_tree',
@@ -57,6 +64,20 @@ def generate_launch_description():
         'fake_bms',
         default_value='true',
         description='Publish fake sensor_msgs/BatteryState on /bms for teleworker_status in simulation'
+    )
+
+    publish_imu = LaunchConfiguration('publish_imu')
+    publish_imu_arg = DeclareLaunchArgument(
+        'publish_imu',
+        default_value='true',
+        description='Publish simulated IMU on /imu'
+    )
+
+    use_imu_for_odom_yaw = LaunchConfiguration('use_imu_for_odom_yaw')
+    use_imu_for_odom_yaw_arg = DeclareLaunchArgument(
+        'use_imu_for_odom_yaw',
+        default_value='true',
+        description='Use simulated IMU yaw and gyro to stabilize Stage odometry'
     )
 
     def stage_world_configuration(context):
@@ -100,8 +121,11 @@ def generate_launch_description():
         stage_world_arg,
         one_tf_tree_arg,
         enforce_prefixes_arg,
+        enable_gui_arg,
         use_static_transformations_arg,
         fake_bms_arg,
+        publish_imu_arg,
+        use_imu_for_odom_yaw_arg,
         stage_world_configuration_arg,
 
         Node(
@@ -112,8 +136,11 @@ def generate_launch_description():
             parameters=[{
                 'one_tf_tree': one_tf_tree,
                 'enforce_prefixes': enforce_prefixes,
+                'enable_gui': enable_gui,
                 'use_static_transformations': use_static_transformations,
-                'world_file': [LaunchConfiguration('world_file')]
+                'world_file': [LaunchConfiguration('world_file')],
+                'publish_imu': publish_imu,
+                'use_imu_for_odom_yaw': use_imu_for_odom_yaw,
             }],
         ),
 

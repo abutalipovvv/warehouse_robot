@@ -9,6 +9,7 @@
 #include <unistd.h>
 #include <signal.h>
 #include <mutex>
+#include <random>
 
 // roscpp
 #include <rclcpp/rclcpp.hpp>
@@ -18,6 +19,7 @@
 #include <sensor_msgs/msg/image.hpp>
 #include <sensor_msgs/image_encodings.hpp>
 #include <sensor_msgs/msg/camera_info.hpp>
+#include <sensor_msgs/msg/imu.hpp>
 #include <nav_msgs/msg/odometry.hpp>
 #include <rosgraph_msgs/msg/clock.hpp>
 #include <stage_ros2/transform_broadcaster.h>
@@ -116,6 +118,7 @@ private:
     std::string topic_name_space_;
     std::string frame_name_space_;
     std::string topic_name_cmd_;
+    std::string topic_name_imu_;
 
     std::string topic_name_tf_;
     std::string topic_name_tf_static_;
@@ -124,8 +127,17 @@ private:
     std::string frame_id_odom_;
     std::string frame_id_world_;
     std::string frame_id_base_link_;
+    std::string frame_id_imu_;
     nav_msgs::msg::Odometry msg_odom_;
+    sensor_msgs::msg::Imu msg_imu_;
     std::shared_ptr<Stg::Pose> global_pose_;
+    std::shared_ptr<Stg::Velocity> body_velocity_;
+    std::mt19937 rng_;
+    bool imu_initialized_;
+    double imu_yaw_bias_;
+    double imu_angular_velocity_bias_;
+
+    double sample_noise(double stddev);
 
 public:
     Vehicle(size_t id, const Stg::Pose & pose, const std::string & name, StageNode * node);
@@ -151,6 +163,7 @@ public:
     // ros publishers
     rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr pub_odom_;             // one odom
     rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr pub_ground_truth_;     // one ground truth
+    rclcpp::Publisher<sensor_msgs::msg::Imu>::SharedPtr pub_imu_;                // one imu
     rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr sub_cmd_;     // one cmd_vel subscriber
 
     std::shared_ptr<stage_ros2::StaticTransformBroadcaster> tf_static_broadcaster_;
@@ -171,6 +184,12 @@ public:
   std::string frame_id_odom_name_;         /// ROS parameter
   std::string frame_id_world_name_;        /// ROS parameter
   std::string frame_id_base_link_name_;    /// ROS parameter
+  std::string frame_id_imu_name_;          /// ROS parameter
+  bool publish_imu_;                       /// ROS parameter
+  bool use_imu_for_odom_yaw_;              /// ROS parameter
+  double imu_yaw_noise_stddev_;            /// ROS parameter
+  double imu_angular_velocity_noise_stddev_;   /// ROS parameter
+  double imu_linear_acceleration_noise_stddev_;   /// ROS parameter
 
   // TF broadcaster to publish the robot odom
   std::shared_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_stage_;

@@ -1,0 +1,33 @@
+[33mCMake Warning:
+  Manually-specified variables were not used by the project:
+
+    CATKIN_INSTALL_INTO_PREFIX_ROOT
+    CATKIN_SYMLINK_INSTALL
+
+[0m
+gmake[2]: Warning: File '/home/kaisar/warehouse_robot/robot/ws/src/Stage/libstage/block.cc' has modification time 599 s in the future
+gmake[2]: warning:  Clock skew detected.  Your build may be incomplete.
+gmake[2]: Warning: File '/home/kaisar/warehouse_robot/robot/ws/src/Stage/examples/ctrl/source.cc' has modification time 592 s in the future
+gmake[2]: Warning: File '/home/kaisar/warehouse_robot/robot/ws/src/Stage/examples/ctrl/fasr.cc' has modification time 592 s in the future
+gmake[2]: Warning: File '/home/kaisar/warehouse_robot/robot/ws/src/Stage/examples/ctrl/sink.cc' has modification time 592 s in the future
+gmake[2]: Warning: File '/home/kaisar/warehouse_robot/robot/ws/src/Stage/examples/ctrl/rasterize.cc' has modification time 592 s in the future
+gmake[2]: Warning: File '/home/kaisar/warehouse_robot/robot/ws/src/Stage/examples/ctrl/fasr2.cc' has modification time 592 s in the future
+gmake[2]: Warning: File '/home/kaisar/warehouse_robot/robot/ws/src/Stage/examples/ctrl/pioneer_flocking.cc' has modification time 592 s in the future
+gmake[2]: Warning: File '/home/kaisar/warehouse_robot/robot/ws/src/Stage/libstage/main.cc' has modification time 592 s in the future
+gmake[2]: Warning: File '/home/kaisar/warehouse_robot/robot/ws/src/Stage/examples/ctrl/lasernoise.cc' has modification time 592 s in the future
+gmake[2]: Warning: File '/home/kaisar/warehouse_robot/robot/ws/src/Stage/examples/ctrl/dynamic.cc' has modification time 592 s in the future
+gmake[2]: Warning: File '/home/kaisar/warehouse_robot/robot/ws/src/Stage/examples/ctrl/wander.cc' has modification time 592 s in the future
+gmake[2]: Warning: File '/home/kaisar/warehouse_robot/robot/ws/src/Stage/worlds/benchmark/expand_swarm.cc' has modification time 592 s in the future
+gmake[2]: Warning: File '/home/kaisar/warehouse_robot/robot/ws/src/Stage/worlds/benchmark/expand_pioneer.cc' has modification time 592 s in the future
+gmake[2]: warning:  Clock skew detected.  Your build may be incomplete.
+gmake[2]: warning:  Clock skew detected.  Your build may be incomplete.
+gmake[2]: warning:  Clock skew detected.  Your build may be incomplete.
+gmake[2]: warning:  Clock skew detected.  Your build may be incomplete.
+gmake[2]: warning:  Clock skew detected.  Your build may be incomplete.
+gmake[2]: warning:  Clock skew detected.  Your build may be incomplete.
+gmake[2]: warning:  Clock skew detected.  Your build may be incomplete.
+gmake[2]: warning:  Clock skew detected.  Your build may be incomplete.
+gmake[2]: warning:  Clock skew detected.  Your build may be incomplete.
+gmake[2]: warning:  Clock skew detected.  Your build may be incomplete.
+gmake[2]: warning:  Clock skew detected.  Your build may be incomplete.
+gmake[2]: warning:  Clock skew detected.  Your build may be incomplete.

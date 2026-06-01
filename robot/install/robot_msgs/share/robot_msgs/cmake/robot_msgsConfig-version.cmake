@@ -1,0 +1,1 @@
+/home/kaisar/warehouse_robot/robot/build/robot_msgs/ament_cmake_core/robot_msgsConfig-version.cmake

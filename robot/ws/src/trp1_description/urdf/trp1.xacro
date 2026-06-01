@@ -110,6 +110,14 @@
     -->
   </link>
 
+  <link name="imu_link"/>
+
+  <joint type="fixed" name="imu_joint">
+    <origin xyz="0 0 0.18" rpy="0 0 0"/>
+    <parent link="base_link"/>
+    <child link="imu_link"/>
+  </joint>
+
   <!-- Intel D430 -->
   <joint type="fixed" name="camera_joint">
     <origin xyz="0.34 0.0 0.08" rpy="0 -0.13 0"/>

@@ -8,6 +8,7 @@
 #define TOPIC_TF_STATIC "tf_static"
 #define TOPIC_ODOM "odom"
 #define TOPIC_GROUND_TRUTH "ground_truth"
+#define TOPIC_IMU "imu"
 #define TOPIC_CMD_VEL "cmd_vel"
 
 using std::placeholders::_1;
@@ -15,8 +16,25 @@ using std::placeholders::_1;
 StageNode::Vehicle::Vehicle(
     size_t id, const Stg::Pose &pose, const std::string &name,
     StageNode *node)
-    : initialized_(false), id_(id), initial_pose_(pose), name_(name), node_(node)
+    : initialized_(false),
+      id_(id),
+      initial_pose_(pose),
+      name_(name),
+      node_(node),
+      rng_(static_cast<std::mt19937::result_type>(0x6d2b79f5u + (id * 2654435761u))),
+      imu_initialized_(false),
+      imu_yaw_bias_(0.0),
+      imu_angular_velocity_bias_(0.0)
 {
+}
+
+double StageNode::Vehicle::sample_noise(double stddev)
+{
+  if (stddev <= 0.0) {
+    return 0.0;
+  }
+  std::normal_distribution<double> distribution(0.0, stddev);
+  return distribution(rng_);
 }
 
 size_t StageNode::Vehicle::id() const
@@ -62,9 +80,11 @@ void StageNode::Vehicle::init(bool use_topic_prefixes, bool use_one_tf_tree)
   frame_id_base_link_ = frame_name_space_ + node_->frame_id_base_link_name_;
   frame_id_odom_ = frame_name_space_ + node_->frame_id_odom_name_;
   frame_id_world_ = frame_name_space_ + node_->frame_id_world_name_;
+  frame_id_imu_ = frame_name_space_ + node_->frame_id_imu_name_;
 
   topic_name_odom_ = topic_name_space_ + TOPIC_ODOM;
   topic_name_ground_truth_ = topic_name_space_ + TOPIC_GROUND_TRUTH;
+  topic_name_imu_ = topic_name_space_ + TOPIC_IMU;
   topic_name_cmd_ = topic_name_space_ + TOPIC_CMD_VEL;
 
   tf_static_broadcaster_ = std::make_shared<stage_ros2::StaticTransformBroadcaster>(node_, topic_name_tf_static_.c_str());
@@ -73,6 +93,9 @@ void StageNode::Vehicle::init(bool use_topic_prefixes, bool use_one_tf_tree)
   pub_odom_ = node_->create_publisher<nav_msgs::msg::Odometry>(topic_name_odom_, 10);
   pub_ground_truth_ =
       node_->create_publisher<nav_msgs::msg::Odometry>(topic_name_ground_truth_, 10);
+  if (node_->publish_imu_) {
+    pub_imu_ = node_->create_publisher<sensor_msgs::msg::Imu>(topic_name_imu_, 10);
+  }
   sub_cmd_ =
       node_->create_subscription<geometry_msgs::msg::Twist>(
           topic_name_cmd_, 10,
@@ -98,39 +121,27 @@ void StageNode::Vehicle::publish_msg()
   if (!initialized_)
     return;
 
-  // Get latest odometry data
-  // Translate into ROS message format and publish
-  msg_odom_.pose.pose.position.x = positionmodel->est_pose.x;
-  msg_odom_.pose.pose.position.y = positionmodel->est_pose.y;
-  msg_odom_.pose.pose.orientation = createQuaternionMsgFromYaw(positionmodel->est_pose.a);
   Stg::Velocity v = positionmodel->GetVelocity();
-  msg_odom_.twist.twist.linear.x = v.x;
-  msg_odom_.twist.twist.linear.y = v.y;
-  msg_odom_.twist.twist.angular.z = v.a;
-  msg_odom_.header.frame_id = frame_id_odom_;
-  msg_odom_.header.stamp = node_->sim_time_;
-  msg_odom_.child_frame_id = frame_id_base_link_;
-
-  pub_odom_->publish(msg_odom_);
-
-  // Also publish the ground truth pose and velocity
   Stg::Pose gpose = positionmodel->GetGlobalPose();
   tf2::Quaternion q_gpose;
   q_gpose.setRPY(0.0, 0.0, gpose.a);
   tf2::Transform gt(q_gpose, tf2::Vector3(gpose.x, gpose.y, 0.0));
-  // Velocity is 0 by default and will be set only if there is previous pose and time delta>0
-  // @ToDo uising the positionmodel->GetVelocity() a self computed delta
+
+  double dt = 0.0;
+  if (time_last_pose_update_ != rclcpp::Time(0, 0)) {
+    dt = (node_->sim_time_ - time_last_pose_update_).seconds();
+  }
+
   Stg::Velocity gvel(0, 0, 0, 0);
   if (global_pose_)
   {
-    double dT = (node_->sim_time_ - time_last_pose_update_).seconds();
-    if (dT > 0)
+    if (dt > 0)
     {
       gvel = Stg::Velocity(
-          (gpose.x - global_pose_->x) / dT,
-          (gpose.y - global_pose_->y) / dT,
-          (gpose.z - global_pose_->z) / dT,
-          Stg::normalize(gpose.a - global_pose_->a) / dT);
+          (gpose.x - global_pose_->x) / dt,
+          (gpose.y - global_pose_->y) / dt,
+          (gpose.z - global_pose_->z) / dt,
+          Stg::normalize(gpose.a - global_pose_->a) / dt);
     }
     *global_pose_ = gpose;
   }
@@ -139,6 +150,76 @@ void StageNode::Vehicle::publish_msg()
     // There are no previous readings, adding current pose...
     global_pose_ = std::make_shared<Stg::Pose>(gpose);
   }
+
+  if (!imu_initialized_) {
+    imu_yaw_bias_ = sample_noise(node_->imu_yaw_noise_stddev_);
+    imu_angular_velocity_bias_ = sample_noise(node_->imu_angular_velocity_noise_stddev_ * 0.2);
+    imu_initialized_ = true;
+  }
+
+  double linear_acceleration_x = 0.0;
+  double linear_acceleration_y = 0.0;
+  if (body_velocity_ && dt > 0.0) {
+    linear_acceleration_x = (v.x - body_velocity_->x) / dt;
+    linear_acceleration_y = (v.y - body_velocity_->y) / dt;
+  }
+  if (body_velocity_) {
+    *body_velocity_ = v;
+  } else {
+    body_velocity_ = std::make_shared<Stg::Velocity>(v);
+  }
+
+  const double imu_yaw = Stg::normalize(gpose.a + imu_yaw_bias_);
+  const double imu_angular_velocity_z =
+    v.a + imu_angular_velocity_bias_ + sample_noise(node_->imu_angular_velocity_noise_stddev_);
+
+  msg_imu_.header.stamp = node_->sim_time_;
+  msg_imu_.header.frame_id = frame_id_imu_;
+  msg_imu_.orientation = createQuaternionMsgFromYaw(imu_yaw);
+  msg_imu_.angular_velocity.x = 0.0;
+  msg_imu_.angular_velocity.y = 0.0;
+  msg_imu_.angular_velocity.z = imu_angular_velocity_z;
+  msg_imu_.linear_acceleration.x =
+    linear_acceleration_x + sample_noise(node_->imu_linear_acceleration_noise_stddev_);
+  msg_imu_.linear_acceleration.y =
+    linear_acceleration_y + sample_noise(node_->imu_linear_acceleration_noise_stddev_);
+  msg_imu_.linear_acceleration.z = 0.0;
+  msg_imu_.orientation_covariance.fill(0.0);
+  msg_imu_.angular_velocity_covariance.fill(0.0);
+  msg_imu_.linear_acceleration_covariance.fill(0.0);
+  msg_imu_.orientation_covariance[0] = 1e6;
+  msg_imu_.orientation_covariance[4] = 1e6;
+  msg_imu_.orientation_covariance[8] =
+    node_->imu_yaw_noise_stddev_ * node_->imu_yaw_noise_stddev_;
+  msg_imu_.angular_velocity_covariance[0] = 1e6;
+  msg_imu_.angular_velocity_covariance[4] = 1e6;
+  msg_imu_.angular_velocity_covariance[8] =
+    node_->imu_angular_velocity_noise_stddev_ * node_->imu_angular_velocity_noise_stddev_;
+  msg_imu_.linear_acceleration_covariance[0] =
+    node_->imu_linear_acceleration_noise_stddev_ * node_->imu_linear_acceleration_noise_stddev_;
+  msg_imu_.linear_acceleration_covariance[4] =
+    node_->imu_linear_acceleration_noise_stddev_ * node_->imu_linear_acceleration_noise_stddev_;
+  msg_imu_.linear_acceleration_covariance[8] = 1e6;
+
+  if (node_->publish_imu_ && pub_imu_) {
+    pub_imu_->publish(msg_imu_);
+  }
+
+  // Get latest odometry data and stabilize yaw with the simulated IMU when requested.
+  msg_odom_.pose.pose.position.x = positionmodel->est_pose.x;
+  msg_odom_.pose.pose.position.y = positionmodel->est_pose.y;
+  msg_odom_.pose.pose.orientation = createQuaternionMsgFromYaw(
+      node_->use_imu_for_odom_yaw_ ? imu_yaw : positionmodel->est_pose.a);
+  msg_odom_.twist.twist.linear.x = v.x;
+  msg_odom_.twist.twist.linear.y = v.y;
+  msg_odom_.twist.twist.angular.z = node_->use_imu_for_odom_yaw_ ? imu_angular_velocity_z : v.a;
+  msg_odom_.header.frame_id = frame_id_odom_;
+  msg_odom_.header.stamp = node_->sim_time_;
+  msg_odom_.child_frame_id = frame_id_base_link_;
+
+  pub_odom_->publish(msg_odom_);
+
+  // Also publish the ground truth pose and velocity.
   nav_msgs::msg::Odometry ground_truth_msg;
   ground_truth_msg.pose.pose.position.x = gt.getOrigin().x();
   ground_truth_msg.pose.pose.position.y = gt.getOrigin().y();

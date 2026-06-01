@@ -49,7 +49,7 @@ bool StageNode::Vehicle::Ranger::prepare_msg()
   msg->range_min = sensor.range.min;
   msg->range_max = sensor.range.max;
   msg->ranges.resize(sensor.ranges.size());
-  msg->intensities.resize(sensor.intensities.size());
+  msg->intensities.resize(sensor.ranges.size(), 0.0f);
   msg->header.frame_id = frame_id;
 
   return true;
@@ -93,7 +93,11 @@ void StageNode::Vehicle::Ranger::publish_msg()
     msg->header.stamp = vehicle->node()->sim_time_;
     for (unsigned int i = 0; i < sensor.ranges.size(); i++) {
       msg->ranges[i] = sensor.ranges[i];
-      msg->intensities[i] = sensor.intensities[i];
+      if (i < sensor.intensities.size()) {
+        msg->intensities[i] = sensor.intensities[i];
+      } else {
+        msg->intensities[i] = 0.0f;
+      }
     }
     pub->publish(*msg);
   }

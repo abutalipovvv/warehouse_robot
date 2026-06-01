@@ -193,7 +193,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output", default=None, type=Path)
     parser.add_argument("--params", default=DEFAULT_PARAMS_PATH, type=Path)
     parser.add_argument("--host", default="127.0.0.1")
-    parser.add_argument("--port", default=8080, type=int)
+    parser.add_argument("--port", default=8090, type=int)
     parser.add_argument("--open", action="store_true")
     return parser.parse_args()
 

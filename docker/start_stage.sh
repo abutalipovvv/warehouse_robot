@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-source /opt/ros/humble/setup.bash
+source /opt/ros/jazzy/setup.bash
 cd /root/stage_ws
 source /root/stage_ws/install/setup.bash
 colcon build
@@ -25,4 +25,4 @@ trap cleanup EXIT
 
 sleep 1
 
-exec ros2 launch stage_ros2 stage.launch.py world:=us_office enforce_prefixes:=false one_tf_tree:=false
+exec ros2 launch stage_ros2 stage.launch.py world:=22.05.26_smap enforce_prefixes:=false one_tf_tree:=false

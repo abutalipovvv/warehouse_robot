@@ -1,0 +1,50 @@
+// generated from rosidl_adapter/resource/msg.idl.em
+// with input from robot_msgs/msg/RobotStatus.msg
+// generated code does not contain a copyright notice
+
+#include "builtin_interfaces/msg/Time.idl"
+
+module robot_msgs {
+  module msg {
+    @verbatim (language="comment", text=
+      "Robot state values are published as strings:" "\n"
+      "DISCONNECTED, LOCALIZING, IDLE, MANUAL, EXECUTING_ROUTE, ARRIVED, ERROR")
+    struct RobotStatus {
+      builtin_interfaces::msg::Time stamp;
+
+      string robot_id;
+
+      string map_id;
+
+      boolean connected;
+
+      boolean localization_ok;
+
+      float localization_age_sec;
+
+      string state;
+
+      string message;
+
+      string target_lm;
+
+      string nearest_lm;
+
+      string current_edge_id;
+
+      string route_id;
+
+      float route_progress;
+
+      float pose_x;
+
+      float pose_y;
+
+      float pose_yaw;
+
+      float linear_velocity;
+
+      float angular_velocity;
+    };
+  };
+};

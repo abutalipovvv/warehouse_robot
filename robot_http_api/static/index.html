@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Warehouse Robot Control</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-mark"></span>
+        <div>
+          <h1 id="pageTitle">Warehouse Robot Control</h1>
+          <p id="statusText">Waiting for robot status.</p>
+        </div>
+      </div>
+
+      <div class="command-bar">
+        <span id="robotIdBadge" class="badge">robot</span>
+        <span id="connectionBadge" class="badge error">offline</span>
+        <button id="navigateButton" class="primary" type="button">Navigate To LM</button>
+        <button id="cancelRouteButton" type="button">Cancel Route</button>
+        <button id="refreshStatusButton" type="button">Refresh</button>
+        <button id="stopRobotButton" class="danger" type="button">Stop</button>
+      </div>
+    </header>
+
+    <main class="workspace">
+      <section class="map-panel">
+        <div class="map-toolbar">
+          <button id="zoomInButton" type="button">Zoom +</button>
+          <button id="zoomOutButton" type="button">Zoom -</button>
+          <button id="followRobotButton" type="button" aria-pressed="true">Follow Robot</button>
+          <button id="resetViewButton" type="button">Reset View</button>
+        </div>
+
+        <svg id="mapSvg" aria-label="Robot map">
+          <g id="viewport">
+            <image id="mapImage" preserveAspectRatio="none"></image>
+            <g id="graphLayer"></g>
+            <g id="routeLayer"></g>
+            <g id="landmarkLayer"></g>
+            <g id="robotLayer"></g>
+          </g>
+        </svg>
+
+        <div class="map-manual-info">
+          <span id="manualSpeedText" class="mono">0.25 m/s | 0.90 rad/s</span>
+          <button id="mapStopRobotButton" class="danger" type="button">Stop</button>
+        </div>
+
+        <div class="manual-pad" aria-label="Manual robot control">
+          <button type="button" class="manual-key up" data-manual-key="w" title="W / forward">&#8593;</button>
+          <button type="button" class="manual-key left" data-manual-key="a" title="A / left">&#8592;</button>
+          <button type="button" class="manual-key down" data-manual-key="s" title="S / backward">&#8595;</button>
+          <button type="button" class="manual-key right" data-manual-key="d" title="D / right">&#8594;</button>
+        </div>
+      </section>
+
+      <aside class="side-panel">
+        <nav class="tab-strip" aria-label="Robot control tabs">
+          <button class="tab-button active" type="button" data-tab="status">Mission</button>
+          <button class="tab-button" type="button" data-tab="route">Route</button>
+          <button class="tab-button" type="button" data-tab="teleop">Robot</button>
+          <button class="tab-button" type="button" data-tab="params">Params</button>
+        </nav>
+
+        <section class="panel-block edge-inspector-block">
+          <div class="block-title">Robot Inspector</div>
+          <div class="edge-inspector-grid">
+            <div class="edge-inspector-main">
+              <span>State</span>
+              <strong id="mapStateText">-</strong>
+            </div>
+            <div>
+              <span>Nearest LM</span>
+              <strong id="mapNearestText">-</strong>
+            </div>
+            <div>
+              <span>Target LM</span>
+              <strong id="mapTargetText">-</strong>
+            </div>
+            <div>
+              <span>Connection</span>
+              <strong id="summaryConnectionText">-</strong>
+            </div>
+            <div>
+              <span>Robot</span>
+              <strong id="summaryRobotText">-</strong>
+            </div>
+            <div class="edge-inspector-main">
+              <span>Pose</span>
+              <strong id="poseSummaryText">x: -, y: -, yaw: -</strong>
+            </div>
+          </div>
+        </section>
+
+        <section id="tabStatus" class="tab-page active">
+          <section class="panel-block">
+            <div class="block-title">Mission</div>
+            <div class="state-grid">
+              <div>
+                <span>Mode</span>
+                <strong id="modeText">-</strong>
+              </div>
+              <div>
+                <span>Target</span>
+                <strong id="targetText">-</strong>
+              </div>
+              <div>
+                <span>Nearest LM</span>
+                <strong id="nearestText">-</strong>
+              </div>
+              <div>
+                <span>Progress</span>
+                <strong id="progressText">0%</strong>
+              </div>
+            </div>
+          </section>
+
+          <section class="panel-block">
+            <div class="block-title">Robot</div>
+            <div id="poseText" class="mono">x: -, y: -, yaw: -</div>
+            <div id="velocityText" class="mono secondary-mono">v: -, w: -</div>
+          </section>
+
+          <section class="panel-block">
+            <div class="block-title">Route LM</div>
+            <ul id="routeList" class="route-list"></ul>
+          </section>
+
+          <section class="panel-block">
+            <div class="block-title">Legend</div>
+            <div class="legend">
+              <div><span class="swatch edge"></span>Graph edge</div>
+              <div><span class="swatch route"></span>Planned route</div>
+              <div><span class="swatch nearest"></span>Nearest LM</div>
+              <div><span class="swatch goal"></span>Target LM</div>
+              <div><span class="swatch robot"></span>Robot footprint</div>
+            </div>
+          </section>
+        </section>
+
+        <section id="tabRoute" class="tab-page">
+          <section class="panel-block">
+            <div class="block-title">Route Planner</div>
+            <label>
+              Goal LM
+              <select id="goalSelect"></select>
+            </label>
+            <div class="button-row split">
+              <button id="planRouteButton" type="button">Plan Route</button>
+              <button id="executeRouteButton" class="primary" type="button">Execute Planned</button>
+            </div>
+          </section>
+
+          <section class="panel-block">
+            <div class="block-title">Active Route</div>
+            <div class="state-grid">
+              <div>
+                <span>Route ID</span>
+                <strong id="routeIdText">-</strong>
+              </div>
+              <div>
+                <span>Length</span>
+                <strong id="routeLengthText">0.00 m</strong>
+              </div>
+            </div>
+            <div id="routeNodesText" class="route-sequence mono">No route planned.</div>
+          </section>
+        </section>
+
+        <section id="tabTeleop" class="tab-page">
+          <section class="panel-block">
+            <div class="block-title">Robot State</div>
+            <div class="state-grid">
+              <div>
+                <span>Localization</span>
+                <strong id="localizationText">-</strong>
+              </div>
+              <div>
+                <span>Current Edge</span>
+                <strong id="edgeText">-</strong>
+              </div>
+            </div>
+          </section>
+
+          <section class="panel-block">
+            <div class="block-title">Manual Control</div>
+            <div class="param-list">
+              <label>
+                Linear speed
+                <input id="manualLinearSpeedInput" type="number" value="0.25" min="0.02" max="1.50" step="0.01" />
+              </label>
+              <label>
+                Angular speed
+                <input id="manualAngularSpeedInput" type="number" value="0.90" min="0.05" max="3.00" step="0.05" />
+              </label>
+            </div>
+            <p class="helper-text">Use the map pad or keyboard `W A S D`. Teleop is fixed in the lower-left corner like the simulator view.</p>
+          </section>
+
+          <section class="panel-block">
+            <div class="block-title">Events</div>
+            <div id="eventLog" class="event-log mono">No events yet.</div>
+          </section>
+        </section>
+
+        <section id="tabParams" class="tab-page">
+          <section class="panel-block">
+            <div class="block-title">Controller Params</div>
+            <div class="param-list">
+              <label>
+                Nearest LM tolerance
+                <input id="nearestToleranceInput" type="number" value="0.05" min="0.00" max="1.00" step="0.01" />
+              </label>
+              <label>
+                On-route tolerance
+                <input id="onRouteToleranceInput" type="number" value="0.12" min="0.00" max="1.00" step="0.01" />
+              </label>
+              <label>
+                Sample distance
+                <input id="sampleDistanceInput" type="number" value="0.05" min="0.01" max="0.50" step="0.01" />
+              </label>
+              <label>
+                Route speed
+                <input id="routeSpeedInput" type="number" value="0.35" min="0.05" max="2.00" step="0.01" />
+              </label>
+              <label>
+                Lookahead
+                <input id="lookaheadInput" type="number" value="0.80" min="0.10" max="3.00" step="0.05" />
+              </label>
+              <label>
+                Stop distance
+                <input id="stopDistanceInput" type="number" value="0.40" min="0.04" max="1.00" step="0.01" />
+              </label>
+              <label>
+                Localization timeout
+                <input id="localizationTimeoutInput" type="number" value="0.50" min="0.10" max="5.00" step="0.05" />
+              </label>
+            </div>
+            <div class="tab-actions">
+              <button id="saveParamsButton" class="primary" type="button">Save Params</button>
+            </div>
+          </section>
+        </section>
+      </aside>
+    </main>
+  </div>
+
+  <script src="demo-data.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

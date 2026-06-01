@@ -29,6 +29,12 @@ DEFAULT_ROUTE_PARAMS: dict[str, Any] = {
         "footprint_lookahead": 0.80,
         "collision_margin": 0.04,
         "stop_distance": 0.40,
+        "angular_gain": 2.20,
+        "max_angular_speed": 0.90,
+        "rotate_in_place_angle_deg": 32.0,
+        "curve_speed_limit": 0.25,
+        "rejoin_speed_limit": 0.16,
+        "hard_rejoin_speed_limit": 0.06,
     },
     "planner": {
         "nearest_lm_tolerance": 0.05,
@@ -37,10 +43,13 @@ DEFAULT_ROUTE_PARAMS: dict[str, Any] = {
         "precision_start_distance": 0.10,
     },
     "localization": {
-        "pose_source": "AMCL + wheel odom",
+        "pose_source": "AMCL + IMU-aided odom",
         "localization_timeout": 0.50,
         "allowed_lateral_error": 0.02,
         "allowed_yaw_error_deg": 1.0,
+        "accept_stale_pose_when_stationary": True,
+        "stationary_linear_velocity_epsilon": 0.02,
+        "stationary_angular_velocity_epsilon": 0.05,
     },
     "manual": {
         "linear_speed": 0.25,

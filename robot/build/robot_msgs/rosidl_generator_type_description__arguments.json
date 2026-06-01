@@ -1,0 +1,12 @@
+{
+  "package_name": "robot_msgs",
+  "output_dir": "/home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_generator_type_description/robot_msgs",
+  "idl_tuples": [
+    "/home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_adapter/robot_msgs:msg/RobotStatus.idl"
+  ],
+  "include_paths": [
+    "builtin_interfaces:/opt/ros/jazzy/share/builtin_interfaces",
+    "geometry_msgs:/opt/ros/jazzy/share/geometry_msgs",
+    "std_msgs:/opt/ros/jazzy/share/std_msgs"
+  ]
+}

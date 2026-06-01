@@ -1,0 +1,1 @@
+/home/kaisar/warehouse_robot/robot/build/trp1_description/ament_cmake_environment_hooks/local_setup.zsh

@@ -1,0 +1,49 @@
+-- The C compiler identification is GNU 13.3.0
+-- The CXX compiler identification is GNU 13.3.0
+-- Detecting C compiler ABI info
+-- Detecting C compiler ABI info - done
+-- Check for working C compiler: /usr/bin/cc - skipped
+-- Detecting C compile features
+-- Detecting C compile features - done
+-- Detecting CXX compiler ABI info
+-- Detecting CXX compiler ABI info - done
+-- Check for working CXX compiler: /usr/bin/c++ - skipped
+-- Detecting CXX compile features
+-- Detecting CXX compile features - done
+-- Found ament_cmake: 2.5.6 (/opt/ros/jazzy/share/ament_cmake/cmake)
+-- Found Python3: /usr/bin/python3 (found version "3.12.3") found components: Interpreter 
+-- Override CMake install command with custom implementation using symlinks instead of copying resources
+-- Configuring done (0.8s)
+-- Generating done (0.0s)
+-- Build files have been written to: /home/kaisar/warehouse_robot/robot/build/trp1_description
+-- Found ament_cmake: 2.5.6 (/opt/ros/jazzy/share/ament_cmake/cmake)
+-- Override CMake install command with custom implementation using symlinks instead of copying resources
+-- Configuring done (0.3s)
+-- Generating done (0.0s)
+-- Build files have been written to: /home/kaisar/warehouse_robot/robot/build/trp1_description
+-- Install configuration: ""
+-- Execute custom install script
+-- Symlinking: /home/kaisar/warehouse_robot/robot/install/trp1_description/share/trp1_description/urdf/d430.urdf.xacro
+-- Symlinking: /home/kaisar/warehouse_robot/robot/install/trp1_description/share/trp1_description/urdf/materials.xacro
+-- Symlinking: /home/kaisar/warehouse_robot/robot/install/trp1_description/share/trp1_description/urdf/sick.urdf.xacro
+-- Symlinking: /home/kaisar/warehouse_robot/robot/install/trp1_description/share/trp1_description/urdf/trp1.gazebo
+-- Symlinking: /home/kaisar/warehouse_robot/robot/install/trp1_description/share/trp1_description/urdf/trp1.xacro
+-- Symlinking: /home/kaisar/warehouse_robot/robot/install/trp1_description/share/trp1_description/urdf/trp1_old._oldxacro
+-- Symlinking: /home/kaisar/warehouse_robot/robot/install/trp1_description/share/trp1_description/urdf/trp1_old.xacro
+-- Symlinking: /home/kaisar/warehouse_robot/robot/install/trp1_description/share/trp1_description/urdf/trp1_stage.urdf.xacro
+-- Symlinking: /home/kaisar/warehouse_robot/robot/install/trp1_description/share/trp1_description/launch/launch.py
+-- Symlinking: /home/kaisar/warehouse_robot/robot/install/trp1_description/share/ament_index/resource_index/package_run_dependencies/trp1_description
+-- Symlinking: /home/kaisar/warehouse_robot/robot/install/trp1_description/share/ament_index/resource_index/parent_prefix_path/trp1_description
+-- Symlinking: /home/kaisar/warehouse_robot/robot/install/trp1_description/share/trp1_description/environment/ament_prefix_path.sh
+-- Symlinking: /home/kaisar/warehouse_robot/robot/install/trp1_description/share/trp1_description/environment/ament_prefix_path.dsv
+-- Symlinking: /home/kaisar/warehouse_robot/robot/install/trp1_description/share/trp1_description/environment/path.sh
+-- Symlinking: /home/kaisar/warehouse_robot/robot/install/trp1_description/share/trp1_description/environment/path.dsv
+-- Symlinking: /home/kaisar/warehouse_robot/robot/install/trp1_description/share/trp1_description/local_setup.bash
+-- Symlinking: /home/kaisar/warehouse_robot/robot/install/trp1_description/share/trp1_description/local_setup.sh
+-- Symlinking: /home/kaisar/warehouse_robot/robot/install/trp1_description/share/trp1_description/local_setup.zsh
+-- Symlinking: /home/kaisar/warehouse_robot/robot/install/trp1_description/share/trp1_description/local_setup.dsv
+-- Symlinking: /home/kaisar/warehouse_robot/robot/install/trp1_description/share/trp1_description/package.dsv
+-- Symlinking: /home/kaisar/warehouse_robot/robot/install/trp1_description/share/ament_index/resource_index/packages/trp1_description
+-- Symlinking: /home/kaisar/warehouse_robot/robot/install/trp1_description/share/trp1_description/cmake/trp1_descriptionConfig.cmake
+-- Symlinking: /home/kaisar/warehouse_robot/robot/install/trp1_description/share/trp1_description/cmake/trp1_descriptionConfig-version.cmake
+-- Symlinking: /home/kaisar/warehouse_robot/robot/install/trp1_description/share/trp1_description/package.xml

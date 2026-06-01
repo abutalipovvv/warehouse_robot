@@ -53,6 +53,15 @@ void StageNode::declare_parameters()
   param_desc_publish_ground_truth.description = "publishes on true a ground truth tf!";
   this->declare_parameter<bool>("publish_ground_truth", true, param_desc_publish_ground_truth);
 
+  auto param_desc_publish_imu = rcl_interfaces::msg::ParameterDescriptor{};
+  param_desc_publish_imu.description = "publishes on true a simulated imu topic!";
+  this->declare_parameter<bool>("publish_imu", true, param_desc_publish_imu);
+
+  auto param_desc_use_imu_for_odom_yaw = rcl_interfaces::msg::ParameterDescriptor{};
+  param_desc_use_imu_for_odom_yaw.description =
+    "on true the simulated odom yaw is stabilized with imu heading and gyro";
+  this->declare_parameter<bool>("use_imu_for_odom_yaw", true, param_desc_use_imu_for_odom_yaw);
+
   auto param_desc_world_file = rcl_interfaces::msg::ParameterDescriptor{};
   param_desc_world_file.description = "USE model names!";
   this->declare_parameter<std::string>("world_file", "cave.world", param_desc_world_file);
@@ -72,6 +81,31 @@ void StageNode::declare_parameters()
   this->declare_parameter<std::string>(
     "frame_id_base_link", "base_link",
     param_desc_frame_id_base_link_name_);
+
+  auto param_desc_frame_id_imu_name_ = rcl_interfaces::msg::ParameterDescriptor{};
+  param_desc_frame_id_imu_name_.description =
+    "imu frame name or postfix in case of multiple robots";
+  this->declare_parameter<std::string>(
+    "frame_id_imu", "imu_link",
+    param_desc_frame_id_imu_name_);
+
+  auto param_desc_imu_yaw_noise = rcl_interfaces::msg::ParameterDescriptor{};
+  param_desc_imu_yaw_noise.description = "constant yaw bias stddev for simulated imu in rad";
+  this->declare_parameter<double>("imu_yaw_noise_stddev", 0.01, param_desc_imu_yaw_noise);
+
+  auto param_desc_imu_angular_velocity_noise = rcl_interfaces::msg::ParameterDescriptor{};
+  param_desc_imu_angular_velocity_noise.description =
+    "white noise stddev for simulated imu angular velocity in rad/s";
+  this->declare_parameter<double>(
+    "imu_angular_velocity_noise_stddev", 0.02,
+    param_desc_imu_angular_velocity_noise);
+
+  auto param_desc_imu_linear_acceleration_noise = rcl_interfaces::msg::ParameterDescriptor{};
+  param_desc_imu_linear_acceleration_noise.description =
+    "white noise stddev for simulated imu linear acceleration in m/s^2";
+  this->declare_parameter<double>(
+    "imu_linear_acceleration_noise_stddev", 0.05,
+    param_desc_imu_linear_acceleration_noise);
 }
 
 void StageNode::update_parameters()
@@ -84,9 +118,19 @@ void StageNode::update_parameters()
   this->base_watchdog_timeout_ = rclcpp::Duration::from_seconds(base_watchdog_timeout_sec);
   this->get_parameter("is_depth_canonical", this->isDepthCanonical_);
   this->get_parameter("publish_ground_truth", this->publish_ground_truth_);
+  this->get_parameter("publish_imu", this->publish_imu_);
+  this->get_parameter("use_imu_for_odom_yaw", this->use_imu_for_odom_yaw_);
   this->get_parameter("frame_id_odom", this->frame_id_odom_name_);
   this->get_parameter("frame_id_world", this->frame_id_world_name_);
   this->get_parameter("frame_id_base_link", this->frame_id_base_link_name_);
+  this->get_parameter("frame_id_imu", this->frame_id_imu_name_);
+  this->get_parameter("imu_yaw_noise_stddev", this->imu_yaw_noise_stddev_);
+  this->get_parameter(
+    "imu_angular_velocity_noise_stddev",
+    this->imu_angular_velocity_noise_stddev_);
+  this->get_parameter(
+    "imu_linear_acceleration_noise_stddev",
+    this->imu_linear_acceleration_noise_stddev_);
 
   this->get_parameter("world_file", this->world_file_);
   if (!std::filesystem::exists(this->world_file_)) {
@@ -117,6 +161,16 @@ void StageNode::callback_update_parameters()
   this->get_parameter("use_static_transformations", use_static_transformations_);
 
   this->get_parameter("publish_ground_truth", this->publish_ground_truth_);
+  this->get_parameter("publish_imu", this->publish_imu_);
+  this->get_parameter("use_imu_for_odom_yaw", this->use_imu_for_odom_yaw_);
+  this->get_parameter("frame_id_imu", this->frame_id_imu_name_);
+  this->get_parameter("imu_yaw_noise_stddev", this->imu_yaw_noise_stddev_);
+  this->get_parameter(
+    "imu_angular_velocity_noise_stddev",
+    this->imu_angular_velocity_noise_stddev_);
+  this->get_parameter(
+    "imu_linear_acceleration_noise_stddev",
+    this->imu_linear_acceleration_noise_stddev_);
   // RCLCPP_INFO(this->get_logger(), "callback_update_parameter");
 }
 
