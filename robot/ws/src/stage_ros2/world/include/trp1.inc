@@ -2,12 +2,12 @@ define hokuyolaser ranger
 (
   sensor(       
     # laser-specific properties
-    # factory settings for LMS200  
+    # wide-area simulator LiDAR: full 360 deg coverage, 40 m range
     pose [ 0 0 0 0 ]
     size [ 0.07 0.07 0.05 ]
-    range [ 0.0  5.0 ]
-    fov 270.0
-    samples 271
+    range [ 0.0  40.0 ]
+    fov 360.0
+    samples 361
     color_rgba [ 0 0 1 0.15 ]
   )
   model

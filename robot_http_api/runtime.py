@@ -313,5 +313,5 @@ class RobotRuntime:
                 "routeProgress": self._route_progress,
                 "route": route,
                 "localizationAgeSec": self.localization_age(),
-                "events": [item.to_dict() for item in self._events[-40:]],
+                "events": [item.to_dict() for item in self._events[-120:]],
             }

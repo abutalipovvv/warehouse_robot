@@ -552,6 +552,7 @@ class RobotHttpApiNode(Node):
         self.params_path = params_path
         self._status_lock = Lock()
         self._latest_status: RobotStatus | None = None
+        self._last_status_event_key: tuple[str, str] | None = None
         self._cmd_vel_pub = self.create_publisher(Twist, cmd_vel_topic, 20)
         self.create_subscription(RobotStatus, status_topic, self._on_robot_status, 20)
         self.create_timer(0.05, self._control_step)
@@ -725,15 +726,92 @@ class RobotHttpApiNode(Node):
                 yaw=float(pose_payload.get("yaw", 0.0) or 0.0),
             )
         if pose is None:
-            pose = self.runtime.latest_pose()
+            pose = self._best_available_pose()
         if pose is None:
             raise ValueError("robot pose is not available yet")
         start_lm = str(payload.get("startLm") or "").strip() or None
         return self.route_planner.plan_from_pose(pose=pose, goal_lm=goal_lm, start_lm=start_lm)
 
+    def _best_available_pose(self) -> Pose2D | None:
+        pose = self.runtime.latest_pose()
+        if pose is not None:
+            return pose
+
+        snapshot = self.runtime.snapshot()
+        pose_payload = snapshot.get("pose")
+        if isinstance(pose_payload, dict):
+            return Pose2D(
+                x=float(pose_payload.get("x", 0.0) or 0.0),
+                y=float(pose_payload.get("y", 0.0) or 0.0),
+                yaw=float(pose_payload.get("yaw", 0.0) or 0.0),
+            )
+
+        with self._status_lock:
+            message = self._latest_status
+        if message is None:
+            return None
+
+        state = str(message.state or "")
+        if not bool(message.localization_ok) and state in {"", "LOCALIZING", "ERROR"}:
+            return None
+
+        return Pose2D(
+            x=float(message.pose_x),
+            y=float(message.pose_y),
+            yaw=float(message.pose_yaw),
+        )
+
     def _on_robot_status(self, message: RobotStatus) -> None:
         with self._status_lock:
+            previous = self._latest_status
             self._latest_status = message
+        self._persist_status_event(previous, message)
+
+    def _persist_status_event(self, previous: RobotStatus | None, current: RobotStatus) -> None:
+        state = str(current.state or "").strip() or "UNKNOWN"
+        raw_message = str(current.message or "").strip()
+        previous_state = str(previous.state or "").strip() if previous is not None else ""
+        previous_message = str(previous.message or "").strip() if previous is not None else ""
+
+        if state == previous_state and raw_message == previous_message:
+            return
+
+        level = "info"
+        persist = False
+        if state == "ERROR":
+            level = "error"
+            persist = True
+        elif state == "LOCALIZING" and ("timeout" in raw_message.lower() or "waiting" in raw_message.lower()):
+            level = "warn"
+            persist = True
+        elif previous_state == "ERROR" and state != "ERROR":
+            level = "info"
+            persist = True
+
+        if not persist:
+            return
+
+        event_key = (state, raw_message)
+        if event_key == self._last_status_event_key:
+            return
+        self._last_status_event_key = event_key
+        self.runtime.add_event(level, self._humanize_status_event(state, raw_message))
+
+    def _humanize_status_event(self, state: str, message: str) -> str:
+        text = message.strip() or state
+        lowered = text.lower()
+
+        if state == "ERROR" and "localization timeout" in lowered:
+            return f"Localization error: {text}. Robot pose became stale. Check /scan, /amcl_pose, /tf, and map alignment."
+        if state == "LOCALIZING" and "waiting for amcl pose" in lowered:
+            return "Localization waiting: AMCL pose has not been received yet. Set initial pose and verify /amcl_pose."
+        if state == "LOCALIZING" and "timeout" in lowered:
+            return f"Localization warning: {text}. The last AMCL update is too old."
+        if state == "ERROR" and "robot pose is not available" in lowered:
+            return "Route execution error: robot pose is not available for planning."
+        if state != "ERROR" and state != "LOCALIZING":
+            return f"Recovered from error: {text}."
+        return f"{state}: {text}"
 
     def _control_step(self) -> None:
         now = monotonic()
@@ -743,6 +821,10 @@ class RobotHttpApiNode(Node):
             if not status.get("localizationOk", False):
                 self.runtime.clear_manual()
                 self.runtime.set_state("ERROR", "Localization timeout during manual control.")
+                self.runtime.add_event(
+                    "error",
+                    "Manual control error: localization timed out while teleop was active. Robot was stopped."
+                )
                 self._publish_cmd_vel(0.0, 0.0)
                 return
             self.runtime.set_state("MANUAL", "Manual control active.")
@@ -758,6 +840,10 @@ class RobotHttpApiNode(Node):
         pose_payload = status.get("pose")
         if not isinstance(pose_payload, dict):
             self.runtime.finish_route(False, "Robot pose is not available.")
+            self.runtime.add_event(
+                "error",
+                "Route execution error: robot pose is not available. Planning or tracking cannot continue."
+            )
             self._publish_cmd_vel(0.0, 0.0)
             return
 
@@ -796,6 +882,10 @@ class RobotHttpApiNode(Node):
 
         if not route.trajectory:
             self.runtime.finish_route(False, "Route is empty.")
+            self.runtime.add_event(
+                "error",
+                "Route execution error: the planned route is empty."
+            )
             self._publish_cmd_vel(0.0, 0.0)
             return
 
