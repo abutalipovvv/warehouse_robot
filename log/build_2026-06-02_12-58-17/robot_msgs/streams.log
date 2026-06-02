@@ -1,0 +1,85 @@
+[0.019s] Invoking command in '/home/kaisar/warehouse_robot/build/robot_msgs': CMAKE_PREFIX_PATH=/home/kaisar/warehouse_robot/install/trp1_description:/home/kaisar/warehouse_robot/install/stage_ros2:/opt/ros/jazzy:/home/kaisar/warehouse_robot/install/stage:/home/kaisar/warehouse_robot/install/robot_msgs:/home/kaisar/warehouse_robot/install/nav2:/home/kaisar/warehouse_robot/robot/install/trp1_description:/home/kaisar/warehouse_robot/robot/install/stage_ros2:/home/kaisar/warehouse_robot/robot/install/stage:/home/kaisar/warehouse_robot/robot/install/robot_msgs:/home/kaisar/warehouse_robot/robot/install/nav2:/opt/ros/jazzy/opt/gz_sim_vendor:/opt/ros/jazzy/opt/gz_sensors_vendor:/opt/ros/jazzy/opt/gz_physics_vendor:/opt/ros/jazzy/opt/sdformat_vendor:/opt/ros/jazzy/opt/gz_gui_vendor:/opt/ros/jazzy/opt/gz_transport_vendor:/opt/ros/jazzy/opt/gz_rendering_vendor:/opt/ros/jazzy/opt/gz_plugin_vendor:/opt/ros/jazzy/opt/gz_fuel_tools_vendor:/opt/ros/jazzy/opt/gz_msgs_vendor:/opt/ros/jazzy/opt/gz_common_vendor:/opt/ros/jazzy/opt/gz_math_vendor:/opt/ros/jazzy/opt/gz_utils_vendor:/opt/ros/jazzy/opt/gz_tools_vendor:/opt/ros/jazzy/opt/gz_ogre_next_vendor:/opt/ros/jazzy/opt/gz_dartsim_vendor:/opt/ros/jazzy/opt/gz_cmake_vendor DEBUGINFOD_URLS=https://debuginfod.ubuntu.com /usr/bin/cmake --build /home/kaisar/warehouse_robot/build/robot_msgs -- -j12 -l12
+[0.086s] [  4%] Built target robot_msgs__rs
+[0.086s] [  4%] Built target robot_msgs__rosidl_generator_type_description
+[0.103s] [  4%] Built target ament_cmake_python_symlink_robot_msgs
+[0.120s] [  6%] Built target robot_msgs__cpp
+[0.131s] [ 24%] Built target robot_msgs__rosidl_generator_c
+[0.197s] [ 33%] Built target robot_msgs__rosidl_typesupport_introspection_c
+[0.200s] [ 42%] Built target robot_msgs__rosidl_typesupport_fastrtps_cpp
+[0.202s] [ 51%] Built target robot_msgs__rosidl_typesupport_c
+[0.202s] [ 68%] Built target robot_msgs__rosidl_typesupport_cpp
+[0.202s] [ 68%] Built target robot_msgs__rosidl_typesupport_fastrtps_c
+[0.204s] [ 77%] Built target robot_msgs__rosidl_typesupport_introspection_cpp
+[0.221s] Traceback (most recent call last):
+[0.221s]   File "/home/kaisar/warehouse_robot/build/robot_msgs/ament_cmake_python/robot_msgs/setup.py", line 1, in <module>
+[0.221s]     from setuptools import find_packages
+[0.221s]   File "/usr/lib/python3/dist-packages/setuptools/__init__.py", line 7, in <module>
+[0.221s]     import _distutils_hack.override  # noqa: F401
+[0.221s]     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[0.221s]   File "/usr/lib/python3/dist-packages/_distutils_hack/override.py", line 1, in <module>
+[0.221s]     __import__('_distutils_hack').do_override()
+[0.221s]   File "/usr/lib/python3/dist-packages/_distutils_hack/__init__.py", line 77, in do_override
+[0.221s]     ensure_local_distutils()
+[0.222s]   File "/usr/lib/python3/dist-packages/_distutils_hack/__init__.py", line 60, in ensure_local_distutils
+[0.222s]     importlib.import_module('distutils')
+[0.222s]   File "/usr/lib/python3.12/importlib/__init__.py", line 90, in import_module
+[0.222s]     return _bootstrap._gcd_import(name[level:], package, level)
+[0.222s]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[0.222s]   File "<frozen importlib._bootstrap>", line 1387, in _gcd_import
+[0.222s]   File "<frozen importlib._bootstrap>", line 1360, in _find_and_load
+[0.222s]   File "<frozen importlib._bootstrap>", line 1322, in _find_and_load_unlocked
+[0.222s]   File "<frozen importlib._bootstrap>", line 1262, in _find_spec
+[0.222s]   File "/usr/lib/python3/dist-packages/_distutils_hack/__init__.py", line 97, in find_spec
+[0.222s]     return method()
+[0.223s]            ^^^^^^^^
+[0.223s]   File "/usr/lib/python3/dist-packages/_distutils_hack/__init__.py", line 108, in spec_for_distutils
+[0.223s]     mod = importlib.import_module('setuptools._distutils')
+[0.223s]           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[0.223s]   File "/usr/lib/python3.12/importlib/__init__.py", line 90, in import_module
+[0.223s]     return _bootstrap._gcd_import(name[level:], package, level)
+[0.223s]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[0.223s]   File "/usr/lib/python3/dist-packages/setuptools/_distutils/__init__.py", line 12, in <module>
+[0.225s]     importlib.import_module('_distutils_system_mod')
+[0.225s]   File "/usr/lib/python3.12/importlib/__init__.py", line 90, in import_module
+[0.226s]     return _bootstrap._gcd_import(name[level:], package, level)
+[0.226s]            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[0.226s]   File "/usr/lib/python3.12/_distutils_system_mod.py", line 15, in <module>
+[0.226s]     import distutils.command.install as orig_install
+[0.226s]   File "/usr/lib/python3/dist-packages/setuptools/_distutils/command/install.py", line 12, in <module>
+[0.226s]     from ..core import Command
+[0.227s]   File "/usr/lib/python3/dist-packages/setuptools/_distutils/core.py", line 22, in <module>
+[0.227s]     from .dist import Distribution
+[0.227s]   File "/usr/lib/python3/dist-packages/setuptools/_distutils/dist.py", line 26, in <module>
+[0.227s]     from .fancy_getopt import FancyGetopt, translate_longopt
+[0.227s]   File "/usr/lib/python3/dist-packages/setuptools/_distutils/fancy_getopt.py", line 14, in <module>
+[0.227s]     import getopt
+[0.227s]   File "/usr/lib/python3.12/getopt.py", line 38, in <module>
+[0.227s]     from gettext import gettext as _
+[0.227s]   File "/usr/lib/python3.12/gettext.py", line 73, in <module>
+[0.227s]     _token_pattern = re.compile(r"""
+[0.228s]                      ^^^^^^^^^^^^^^^
+[0.228s]   File "/usr/lib/python3.12/re/__init__.py", line 228, in compile
+[0.228s]     return _compile(pattern, flags)
+[0.228s]            ^^^^^^^^^^^^^^^^^^^^^^^^
+[0.228s]   File "/usr/lib/python3.12/re/__init__.py", line 307, in _compile
+[0.228s]     p = _compiler.compile(pattern, flags)
+[0.228s]         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[0.228s]   File "/usr/lib/python3.12/re/_compiler.py", line 745, in compile
+[0.228s]     p = _parser.parse(p, flags)
+[0.228s]         ^^^^^^^^^^^^^^^^^^^^^^^
+[0.228s]   File "/usr/lib/python3.12/re/_parser.py", line 979, in parse
+[0.228s]     p = _parse_sub(source, state, flags & SRE_FLAG_VERBOSE, 0)
+[0.229s]         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[0.229s]   File "/usr/lib/python3.12/re/_parser.py", line 460, in _parse_sub
+[0.229s]     itemsappend(_parse(source, state, verbose, nested + 1,
+[0.229s]                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[0.229s]   File "/usr/lib/python3.12/re/_parser.py", line 537, in _parse
+[0.229s]     while True:
+[0.229s]           ^^^^
+[0.229s] KeyboardInterrupt
+[0.229s] gmake[2]: *** [CMakeFiles/ament_cmake_python_build_robot_msgs_egg.dir/build.make:70: CMakeFiles/ament_cmake_python_build_robot_msgs_egg] Interrupt
+[0.229s] gmake[1]: *** [CMakeFiles/Makefile2:497: CMakeFiles/ament_cmake_python_build_robot_msgs_egg.dir/all] Interrupt
+[0.229s] gmake[1]: *** wait: No child processes.  Stop.
+[0.230s] gmake[1]: *** Waiting for unfinished jobs....
+[0.230s] gmake[1]: *** wait: No child processes.  Stop.
+[0.230s] gmake: *** [Makefile:146: all] Error 2

@@ -1,0 +1,7 @@
+Metadata-Version: 2.1
+Name: robot-http-api
+Version: 0.0.0
+Summary: HTTP server that bridges operator requests to ROS 2 robot services.
+Maintainer: ros
+Maintainer-email: kaisar.abutalipovv@gmail.com
+License: TODO: License declaration

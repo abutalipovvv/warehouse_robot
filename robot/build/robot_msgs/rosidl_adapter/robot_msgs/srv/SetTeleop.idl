@@ -1,0 +1,21 @@
+// generated from rosidl_adapter/resource/srv.idl.em
+// with input from robot_msgs/srv/SetTeleop.srv
+// generated code does not contain a copyright notice
+
+
+module robot_msgs {
+  module srv {
+    struct SetTeleop_Request {
+      double linear;
+
+      double angular;
+
+      uint32 timeout_ms;
+    };
+    struct SetTeleop_Response {
+      boolean ok;
+
+      string error;
+    };
+  };
+};

@@ -1,0 +1,11 @@
+/home/kaisar/warehouse_robot/build/stage_ros2/CMakeFiles/uninstall.dir
+/home/kaisar/warehouse_robot/build/stage_ros2/CMakeFiles/stage_ros2_uninstall.dir
+/home/kaisar/warehouse_robot/build/stage_ros2/CMakeFiles/stage_node.dir
+/home/kaisar/warehouse_robot/build/stage_ros2/CMakeFiles/stage_ros2.dir
+/home/kaisar/warehouse_robot/build/stage_ros2/CMakeFiles/test.dir
+/home/kaisar/warehouse_robot/build/stage_ros2/CMakeFiles/edit_cache.dir
+/home/kaisar/warehouse_robot/build/stage_ros2/CMakeFiles/rebuild_cache.dir
+/home/kaisar/warehouse_robot/build/stage_ros2/CMakeFiles/list_install_components.dir
+/home/kaisar/warehouse_robot/build/stage_ros2/CMakeFiles/install.dir
+/home/kaisar/warehouse_robot/build/stage_ros2/CMakeFiles/install/local.dir
+/home/kaisar/warehouse_robot/build/stage_ros2/CMakeFiles/install/strip.dir

@@ -1,0 +1,17 @@
+// generated from rosidl_adapter/resource/srv.idl.em
+// with input from robot_msgs/srv/CancelRoute.srv
+// generated code does not contain a copyright notice
+
+
+module robot_msgs {
+  module srv {
+    struct CancelRoute_Request {
+      string message;
+    };
+    struct CancelRoute_Response {
+      boolean ok;
+
+      string error;
+    };
+  };
+};

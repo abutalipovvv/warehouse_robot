@@ -4,6 +4,8 @@ file(REMOVE_RECURSE
   "/home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_generator_rs/robot_msgs/rust/src/lib.rs"
   "/home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_generator_rs/robot_msgs/rust/src/msg.rs"
   "/home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_generator_rs/robot_msgs/rust/src/msg/rmw.rs"
+  "/home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_generator_rs/robot_msgs/rust/src/srv.rs"
+  "/home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_generator_rs/robot_msgs/rust/src/srv/rmw.rs"
   "CMakeFiles/robot_msgs__rs"
 )
 

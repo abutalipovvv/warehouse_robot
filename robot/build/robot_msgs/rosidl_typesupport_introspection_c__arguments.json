@@ -3,7 +3,13 @@
   "output_dir": "/home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_typesupport_introspection_c/robot_msgs",
   "template_dir": "/opt/ros/jazzy/share/rosidl_typesupport_introspection_c/resource",
   "idl_tuples": [
-    "/home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_adapter/robot_msgs:msg/RobotStatus.idl"
+    "/home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_adapter/robot_msgs:msg/RobotStatus.idl",
+    "/home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_adapter/robot_msgs:srv/PlanRoute.idl",
+    "/home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_adapter/robot_msgs:srv/ExecuteRoute.idl",
+    "/home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_adapter/robot_msgs:srv/CancelRoute.idl",
+    "/home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_adapter/robot_msgs:srv/SetTeleop.idl",
+    "/home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_adapter/robot_msgs:srv/ReleaseManual.idl",
+    "/home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_adapter/robot_msgs:srv/StopRobot.idl"
   ],
   "ros_interface_dependencies": [
     "builtin_interfaces:/opt/ros/jazzy/share/builtin_interfaces/msg/Duration.idl",
@@ -69,7 +75,8 @@
     "std_msgs:/opt/ros/jazzy/share/std_msgs/msg/UInt64.idl",
     "std_msgs:/opt/ros/jazzy/share/std_msgs/msg/UInt64MultiArray.idl",
     "std_msgs:/opt/ros/jazzy/share/std_msgs/msg/UInt8.idl",
-    "std_msgs:/opt/ros/jazzy/share/std_msgs/msg/UInt8MultiArray.idl"
+    "std_msgs:/opt/ros/jazzy/share/std_msgs/msg/UInt8MultiArray.idl",
+    "service_msgs:/opt/ros/jazzy/share/service_msgs/msg/ServiceEventInfo.idl"
   ],
   "target_dependencies": [
     "/opt/ros/jazzy/lib/rosidl_typesupport_introspection_c/rosidl_typesupport_introspection_c",
@@ -81,6 +88,12 @@
     "/opt/ros/jazzy/share/rosidl_typesupport_introspection_c/resource/srv__rosidl_typesupport_introspection_c.h.em",
     "/opt/ros/jazzy/share/rosidl_typesupport_introspection_c/resource/srv__type_support.c.em",
     "/home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_adapter/robot_msgs/msg/RobotStatus.idl",
+    "/home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_adapter/robot_msgs/srv/PlanRoute.idl",
+    "/home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_adapter/robot_msgs/srv/ExecuteRoute.idl",
+    "/home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_adapter/robot_msgs/srv/CancelRoute.idl",
+    "/home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_adapter/robot_msgs/srv/SetTeleop.idl",
+    "/home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_adapter/robot_msgs/srv/ReleaseManual.idl",
+    "/home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_adapter/robot_msgs/srv/StopRobot.idl",
     "/opt/ros/jazzy/share/builtin_interfaces/msg/Duration.idl",
     "/opt/ros/jazzy/share/builtin_interfaces/msg/Time.idl",
     "/opt/ros/jazzy/share/geometry_msgs/msg/Accel.idl",
@@ -144,6 +157,7 @@
     "/opt/ros/jazzy/share/std_msgs/msg/UInt64.idl",
     "/opt/ros/jazzy/share/std_msgs/msg/UInt64MultiArray.idl",
     "/opt/ros/jazzy/share/std_msgs/msg/UInt8.idl",
-    "/opt/ros/jazzy/share/std_msgs/msg/UInt8MultiArray.idl"
+    "/opt/ros/jazzy/share/std_msgs/msg/UInt8MultiArray.idl",
+    "/opt/ros/jazzy/share/service_msgs/msg/ServiceEventInfo.idl"
   ]
 }

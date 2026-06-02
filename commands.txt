@@ -18,8 +18,15 @@ py serve_web.py --map-dir maps_out/22.05.26_smap.smap --open
 # Single robot HTTP API + ROS 2
 cd ~/warehouse_robot/robot
 source /opt/ros/jazzy/setup.bash
-colcon build --packages-select robot_msgs
+colcon build --packages-select robot_msgs robot_planner robot_status
 source install/setup.bash
 cd ~/warehouse_robot
 export ROS_LOG_DIR=/tmp/ros_logs
+# Robot-side server listens on LAN by default at 0.0.0.0:8790
 python3 serve_robot.py --map-dir maps_out/22.05.26_smap.smap --open
+
+
+# Operator app for connecting to robots by IP
+cd ~/warehouse_robot
+# Run this on another computer, then add robot 192.168.11.104:8790 in the UI
+python3 serve_operator.py --open

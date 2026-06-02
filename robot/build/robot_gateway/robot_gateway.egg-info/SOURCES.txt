@@ -1,0 +1,13 @@
+package.xml
+setup.cfg
+setup.py
+resource/robot_gateway
+robot_gateway/__init__.py
+robot_gateway/gateway_node.py
+robot_gateway.egg-info/PKG-INFO
+robot_gateway.egg-info/SOURCES.txt
+robot_gateway.egg-info/dependency_links.txt
+robot_gateway.egg-info/entry_points.txt
+robot_gateway.egg-info/requires.txt
+robot_gateway.egg-info/top_level.txt
+robot_gateway.egg-info/zip-safe

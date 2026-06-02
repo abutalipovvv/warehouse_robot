@@ -1,0 +1,7 @@
+{
+  "package_name": "robot_msgs",
+  "non_idl_tuples": [
+    "/home/kaisar/warehouse_robot/robot/ws/src/robot_msgs:msg/RobotStatus.msg",
+    "/home/kaisar/warehouse_robot/robot/ws/src/robot_msgs:srv/PlanRoute.srv"
+  ]
+}

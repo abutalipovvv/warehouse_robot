@@ -1,0 +1,17 @@
+// generated from rosidl_adapter/resource/srv.idl.em
+// with input from robot_msgs/srv/ExecuteRoute.srv
+// generated code does not contain a copyright notice
+
+
+module robot_msgs {
+  module srv {
+    struct ExecuteRoute_Request {
+      string route_json;
+    };
+    struct ExecuteRoute_Response {
+      boolean ok;
+
+      string error;
+    };
+  };
+};

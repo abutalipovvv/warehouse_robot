@@ -48,13 +48,14 @@ planner:
 localization:
   pose_source: AMCL + IMU-aided odom
   localization_timeout: 0.5
+  amcl_correction_timeout: 5
   allowed_lateral_error: 0.02
   allowed_yaw_error_deg: 1
   accept_stale_pose_when_stationary: true
   stationary_linear_velocity_epsilon: 0.02
   stationary_angular_velocity_epsilon: 0.05
 manual:
-  linear_speed: 0.5
+  linear_speed: 1
   angular_speed: 1.8
   prediction_time: 1
   prediction_step: 0.1

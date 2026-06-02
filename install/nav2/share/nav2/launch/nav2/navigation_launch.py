@@ -1,0 +1,1 @@
+/home/kaisar/warehouse_robot/robot/ws/src/nav2/launch/nav2/navigation_launch.py

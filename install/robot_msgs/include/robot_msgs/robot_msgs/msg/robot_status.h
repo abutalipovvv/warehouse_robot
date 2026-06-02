@@ -1,0 +1,1 @@
+/home/kaisar/warehouse_robot/build/robot_msgs/rosidl_generator_c/robot_msgs/msg/robot_status.h

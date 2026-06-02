@@ -1,0 +1,267 @@
+{
+	"configurations" : 
+	[
+		{
+			"directories" : 
+			[
+				{
+					"build" : ".",
+					"childIndexes" : 
+					[
+						1,
+						2
+					],
+					"hasInstallRule" : true,
+					"jsonFile" : "directory-.-40295bf741f923501215.json",
+					"minimumCMakeVersion" : 
+					{
+						"string" : "3.20"
+					},
+					"projectIndex" : 0,
+					"source" : ".",
+					"targetIndexes" : 
+					[
+						0,
+						1,
+						2,
+						3,
+						5,
+						6,
+						7,
+						8,
+						9,
+						10,
+						11,
+						12,
+						13,
+						15,
+						16,
+						17,
+						18,
+						19
+					]
+				},
+				{
+					"build" : "robot_msgs__py",
+					"jsonFile" : "directory-robot_msgs__py-42bdc816bfbfe68e4ba0.json",
+					"minimumCMakeVersion" : 
+					{
+						"string" : "3.20"
+					},
+					"parentIndex" : 0,
+					"projectIndex" : 0,
+					"source" : "/home/kaisar/warehouse_robot/build/robot_msgs/robot_msgs__py",
+					"targetIndexes" : 
+					[
+						4
+					]
+				},
+				{
+					"build" : "robot_msgs__rs",
+					"jsonFile" : "directory-robot_msgs__rs-a05390925c94a653899e.json",
+					"minimumCMakeVersion" : 
+					{
+						"string" : "3.20"
+					},
+					"parentIndex" : 0,
+					"projectIndex" : 0,
+					"source" : "/home/kaisar/warehouse_robot/build/robot_msgs/robot_msgs__rs",
+					"targetIndexes" : 
+					[
+						14
+					]
+				}
+			],
+			"name" : "",
+			"projects" : 
+			[
+				{
+					"directoryIndexes" : 
+					[
+						0,
+						1,
+						2
+					],
+					"name" : "robot_msgs",
+					"targetIndexes" : 
+					[
+						0,
+						1,
+						2,
+						3,
+						4,
+						5,
+						6,
+						7,
+						8,
+						9,
+						10,
+						11,
+						12,
+						13,
+						14,
+						15,
+						16,
+						17,
+						18,
+						19
+					]
+				}
+			],
+			"targets" : 
+			[
+				{
+					"directoryIndex" : 0,
+					"id" : "ament_cmake_python_build_robot_msgs_egg::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-ament_cmake_python_build_robot_msgs_egg-47a17ca55b57b7b286d0.json",
+					"name" : "ament_cmake_python_build_robot_msgs_egg",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "ament_cmake_python_symlink_robot_msgs::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-ament_cmake_python_symlink_robot_msgs-10a674b2335d8726cc2e.json",
+					"name" : "ament_cmake_python_symlink_robot_msgs",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "robot_msgs::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-robot_msgs-8873ad3a4337b124199f.json",
+					"name" : "robot_msgs",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "robot_msgs__cpp::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-robot_msgs__cpp-3ae79ed0e0f2f58de66f.json",
+					"name" : "robot_msgs__cpp",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 1,
+					"id" : "robot_msgs__py::@5fc6735b69ad7f9b66f4",
+					"jsonFile" : "target-robot_msgs__py-faa4b6f53ab10938458d.json",
+					"name" : "robot_msgs__py",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "robot_msgs__rosidl_generator_c::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-robot_msgs__rosidl_generator_c-f3d3f838c8824f8eb855.json",
+					"name" : "robot_msgs__rosidl_generator_c",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "robot_msgs__rosidl_generator_py::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-robot_msgs__rosidl_generator_py-dbbb5545c14d990884a8.json",
+					"name" : "robot_msgs__rosidl_generator_py",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "robot_msgs__rosidl_generator_type_description::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-robot_msgs__rosidl_generator_type_description-2ef37bd397ab7b8ac618.json",
+					"name" : "robot_msgs__rosidl_generator_type_description",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "robot_msgs__rosidl_typesupport_c::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-robot_msgs__rosidl_typesupport_c-d780b32601f5b348d81f.json",
+					"name" : "robot_msgs__rosidl_typesupport_c",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "robot_msgs__rosidl_typesupport_cpp::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-robot_msgs__rosidl_typesupport_cpp-c6c01e4df5994f9b23f6.json",
+					"name" : "robot_msgs__rosidl_typesupport_cpp",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "robot_msgs__rosidl_typesupport_fastrtps_c::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-robot_msgs__rosidl_typesupport_fastrtps_c-d0d17ade7e72e99115e8.json",
+					"name" : "robot_msgs__rosidl_typesupport_fastrtps_c",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "robot_msgs__rosidl_typesupport_fastrtps_cpp::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-robot_msgs__rosidl_typesupport_fastrtps_cpp-102bfdc97f3a8a9cf381.json",
+					"name" : "robot_msgs__rosidl_typesupport_fastrtps_cpp",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "robot_msgs__rosidl_typesupport_introspection_c::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-robot_msgs__rosidl_typesupport_introspection_c-b456ab1cfb8632d6284f.json",
+					"name" : "robot_msgs__rosidl_typesupport_introspection_c",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "robot_msgs__rosidl_typesupport_introspection_cpp::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-robot_msgs__rosidl_typesupport_introspection_cpp-9eda11c909102013619a.json",
+					"name" : "robot_msgs__rosidl_typesupport_introspection_cpp",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 2,
+					"id" : "robot_msgs__rs::@c8e52f91219c0fbc9b11",
+					"jsonFile" : "target-robot_msgs__rs-ea5df8a2c25a78ff3e0d.json",
+					"name" : "robot_msgs__rs",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "robot_msgs_s__rosidl_typesupport_c::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-robot_msgs_s__rosidl_typesupport_c-07d2f3c53304eb79381e.json",
+					"name" : "robot_msgs_s__rosidl_typesupport_c",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "robot_msgs_s__rosidl_typesupport_fastrtps_c::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-robot_msgs_s__rosidl_typesupport_fastrtps_c-2137aafec1793f926ff1.json",
+					"name" : "robot_msgs_s__rosidl_typesupport_fastrtps_c",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "robot_msgs_s__rosidl_typesupport_introspection_c::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-robot_msgs_s__rosidl_typesupport_introspection_c-c2cf089a93995912d885.json",
+					"name" : "robot_msgs_s__rosidl_typesupport_introspection_c",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "robot_msgs_uninstall::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-robot_msgs_uninstall-f68f6a2d910ce9aec177.json",
+					"name" : "robot_msgs_uninstall",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "uninstall::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-uninstall-d56fbdcfddd311cd29ca.json",
+					"name" : "uninstall",
+					"projectIndex" : 0
+				}
+			]
+		}
+	],
+	"kind" : "codemodel",
+	"paths" : 
+	{
+		"build" : "/home/kaisar/warehouse_robot/build/robot_msgs",
+		"source" : "/home/kaisar/warehouse_robot/robot/ws/src/robot_msgs"
+	},
+	"version" : 
+	{
+		"major" : 2,
+		"minor" : 6
+	}
+}

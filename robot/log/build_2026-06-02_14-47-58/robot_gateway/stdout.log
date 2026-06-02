@@ -1,0 +1,17 @@
+running develop
+running egg_info
+writing robot_gateway.egg-info/PKG-INFO
+writing dependency_links to robot_gateway.egg-info/dependency_links.txt
+writing entry points to robot_gateway.egg-info/entry_points.txt
+writing requirements to robot_gateway.egg-info/requires.txt
+writing top-level names to robot_gateway.egg-info/top_level.txt
+reading manifest file 'robot_gateway.egg-info/SOURCES.txt'
+writing manifest file 'robot_gateway.egg-info/SOURCES.txt'
+running build_ext
+Creating /home/kaisar/warehouse_robot/robot/install/robot_gateway/lib/python3.12/site-packages/robot-gateway.egg-link (link to .)
+Installing robot_gateway_node script to /home/kaisar/warehouse_robot/robot/install/robot_gateway/lib/robot_gateway
+
+Installed /home/kaisar/warehouse_robot/robot/build/robot_gateway
+running symlink_data
+symbolically linking /home/kaisar/warehouse_robot/robot/build/robot_gateway/resource/robot_gateway -> /home/kaisar/warehouse_robot/robot/install/robot_gateway/share/ament_index/resource_index/packages
+symbolically linking /home/kaisar/warehouse_robot/robot/build/robot_gateway/package.xml -> /home/kaisar/warehouse_robot/robot/install/robot_gateway/share/robot_gateway

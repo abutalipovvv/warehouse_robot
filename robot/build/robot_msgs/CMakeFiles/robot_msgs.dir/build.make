@@ -67,6 +67,12 @@ include CMakeFiles/robot_msgs.dir/compiler_depend.make
 include CMakeFiles/robot_msgs.dir/progress.make
 
 CMakeFiles/robot_msgs: /home/kaisar/warehouse_robot/robot/ws/src/robot_msgs/msg/RobotStatus.msg
+CMakeFiles/robot_msgs: /home/kaisar/warehouse_robot/robot/ws/src/robot_msgs/srv/PlanRoute.srv
+CMakeFiles/robot_msgs: /home/kaisar/warehouse_robot/robot/ws/src/robot_msgs/srv/ExecuteRoute.srv
+CMakeFiles/robot_msgs: /home/kaisar/warehouse_robot/robot/ws/src/robot_msgs/srv/CancelRoute.srv
+CMakeFiles/robot_msgs: /home/kaisar/warehouse_robot/robot/ws/src/robot_msgs/srv/SetTeleop.srv
+CMakeFiles/robot_msgs: /home/kaisar/warehouse_robot/robot/ws/src/robot_msgs/srv/ReleaseManual.srv
+CMakeFiles/robot_msgs: /home/kaisar/warehouse_robot/robot/ws/src/robot_msgs/srv/StopRobot.srv
 CMakeFiles/robot_msgs: /opt/ros/jazzy/share/builtin_interfaces/msg/Duration.idl
 CMakeFiles/robot_msgs: /opt/ros/jazzy/share/builtin_interfaces/msg/Time.idl
 CMakeFiles/robot_msgs: /opt/ros/jazzy/share/geometry_msgs/msg/Accel.idl
@@ -101,6 +107,7 @@ CMakeFiles/robot_msgs: /opt/ros/jazzy/share/geometry_msgs/msg/Vector3Stamped.idl
 CMakeFiles/robot_msgs: /opt/ros/jazzy/share/geometry_msgs/msg/VelocityStamped.idl
 CMakeFiles/robot_msgs: /opt/ros/jazzy/share/geometry_msgs/msg/Wrench.idl
 CMakeFiles/robot_msgs: /opt/ros/jazzy/share/geometry_msgs/msg/WrenchStamped.idl
+CMakeFiles/robot_msgs: /opt/ros/jazzy/share/service_msgs/msg/ServiceEventInfo.idl
 
 robot_msgs: CMakeFiles/robot_msgs
 robot_msgs: CMakeFiles/robot_msgs.dir/build.make

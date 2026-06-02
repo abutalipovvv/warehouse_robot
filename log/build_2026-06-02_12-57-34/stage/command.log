@@ -1,0 +1,6 @@
+Invoking command in '/home/kaisar/warehouse_robot/build/stage': DEBUGINFOD_URLS=https://debuginfod.ubuntu.com /usr/bin/cmake /home/kaisar/warehouse_robot/robot/ws/src/Stage -DCATKIN_INSTALL_INTO_PREFIX_ROOT=0 -DCATKIN_SYMLINK_INSTALL=ON -DCMAKE_INSTALL_PREFIX=/home/kaisar/warehouse_robot/install/stage
+Invoked command in '/home/kaisar/warehouse_robot/build/stage' returned '0': DEBUGINFOD_URLS=https://debuginfod.ubuntu.com /usr/bin/cmake /home/kaisar/warehouse_robot/robot/ws/src/Stage -DCATKIN_INSTALL_INTO_PREFIX_ROOT=0 -DCATKIN_SYMLINK_INSTALL=ON -DCMAKE_INSTALL_PREFIX=/home/kaisar/warehouse_robot/install/stage
+Invoking command in '/home/kaisar/warehouse_robot/build/stage': DEBUGINFOD_URLS=https://debuginfod.ubuntu.com /usr/bin/cmake --build /home/kaisar/warehouse_robot/build/stage -- -j12 -l12
+Invoked command in '/home/kaisar/warehouse_robot/build/stage' returned '0': DEBUGINFOD_URLS=https://debuginfod.ubuntu.com /usr/bin/cmake --build /home/kaisar/warehouse_robot/build/stage -- -j12 -l12
+Invoking command in '/home/kaisar/warehouse_robot/build/stage': DEBUGINFOD_URLS=https://debuginfod.ubuntu.com /usr/bin/cmake --install /home/kaisar/warehouse_robot/build/stage
+Invoked command in '/home/kaisar/warehouse_robot/build/stage' returned '0': DEBUGINFOD_URLS=https://debuginfod.ubuntu.com /usr/bin/cmake --install /home/kaisar/warehouse_robot/build/stage

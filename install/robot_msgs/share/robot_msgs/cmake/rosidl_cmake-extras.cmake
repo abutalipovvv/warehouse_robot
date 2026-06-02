@@ -1,0 +1,1 @@
+/home/kaisar/warehouse_robot/build/robot_msgs/rosidl_cmake/rosidl_cmake-extras.cmake

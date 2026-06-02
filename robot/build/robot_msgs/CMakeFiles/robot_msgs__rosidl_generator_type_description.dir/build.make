@@ -67,15 +67,51 @@ include CMakeFiles/robot_msgs__rosidl_generator_type_description.dir/compiler_de
 include CMakeFiles/robot_msgs__rosidl_generator_type_description.dir/progress.make
 
 CMakeFiles/robot_msgs__rosidl_generator_type_description: rosidl_generator_type_description/robot_msgs/msg/RobotStatus.json
+CMakeFiles/robot_msgs__rosidl_generator_type_description: rosidl_generator_type_description/robot_msgs/srv/PlanRoute.json
+CMakeFiles/robot_msgs__rosidl_generator_type_description: rosidl_generator_type_description/robot_msgs/srv/ExecuteRoute.json
+CMakeFiles/robot_msgs__rosidl_generator_type_description: rosidl_generator_type_description/robot_msgs/srv/CancelRoute.json
+CMakeFiles/robot_msgs__rosidl_generator_type_description: rosidl_generator_type_description/robot_msgs/srv/SetTeleop.json
+CMakeFiles/robot_msgs__rosidl_generator_type_description: rosidl_generator_type_description/robot_msgs/srv/ReleaseManual.json
+CMakeFiles/robot_msgs__rosidl_generator_type_description: rosidl_generator_type_description/robot_msgs/srv/StopRobot.json
 
 rosidl_generator_type_description/robot_msgs/msg/RobotStatus.json: /opt/ros/jazzy/lib/rosidl_generator_type_description/rosidl_generator_type_description
 rosidl_generator_type_description/robot_msgs/msg/RobotStatus.json: /opt/ros/jazzy/lib/python3.12/site-packages/rosidl_generator_type_description/__init__.py
 rosidl_generator_type_description/robot_msgs/msg/RobotStatus.json: rosidl_adapter/robot_msgs/msg/RobotStatus.idl
+rosidl_generator_type_description/robot_msgs/msg/RobotStatus.json: rosidl_adapter/robot_msgs/srv/PlanRoute.idl
+rosidl_generator_type_description/robot_msgs/msg/RobotStatus.json: rosidl_adapter/robot_msgs/srv/ExecuteRoute.idl
+rosidl_generator_type_description/robot_msgs/msg/RobotStatus.json: rosidl_adapter/robot_msgs/srv/CancelRoute.idl
+rosidl_generator_type_description/robot_msgs/msg/RobotStatus.json: rosidl_adapter/robot_msgs/srv/SetTeleop.idl
+rosidl_generator_type_description/robot_msgs/msg/RobotStatus.json: rosidl_adapter/robot_msgs/srv/ReleaseManual.idl
+rosidl_generator_type_description/robot_msgs/msg/RobotStatus.json: rosidl_adapter/robot_msgs/srv/StopRobot.idl
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --blue --bold --progress-dir=/home/kaisar/warehouse_robot/robot/build/robot_msgs/CMakeFiles --progress-num=$(CMAKE_PROGRESS_1) "Generating type hashes for ROS interfaces"
 	/usr/bin/python3 /opt/ros/jazzy/lib/rosidl_generator_type_description/rosidl_generator_type_description --generator-arguments-file /home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_generator_type_description__arguments.json
 
+rosidl_generator_type_description/robot_msgs/srv/PlanRoute.json: rosidl_generator_type_description/robot_msgs/msg/RobotStatus.json
+	@$(CMAKE_COMMAND) -E touch_nocreate rosidl_generator_type_description/robot_msgs/srv/PlanRoute.json
+
+rosidl_generator_type_description/robot_msgs/srv/ExecuteRoute.json: rosidl_generator_type_description/robot_msgs/msg/RobotStatus.json
+	@$(CMAKE_COMMAND) -E touch_nocreate rosidl_generator_type_description/robot_msgs/srv/ExecuteRoute.json
+
+rosidl_generator_type_description/robot_msgs/srv/CancelRoute.json: rosidl_generator_type_description/robot_msgs/msg/RobotStatus.json
+	@$(CMAKE_COMMAND) -E touch_nocreate rosidl_generator_type_description/robot_msgs/srv/CancelRoute.json
+
+rosidl_generator_type_description/robot_msgs/srv/SetTeleop.json: rosidl_generator_type_description/robot_msgs/msg/RobotStatus.json
+	@$(CMAKE_COMMAND) -E touch_nocreate rosidl_generator_type_description/robot_msgs/srv/SetTeleop.json
+
+rosidl_generator_type_description/robot_msgs/srv/ReleaseManual.json: rosidl_generator_type_description/robot_msgs/msg/RobotStatus.json
+	@$(CMAKE_COMMAND) -E touch_nocreate rosidl_generator_type_description/robot_msgs/srv/ReleaseManual.json
+
+rosidl_generator_type_description/robot_msgs/srv/StopRobot.json: rosidl_generator_type_description/robot_msgs/msg/RobotStatus.json
+	@$(CMAKE_COMMAND) -E touch_nocreate rosidl_generator_type_description/robot_msgs/srv/StopRobot.json
+
 robot_msgs__rosidl_generator_type_description: CMakeFiles/robot_msgs__rosidl_generator_type_description
 robot_msgs__rosidl_generator_type_description: rosidl_generator_type_description/robot_msgs/msg/RobotStatus.json
+robot_msgs__rosidl_generator_type_description: rosidl_generator_type_description/robot_msgs/srv/CancelRoute.json
+robot_msgs__rosidl_generator_type_description: rosidl_generator_type_description/robot_msgs/srv/ExecuteRoute.json
+robot_msgs__rosidl_generator_type_description: rosidl_generator_type_description/robot_msgs/srv/PlanRoute.json
+robot_msgs__rosidl_generator_type_description: rosidl_generator_type_description/robot_msgs/srv/ReleaseManual.json
+robot_msgs__rosidl_generator_type_description: rosidl_generator_type_description/robot_msgs/srv/SetTeleop.json
+robot_msgs__rosidl_generator_type_description: rosidl_generator_type_description/robot_msgs/srv/StopRobot.json
 robot_msgs__rosidl_generator_type_description: CMakeFiles/robot_msgs__rosidl_generator_type_description.dir/build.make
 .PHONY : robot_msgs__rosidl_generator_type_description
 

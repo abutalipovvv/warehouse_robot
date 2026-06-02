@@ -70,8 +70,21 @@ include /home/kaisar/warehouse_robot/robot/build/robot_msgs/robot_msgs__py/CMake
 /home/kaisar/warehouse_robot/robot/build/robot_msgs/robot_msgs__py/CMakeFiles/robot_msgs__py: rosidl_generator_py/robot_msgs/_robot_msgs_s.ep.rosidl_typesupport_introspection_c.c
 /home/kaisar/warehouse_robot/robot/build/robot_msgs/robot_msgs__py/CMakeFiles/robot_msgs__py: rosidl_generator_py/robot_msgs/_robot_msgs_s.ep.rosidl_typesupport_c.c
 /home/kaisar/warehouse_robot/robot/build/robot_msgs/robot_msgs__py/CMakeFiles/robot_msgs__py: rosidl_generator_py/robot_msgs/msg/_robot_status.py
+/home/kaisar/warehouse_robot/robot/build/robot_msgs/robot_msgs__py/CMakeFiles/robot_msgs__py: rosidl_generator_py/robot_msgs/srv/_plan_route.py
+/home/kaisar/warehouse_robot/robot/build/robot_msgs/robot_msgs__py/CMakeFiles/robot_msgs__py: rosidl_generator_py/robot_msgs/srv/_execute_route.py
+/home/kaisar/warehouse_robot/robot/build/robot_msgs/robot_msgs__py/CMakeFiles/robot_msgs__py: rosidl_generator_py/robot_msgs/srv/_cancel_route.py
+/home/kaisar/warehouse_robot/robot/build/robot_msgs/robot_msgs__py/CMakeFiles/robot_msgs__py: rosidl_generator_py/robot_msgs/srv/_set_teleop.py
+/home/kaisar/warehouse_robot/robot/build/robot_msgs/robot_msgs__py/CMakeFiles/robot_msgs__py: rosidl_generator_py/robot_msgs/srv/_release_manual.py
+/home/kaisar/warehouse_robot/robot/build/robot_msgs/robot_msgs__py/CMakeFiles/robot_msgs__py: rosidl_generator_py/robot_msgs/srv/_stop_robot.py
 /home/kaisar/warehouse_robot/robot/build/robot_msgs/robot_msgs__py/CMakeFiles/robot_msgs__py: rosidl_generator_py/robot_msgs/msg/__init__.py
+/home/kaisar/warehouse_robot/robot/build/robot_msgs/robot_msgs__py/CMakeFiles/robot_msgs__py: rosidl_generator_py/robot_msgs/srv/__init__.py
 /home/kaisar/warehouse_robot/robot/build/robot_msgs/robot_msgs__py/CMakeFiles/robot_msgs__py: rosidl_generator_py/robot_msgs/msg/_robot_status_s.c
+/home/kaisar/warehouse_robot/robot/build/robot_msgs/robot_msgs__py/CMakeFiles/robot_msgs__py: rosidl_generator_py/robot_msgs/srv/_plan_route_s.c
+/home/kaisar/warehouse_robot/robot/build/robot_msgs/robot_msgs__py/CMakeFiles/robot_msgs__py: rosidl_generator_py/robot_msgs/srv/_execute_route_s.c
+/home/kaisar/warehouse_robot/robot/build/robot_msgs/robot_msgs__py/CMakeFiles/robot_msgs__py: rosidl_generator_py/robot_msgs/srv/_cancel_route_s.c
+/home/kaisar/warehouse_robot/robot/build/robot_msgs/robot_msgs__py/CMakeFiles/robot_msgs__py: rosidl_generator_py/robot_msgs/srv/_set_teleop_s.c
+/home/kaisar/warehouse_robot/robot/build/robot_msgs/robot_msgs__py/CMakeFiles/robot_msgs__py: rosidl_generator_py/robot_msgs/srv/_release_manual_s.c
+/home/kaisar/warehouse_robot/robot/build/robot_msgs/robot_msgs__py/CMakeFiles/robot_msgs__py: rosidl_generator_py/robot_msgs/srv/_stop_robot_s.c
 
 rosidl_generator_py/robot_msgs/_robot_msgs_s.ep.rosidl_typesupport_fastrtps_c.c: /opt/ros/jazzy/lib/rosidl_generator_py/rosidl_generator_py
 rosidl_generator_py/robot_msgs/_robot_msgs_s.ep.rosidl_typesupport_fastrtps_c.c: /opt/ros/jazzy/lib/python3.12/site-packages/rosidl_generator_py/__init__.py
@@ -87,6 +100,12 @@ rosidl_generator_py/robot_msgs/_robot_msgs_s.ep.rosidl_typesupport_fastrtps_c.c:
 rosidl_generator_py/robot_msgs/_robot_msgs_s.ep.rosidl_typesupport_fastrtps_c.c: /opt/ros/jazzy/share/rosidl_generator_py/resource/_srv_pkg_typesupport_entry_point.c.em
 rosidl_generator_py/robot_msgs/_robot_msgs_s.ep.rosidl_typesupport_fastrtps_c.c: /opt/ros/jazzy/share/rosidl_generator_py/resource/_srv.py.em
 rosidl_generator_py/robot_msgs/_robot_msgs_s.ep.rosidl_typesupport_fastrtps_c.c: rosidl_adapter/robot_msgs/msg/RobotStatus.idl
+rosidl_generator_py/robot_msgs/_robot_msgs_s.ep.rosidl_typesupport_fastrtps_c.c: rosidl_adapter/robot_msgs/srv/PlanRoute.idl
+rosidl_generator_py/robot_msgs/_robot_msgs_s.ep.rosidl_typesupport_fastrtps_c.c: rosidl_adapter/robot_msgs/srv/ExecuteRoute.idl
+rosidl_generator_py/robot_msgs/_robot_msgs_s.ep.rosidl_typesupport_fastrtps_c.c: rosidl_adapter/robot_msgs/srv/CancelRoute.idl
+rosidl_generator_py/robot_msgs/_robot_msgs_s.ep.rosidl_typesupport_fastrtps_c.c: rosidl_adapter/robot_msgs/srv/SetTeleop.idl
+rosidl_generator_py/robot_msgs/_robot_msgs_s.ep.rosidl_typesupport_fastrtps_c.c: rosidl_adapter/robot_msgs/srv/ReleaseManual.idl
+rosidl_generator_py/robot_msgs/_robot_msgs_s.ep.rosidl_typesupport_fastrtps_c.c: rosidl_adapter/robot_msgs/srv/StopRobot.idl
 rosidl_generator_py/robot_msgs/_robot_msgs_s.ep.rosidl_typesupport_fastrtps_c.c: /opt/ros/jazzy/share/builtin_interfaces/msg/Duration.idl
 rosidl_generator_py/robot_msgs/_robot_msgs_s.ep.rosidl_typesupport_fastrtps_c.c: /opt/ros/jazzy/share/builtin_interfaces/msg/Time.idl
 rosidl_generator_py/robot_msgs/_robot_msgs_s.ep.rosidl_typesupport_fastrtps_c.c: /opt/ros/jazzy/share/geometry_msgs/msg/Accel.idl
@@ -151,6 +170,7 @@ rosidl_generator_py/robot_msgs/_robot_msgs_s.ep.rosidl_typesupport_fastrtps_c.c:
 rosidl_generator_py/robot_msgs/_robot_msgs_s.ep.rosidl_typesupport_fastrtps_c.c: /opt/ros/jazzy/share/std_msgs/msg/UInt64MultiArray.idl
 rosidl_generator_py/robot_msgs/_robot_msgs_s.ep.rosidl_typesupport_fastrtps_c.c: /opt/ros/jazzy/share/std_msgs/msg/UInt8.idl
 rosidl_generator_py/robot_msgs/_robot_msgs_s.ep.rosidl_typesupport_fastrtps_c.c: /opt/ros/jazzy/share/std_msgs/msg/UInt8MultiArray.idl
+rosidl_generator_py/robot_msgs/_robot_msgs_s.ep.rosidl_typesupport_fastrtps_c.c: /opt/ros/jazzy/share/service_msgs/msg/ServiceEventInfo.idl
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --blue --bold --progress-dir=/home/kaisar/warehouse_robot/robot/build/robot_msgs/CMakeFiles --progress-num=$(CMAKE_PROGRESS_1) "Generating Python code for ROS interfaces"
 	cd /home/kaisar/warehouse_robot/robot/build/robot_msgs/robot_msgs__py && /usr/bin/python3 /opt/ros/jazzy/share/rosidl_generator_py/cmake/../../../lib/rosidl_generator_py/rosidl_generator_py --generator-arguments-file /home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_generator_py__arguments.json --typesupport-impls "rosidl_typesupport_fastrtps_c;rosidl_typesupport_introspection_c;rosidl_typesupport_c"
 
@@ -163,11 +183,50 @@ rosidl_generator_py/robot_msgs/_robot_msgs_s.ep.rosidl_typesupport_c.c: rosidl_g
 rosidl_generator_py/robot_msgs/msg/_robot_status.py: rosidl_generator_py/robot_msgs/_robot_msgs_s.ep.rosidl_typesupport_fastrtps_c.c
 	@$(CMAKE_COMMAND) -E touch_nocreate rosidl_generator_py/robot_msgs/msg/_robot_status.py
 
+rosidl_generator_py/robot_msgs/srv/_plan_route.py: rosidl_generator_py/robot_msgs/_robot_msgs_s.ep.rosidl_typesupport_fastrtps_c.c
+	@$(CMAKE_COMMAND) -E touch_nocreate rosidl_generator_py/robot_msgs/srv/_plan_route.py
+
+rosidl_generator_py/robot_msgs/srv/_execute_route.py: rosidl_generator_py/robot_msgs/_robot_msgs_s.ep.rosidl_typesupport_fastrtps_c.c
+	@$(CMAKE_COMMAND) -E touch_nocreate rosidl_generator_py/robot_msgs/srv/_execute_route.py
+
+rosidl_generator_py/robot_msgs/srv/_cancel_route.py: rosidl_generator_py/robot_msgs/_robot_msgs_s.ep.rosidl_typesupport_fastrtps_c.c
+	@$(CMAKE_COMMAND) -E touch_nocreate rosidl_generator_py/robot_msgs/srv/_cancel_route.py
+
+rosidl_generator_py/robot_msgs/srv/_set_teleop.py: rosidl_generator_py/robot_msgs/_robot_msgs_s.ep.rosidl_typesupport_fastrtps_c.c
+	@$(CMAKE_COMMAND) -E touch_nocreate rosidl_generator_py/robot_msgs/srv/_set_teleop.py
+
+rosidl_generator_py/robot_msgs/srv/_release_manual.py: rosidl_generator_py/robot_msgs/_robot_msgs_s.ep.rosidl_typesupport_fastrtps_c.c
+	@$(CMAKE_COMMAND) -E touch_nocreate rosidl_generator_py/robot_msgs/srv/_release_manual.py
+
+rosidl_generator_py/robot_msgs/srv/_stop_robot.py: rosidl_generator_py/robot_msgs/_robot_msgs_s.ep.rosidl_typesupport_fastrtps_c.c
+	@$(CMAKE_COMMAND) -E touch_nocreate rosidl_generator_py/robot_msgs/srv/_stop_robot.py
+
 rosidl_generator_py/robot_msgs/msg/__init__.py: rosidl_generator_py/robot_msgs/_robot_msgs_s.ep.rosidl_typesupport_fastrtps_c.c
 	@$(CMAKE_COMMAND) -E touch_nocreate rosidl_generator_py/robot_msgs/msg/__init__.py
 
+rosidl_generator_py/robot_msgs/srv/__init__.py: rosidl_generator_py/robot_msgs/_robot_msgs_s.ep.rosidl_typesupport_fastrtps_c.c
+	@$(CMAKE_COMMAND) -E touch_nocreate rosidl_generator_py/robot_msgs/srv/__init__.py
+
 rosidl_generator_py/robot_msgs/msg/_robot_status_s.c: rosidl_generator_py/robot_msgs/_robot_msgs_s.ep.rosidl_typesupport_fastrtps_c.c
 	@$(CMAKE_COMMAND) -E touch_nocreate rosidl_generator_py/robot_msgs/msg/_robot_status_s.c
+
+rosidl_generator_py/robot_msgs/srv/_plan_route_s.c: rosidl_generator_py/robot_msgs/_robot_msgs_s.ep.rosidl_typesupport_fastrtps_c.c
+	@$(CMAKE_COMMAND) -E touch_nocreate rosidl_generator_py/robot_msgs/srv/_plan_route_s.c
+
+rosidl_generator_py/robot_msgs/srv/_execute_route_s.c: rosidl_generator_py/robot_msgs/_robot_msgs_s.ep.rosidl_typesupport_fastrtps_c.c
+	@$(CMAKE_COMMAND) -E touch_nocreate rosidl_generator_py/robot_msgs/srv/_execute_route_s.c
+
+rosidl_generator_py/robot_msgs/srv/_cancel_route_s.c: rosidl_generator_py/robot_msgs/_robot_msgs_s.ep.rosidl_typesupport_fastrtps_c.c
+	@$(CMAKE_COMMAND) -E touch_nocreate rosidl_generator_py/robot_msgs/srv/_cancel_route_s.c
+
+rosidl_generator_py/robot_msgs/srv/_set_teleop_s.c: rosidl_generator_py/robot_msgs/_robot_msgs_s.ep.rosidl_typesupport_fastrtps_c.c
+	@$(CMAKE_COMMAND) -E touch_nocreate rosidl_generator_py/robot_msgs/srv/_set_teleop_s.c
+
+rosidl_generator_py/robot_msgs/srv/_release_manual_s.c: rosidl_generator_py/robot_msgs/_robot_msgs_s.ep.rosidl_typesupport_fastrtps_c.c
+	@$(CMAKE_COMMAND) -E touch_nocreate rosidl_generator_py/robot_msgs/srv/_release_manual_s.c
+
+rosidl_generator_py/robot_msgs/srv/_stop_robot_s.c: rosidl_generator_py/robot_msgs/_robot_msgs_s.ep.rosidl_typesupport_fastrtps_c.c
+	@$(CMAKE_COMMAND) -E touch_nocreate rosidl_generator_py/robot_msgs/srv/_stop_robot_s.c
 
 robot_msgs__py: /home/kaisar/warehouse_robot/robot/build/robot_msgs/robot_msgs__py/CMakeFiles/robot_msgs__py
 robot_msgs__py: rosidl_generator_py/robot_msgs/_robot_msgs_s.ep.rosidl_typesupport_c.c
@@ -176,6 +235,19 @@ robot_msgs__py: rosidl_generator_py/robot_msgs/_robot_msgs_s.ep.rosidl_typesuppo
 robot_msgs__py: rosidl_generator_py/robot_msgs/msg/__init__.py
 robot_msgs__py: rosidl_generator_py/robot_msgs/msg/_robot_status.py
 robot_msgs__py: rosidl_generator_py/robot_msgs/msg/_robot_status_s.c
+robot_msgs__py: rosidl_generator_py/robot_msgs/srv/__init__.py
+robot_msgs__py: rosidl_generator_py/robot_msgs/srv/_cancel_route.py
+robot_msgs__py: rosidl_generator_py/robot_msgs/srv/_cancel_route_s.c
+robot_msgs__py: rosidl_generator_py/robot_msgs/srv/_execute_route.py
+robot_msgs__py: rosidl_generator_py/robot_msgs/srv/_execute_route_s.c
+robot_msgs__py: rosidl_generator_py/robot_msgs/srv/_plan_route.py
+robot_msgs__py: rosidl_generator_py/robot_msgs/srv/_plan_route_s.c
+robot_msgs__py: rosidl_generator_py/robot_msgs/srv/_release_manual.py
+robot_msgs__py: rosidl_generator_py/robot_msgs/srv/_release_manual_s.c
+robot_msgs__py: rosidl_generator_py/robot_msgs/srv/_set_teleop.py
+robot_msgs__py: rosidl_generator_py/robot_msgs/srv/_set_teleop_s.c
+robot_msgs__py: rosidl_generator_py/robot_msgs/srv/_stop_robot.py
+robot_msgs__py: rosidl_generator_py/robot_msgs/srv/_stop_robot_s.c
 robot_msgs__py: /home/kaisar/warehouse_robot/robot/build/robot_msgs/robot_msgs__py/CMakeFiles/robot_msgs__py.dir/build.make
 .PHONY : robot_msgs__py
 

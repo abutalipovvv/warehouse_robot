@@ -1,2 +1,14 @@
 msg/RobotStatus.idl
 msg/RobotStatus.msg
+srv/CancelRoute.idl
+srv/CancelRoute.srv
+srv/ExecuteRoute.idl
+srv/ExecuteRoute.srv
+srv/PlanRoute.idl
+srv/PlanRoute.srv
+srv/ReleaseManual.idl
+srv/ReleaseManual.srv
+srv/SetTeleop.idl
+srv/SetTeleop.srv
+srv/StopRobot.idl
+srv/StopRobot.srv

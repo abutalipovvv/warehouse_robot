@@ -45,6 +45,7 @@ DEFAULT_ROUTE_PARAMS: dict[str, Any] = {
     "localization": {
         "pose_source": "AMCL + IMU-aided odom",
         "localization_timeout": 0.50,
+        "amcl_correction_timeout": 5.00,
         "allowed_lateral_error": 0.02,
         "allowed_yaw_error_deg": 1.0,
         "accept_stale_pose_when_stationary": True,

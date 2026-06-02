@@ -1,0 +1,29 @@
+// generated from rosidl_adapter/resource/srv.idl.em
+// with input from robot_msgs/srv/PlanRoute.srv
+// generated code does not contain a copyright notice
+
+
+module robot_msgs {
+  module srv {
+    struct PlanRoute_Request {
+      string goal_lm;
+
+      string start_lm;
+
+      boolean use_start_pose;
+
+      double start_x;
+
+      double start_y;
+
+      double start_yaw;
+    };
+    struct PlanRoute_Response {
+      boolean ok;
+
+      string error;
+
+      string route_json;
+    };
+  };
+};

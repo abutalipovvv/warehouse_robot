@@ -1,0 +1,10 @@
+string goal_lm
+string start_lm
+bool use_start_pose
+float64 start_x
+float64 start_y
+float64 start_yaw
+---
+bool ok
+string error
+string route_json

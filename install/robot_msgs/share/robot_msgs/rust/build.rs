@@ -1,0 +1,1 @@
+/home/kaisar/warehouse_robot/build/robot_msgs/rosidl_generator_rs/robot_msgs/rust/build.rs

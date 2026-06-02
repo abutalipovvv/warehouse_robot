@@ -1,0 +1,17 @@
+// generated from rosidl_adapter/resource/srv.idl.em
+// with input from robot_msgs/srv/StopRobot.srv
+// generated code does not contain a copyright notice
+
+
+module robot_msgs {
+  module srv {
+    struct StopRobot_Request {
+      string message;
+    };
+    struct StopRobot_Response {
+      boolean ok;
+
+      string error;
+    };
+  };
+};

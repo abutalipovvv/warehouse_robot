@@ -1,0 +1,26 @@
+running develop
+running egg_info
+creating robot_http_api.egg-info
+writing robot_http_api.egg-info/PKG-INFO
+writing dependency_links to robot_http_api.egg-info/dependency_links.txt
+writing entry points to robot_http_api.egg-info/entry_points.txt
+writing requirements to robot_http_api.egg-info/requires.txt
+writing top-level names to robot_http_api.egg-info/top_level.txt
+writing manifest file 'robot_http_api.egg-info/SOURCES.txt'
+reading manifest file 'robot_http_api.egg-info/SOURCES.txt'
+writing manifest file 'robot_http_api.egg-info/SOURCES.txt'
+running build_ext
+Creating /home/kaisar/warehouse_robot/robot/install/robot_http_api/lib/python3.12/site-packages/robot-http-api.egg-link (link to .)
+Installing robot_http_api_server script to /home/kaisar/warehouse_robot/robot/install/robot_http_api/lib/robot_http_api
+
+Installed /home/kaisar/warehouse_robot/robot/build/robot_http_api
+running symlink_data
+creating /home/kaisar/warehouse_robot/robot/install/robot_http_api/share/ament_index
+creating /home/kaisar/warehouse_robot/robot/install/robot_http_api/share/ament_index/resource_index
+creating /home/kaisar/warehouse_robot/robot/install/robot_http_api/share/ament_index/resource_index/packages
+symbolically linking /home/kaisar/warehouse_robot/robot/build/robot_http_api/resource/robot_http_api -> /home/kaisar/warehouse_robot/robot/install/robot_http_api/share/ament_index/resource_index/packages
+symbolically linking /home/kaisar/warehouse_robot/robot/build/robot_http_api/package.xml -> /home/kaisar/warehouse_robot/robot/install/robot_http_api/share/robot_http_api
+creating /home/kaisar/warehouse_robot/robot/install/robot_http_api/share/robot_http_api/static
+symbolically linking /home/kaisar/warehouse_robot/robot/build/robot_http_api/robot_http_api/static/app.js -> /home/kaisar/warehouse_robot/robot/install/robot_http_api/share/robot_http_api/static
+symbolically linking /home/kaisar/warehouse_robot/robot/build/robot_http_api/robot_http_api/static/index.html -> /home/kaisar/warehouse_robot/robot/install/robot_http_api/share/robot_http_api/static
+symbolically linking /home/kaisar/warehouse_robot/robot/build/robot_http_api/robot_http_api/static/styles.css -> /home/kaisar/warehouse_robot/robot/install/robot_http_api/share/robot_http_api/static

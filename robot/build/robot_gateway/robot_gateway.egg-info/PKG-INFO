@@ -1,0 +1,7 @@
+Metadata-Version: 2.1
+Name: robot-gateway
+Version: 0.0.0
+Summary: ROS 2 gateway node between robot services/status topics and external transports.
+Maintainer: ros
+Maintainer-email: kaisar.abutalipovv@gmail.com
+License: TODO: License declaration

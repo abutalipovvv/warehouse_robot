@@ -1,0 +1,1 @@
+/home/kaisar/warehouse_robot/build/trp1_description/ament_cmake_core/trp1_descriptionConfig-version.cmake

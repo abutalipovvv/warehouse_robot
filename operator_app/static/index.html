@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Warehouse Operator</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true"></span>
+        <div>
+          <h1>Warehouse Operator</h1>
+          <p>Connect to robots over LAN or Wi-Fi and open their control console.</p>
+        </div>
+      </div>
+      <div class="toolbar">
+        <button id="openSidebarButton" type="button">Robots</button>
+        <button id="refreshButton" type="button">Refresh</button>
+        <button id="addRobotButton" class="primary" type="button">Add Robot +</button>
+      </div>
+    </header>
+
+    <main class="workspace">
+      <div id="sidebarBackdrop" class="sidebar-backdrop"></div>
+
+      <aside id="sidebarDrawer" class="sidebar">
+        <div class="sidebar-head">
+          <div>
+            <div class="eyebrow">Available Robots</div>
+            <strong id="robotCountText">0 saved</strong>
+          </div>
+          <button id="closeSidebarButton" class="ghost-button" type="button" aria-label="Close">x</button>
+        </div>
+        <div id="robotsList" class="robot-list"></div>
+      </aside>
+
+      <section class="detail-panel">
+        <div id="emptyState" class="empty-state">
+          <h2>Select a robot</h2>
+          <p>Add a robot by IP address, then open its live robot-side UI here. The robot view will use the full workspace.</p>
+        </div>
+
+        <div id="robotView" class="robot-view hidden">
+          <iframe id="robotFrame" title="Robot control view"></iframe>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <dialog id="addRobotDialog">
+    <form method="dialog" class="dialog-card">
+      <div class="dialog-head">
+        <div>
+          <div class="eyebrow">Add Robot</div>
+          <h2>Connect by IP</h2>
+        </div>
+        <button id="closeDialogButton" class="ghost-button" type="button" aria-label="Close">x</button>
+      </div>
+
+      <label>
+        Display Name
+        <input id="robotNameInput" type="text" placeholder="Robot 1" />
+      </label>
+
+      <div class="field-row">
+        <label>
+          IP Address
+          <input id="robotHostInput" type="text" placeholder="192.168.1.45" required />
+        </label>
+        <label>
+          Port
+          <input id="robotPortInput" type="number" min="1" max="65535" value="8790" required />
+        </label>
+      </div>
+
+      <div id="probeResult" class="probe-result neutral">Enter the robot IP and check the connection.</div>
+
+      <div class="dialog-actions">
+        <button id="probeRobotButton" type="button">Check Robot</button>
+        <button id="saveRobotButton" class="primary" type="button">Save Robot</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="app.js"></script>
+</body>
+</html>

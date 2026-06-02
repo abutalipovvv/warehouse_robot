@@ -71,6 +71,8 @@ include /home/kaisar/warehouse_robot/robot/build/robot_msgs/robot_msgs__rs/CMake
 /home/kaisar/warehouse_robot/robot/build/robot_msgs/robot_msgs__rs/CMakeFiles/robot_msgs__rs: rosidl_generator_rs/robot_msgs/rust/Cargo.toml
 /home/kaisar/warehouse_robot/robot/build/robot_msgs/robot_msgs__rs/CMakeFiles/robot_msgs__rs: rosidl_generator_rs/robot_msgs/rust/src/msg.rs
 /home/kaisar/warehouse_robot/robot/build/robot_msgs/robot_msgs__rs/CMakeFiles/robot_msgs__rs: rosidl_generator_rs/robot_msgs/rust/src/msg/rmw.rs
+/home/kaisar/warehouse_robot/robot/build/robot_msgs/robot_msgs__rs/CMakeFiles/robot_msgs__rs: rosidl_generator_rs/robot_msgs/rust/src/srv.rs
+/home/kaisar/warehouse_robot/robot/build/robot_msgs/robot_msgs__rs/CMakeFiles/robot_msgs__rs: rosidl_generator_rs/robot_msgs/rust/src/srv/rmw.rs
 
 rosidl_generator_rs/robot_msgs/rust/src/lib.rs: /opt/ros/jazzy/lib/rosidl_generator_rs/rosidl_generator_rs
 rosidl_generator_rs/robot_msgs/rust/src/lib.rs: /opt/ros/jazzy/lib/python3.12/site-packages/rosidl_generator_rs/__init__.py
@@ -85,7 +87,19 @@ rosidl_generator_rs/robot_msgs/rust/src/lib.rs: /opt/ros/jazzy/share/rosidl_gene
 rosidl_generator_rs/robot_msgs/rust/src/lib.rs: /opt/ros/jazzy/share/rosidl_generator_rs/resource/templates/srv_idiomatic.rs.em
 rosidl_generator_rs/robot_msgs/rust/src/lib.rs: /opt/ros/jazzy/share/rosidl_generator_rs/resource/templates/srv_rmw.rs.em
 rosidl_generator_rs/robot_msgs/rust/src/lib.rs: rosidl_adapter/robot_msgs/msg/RobotStatus.idl
+rosidl_generator_rs/robot_msgs/rust/src/lib.rs: rosidl_adapter/robot_msgs/srv/PlanRoute.idl
+rosidl_generator_rs/robot_msgs/rust/src/lib.rs: rosidl_adapter/robot_msgs/srv/ExecuteRoute.idl
+rosidl_generator_rs/robot_msgs/rust/src/lib.rs: rosidl_adapter/robot_msgs/srv/CancelRoute.idl
+rosidl_generator_rs/robot_msgs/rust/src/lib.rs: rosidl_adapter/robot_msgs/srv/SetTeleop.idl
+rosidl_generator_rs/robot_msgs/rust/src/lib.rs: rosidl_adapter/robot_msgs/srv/ReleaseManual.idl
+rosidl_generator_rs/robot_msgs/rust/src/lib.rs: rosidl_adapter/robot_msgs/srv/StopRobot.idl
 rosidl_generator_rs/robot_msgs/rust/src/lib.rs: rosidl_adapter/robot_msgs/msg/RobotStatus.idl
+rosidl_generator_rs/robot_msgs/rust/src/lib.rs: rosidl_adapter/robot_msgs/srv/PlanRoute.idl
+rosidl_generator_rs/robot_msgs/rust/src/lib.rs: rosidl_adapter/robot_msgs/srv/ExecuteRoute.idl
+rosidl_generator_rs/robot_msgs/rust/src/lib.rs: rosidl_adapter/robot_msgs/srv/CancelRoute.idl
+rosidl_generator_rs/robot_msgs/rust/src/lib.rs: rosidl_adapter/robot_msgs/srv/SetTeleop.idl
+rosidl_generator_rs/robot_msgs/rust/src/lib.rs: rosidl_adapter/robot_msgs/srv/ReleaseManual.idl
+rosidl_generator_rs/robot_msgs/rust/src/lib.rs: rosidl_adapter/robot_msgs/srv/StopRobot.idl
 rosidl_generator_rs/robot_msgs/rust/src/lib.rs: /opt/ros/jazzy/share/builtin_interfaces/msg/Duration.idl
 rosidl_generator_rs/robot_msgs/rust/src/lib.rs: /opt/ros/jazzy/share/builtin_interfaces/msg/Time.idl
 rosidl_generator_rs/robot_msgs/rust/src/lib.rs: /opt/ros/jazzy/share/geometry_msgs/msg/Accel.idl
@@ -150,6 +164,7 @@ rosidl_generator_rs/robot_msgs/rust/src/lib.rs: /opt/ros/jazzy/share/std_msgs/ms
 rosidl_generator_rs/robot_msgs/rust/src/lib.rs: /opt/ros/jazzy/share/std_msgs/msg/UInt64MultiArray.idl
 rosidl_generator_rs/robot_msgs/rust/src/lib.rs: /opt/ros/jazzy/share/std_msgs/msg/UInt8.idl
 rosidl_generator_rs/robot_msgs/rust/src/lib.rs: /opt/ros/jazzy/share/std_msgs/msg/UInt8MultiArray.idl
+rosidl_generator_rs/robot_msgs/rust/src/lib.rs: /opt/ros/jazzy/share/service_msgs/msg/ServiceEventInfo.idl
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --blue --bold --progress-dir=/home/kaisar/warehouse_robot/robot/build/robot_msgs/CMakeFiles --progress-num=$(CMAKE_PROGRESS_1) "Generating Rust code for ROS interfaces"
 	cd /home/kaisar/warehouse_robot/robot/build/robot_msgs/robot_msgs__rs && /usr/bin/python3 /opt/ros/jazzy/share/rosidl_generator_rs/cmake/../../../lib/rosidl_generator_rs/rosidl_generator_rs --generator-arguments-file /home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_generator_rs__arguments.json --typesupport-impls "rosidl_typesupport_fastrtps_c;rosidl_typesupport_introspection_c;rosidl_typesupport_c"
 
@@ -165,12 +180,20 @@ rosidl_generator_rs/robot_msgs/rust/src/msg.rs: rosidl_generator_rs/robot_msgs/r
 rosidl_generator_rs/robot_msgs/rust/src/msg/rmw.rs: rosidl_generator_rs/robot_msgs/rust/src/lib.rs
 	@$(CMAKE_COMMAND) -E touch_nocreate rosidl_generator_rs/robot_msgs/rust/src/msg/rmw.rs
 
+rosidl_generator_rs/robot_msgs/rust/src/srv.rs: rosidl_generator_rs/robot_msgs/rust/src/lib.rs
+	@$(CMAKE_COMMAND) -E touch_nocreate rosidl_generator_rs/robot_msgs/rust/src/srv.rs
+
+rosidl_generator_rs/robot_msgs/rust/src/srv/rmw.rs: rosidl_generator_rs/robot_msgs/rust/src/lib.rs
+	@$(CMAKE_COMMAND) -E touch_nocreate rosidl_generator_rs/robot_msgs/rust/src/srv/rmw.rs
+
 robot_msgs__rs: /home/kaisar/warehouse_robot/robot/build/robot_msgs/robot_msgs__rs/CMakeFiles/robot_msgs__rs
 robot_msgs__rs: rosidl_generator_rs/robot_msgs/rust/Cargo.toml
 robot_msgs__rs: rosidl_generator_rs/robot_msgs/rust/build.rs
 robot_msgs__rs: rosidl_generator_rs/robot_msgs/rust/src/lib.rs
 robot_msgs__rs: rosidl_generator_rs/robot_msgs/rust/src/msg.rs
 robot_msgs__rs: rosidl_generator_rs/robot_msgs/rust/src/msg/rmw.rs
+robot_msgs__rs: rosidl_generator_rs/robot_msgs/rust/src/srv.rs
+robot_msgs__rs: rosidl_generator_rs/robot_msgs/rust/src/srv/rmw.rs
 robot_msgs__rs: /home/kaisar/warehouse_robot/robot/build/robot_msgs/robot_msgs__rs/CMakeFiles/robot_msgs__rs.dir/build.make
 .PHONY : robot_msgs__rs
 

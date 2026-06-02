@@ -1,0 +1,1 @@
+/home/kaisar/warehouse_robot/build/stage_ros2/ament_cmake_environment_hooks/local_setup.sh

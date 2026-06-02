@@ -1,0 +1,24 @@
+[2.105s] Invoking command in '/home/kaisar/warehouse_robot/robot/ws/src/robot_http_api': AMENT_PREFIX_PATH=/home/kaisar/warehouse_robot/robot/install/robot_planner:/home/kaisar/warehouse_robot/robot/install/robot_msgs:${AMENT_PREFIX_PATH} CMAKE_PREFIX_PATH=/home/kaisar/warehouse_robot/robot/install/robot_msgs:${CMAKE_PREFIX_PATH} DEBUGINFOD_URLS=https://debuginfod.ubuntu.com LD_LIBRARY_PATH=/home/kaisar/warehouse_robot/robot/install/robot_msgs/lib:${LD_LIBRARY_PATH} PYTHONPATH=/home/kaisar/warehouse_robot/robot/build/robot_http_api/prefix_override:/usr/lib/python3/dist-packages/colcon_core/task/python/colcon_distutils_commands:/home/kaisar/warehouse_robot/robot/install/robot_http_api/lib/python3.12/site-packages:/home/kaisar/warehouse_robot/robot/install/robot_planner/lib/python3.12/site-packages:/home/kaisar/warehouse_robot/robot/install/robot_msgs/lib/python3.12/site-packages:${PYTHONPATH} /usr/bin/python3 -W ignore:setup.py install is deprecated -W ignore:easy_install command is deprecated setup.py egg_info --egg-base ../../../build/robot_http_api build --build-base /home/kaisar/warehouse_robot/robot/build/robot_http_api/build install --record /home/kaisar/warehouse_robot/robot/build/robot_http_api/install.log --single-version-externally-managed install_data
+[2.549s] running egg_info
+[2.585s] writing ../../../build/robot_http_api/robot_http_api.egg-info/PKG-INFO
+[2.585s] writing dependency_links to ../../../build/robot_http_api/robot_http_api.egg-info/dependency_links.txt
+[2.585s] deleting ../../../build/robot_http_api/robot_http_api.egg-info/entry_points.txt
+[2.585s] writing requirements to ../../../build/robot_http_api/robot_http_api.egg-info/requires.txt
+[2.585s] writing top-level names to ../../../build/robot_http_api/robot_http_api.egg-info/top_level.txt
+[2.659s] reading manifest file '../../../build/robot_http_api/robot_http_api.egg-info/SOURCES.txt'
+[2.660s] writing manifest file '../../../build/robot_http_api/robot_http_api.egg-info/SOURCES.txt'
+[2.660s] running build
+[2.660s] running build_py
+[2.660s] copying robot_http_api/server.py -> /home/kaisar/warehouse_robot/robot/build/robot_http_api/build/lib/robot_http_api
+[2.660s] running install
+[2.668s] running install_lib
+[2.705s] copying /home/kaisar/warehouse_robot/robot/build/robot_http_api/build/lib/robot_http_api/server.py -> /home/kaisar/warehouse_robot/robot/install/robot_http_api/lib/python3.12/site-packages/robot_http_api
+[2.706s] byte-compiling /home/kaisar/warehouse_robot/robot/install/robot_http_api/lib/python3.12/site-packages/robot_http_api/server.py to server.cpython-312.pyc
+[2.710s] running install_data
+[2.710s] copying package.xml -> /home/kaisar/warehouse_robot/robot/install/robot_http_api/share/robot_http_api
+[2.710s] running install_egg_info
+[2.747s] removing '/home/kaisar/warehouse_robot/robot/install/robot_http_api/lib/python3.12/site-packages/robot_http_api-0.0.0-py3.12.egg-info' (and everything under it)
+[2.748s] Copying ../../../build/robot_http_api/robot_http_api.egg-info to /home/kaisar/warehouse_robot/robot/install/robot_http_api/lib/python3.12/site-packages/robot_http_api-0.0.0-py3.12.egg-info
+[2.749s] running install_scripts
+[2.996s] writing list of installed files to '/home/kaisar/warehouse_robot/robot/build/robot_http_api/install.log'
+[3.063s] Invoked command in '/home/kaisar/warehouse_robot/robot/ws/src/robot_http_api' returned '0': AMENT_PREFIX_PATH=/home/kaisar/warehouse_robot/robot/install/robot_planner:/home/kaisar/warehouse_robot/robot/install/robot_msgs:${AMENT_PREFIX_PATH} CMAKE_PREFIX_PATH=/home/kaisar/warehouse_robot/robot/install/robot_msgs:${CMAKE_PREFIX_PATH} DEBUGINFOD_URLS=https://debuginfod.ubuntu.com LD_LIBRARY_PATH=/home/kaisar/warehouse_robot/robot/install/robot_msgs/lib:${LD_LIBRARY_PATH} PYTHONPATH=/home/kaisar/warehouse_robot/robot/build/robot_http_api/prefix_override:/usr/lib/python3/dist-packages/colcon_core/task/python/colcon_distutils_commands:/home/kaisar/warehouse_robot/robot/install/robot_http_api/lib/python3.12/site-packages:/home/kaisar/warehouse_robot/robot/install/robot_planner/lib/python3.12/site-packages:/home/kaisar/warehouse_robot/robot/install/robot_msgs/lib/python3.12/site-packages:${PYTHONPATH} /usr/bin/python3 -W ignore:setup.py install is deprecated -W ignore:easy_install command is deprecated setup.py egg_info --egg-base ../../../build/robot_http_api build --build-base /home/kaisar/warehouse_robot/robot/build/robot_http_api/build install --record /home/kaisar/warehouse_robot/robot/build/robot_http_api/install.log --single-version-externally-managed install_data
