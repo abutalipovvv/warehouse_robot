@@ -1,0 +1,17 @@
+/home/kaisar/warehouse_robot/robot/install/robot_launch/share/robot_launch//launch/__pycache__/launch.cpython-312.pyc
+/home/kaisar/warehouse_robot/robot/install/robot_launch/share/robot_launch//launch/launch.py
+/home/kaisar/warehouse_robot/robot/install/robot_launch/share/ament_index/resource_index/package_run_dependencies/robot_launch
+/home/kaisar/warehouse_robot/robot/install/robot_launch/share/ament_index/resource_index/parent_prefix_path/robot_launch
+/home/kaisar/warehouse_robot/robot/install/robot_launch/share/robot_launch/environment/ament_prefix_path.sh
+/home/kaisar/warehouse_robot/robot/install/robot_launch/share/robot_launch/environment/ament_prefix_path.dsv
+/home/kaisar/warehouse_robot/robot/install/robot_launch/share/robot_launch/environment/path.sh
+/home/kaisar/warehouse_robot/robot/install/robot_launch/share/robot_launch/environment/path.dsv
+/home/kaisar/warehouse_robot/robot/install/robot_launch/share/robot_launch/local_setup.bash
+/home/kaisar/warehouse_robot/robot/install/robot_launch/share/robot_launch/local_setup.sh
+/home/kaisar/warehouse_robot/robot/install/robot_launch/share/robot_launch/local_setup.zsh
+/home/kaisar/warehouse_robot/robot/install/robot_launch/share/robot_launch/local_setup.dsv
+/home/kaisar/warehouse_robot/robot/install/robot_launch/share/robot_launch/package.dsv
+/home/kaisar/warehouse_robot/robot/install/robot_launch/share/ament_index/resource_index/packages/robot_launch
+/home/kaisar/warehouse_robot/robot/install/robot_launch/share/robot_launch/cmake/robot_launchConfig.cmake
+/home/kaisar/warehouse_robot/robot/install/robot_launch/share/robot_launch/cmake/robot_launchConfig-version.cmake
+/home/kaisar/warehouse_robot/robot/install/robot_launch/share/robot_launch/package.xml

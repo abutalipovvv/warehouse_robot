@@ -127,6 +127,11 @@ class OperatorAppState:
         host = str(payload.get("host") or "").strip()
         if not host:
             raise ValueError("host is required")
+        if host in {"0.0.0.0", "::"}:
+            raise ValueError(
+                f"{host} is a listen/bind address, not a robot address. "
+                "Use 127.0.0.1 on the same PC or the robot LAN IP like 192.168.x.x."
+            )
         return host
 
     @staticmethod

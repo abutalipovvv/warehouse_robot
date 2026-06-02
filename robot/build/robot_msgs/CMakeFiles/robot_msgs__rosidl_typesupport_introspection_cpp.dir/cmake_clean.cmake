@@ -1,4 +1,6 @@
 file(REMOVE_RECURSE
+  "CMakeFiles/robot_msgs__rosidl_typesupport_introspection_cpp.dir/rosidl_typesupport_introspection_cpp/robot_msgs/msg/detail/executor_state__type_support.cpp.o"
+  "CMakeFiles/robot_msgs__rosidl_typesupport_introspection_cpp.dir/rosidl_typesupport_introspection_cpp/robot_msgs/msg/detail/executor_state__type_support.cpp.o.d"
   "CMakeFiles/robot_msgs__rosidl_typesupport_introspection_cpp.dir/rosidl_typesupport_introspection_cpp/robot_msgs/msg/detail/robot_status__type_support.cpp.o"
   "CMakeFiles/robot_msgs__rosidl_typesupport_introspection_cpp.dir/rosidl_typesupport_introspection_cpp/robot_msgs/msg/detail/robot_status__type_support.cpp.o.d"
   "CMakeFiles/robot_msgs__rosidl_typesupport_introspection_cpp.dir/rosidl_typesupport_introspection_cpp/robot_msgs/srv/detail/cancel_route__type_support.cpp.o"
@@ -7,14 +9,10 @@ file(REMOVE_RECURSE
   "CMakeFiles/robot_msgs__rosidl_typesupport_introspection_cpp.dir/rosidl_typesupport_introspection_cpp/robot_msgs/srv/detail/execute_route__type_support.cpp.o.d"
   "CMakeFiles/robot_msgs__rosidl_typesupport_introspection_cpp.dir/rosidl_typesupport_introspection_cpp/robot_msgs/srv/detail/plan_route__type_support.cpp.o"
   "CMakeFiles/robot_msgs__rosidl_typesupport_introspection_cpp.dir/rosidl_typesupport_introspection_cpp/robot_msgs/srv/detail/plan_route__type_support.cpp.o.d"
-  "CMakeFiles/robot_msgs__rosidl_typesupport_introspection_cpp.dir/rosidl_typesupport_introspection_cpp/robot_msgs/srv/detail/release_manual__type_support.cpp.o"
-  "CMakeFiles/robot_msgs__rosidl_typesupport_introspection_cpp.dir/rosidl_typesupport_introspection_cpp/robot_msgs/srv/detail/release_manual__type_support.cpp.o.d"
-  "CMakeFiles/robot_msgs__rosidl_typesupport_introspection_cpp.dir/rosidl_typesupport_introspection_cpp/robot_msgs/srv/detail/set_teleop__type_support.cpp.o"
-  "CMakeFiles/robot_msgs__rosidl_typesupport_introspection_cpp.dir/rosidl_typesupport_introspection_cpp/robot_msgs/srv/detail/set_teleop__type_support.cpp.o.d"
-  "CMakeFiles/robot_msgs__rosidl_typesupport_introspection_cpp.dir/rosidl_typesupport_introspection_cpp/robot_msgs/srv/detail/stop_robot__type_support.cpp.o"
-  "CMakeFiles/robot_msgs__rosidl_typesupport_introspection_cpp.dir/rosidl_typesupport_introspection_cpp/robot_msgs/srv/detail/stop_robot__type_support.cpp.o.d"
   "librobot_msgs__rosidl_typesupport_introspection_cpp.pdb"
   "librobot_msgs__rosidl_typesupport_introspection_cpp.so"
+  "rosidl_typesupport_introspection_cpp/robot_msgs/msg/detail/executor_state__rosidl_typesupport_introspection_cpp.hpp"
+  "rosidl_typesupport_introspection_cpp/robot_msgs/msg/detail/executor_state__type_support.cpp"
   "rosidl_typesupport_introspection_cpp/robot_msgs/msg/detail/robot_status__rosidl_typesupport_introspection_cpp.hpp"
   "rosidl_typesupport_introspection_cpp/robot_msgs/msg/detail/robot_status__type_support.cpp"
   "rosidl_typesupport_introspection_cpp/robot_msgs/srv/detail/cancel_route__rosidl_typesupport_introspection_cpp.hpp"
@@ -23,12 +21,6 @@ file(REMOVE_RECURSE
   "rosidl_typesupport_introspection_cpp/robot_msgs/srv/detail/execute_route__type_support.cpp"
   "rosidl_typesupport_introspection_cpp/robot_msgs/srv/detail/plan_route__rosidl_typesupport_introspection_cpp.hpp"
   "rosidl_typesupport_introspection_cpp/robot_msgs/srv/detail/plan_route__type_support.cpp"
-  "rosidl_typesupport_introspection_cpp/robot_msgs/srv/detail/release_manual__rosidl_typesupport_introspection_cpp.hpp"
-  "rosidl_typesupport_introspection_cpp/robot_msgs/srv/detail/release_manual__type_support.cpp"
-  "rosidl_typesupport_introspection_cpp/robot_msgs/srv/detail/set_teleop__rosidl_typesupport_introspection_cpp.hpp"
-  "rosidl_typesupport_introspection_cpp/robot_msgs/srv/detail/set_teleop__type_support.cpp"
-  "rosidl_typesupport_introspection_cpp/robot_msgs/srv/detail/stop_robot__rosidl_typesupport_introspection_cpp.hpp"
-  "rosidl_typesupport_introspection_cpp/robot_msgs/srv/detail/stop_robot__type_support.cpp"
 )
 
 # Per-language clean rules from dependency scanning.

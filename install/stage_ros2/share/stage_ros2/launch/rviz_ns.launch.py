@@ -1,1 +1,0 @@
-/home/kaisar/warehouse_robot/robot/ws/src/stage_ros2/launch/rviz_ns.launch.py

@@ -125,16 +125,6 @@ class PlannedRobotRoute:
 
 
 @dataclass
-class ManualCommand:
-    linear: float
-    angular: float
-    expires_at: float
-
-    def active(self, now: float) -> bool:
-        return now <= self.expires_at
-
-
-@dataclass
 class RobotEvent:
     stamp: float
     level: str
@@ -162,7 +152,6 @@ class RobotRuntime:
         self._target_lm = ""
         self._current_edge_id = ""
         self._route_progress = 0.0
-        self._manual_command: ManualCommand | None = None
         self._active_route: PlannedRobotRoute | None = None
         self._events: list[RobotEvent] = []
         self.add_event("info", "robot runtime initialized")
@@ -203,47 +192,8 @@ class RobotRuntime:
             self._state = state
             self._message = message
 
-    def manual_command(self, now: float | None = None) -> ManualCommand | None:
-        with self._lock:
-            if self._manual_command is None:
-                return None
-            current = now if now is not None else monotonic()
-            if not self._manual_command.active(current):
-                self._manual_command = None
-                if self._state == "MANUAL":
-                    self._state = "IDLE"
-                    self._message = "Manual control released."
-                return None
-            return ManualCommand(
-                linear=self._manual_command.linear,
-                angular=self._manual_command.angular,
-                expires_at=self._manual_command.expires_at,
-            )
-
-    def set_manual_command(self, linear: float, angular: float, timeout_sec: float) -> None:
-        with self._lock:
-            self._manual_command = ManualCommand(
-                linear=linear,
-                angular=angular,
-                expires_at=monotonic() + max(0.05, timeout_sec),
-            )
-            self._active_route = None
-            self._state = "MANUAL"
-            self._message = "Manual control active."
-            self._target_lm = ""
-            self._current_edge_id = ""
-            self._route_progress = 0.0
-
-    def clear_manual(self) -> None:
-        with self._lock:
-            self._manual_command = None
-            if self._state == "MANUAL":
-                self._state = "IDLE"
-                self._message = "Manual control released."
-
     def set_route(self, route: PlannedRobotRoute) -> None:
         with self._lock:
-            self._manual_command = None
             self._active_route = route
             self._target_lm = route.goal_lm
             self._current_edge_id = route.trajectory[0].edge_id if route.trajectory else ""

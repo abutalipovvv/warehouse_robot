@@ -4,10 +4,10 @@
 
 #include <string.h>
 
-#include "robot_msgs/srv/detail/plan_route__type_support.h"
+#include "robot_msgs/srv/detail/plan_route__functions.h"
 #include "robot_msgs/srv/detail/plan_route__struct.h"
 #include "rosidl_typesupport_interface/macros.h"
-#include "robot_msgs/srv/detail/plan_route__functions.h"
+#include "robot_msgs/srv/detail/plan_route__type_support.h"
 
 #ifdef __cplusplus
 extern "C"

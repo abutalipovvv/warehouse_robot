@@ -1,4 +1,6 @@
 file(REMOVE_RECURSE
+  "CMakeFiles/robot_msgs__rosidl_generator_py.dir/rosidl_generator_py/robot_msgs/msg/_executor_state_s.c.o"
+  "CMakeFiles/robot_msgs__rosidl_generator_py.dir/rosidl_generator_py/robot_msgs/msg/_executor_state_s.c.o.d"
   "CMakeFiles/robot_msgs__rosidl_generator_py.dir/rosidl_generator_py/robot_msgs/msg/_robot_status_s.c.o"
   "CMakeFiles/robot_msgs__rosidl_generator_py.dir/rosidl_generator_py/robot_msgs/msg/_robot_status_s.c.o.d"
   "CMakeFiles/robot_msgs__rosidl_generator_py.dir/rosidl_generator_py/robot_msgs/srv/_cancel_route_s.c.o"
@@ -7,12 +9,6 @@ file(REMOVE_RECURSE
   "CMakeFiles/robot_msgs__rosidl_generator_py.dir/rosidl_generator_py/robot_msgs/srv/_execute_route_s.c.o.d"
   "CMakeFiles/robot_msgs__rosidl_generator_py.dir/rosidl_generator_py/robot_msgs/srv/_plan_route_s.c.o"
   "CMakeFiles/robot_msgs__rosidl_generator_py.dir/rosidl_generator_py/robot_msgs/srv/_plan_route_s.c.o.d"
-  "CMakeFiles/robot_msgs__rosidl_generator_py.dir/rosidl_generator_py/robot_msgs/srv/_release_manual_s.c.o"
-  "CMakeFiles/robot_msgs__rosidl_generator_py.dir/rosidl_generator_py/robot_msgs/srv/_release_manual_s.c.o.d"
-  "CMakeFiles/robot_msgs__rosidl_generator_py.dir/rosidl_generator_py/robot_msgs/srv/_set_teleop_s.c.o"
-  "CMakeFiles/robot_msgs__rosidl_generator_py.dir/rosidl_generator_py/robot_msgs/srv/_set_teleop_s.c.o.d"
-  "CMakeFiles/robot_msgs__rosidl_generator_py.dir/rosidl_generator_py/robot_msgs/srv/_stop_robot_s.c.o"
-  "CMakeFiles/robot_msgs__rosidl_generator_py.dir/rosidl_generator_py/robot_msgs/srv/_stop_robot_s.c.o.d"
   "librobot_msgs__rosidl_generator_py.pdb"
   "librobot_msgs__rosidl_generator_py.so"
 )

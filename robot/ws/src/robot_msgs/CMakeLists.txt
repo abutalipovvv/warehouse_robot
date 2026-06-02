@@ -11,13 +11,11 @@ find_package(geometry_msgs REQUIRED)
 find_package(rosidl_default_generators REQUIRED)
 
 rosidl_generate_interfaces(${PROJECT_NAME}
+  "msg/ExecutorState.msg"
   "msg/RobotStatus.msg"
   "srv/PlanRoute.srv"
   "srv/ExecuteRoute.srv"
   "srv/CancelRoute.srv"
-  "srv/SetTeleop.srv"
-  "srv/ReleaseManual.srv"
-  "srv/StopRobot.srv"
   DEPENDENCIES
     builtin_interfaces
     geometry_msgs

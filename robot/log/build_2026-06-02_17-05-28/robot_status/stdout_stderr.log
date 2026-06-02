@@ -1,0 +1,22 @@
+running develop
+running egg_info
+creating robot_status.egg-info
+writing robot_status.egg-info/PKG-INFO
+writing dependency_links to robot_status.egg-info/dependency_links.txt
+writing entry points to robot_status.egg-info/entry_points.txt
+writing requirements to robot_status.egg-info/requires.txt
+writing top-level names to robot_status.egg-info/top_level.txt
+writing manifest file 'robot_status.egg-info/SOURCES.txt'
+reading manifest file 'robot_status.egg-info/SOURCES.txt'
+writing manifest file 'robot_status.egg-info/SOURCES.txt'
+running build_ext
+Creating /home/kaisar/warehouse_robot/robot/install/robot_status/lib/python3.12/site-packages/robot-status.egg-link (link to .)
+Installing status_node script to /home/kaisar/warehouse_robot/robot/install/robot_status/lib/robot_status
+
+Installed /home/kaisar/warehouse_robot/robot/build/robot_status
+running symlink_data
+creating /home/kaisar/warehouse_robot/robot/install/robot_status/share/ament_index
+creating /home/kaisar/warehouse_robot/robot/install/robot_status/share/ament_index/resource_index
+creating /home/kaisar/warehouse_robot/robot/install/robot_status/share/ament_index/resource_index/packages
+symbolically linking /home/kaisar/warehouse_robot/robot/build/robot_status/resource/robot_status -> /home/kaisar/warehouse_robot/robot/install/robot_status/share/ament_index/resource_index/packages
+symbolically linking /home/kaisar/warehouse_robot/robot/build/robot_status/package.xml -> /home/kaisar/warehouse_robot/robot/install/robot_status/share/robot_status

@@ -1,1 +1,0 @@
-/home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_typesupport_fastrtps_cpp/robot_msgs/srv/detail/release_manual__rosidl_typesupport_fastrtps_cpp.hpp

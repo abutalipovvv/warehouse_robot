@@ -19,4 +19,9 @@ setup(
     description="Robot status aggregation node for localization, route execution, and manual control.",
     license="TODO: License declaration",
     tests_require=["pytest"],
+    entry_points={
+        "console_scripts": [
+            "status_node=robot_status.main:main",
+        ],
+    },
 )

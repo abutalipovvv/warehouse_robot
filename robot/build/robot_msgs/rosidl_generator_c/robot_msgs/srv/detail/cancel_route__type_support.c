@@ -5,9 +5,9 @@
 #include <string.h>
 
 #include "robot_msgs/srv/detail/cancel_route__functions.h"
-#include "rosidl_typesupport_interface/macros.h"
 #include "robot_msgs/srv/detail/cancel_route__struct.h"
 #include "robot_msgs/srv/detail/cancel_route__type_support.h"
+#include "rosidl_typesupport_interface/macros.h"
 
 #ifdef __cplusplus
 extern "C"

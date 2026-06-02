@@ -3,13 +3,11 @@
   "output_dir": "/home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_typesupport_cpp/robot_msgs",
   "template_dir": "/opt/ros/jazzy/share/rosidl_typesupport_cpp/resource",
   "idl_tuples": [
+    "/home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_adapter/robot_msgs:msg/ExecutorState.idl",
     "/home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_adapter/robot_msgs:msg/RobotStatus.idl",
     "/home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_adapter/robot_msgs:srv/PlanRoute.idl",
     "/home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_adapter/robot_msgs:srv/ExecuteRoute.idl",
-    "/home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_adapter/robot_msgs:srv/CancelRoute.idl",
-    "/home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_adapter/robot_msgs:srv/SetTeleop.idl",
-    "/home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_adapter/robot_msgs:srv/ReleaseManual.idl",
-    "/home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_adapter/robot_msgs:srv/StopRobot.idl"
+    "/home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_adapter/robot_msgs:srv/CancelRoute.idl"
   ],
   "ros_interface_dependencies": [
     "builtin_interfaces:/opt/ros/jazzy/share/builtin_interfaces/msg/Duration.idl",
@@ -85,13 +83,11 @@
     "/opt/ros/jazzy/share/rosidl_typesupport_cpp/resource/idl__type_support.cpp.em",
     "/opt/ros/jazzy/share/rosidl_typesupport_cpp/resource/msg__type_support.cpp.em",
     "/opt/ros/jazzy/share/rosidl_typesupport_cpp/resource/srv__type_support.cpp.em",
+    "/home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_adapter/robot_msgs/msg/ExecutorState.idl",
     "/home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_adapter/robot_msgs/msg/RobotStatus.idl",
     "/home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_adapter/robot_msgs/srv/PlanRoute.idl",
     "/home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_adapter/robot_msgs/srv/ExecuteRoute.idl",
     "/home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_adapter/robot_msgs/srv/CancelRoute.idl",
-    "/home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_adapter/robot_msgs/srv/SetTeleop.idl",
-    "/home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_adapter/robot_msgs/srv/ReleaseManual.idl",
-    "/home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_adapter/robot_msgs/srv/StopRobot.idl",
     "/opt/ros/jazzy/share/builtin_interfaces/msg/Duration.idl",
     "/opt/ros/jazzy/share/builtin_interfaces/msg/Time.idl",
     "/opt/ros/jazzy/share/geometry_msgs/msg/Accel.idl",

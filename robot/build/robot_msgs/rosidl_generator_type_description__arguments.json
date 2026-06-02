@@ -2,13 +2,11 @@
   "package_name": "robot_msgs",
   "output_dir": "/home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_generator_type_description/robot_msgs",
   "idl_tuples": [
+    "/home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_adapter/robot_msgs:msg/ExecutorState.idl",
     "/home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_adapter/robot_msgs:msg/RobotStatus.idl",
     "/home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_adapter/robot_msgs:srv/PlanRoute.idl",
     "/home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_adapter/robot_msgs:srv/ExecuteRoute.idl",
-    "/home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_adapter/robot_msgs:srv/CancelRoute.idl",
-    "/home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_adapter/robot_msgs:srv/SetTeleop.idl",
-    "/home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_adapter/robot_msgs:srv/ReleaseManual.idl",
-    "/home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_adapter/robot_msgs:srv/StopRobot.idl"
+    "/home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_adapter/robot_msgs:srv/CancelRoute.idl"
   ],
   "include_paths": [
     "builtin_interfaces:/opt/ros/jazzy/share/builtin_interfaces",

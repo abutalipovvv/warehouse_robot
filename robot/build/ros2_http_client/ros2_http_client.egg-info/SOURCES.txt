@@ -1,0 +1,12 @@
+package.xml
+setup.cfg
+setup.py
+resource/ros2_http_client
+ros2_http_client/__init__.py
+ros2_http_client/client.py
+ros2_http_client.egg-info/PKG-INFO
+ros2_http_client.egg-info/SOURCES.txt
+ros2_http_client.egg-info/dependency_links.txt
+ros2_http_client.egg-info/requires.txt
+ros2_http_client.egg-info/top_level.txt
+ros2_http_client.egg-info/zip-safe

@@ -66,13 +66,11 @@ include CMakeFiles/robot_msgs.dir/compiler_depend.make
 # Include the progress variables for this target.
 include CMakeFiles/robot_msgs.dir/progress.make
 
+CMakeFiles/robot_msgs: /home/kaisar/warehouse_robot/robot/ws/src/robot_msgs/msg/ExecutorState.msg
 CMakeFiles/robot_msgs: /home/kaisar/warehouse_robot/robot/ws/src/robot_msgs/msg/RobotStatus.msg
 CMakeFiles/robot_msgs: /home/kaisar/warehouse_robot/robot/ws/src/robot_msgs/srv/PlanRoute.srv
 CMakeFiles/robot_msgs: /home/kaisar/warehouse_robot/robot/ws/src/robot_msgs/srv/ExecuteRoute.srv
 CMakeFiles/robot_msgs: /home/kaisar/warehouse_robot/robot/ws/src/robot_msgs/srv/CancelRoute.srv
-CMakeFiles/robot_msgs: /home/kaisar/warehouse_robot/robot/ws/src/robot_msgs/srv/SetTeleop.srv
-CMakeFiles/robot_msgs: /home/kaisar/warehouse_robot/robot/ws/src/robot_msgs/srv/ReleaseManual.srv
-CMakeFiles/robot_msgs: /home/kaisar/warehouse_robot/robot/ws/src/robot_msgs/srv/StopRobot.srv
 CMakeFiles/robot_msgs: /opt/ros/jazzy/share/builtin_interfaces/msg/Duration.idl
 CMakeFiles/robot_msgs: /opt/ros/jazzy/share/builtin_interfaces/msg/Time.idl
 CMakeFiles/robot_msgs: /opt/ros/jazzy/share/geometry_msgs/msg/Accel.idl

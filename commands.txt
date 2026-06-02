@@ -11,6 +11,7 @@ ros2 launch nav2 nav2_launch.py
 .\run_web.bat --map-dir map_data/maps_out/22.05.26_smap.smap
 
 py serve_web.py --map-dir maps_out/22.05.26_smap.smap --open
+python3 scripts/stress_fleet_web.py --base-url http://127.0.0.1:8090 --robots 4 --queue-length 6
 
 & "$env:LOCALAPPDATA\Python\bin\python.exe" serve_web.py --open
 
@@ -18,10 +19,13 @@ py serve_web.py --map-dir maps_out/22.05.26_smap.smap --open
 # Single robot HTTP API + ROS 2
 cd ~/warehouse_robot/robot
 source /opt/ros/jazzy/setup.bash
-colcon build --packages-select robot_msgs robot_planner robot_status
-source install/setup.bash
-cd ~/warehouse_robot
+colcon build --packages-select robot_msgs robot_planner robot_status ros2_http_client robot_launch
+source install/local_setup.bash
 export ROS_LOG_DIR=/tmp/ros_logs
+ros2 launch robot_launch launch.py
+cd ~/warehouse_robot
+source /opt/ros/jazzy/setup.bash
+source robot/install/local_setup.bash
 # Robot-side server listens on LAN by default at 0.0.0.0:8790
 python3 serve_robot.py --map-dir maps_out/22.05.26_smap.smap --open
 

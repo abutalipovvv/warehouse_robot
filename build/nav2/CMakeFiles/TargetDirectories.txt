@@ -1,9 +1,0 @@
-/home/kaisar/warehouse_robot/build/nav2/CMakeFiles/uninstall.dir
-/home/kaisar/warehouse_robot/build/nav2/CMakeFiles/nav2_uninstall.dir
-/home/kaisar/warehouse_robot/build/nav2/CMakeFiles/test.dir
-/home/kaisar/warehouse_robot/build/nav2/CMakeFiles/edit_cache.dir
-/home/kaisar/warehouse_robot/build/nav2/CMakeFiles/rebuild_cache.dir
-/home/kaisar/warehouse_robot/build/nav2/CMakeFiles/list_install_components.dir
-/home/kaisar/warehouse_robot/build/nav2/CMakeFiles/install.dir
-/home/kaisar/warehouse_robot/build/nav2/CMakeFiles/install/local.dir
-/home/kaisar/warehouse_robot/build/nav2/CMakeFiles/install/strip.dir

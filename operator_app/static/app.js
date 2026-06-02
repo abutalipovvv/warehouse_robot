@@ -177,7 +177,7 @@ class OperatorApp {
     this.robotNameInput.value = "";
     this.robotHostInput.value = "";
     this.robotPortInput.value = "8790";
-    this.showProbeResult("neutral", "Enter the robot IP and check the connection.");
+    this.showProbeResult("neutral", "Enter 127.0.0.1 for the same PC or the robot LAN IP, then check the connection.");
     this.addRobotDialog.showModal();
   }
 

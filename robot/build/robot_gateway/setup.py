@@ -1,1 +1,0 @@
-/home/kaisar/warehouse_robot/robot/ws/src/robot_gateway/setup.py

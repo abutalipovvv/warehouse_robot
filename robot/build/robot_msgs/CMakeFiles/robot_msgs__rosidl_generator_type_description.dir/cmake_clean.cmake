@@ -1,12 +1,10 @@
 file(REMOVE_RECURSE
   "CMakeFiles/robot_msgs__rosidl_generator_type_description"
+  "rosidl_generator_type_description/robot_msgs/msg/ExecutorState.json"
   "rosidl_generator_type_description/robot_msgs/msg/RobotStatus.json"
   "rosidl_generator_type_description/robot_msgs/srv/CancelRoute.json"
   "rosidl_generator_type_description/robot_msgs/srv/ExecuteRoute.json"
   "rosidl_generator_type_description/robot_msgs/srv/PlanRoute.json"
-  "rosidl_generator_type_description/robot_msgs/srv/ReleaseManual.json"
-  "rosidl_generator_type_description/robot_msgs/srv/SetTeleop.json"
-  "rosidl_generator_type_description/robot_msgs/srv/StopRobot.json"
 )
 
 # Per-language clean rules from dependency scanning.

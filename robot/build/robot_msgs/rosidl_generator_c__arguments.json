@@ -3,22 +3,18 @@
   "output_dir": "/home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_generator_c/robot_msgs",
   "template_dir": "/opt/ros/jazzy/share/rosidl_generator_c/cmake/../resource",
   "idl_tuples": [
+    "/home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_adapter/robot_msgs:msg/ExecutorState.idl",
     "/home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_adapter/robot_msgs:msg/RobotStatus.idl",
     "/home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_adapter/robot_msgs:srv/PlanRoute.idl",
     "/home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_adapter/robot_msgs:srv/ExecuteRoute.idl",
-    "/home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_adapter/robot_msgs:srv/CancelRoute.idl",
-    "/home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_adapter/robot_msgs:srv/SetTeleop.idl",
-    "/home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_adapter/robot_msgs:srv/ReleaseManual.idl",
-    "/home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_adapter/robot_msgs:srv/StopRobot.idl"
+    "/home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_adapter/robot_msgs:srv/CancelRoute.idl"
   ],
   "ros_interface_files": [
+    "/home/kaisar/warehouse_robot/robot/ws/src/robot_msgs/msg/ExecutorState.msg",
     "/home/kaisar/warehouse_robot/robot/ws/src/robot_msgs/msg/RobotStatus.msg",
     "/home/kaisar/warehouse_robot/robot/ws/src/robot_msgs/srv/PlanRoute.srv",
     "/home/kaisar/warehouse_robot/robot/ws/src/robot_msgs/srv/ExecuteRoute.srv",
-    "/home/kaisar/warehouse_robot/robot/ws/src/robot_msgs/srv/CancelRoute.srv",
-    "/home/kaisar/warehouse_robot/robot/ws/src/robot_msgs/srv/SetTeleop.srv",
-    "/home/kaisar/warehouse_robot/robot/ws/src/robot_msgs/srv/ReleaseManual.srv",
-    "/home/kaisar/warehouse_robot/robot/ws/src/robot_msgs/srv/StopRobot.srv"
+    "/home/kaisar/warehouse_robot/robot/ws/src/robot_msgs/srv/CancelRoute.srv"
   ],
   "ros_interface_dependencies": [
     "builtin_interfaces:/opt/ros/jazzy/share/builtin_interfaces/msg/Duration.idl",
@@ -107,13 +103,11 @@
     "/opt/ros/jazzy/share/rosidl_generator_c/cmake/../resource/msg__type_support.h.em",
     "/opt/ros/jazzy/share/rosidl_generator_c/cmake/../resource/srv__type_support.c.em",
     "/opt/ros/jazzy/share/rosidl_generator_c/cmake/../resource/srv__type_support.h.em",
+    "/home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_adapter/robot_msgs/msg/ExecutorState.idl",
     "/home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_adapter/robot_msgs/msg/RobotStatus.idl",
     "/home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_adapter/robot_msgs/srv/PlanRoute.idl",
     "/home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_adapter/robot_msgs/srv/ExecuteRoute.idl",
     "/home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_adapter/robot_msgs/srv/CancelRoute.idl",
-    "/home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_adapter/robot_msgs/srv/SetTeleop.idl",
-    "/home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_adapter/robot_msgs/srv/ReleaseManual.idl",
-    "/home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_adapter/robot_msgs/srv/StopRobot.idl",
     "/opt/ros/jazzy/share/builtin_interfaces/msg/Duration.idl",
     "/opt/ros/jazzy/share/builtin_interfaces/msg/Time.idl",
     "/opt/ros/jazzy/share/geometry_msgs/msg/Accel.idl",
@@ -181,12 +175,10 @@
     "/opt/ros/jazzy/share/service_msgs/msg/ServiceEventInfo.idl"
   ],
   "type_description_tuples": [
+    "msg/ExecutorState.idl:/home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_generator_type_description/robot_msgs/msg/ExecutorState.json",
     "msg/RobotStatus.idl:/home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_generator_type_description/robot_msgs/msg/RobotStatus.json",
     "srv/PlanRoute.idl:/home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_generator_type_description/robot_msgs/srv/PlanRoute.json",
     "srv/ExecuteRoute.idl:/home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_generator_type_description/robot_msgs/srv/ExecuteRoute.json",
-    "srv/CancelRoute.idl:/home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_generator_type_description/robot_msgs/srv/CancelRoute.json",
-    "srv/SetTeleop.idl:/home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_generator_type_description/robot_msgs/srv/SetTeleop.json",
-    "srv/ReleaseManual.idl:/home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_generator_type_description/robot_msgs/srv/ReleaseManual.json",
-    "srv/StopRobot.idl:/home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_generator_type_description/robot_msgs/srv/StopRobot.json"
+    "srv/CancelRoute.idl:/home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_generator_type_description/robot_msgs/srv/CancelRoute.json"
   ]
 }

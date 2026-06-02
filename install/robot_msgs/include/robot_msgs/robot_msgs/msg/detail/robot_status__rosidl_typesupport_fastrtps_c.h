@@ -1,1 +1,0 @@
-/home/kaisar/warehouse_robot/build/robot_msgs/rosidl_typesupport_fastrtps_c/robot_msgs/msg/detail/robot_status__rosidl_typesupport_fastrtps_c.h

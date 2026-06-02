@@ -19,4 +19,9 @@ setup(
     description="Route planner and execution logic for the warehouse robot.",
     license="TODO: License declaration",
     tests_require=["pytest"],
+    entry_points={
+        "console_scripts": [
+            "route_node=robot_planner.route_node:main",
+        ],
+    },
 )

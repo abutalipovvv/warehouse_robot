@@ -1,0 +1,44 @@
+[1.424s] Invoking command in '/home/kaisar/warehouse_robot/robot/ws/src/robot_planner': AMENT_PREFIX_PATH=/home/kaisar/warehouse_robot/robot/install/robot_msgs:${AMENT_PREFIX_PATH} CMAKE_PREFIX_PATH=/home/kaisar/warehouse_robot/robot/install/robot_msgs:${CMAKE_PREFIX_PATH} DEBUGINFOD_URLS=https://debuginfod.ubuntu.com LD_LIBRARY_PATH=/home/kaisar/warehouse_robot/robot/install/robot_msgs/lib:${LD_LIBRARY_PATH} PYTHONPATH=/home/kaisar/warehouse_robot/robot/build/robot_planner/prefix_override:/usr/lib/python3/dist-packages/colcon_core/task/python/colcon_distutils_commands:/home/kaisar/warehouse_robot/robot/install/robot_planner/lib/python3.12/site-packages:/home/kaisar/warehouse_robot/robot/install/robot_msgs/lib/python3.12/site-packages:${PYTHONPATH} /usr/bin/python3 -W ignore:setup.py install is deprecated -W ignore:easy_install command is deprecated setup.py egg_info --egg-base ../../../build/robot_planner build --build-base /home/kaisar/warehouse_robot/robot/build/robot_planner/build install --record /home/kaisar/warehouse_robot/robot/build/robot_planner/install.log --single-version-externally-managed install_data
+[1.857s] running egg_info
+[1.892s] writing ../../../build/robot_planner/robot_planner.egg-info/PKG-INFO
+[1.892s] writing dependency_links to ../../../build/robot_planner/robot_planner.egg-info/dependency_links.txt
+[1.892s] writing entry points to ../../../build/robot_planner/robot_planner.egg-info/entry_points.txt
+[1.892s] writing requirements to ../../../build/robot_planner/robot_planner.egg-info/requires.txt
+[1.892s] writing top-level names to ../../../build/robot_planner/robot_planner.egg-info/top_level.txt
+[1.966s] reading manifest file '../../../build/robot_planner/robot_planner.egg-info/SOURCES.txt'
+[1.967s] writing manifest file '../../../build/robot_planner/robot_planner.egg-info/SOURCES.txt'
+[1.967s] running build
+[1.967s] running build_py
+[1.967s] copying robot_planner/route_planner.py -> /home/kaisar/warehouse_robot/robot/build/robot_planner/build/lib/robot_planner
+[1.967s] copying robot_planner/__init__.py -> /home/kaisar/warehouse_robot/robot/build/robot_planner/build/lib/robot_planner
+[1.968s] creating /home/kaisar/warehouse_robot/robot/build/robot_planner/build/lib/robot_planner/route_core
+[1.968s] copying robot_planner/route_core/params.py -> /home/kaisar/warehouse_robot/robot/build/robot_planner/build/lib/robot_planner/route_core
+[1.968s] copying robot_planner/route_core/planner.py -> /home/kaisar/warehouse_robot/robot/build/robot_planner/build/lib/robot_planner/route_core
+[1.968s] copying robot_planner/route_core/models.py -> /home/kaisar/warehouse_robot/robot/build/robot_planner/build/lib/robot_planner/route_core
+[1.968s] copying robot_planner/route_core/map_loader.py -> /home/kaisar/warehouse_robot/robot/build/robot_planner/build/lib/robot_planner/route_core
+[1.968s] copying robot_planner/route_core/__init__.py -> /home/kaisar/warehouse_robot/robot/build/robot_planner/build/lib/robot_planner/route_core
+[1.969s] running install
+[1.975s] running install_lib
+[2.008s] copying /home/kaisar/warehouse_robot/robot/build/robot_planner/build/lib/robot_planner/route_planner.py -> /home/kaisar/warehouse_robot/robot/install/robot_planner/lib/python3.12/site-packages/robot_planner
+[2.008s] creating /home/kaisar/warehouse_robot/robot/install/robot_planner/lib/python3.12/site-packages/robot_planner/route_core
+[2.008s] copying /home/kaisar/warehouse_robot/robot/build/robot_planner/build/lib/robot_planner/route_core/params.py -> /home/kaisar/warehouse_robot/robot/install/robot_planner/lib/python3.12/site-packages/robot_planner/route_core
+[2.008s] copying /home/kaisar/warehouse_robot/robot/build/robot_planner/build/lib/robot_planner/route_core/planner.py -> /home/kaisar/warehouse_robot/robot/install/robot_planner/lib/python3.12/site-packages/robot_planner/route_core
+[2.009s] copying /home/kaisar/warehouse_robot/robot/build/robot_planner/build/lib/robot_planner/route_core/models.py -> /home/kaisar/warehouse_robot/robot/install/robot_planner/lib/python3.12/site-packages/robot_planner/route_core
+[2.009s] copying /home/kaisar/warehouse_robot/robot/build/robot_planner/build/lib/robot_planner/route_core/map_loader.py -> /home/kaisar/warehouse_robot/robot/install/robot_planner/lib/python3.12/site-packages/robot_planner/route_core
+[2.009s] copying /home/kaisar/warehouse_robot/robot/build/robot_planner/build/lib/robot_planner/route_core/__init__.py -> /home/kaisar/warehouse_robot/robot/install/robot_planner/lib/python3.12/site-packages/robot_planner/route_core
+[2.009s] copying /home/kaisar/warehouse_robot/robot/build/robot_planner/build/lib/robot_planner/__init__.py -> /home/kaisar/warehouse_robot/robot/install/robot_planner/lib/python3.12/site-packages/robot_planner
+[2.010s] byte-compiling /home/kaisar/warehouse_robot/robot/install/robot_planner/lib/python3.12/site-packages/robot_planner/route_planner.py to route_planner.cpython-312.pyc
+[2.015s] byte-compiling /home/kaisar/warehouse_robot/robot/install/robot_planner/lib/python3.12/site-packages/robot_planner/route_core/params.py to params.cpython-312.pyc
+[2.017s] byte-compiling /home/kaisar/warehouse_robot/robot/install/robot_planner/lib/python3.12/site-packages/robot_planner/route_core/planner.py to planner.cpython-312.pyc
+[2.019s] byte-compiling /home/kaisar/warehouse_robot/robot/install/robot_planner/lib/python3.12/site-packages/robot_planner/route_core/models.py to models.cpython-312.pyc
+[2.021s] byte-compiling /home/kaisar/warehouse_robot/robot/install/robot_planner/lib/python3.12/site-packages/robot_planner/route_core/map_loader.py to map_loader.cpython-312.pyc
+[2.024s] byte-compiling /home/kaisar/warehouse_robot/robot/install/robot_planner/lib/python3.12/site-packages/robot_planner/route_core/__init__.py to __init__.cpython-312.pyc
+[2.024s] byte-compiling /home/kaisar/warehouse_robot/robot/install/robot_planner/lib/python3.12/site-packages/robot_planner/__init__.py to __init__.cpython-312.pyc
+[2.025s] running install_data
+[2.025s] running install_egg_info
+[2.066s] removing '/home/kaisar/warehouse_robot/robot/install/robot_planner/lib/python3.12/site-packages/robot_planner-0.0.0-py3.12.egg-info' (and everything under it)
+[2.066s] Copying ../../../build/robot_planner/robot_planner.egg-info to /home/kaisar/warehouse_robot/robot/install/robot_planner/lib/python3.12/site-packages/robot_planner-0.0.0-py3.12.egg-info
+[2.067s] running install_scripts
+[2.292s] Installing route_node script to /home/kaisar/warehouse_robot/robot/install/robot_planner/lib/robot_planner
+[2.293s] writing list of installed files to '/home/kaisar/warehouse_robot/robot/build/robot_planner/install.log'
+[2.348s] Invoked command in '/home/kaisar/warehouse_robot/robot/ws/src/robot_planner' returned '0': AMENT_PREFIX_PATH=/home/kaisar/warehouse_robot/robot/install/robot_msgs:${AMENT_PREFIX_PATH} CMAKE_PREFIX_PATH=/home/kaisar/warehouse_robot/robot/install/robot_msgs:${CMAKE_PREFIX_PATH} DEBUGINFOD_URLS=https://debuginfod.ubuntu.com LD_LIBRARY_PATH=/home/kaisar/warehouse_robot/robot/install/robot_msgs/lib:${LD_LIBRARY_PATH} PYTHONPATH=/home/kaisar/warehouse_robot/robot/build/robot_planner/prefix_override:/usr/lib/python3/dist-packages/colcon_core/task/python/colcon_distutils_commands:/home/kaisar/warehouse_robot/robot/install/robot_planner/lib/python3.12/site-packages:/home/kaisar/warehouse_robot/robot/install/robot_msgs/lib/python3.12/site-packages:${PYTHONPATH} /usr/bin/python3 -W ignore:setup.py install is deprecated -W ignore:easy_install command is deprecated setup.py egg_info --egg-base ../../../build/robot_planner build --build-base /home/kaisar/warehouse_robot/robot/build/robot_planner/build install --record /home/kaisar/warehouse_robot/robot/build/robot_planner/install.log --single-version-externally-managed install_data

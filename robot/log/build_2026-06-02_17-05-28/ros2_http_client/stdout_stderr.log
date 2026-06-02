@@ -1,0 +1,20 @@
+running develop
+running egg_info
+creating ros2_http_client.egg-info
+writing ros2_http_client.egg-info/PKG-INFO
+writing dependency_links to ros2_http_client.egg-info/dependency_links.txt
+writing requirements to ros2_http_client.egg-info/requires.txt
+writing top-level names to ros2_http_client.egg-info/top_level.txt
+writing manifest file 'ros2_http_client.egg-info/SOURCES.txt'
+reading manifest file 'ros2_http_client.egg-info/SOURCES.txt'
+writing manifest file 'ros2_http_client.egg-info/SOURCES.txt'
+running build_ext
+Creating /home/kaisar/warehouse_robot/robot/install/ros2_http_client/lib/python3.12/site-packages/ros2-http-client.egg-link (link to .)
+
+Installed /home/kaisar/warehouse_robot/robot/build/ros2_http_client
+running symlink_data
+creating /home/kaisar/warehouse_robot/robot/install/ros2_http_client/share/ament_index
+creating /home/kaisar/warehouse_robot/robot/install/ros2_http_client/share/ament_index/resource_index
+creating /home/kaisar/warehouse_robot/robot/install/ros2_http_client/share/ament_index/resource_index/packages
+symbolically linking /home/kaisar/warehouse_robot/robot/build/ros2_http_client/resource/ros2_http_client -> /home/kaisar/warehouse_robot/robot/install/ros2_http_client/share/ament_index/resource_index/packages
+symbolically linking /home/kaisar/warehouse_robot/robot/build/ros2_http_client/package.xml -> /home/kaisar/warehouse_robot/robot/install/ros2_http_client/share/ros2_http_client

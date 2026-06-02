@@ -1,1 +1,0 @@
-/home/kaisar/warehouse_robot/build/robot_msgs/rosidl_generator_c/robot_msgs/srv/plan_route.h

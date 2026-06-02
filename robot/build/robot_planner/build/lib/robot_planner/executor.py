@@ -1,14 +1,7 @@
 from __future__ import annotations
 
 import math
-import json
-from time import monotonic
 from typing import Any, Callable
-
-from geometry_msgs.msg import Twist
-from rclpy.node import Node
-from robot_msgs.msg import RobotStatus
-from robot_msgs.srv import CancelRoute, ExecuteRoute
 
 from .route_planner import RobotTrajectoryPlanner, clamp, normalize_angle
 from .runtime import PlannedRobotRoute, Pose2D, RobotRuntime, RoutePoint
@@ -26,6 +19,7 @@ class RouteExecutor:
         self._publish_cmd_vel = publish_cmd_vel
 
     def control_step(self, status: dict[str, Any]) -> None:
+        self.route_planner.reload_params_from_disk()
         route = self.runtime.active_route()
         if route is None:
             if status.get("localizationOk", False) and status.get("state") in {"ARRIVED", "EXECUTING_ROUTE"}:
@@ -314,114 +308,3 @@ class RouteExecutor:
             motion_direction=second.motion_direction if ratio > 0.5 else first.motion_direction,
         )
 
-
-class RouteExecutorNode(Node):
-    def __init__(
-        self,
-        runtime: RobotRuntime,
-        route_planner: RobotTrajectoryPlanner,
-        cmd_vel_topic: str,
-        status_topic: str,
-    ) -> None:
-        super().__init__("route_executor")
-        self.runtime = runtime
-        self.route_planner = route_planner
-        self._cmd_vel_pub = self.create_publisher(Twist, cmd_vel_topic, 20)
-        self._executor = RouteExecutor(runtime, route_planner, self._publish_cmd_vel)
-        self._latest_status = self._default_status_payload()
-        self._last_motion_command = False
-        self.create_subscription(RobotStatus, status_topic, self._on_robot_status, 20)
-        self.create_service(ExecuteRoute, "/route/execute", self._handle_execute_route)
-        self.create_service(CancelRoute, "/route/cancel", self._handle_cancel_route)
-        self.create_timer(0.05, self._control_step)
-
-    def _on_robot_status(self, message: RobotStatus) -> None:
-        self._latest_status = {
-            "robotId": message.robot_id,
-            "mapId": message.map_id,
-            "connected": bool(message.connected),
-            "localizationOk": bool(message.localization_ok),
-            "localizationAgeSec": float(message.localization_age_sec),
-            "state": str(message.state or ""),
-            "message": str(message.message or ""),
-            "targetLm": str(message.target_lm or ""),
-            "nearestLm": str(message.nearest_lm or ""),
-            "currentEdgeId": str(message.current_edge_id or ""),
-            "routeId": str(message.route_id or ""),
-            "routeProgress": float(message.route_progress),
-            "pose": {
-                "x": float(message.pose_x),
-                "y": float(message.pose_y),
-                "yaw": float(message.pose_yaw),
-            } if bool(message.localization_ok) else None,
-            "velocity": {
-                "linear": float(message.linear_velocity),
-                "angular": float(message.angular_velocity),
-            },
-        }
-
-    def _control_step(self) -> None:
-        had_motion = self._last_motion_command
-        self._executor.control_step(self._latest_status)
-        if had_motion and not self._command_is_active():
-            self._publish_cmd_vel(0.0, 0.0)
-
-    def _command_is_active(self) -> bool:
-        snapshot = self.runtime.snapshot()
-        route = snapshot.get("route")
-        return bool(snapshot.get("targetLm") or route is not None)
-
-    def _handle_execute_route(self, request, response):
-        try:
-            payload = json.loads(str(request.route_json or ""))
-            if not isinstance(payload, dict):
-                raise ValueError("route_json must contain an object")
-            route = PlannedRobotRoute.from_dict(payload)
-            if not route.goal_lm:
-                raise ValueError("route.goalLm is required")
-            self.runtime.set_route(route)
-            self.runtime.add_event("info", f"executing route {route.route_id} -> {route.goal_lm}")
-            response.ok = True
-            response.error = ""
-        except Exception as exc:  # pragma: no cover - ROS service boundary
-            response.ok = False
-            response.error = str(exc)
-        return response
-
-    def _handle_cancel_route(self, request, response):
-        try:
-            message = str(request.message or "").strip() or "Route canceled."
-            self.runtime.cancel_route(message)
-            self._publish_cmd_vel(0.0, 0.0)
-            self.runtime.add_event("warn", "route canceled")
-            response.ok = True
-            response.error = ""
-        except Exception as exc:  # pragma: no cover - ROS service boundary
-            response.ok = False
-            response.error = str(exc)
-        return response
-
-    def _publish_cmd_vel(self, linear: float, angular: float) -> None:
-        message = Twist()
-        message.linear.x = float(linear)
-        message.angular.z = float(angular)
-        self._cmd_vel_pub.publish(message)
-        self._last_motion_command = abs(float(linear)) > 1e-6 or abs(float(angular)) > 1e-6
-
-    def _default_status_payload(self) -> dict[str, Any]:
-        return {
-            "robotId": self.runtime.robot_id,
-            "mapId": self.runtime.map_id,
-            "connected": True,
-            "localizationOk": False,
-            "localizationAgeSec": 9999.0,
-            "state": "LOCALIZING",
-            "message": "Waiting for amcl pose.",
-            "targetLm": "",
-            "nearestLm": "",
-            "currentEdgeId": "",
-            "routeId": "",
-            "routeProgress": 0.0,
-            "pose": None,
-            "velocity": {"linear": 0.0, "angular": 0.0},
-        }

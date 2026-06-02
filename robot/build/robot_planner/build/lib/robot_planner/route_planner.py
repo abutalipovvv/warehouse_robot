@@ -1,10 +1,9 @@
 from __future__ import annotations
 
 import math
-from pathlib import Path
 from typing import Any
 
-from route_core import LmRoutePlanner, WarehouseMapLoader, load_route_params
+from .route_core import LmRoutePlanner, WarehouseMapLoader, load_route_params
 
 from .runtime import PlannedRobotRoute, Pose2D, RoutePoint
 
@@ -25,12 +24,14 @@ class RobotTrajectoryPlanner:
     ) -> None:
         self.loaded_map = WarehouseMapLoader(map_dir).load()
         self.params_path = params_path
+        self._params_mtime_ns: int | None = None
         self.params = load_route_params(params_path, create=True)
         self.planner = LmRoutePlanner(
             self.loaded_map.landmarks,
             self.loaded_map.edges,
             params=self.params,
         )
+        self._refresh_params_mtime()
 
     @property
     def map_id(self) -> str:
@@ -60,7 +61,30 @@ class RobotTrajectoryPlanner:
     def current_params(self) -> dict[str, Any]:
         return self.params
 
+    def reload_params_from_disk(self) -> dict[str, Any]:
+        try:
+            mtime_ns = self.params_path.stat().st_mtime_ns
+        except FileNotFoundError:
+            mtime_ns = None
+        if mtime_ns is not None and mtime_ns == self._params_mtime_ns:
+            return self.params
+        self.params = load_route_params(self.params_path, create=True)
+        self.planner = LmRoutePlanner(
+            self.loaded_map.landmarks,
+            self.loaded_map.edges,
+            params=self.params,
+        )
+        self._params_mtime_ns = mtime_ns
+        return self.params
+
+    def _refresh_params_mtime(self) -> None:
+        try:
+            self._params_mtime_ns = self.params_path.stat().st_mtime_ns
+        except FileNotFoundError:
+            self._params_mtime_ns = None
+
     def plan_from_pose(self, pose: Pose2D, goal_lm: str, start_lm: str | None = None) -> PlannedRobotRoute:
+        self.reload_params_from_disk()
         goal = str(goal_lm).strip()
         if goal not in self.loaded_map.landmarks:
             raise ValueError(f"unknown goal LM: {goal}")

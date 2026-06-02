@@ -1,0 +1,50 @@
+[0.014s] Invoking command in '/home/kaisar/warehouse_robot/robot/build/trp1_description': CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}:/home/kaisar/warehouse_robot/robot/install/robot_status:/home/kaisar/warehouse_robot/robot/install/robot_gateway:/home/kaisar/warehouse_robot/robot/install/robot_control:/home/kaisar/warehouse_robot/robot/install/robot_http_api:/home/kaisar/warehouse_robot/robot/install/robot_planner:/opt/ros/jazzy DEBUGINFOD_URLS=https://debuginfod.ubuntu.com /usr/bin/cmake /home/kaisar/warehouse_robot/robot/ws/src/trp1_description -DAMENT_CMAKE_SYMLINK_INSTALL=1 -DCMAKE_INSTALL_PREFIX=/home/kaisar/warehouse_robot/robot/install/trp1_description
+[0.078s] -- The C compiler identification is GNU 13.3.0
+[0.145s] -- The CXX compiler identification is GNU 13.3.0
+[0.165s] -- Detecting C compiler ABI info
+[0.273s] -- Detecting C compiler ABI info - done
+[0.283s] -- Check for working C compiler: /usr/bin/cc - skipped
+[0.283s] -- Detecting C compile features
+[0.283s] -- Detecting C compile features - done
+[0.295s] -- Detecting CXX compiler ABI info
+[0.417s] -- Detecting CXX compiler ABI info - done
+[0.430s] -- Check for working CXX compiler: /usr/bin/c++ - skipped
+[0.430s] -- Detecting CXX compile features
+[0.430s] -- Detecting CXX compile features - done
+[0.436s] -- Found ament_cmake: 2.5.6 (/opt/ros/jazzy/share/ament_cmake/cmake)
+[0.624s] -- Found Python3: /usr/bin/python3 (found version "3.12.3") found components: Interpreter 
+[0.707s] -- Override CMake install command with custom implementation using symlinks instead of copying resources
+[0.868s] -- Configuring done (0.8s)
+[0.872s] -- Generating done (0.0s)
+[0.874s] -- Build files have been written to: /home/kaisar/warehouse_robot/robot/build/trp1_description
+[0.879s] Invoked command in '/home/kaisar/warehouse_robot/robot/build/trp1_description' returned '0': CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}:/home/kaisar/warehouse_robot/robot/install/robot_status:/home/kaisar/warehouse_robot/robot/install/robot_gateway:/home/kaisar/warehouse_robot/robot/install/robot_control:/home/kaisar/warehouse_robot/robot/install/robot_http_api:/home/kaisar/warehouse_robot/robot/install/robot_planner:/opt/ros/jazzy DEBUGINFOD_URLS=https://debuginfod.ubuntu.com /usr/bin/cmake /home/kaisar/warehouse_robot/robot/ws/src/trp1_description -DAMENT_CMAKE_SYMLINK_INSTALL=1 -DCMAKE_INSTALL_PREFIX=/home/kaisar/warehouse_robot/robot/install/trp1_description
+[0.880s] Invoking command in '/home/kaisar/warehouse_robot/robot/build/trp1_description': CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}:/home/kaisar/warehouse_robot/robot/install/robot_status:/home/kaisar/warehouse_robot/robot/install/robot_gateway:/home/kaisar/warehouse_robot/robot/install/robot_control:/home/kaisar/warehouse_robot/robot/install/robot_http_api:/home/kaisar/warehouse_robot/robot/install/robot_planner:/opt/ros/jazzy DEBUGINFOD_URLS=https://debuginfod.ubuntu.com /usr/bin/cmake --build /home/kaisar/warehouse_robot/robot/build/trp1_description -- -j12 -l12
+[0.928s] Invoked command in '/home/kaisar/warehouse_robot/robot/build/trp1_description' returned '0': CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}:/home/kaisar/warehouse_robot/robot/install/robot_status:/home/kaisar/warehouse_robot/robot/install/robot_gateway:/home/kaisar/warehouse_robot/robot/install/robot_control:/home/kaisar/warehouse_robot/robot/install/robot_http_api:/home/kaisar/warehouse_robot/robot/install/robot_planner:/opt/ros/jazzy DEBUGINFOD_URLS=https://debuginfod.ubuntu.com /usr/bin/cmake --build /home/kaisar/warehouse_robot/robot/build/trp1_description -- -j12 -l12
+[0.941s] Invoking command in '/home/kaisar/warehouse_robot/robot/build/trp1_description': CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}:/home/kaisar/warehouse_robot/robot/install/robot_status:/home/kaisar/warehouse_robot/robot/install/robot_gateway:/home/kaisar/warehouse_robot/robot/install/robot_control:/home/kaisar/warehouse_robot/robot/install/robot_http_api:/home/kaisar/warehouse_robot/robot/install/robot_planner:/opt/ros/jazzy DEBUGINFOD_URLS=https://debuginfod.ubuntu.com /usr/bin/cmake --install /home/kaisar/warehouse_robot/robot/build/trp1_description
+[0.950s] -- Install configuration: ""
+[0.951s] -- Execute custom install script
+[0.951s] -- Symlinking: /home/kaisar/warehouse_robot/robot/install/trp1_description/share/trp1_description/urdf/d430.urdf.xacro
+[0.963s] -- Symlinking: /home/kaisar/warehouse_robot/robot/install/trp1_description/share/trp1_description/urdf/materials.xacro
+[0.974s] -- Symlinking: /home/kaisar/warehouse_robot/robot/install/trp1_description/share/trp1_description/urdf/sick.urdf.xacro
+[0.986s] -- Symlinking: /home/kaisar/warehouse_robot/robot/install/trp1_description/share/trp1_description/urdf/trp1.gazebo
+[0.998s] -- Symlinking: /home/kaisar/warehouse_robot/robot/install/trp1_description/share/trp1_description/urdf/trp1.xacro
+[1.010s] -- Symlinking: /home/kaisar/warehouse_robot/robot/install/trp1_description/share/trp1_description/urdf/trp1_old._oldxacro
+[1.022s] -- Symlinking: /home/kaisar/warehouse_robot/robot/install/trp1_description/share/trp1_description/urdf/trp1_old.xacro
+[1.034s] -- Symlinking: /home/kaisar/warehouse_robot/robot/install/trp1_description/share/trp1_description/urdf/trp1_stage.urdf.xacro
+[1.045s] -- Symlinking: /home/kaisar/warehouse_robot/robot/install/trp1_description/share/trp1_description/launch/launch.py
+[1.057s] -- Symlinking: /home/kaisar/warehouse_robot/robot/install/trp1_description/share/ament_index/resource_index/package_run_dependencies/trp1_description
+[1.069s] -- Symlinking: /home/kaisar/warehouse_robot/robot/install/trp1_description/share/ament_index/resource_index/parent_prefix_path/trp1_description
+[1.081s] -- Symlinking: /home/kaisar/warehouse_robot/robot/install/trp1_description/share/trp1_description/environment/ament_prefix_path.sh
+[1.094s] -- Symlinking: /home/kaisar/warehouse_robot/robot/install/trp1_description/share/trp1_description/environment/ament_prefix_path.dsv
+[1.105s] -- Symlinking: /home/kaisar/warehouse_robot/robot/install/trp1_description/share/trp1_description/environment/path.sh
+[1.117s] -- Symlinking: /home/kaisar/warehouse_robot/robot/install/trp1_description/share/trp1_description/environment/path.dsv
+[1.128s] -- Symlinking: /home/kaisar/warehouse_robot/robot/install/trp1_description/share/trp1_description/local_setup.bash
+[1.139s] -- Symlinking: /home/kaisar/warehouse_robot/robot/install/trp1_description/share/trp1_description/local_setup.sh
+[1.151s] -- Symlinking: /home/kaisar/warehouse_robot/robot/install/trp1_description/share/trp1_description/local_setup.zsh
+[1.163s] -- Symlinking: /home/kaisar/warehouse_robot/robot/install/trp1_description/share/trp1_description/local_setup.dsv
+[1.175s] -- Symlinking: /home/kaisar/warehouse_robot/robot/install/trp1_description/share/trp1_description/package.dsv
+[1.186s] -- Symlinking: /home/kaisar/warehouse_robot/robot/install/trp1_description/share/ament_index/resource_index/packages/trp1_description
+[1.198s] -- Symlinking: /home/kaisar/warehouse_robot/robot/install/trp1_description/share/trp1_description/cmake/trp1_descriptionConfig.cmake
+[1.210s] -- Symlinking: /home/kaisar/warehouse_robot/robot/install/trp1_description/share/trp1_description/cmake/trp1_descriptionConfig-version.cmake
+[1.221s] -- Symlinking: /home/kaisar/warehouse_robot/robot/install/trp1_description/share/trp1_description/package.xml
+[1.236s] Invoked command in '/home/kaisar/warehouse_robot/robot/build/trp1_description' returned '0': CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}:/home/kaisar/warehouse_robot/robot/install/robot_status:/home/kaisar/warehouse_robot/robot/install/robot_gateway:/home/kaisar/warehouse_robot/robot/install/robot_control:/home/kaisar/warehouse_robot/robot/install/robot_http_api:/home/kaisar/warehouse_robot/robot/install/robot_planner:/opt/ros/jazzy DEBUGINFOD_URLS=https://debuginfod.ubuntu.com /usr/bin/cmake --install /home/kaisar/warehouse_robot/robot/build/trp1_description

@@ -2,18 +2,16 @@ from __future__ import annotations
 
 import math
 from time import monotonic
-from typing import Any
 
-from geometry_msgs.msg import Twist
-from geometry_msgs.msg import PoseWithCovarianceStamped
+from geometry_msgs.msg import PoseWithCovarianceStamped, Twist
 from nav_msgs.msg import Odometry
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
 from rclpy.time import Time
 from tf2_ros import Buffer, TransformException, TransformListener
 
-from robot_msgs.msg import RobotStatus
-from robot_planner import RobotRuntime, RobotTrajectoryPlanner
+from robot_msgs.msg import ExecutorState, RobotStatus
+from robot_planner import RobotTrajectoryPlanner
 
 AMCL_QOS = QoSProfile(
     history=HistoryPolicy.KEEP_LAST,
@@ -39,28 +37,35 @@ def quaternion_to_yaw(x: float, y: float, z: float, w: float) -> float:
 class RobotStatusNode(Node):
     def __init__(
         self,
-        runtime: RobotRuntime,
+        *,
+        robot_id: str,
         route_planner: RobotTrajectoryPlanner,
         amcl_topic: str,
         odom_topic: str,
         cmd_vel_topic: str,
         status_topic: str,
+        executor_status_topic: str,
     ) -> None:
         super().__init__("robot_status")
-        self.runtime = runtime
+        self.robot_id = robot_id
+        self.map_id = route_planner.map_id
         self.route_planner = route_planner
         self._map_frame = "map"
         self._base_frame = "base_link"
         self._tf_buffer = Buffer()
         self._tf_listener = TransformListener(self._tf_buffer, self, spin_thread=False)
+        self._pose: dict[str, float] | None = None
+        self._pose_updated_at: float | None = None
+        self._velocity = {"linear": 0.0, "angular": 0.0}
         self._last_localization_fix_at: float | None = None
         self._last_manual_cmd_at: float | None = None
-        self._last_manual_linear = 0.0
-        self._last_manual_angular = 0.0
+        self._executor_state = self._default_executor_state()
+
         self.status_pub = self.create_publisher(RobotStatus, status_topic, 10)
         self.create_subscription(PoseWithCovarianceStamped, amcl_topic, self._on_amcl_pose, AMCL_QOS)
         self.create_subscription(Odometry, odom_topic, self._on_odom, ODOM_QOS)
         self.create_subscription(Twist, cmd_vel_topic, self._on_cmd_vel, 20)
+        self.create_subscription(ExecutorState, executor_status_topic, self._on_executor_state, 20)
         self.create_timer(0.03, self._publish_status)
 
     def _on_amcl_pose(self, message: PoseWithCovarianceStamped) -> None:
@@ -72,54 +77,64 @@ class RobotStatusNode(Node):
             pose.orientation.z,
             pose.orientation.w,
         )
-        self.runtime.set_pose(pose.position.x, pose.position.y, yaw)
+        self._set_pose(pose.position.x, pose.position.y, yaw)
         self._update_pose_from_tf()
 
     def _on_odom(self, message: Odometry) -> None:
-        self.runtime.set_velocity(
-            linear=message.twist.twist.linear.x,
-            angular=message.twist.twist.angular.z,
-        )
+        self._velocity = {
+            "linear": float(message.twist.twist.linear.x),
+            "angular": float(message.twist.twist.angular.z),
+        }
         self._update_pose_from_tf()
 
     def _on_cmd_vel(self, message: Twist) -> None:
         linear = float(message.linear.x)
         angular = float(message.angular.z)
         if abs(linear) <= 1e-4 and abs(angular) <= 1e-4:
-            self._last_manual_linear = 0.0
-            self._last_manual_angular = 0.0
             return
         self._last_manual_cmd_at = monotonic()
-        self._last_manual_linear = linear
-        self._last_manual_angular = angular
+
+    def _on_executor_state(self, message: ExecutorState) -> None:
+        self._executor_state = {
+            "routeActive": bool(message.route_active),
+            "state": str(message.state or ""),
+            "message": str(message.message or ""),
+            "targetLm": str(message.target_lm or ""),
+            "currentEdgeId": str(message.current_edge_id or ""),
+            "routeId": str(message.route_id or ""),
+            "routeProgress": float(message.route_progress),
+        }
 
     def _publish_status(self) -> None:
+        self.route_planner.reload_params_from_disk()
         self._update_pose_from_tf()
-        snapshot = self.runtime.snapshot()
-        pose = snapshot.get("pose")
-        state = str(snapshot.get("state") or "LOCALIZING")
-        message = str(snapshot.get("message") or "")
-        amcl_age = self._localization_age()
-        pose_age = self.runtime.localization_age()
+        pose = self._pose
+        pose_age = self._pose_age()
         pose_timeout = self._localization_timeout()
+        amcl_age = self._localization_age()
         amcl_correction_timeout = self._amcl_correction_timeout()
         has_amcl_fix = self._last_localization_fix_at is not None
         pose_fresh = pose is not None and pose_age <= pose_timeout
         localization_ok = pose is not None and has_amcl_fix and pose_fresh
-        stationary = self._is_stationary(snapshot)
+        stationary = self._is_stationary()
 
-        route = snapshot.get("route") if isinstance(snapshot.get("route"), dict) else {}
-        route_active = isinstance(route, dict) and bool(route.get("routeId"))
+        executor_state = self._executor_state
+        route_active = bool(executor_state.get("routeActive"))
         manual_active = self._manual_active() and not route_active
+        state = str(executor_state.get("state") or "IDLE")
+        message = str(executor_state.get("message") or "")
 
         if pose is None or not has_amcl_fix:
-            if state != "ERROR":
+            if route_active or manual_active:
+                state = "ERROR"
+                message = "Waiting for amcl pose."
+            else:
                 state = "LOCALIZING"
                 message = "Waiting for amcl pose."
         elif not pose_fresh:
-            if state in {"MANUAL", "EXECUTING_ROUTE", "ERROR"} or manual_active:
+            if route_active or manual_active or state == "ERROR":
                 state = "ERROR"
-                if not message or message == "Localized.":
+                if not message:
                     message = f"Localization transform timeout: pose is stale for {pose_age:.2f}s"
             else:
                 state = "LOCALIZING"
@@ -127,6 +142,11 @@ class RobotStatusNode(Node):
         elif manual_active:
             state = "MANUAL"
             message = "Manual control active."
+        elif route_active:
+            state = state or "EXECUTING_ROUTE"
+            if not message:
+                target_lm = str(executor_state.get("targetLm") or "").strip()
+                message = f"Driving to {target_lm}." if target_lm else "Executing route."
         elif amcl_age > amcl_correction_timeout:
             if state == "LOCALIZING":
                 state = "IDLE"
@@ -137,40 +157,62 @@ class RobotStatusNode(Node):
                     f"Localized. AMCL correction is {amcl_age:.2f}s old, "
                     "tracking continues on map->base_link TF."
                 )
-        elif state == "LOCALIZING":
+            if state not in {"ARRIVED", "ERROR"}:
+                state = "IDLE"
+        elif state in {"", "LOCALIZING"}:
             state = "IDLE"
             message = "Localized."
-        elif not route_active and state == "ARRIVED":
-            state = "IDLE"
 
         nearest_name = ""
         if pose is not None:
             nearest, _ = self.route_planner.planner.nearest_landmark(pose["x"], pose["y"])
             nearest_name = nearest.name
-            self.runtime.set_nearest_lm(nearest_name)
 
         status = RobotStatus()
         status.stamp = self.get_clock().now().to_msg()
-        status.robot_id = self.runtime.robot_id
-        status.map_id = self.runtime.map_id
+        status.robot_id = self.robot_id
+        status.map_id = self.map_id
         status.connected = True
         status.localization_ok = localization_ok
         status.localization_age_sec = float(amcl_age if math.isfinite(amcl_age) else 9999.0)
         status.state = state
         status.message = message
-        status.target_lm = str(snapshot.get("targetLm") or "")
+        status.target_lm = str(executor_state.get("targetLm") or "")
         status.nearest_lm = nearest_name
-        status.current_edge_id = str(snapshot.get("currentEdgeId") or "")
-        status.route_id = str(route.get("routeId") or "")
-        status.route_progress = float(snapshot.get("routeProgress", 0.0) or 0.0)
+        status.current_edge_id = str(executor_state.get("currentEdgeId") or "")
+        status.route_id = str(executor_state.get("routeId") or "")
+        status.route_progress = float(executor_state.get("routeProgress", 0.0) or 0.0)
         if pose is not None:
             status.pose_x = float(pose["x"])
             status.pose_y = float(pose["y"])
             status.pose_yaw = float(pose["yaw"])
-        velocity = snapshot.get("velocity") if isinstance(snapshot.get("velocity"), dict) else {}
-        status.linear_velocity = float(velocity.get("linear", 0.0) or 0.0)
-        status.angular_velocity = float(velocity.get("angular", 0.0) or 0.0)
+        status.linear_velocity = float(self._velocity.get("linear", 0.0) or 0.0)
+        status.angular_velocity = float(self._velocity.get("angular", 0.0) or 0.0)
         self.status_pub.publish(status)
+
+    def _default_executor_state(self) -> dict[str, object]:
+        return {
+            "routeActive": False,
+            "state": "LOCALIZING",
+            "message": "Waiting for amcl pose.",
+            "targetLm": "",
+            "currentEdgeId": "",
+            "routeId": "",
+            "routeProgress": 0.0,
+        }
+
+    def _set_pose(self, x: float, y: float, yaw: float) -> None:
+        self._pose = {
+            "x": float(x),
+            "y": float(y),
+            "yaw": float(yaw),
+        }
+        self._pose_updated_at = monotonic()
+
+    def _pose_age(self) -> float:
+        if self._pose_updated_at is None:
+            return float("inf")
+        return max(0.0, monotonic() - self._pose_updated_at)
 
     def _manual_active(self) -> bool:
         if self._last_manual_cmd_at is None:
@@ -184,27 +226,14 @@ class RobotStatusNode(Node):
 
     def _update_pose_from_tf(self) -> None:
         try:
-            transform = self._tf_buffer.lookup_transform(
-                self._map_frame,
-                self._base_frame,
-                Time(),
-            )
+            transform = self._tf_buffer.lookup_transform(self._map_frame, self._base_frame, Time())
         except TransformException:
             return
 
         translation = transform.transform.translation
         rotation = transform.transform.rotation
-        yaw = quaternion_to_yaw(
-            rotation.x,
-            rotation.y,
-            rotation.z,
-            rotation.w,
-        )
-        self.runtime.set_pose(
-            float(translation.x),
-            float(translation.y),
-            float(yaw),
-        )
+        yaw = quaternion_to_yaw(rotation.x, rotation.y, rotation.z, rotation.w)
+        self._set_pose(float(translation.x), float(translation.y), float(yaw))
 
     def _localization_timeout(self) -> float:
         params = self.route_planner.current_params()
@@ -232,7 +261,7 @@ class RobotStatusNode(Node):
             localization = {}
         return bool(localization.get("accept_stale_pose_when_stationary", True))
 
-    def _is_stationary(self, snapshot: dict[str, Any]) -> bool:
+    def _is_stationary(self) -> bool:
         params = self.route_planner.current_params()
         localization = params.get("localization", {})
         if not isinstance(localization, dict):
@@ -245,9 +274,6 @@ class RobotStatusNode(Node):
             0.001,
             float(localization.get("stationary_angular_velocity_epsilon", 0.05) or 0.05),
         )
-        velocity = snapshot.get("velocity", {})
-        if not isinstance(velocity, dict):
-            return False
-        linear = abs(float(velocity.get("linear", 0.0) or 0.0))
-        angular = abs(float(velocity.get("angular", 0.0) or 0.0))
+        linear = abs(float(self._velocity.get("linear", 0.0) or 0.0))
+        angular = abs(float(self._velocity.get("angular", 0.0) or 0.0))
         return linear <= linear_epsilon and angular <= angular_epsilon
