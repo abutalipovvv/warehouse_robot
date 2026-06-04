@@ -1,0 +1,61 @@
+robot_model:
+  footprint:
+  - x: 0.35
+    y: 0.275
+  - x: 0.35
+    y: -0.275
+  - x: -0.35
+    y: -0.275
+  - x: -0.35
+    y: 0.275
+  frames:
+    lidar:
+      x: 0.28
+      y: 0
+      label: LiDAR
+      color: '#1f6feb'
+    imu:
+      x: 0
+      y: 0
+      label: IMU
+      color: '#d95521'
+    wheel_left:
+      x: 0
+      y: 0.225
+      label: WL
+      color: '#2f3a4a'
+    wheel_right:
+      x: 0
+      y: -0.225
+      label: WR
+      color: '#2f3a4a'
+navigation:
+  route_speed: 1
+  footprint_lookahead: 0.45
+  collision_margin: 0.04
+  stop_distance: 0.18
+  angular_gain: 2.2
+  max_angular_speed: 0.9
+  rotate_in_place_angle_deg: 32
+  curve_speed_limit: 0.25
+  rejoin_speed_limit: 0.16
+  hard_rejoin_speed_limit: 0.06
+planner:
+  nearest_lm_tolerance: 0.01
+  trajectory_sample_distance: 0.03
+  on_route_tolerance: 0.1
+  precision_start_distance: 0.1
+localization:
+  pose_source: AMCL + IMU-aided odom
+  localization_timeout: 0.5
+  amcl_correction_timeout: 5
+  allowed_lateral_error: 0.02
+  allowed_yaw_error_deg: 1
+  accept_stale_pose_when_stationary: true
+  stationary_linear_velocity_epsilon: 0.02
+  stationary_angular_velocity_epsilon: 0.05
+manual:
+  linear_speed: 0.5
+  angular_speed: 1.8
+  prediction_time: 1
+  prediction_step: 0.1

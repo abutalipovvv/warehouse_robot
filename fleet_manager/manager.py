@@ -144,6 +144,49 @@ class WebFleetManager:
             )
         return {"ok": True, "state": self.state()}
 
+    def check_path(self, payload: dict[str, Any]) -> dict[str, Any]:
+        self._advance_runtime()
+        name = str(payload.get("name", "")).strip()
+        poses = payload.get("poses", [])
+        if not isinstance(poses, list):
+            poses = []
+        step = self.collision.sample_time_step()
+        for index, item in enumerate(poses):
+            if not isinstance(item, dict):
+                continue
+            pose = {
+                "x": float(item.get("x", 0.0) or 0.0),
+                "y": float(item.get("y", 0.0) or 0.0),
+                "yaw": float(item.get("yaw", 0.0) or 0.0),
+            }
+            reason = self.collision.blocked_reason(
+                pose=pose,
+                obstacles=self.obstacles,
+                obstacle_areas=self.obstacle_areas,
+            )
+            if reason:
+                return {
+                    "ok": True,
+                    "blocked": True,
+                    "reason": reason,
+                    "index": index,
+                    "pose": pose,
+                }
+            offset = index * step
+            for other in self.robots.values():
+                if other.name == name or other.pose is None:
+                    continue
+                other_pose = self._predicted_robot_pose(other, offset) or other.pose
+                if other_pose is not None and self.collision.footprints_overlap(pose, other_pose):
+                    return {
+                        "ok": True,
+                        "blocked": True,
+                        "reason": f"robot footprint conflict with {other.name}",
+                        "index": index,
+                        "pose": pose,
+                    }
+        return {"ok": True, "blocked": False, "reason": ""}
+
     def add_robot(self, payload: dict[str, Any]) -> dict[str, Any]:
         name = str(payload.get("name", "")).strip()
         current_lm = str(payload.get("currentLm") or payload.get("spawnLm") or "").strip()
@@ -259,7 +302,7 @@ class WebFleetManager:
                 "y": float(pose.get("y", 0.0) or 0.0),
                 "yaw": float(pose.get("yaw", 0.0) or 0.0),
             }
-        if robot.status in {"IDLE", "ARRIVED", "BLOCKED", "STOPPED"} and not robot.target_lm:
+        if robot.status in {"IDLE", "ARRIVED", "BLOCKED", "STOPPED", "MANUAL", "MANUAL_BLOCKED"} and not robot.target_lm:
             robot.trajectory = []
             robot.plan_nodes = []
             robot.route_started_at = None

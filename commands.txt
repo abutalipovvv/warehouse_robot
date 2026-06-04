@@ -6,14 +6,14 @@ ros2 launch stage_ros2 stage.launch.py  enforce_prefixes:=false one_tf_tree:=fal
 ros2 launch nav2 nav2_launch.py
 
 
-.\run_web.bat
-
-.\run_web.bat --map-dir map_data/maps_out/22.05.26_smap.smap
-
 py serve_web.py --map-dir maps_out/22.05.26_smap.smap --open
-python3 scripts/stress_fleet_web.py --base-url http://127.0.0.1:8090 --robots 4 --queue-length 6
 
 & "$env:LOCALAPPDATA\Python\bin\python.exe" serve_web.py --open
+& "$env:LOCALAPPDATA\Python\bin\python.exe" serve_web.py --map-dir maps_out/22.05.26_smap.smap --open
+
+# serve_web.py now opens the operator app with built-in Fleet Manager simulation.
+# Fleet Manager params:
+#   fleet_manager/params.yaml
 
 
 # Single robot HTTP API + ROS 2
@@ -26,8 +26,12 @@ ros2 launch robot_launch launch.py
 cd ~/warehouse_robot
 source /opt/ros/jazzy/setup.bash
 source robot/install/local_setup.bash
-# Robot-side server listens on LAN by default at 0.0.0.0:8790
-python3 serve_robot.py --map-dir maps_out/22.05.26_smap.smap --open
+# Robot-side server listens on LAN by default at 0.0.0.0:8790.
+# It is API-only; the UI is in operator_app.
+python3 serve_robot.py --map-dir maps_out/22.05.26_smap.smap
+
+# Robot params:
+#   robot/ws/src/params.yaml
 
 
 # Operator app for connecting to robots by IP

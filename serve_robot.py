@@ -20,8 +20,11 @@ def _bootstrap_python_paths() -> None:
         candidates.extend(sorted(install_root.glob(f"*/lib/python{major}.{minor}/site-packages")))
     candidates.extend(
         [
+            ROBOT_WORKSPACE / "ws" / "src",
+            ROBOT_WORKSPACE / "ws" / "src" / "robot_http_server",
             ROBOT_WORKSPACE / "ws" / "src" / "ros2_http_client",
             ROBOT_WORKSPACE / "ws" / "src" / "robot_planner",
+            ROBOT_WORKSPACE / "ws" / "src" / "robot_planner" / "robot_planner",
             ROBOT_WORKSPACE / "ws" / "src" / "robot_status",
             ROBOT_WORKSPACE / "ws" / "src" / "robot_map_manager",
         ]
@@ -34,17 +37,17 @@ def _bootstrap_python_paths() -> None:
 
 _bootstrap_python_paths()
 
-import rclpy
-from rclpy.executors import MultiThreadedExecutor
-
 from robot_http_server.server import RobotHttpApiBridge, parse_args, resolve_map_dir, serve_http_server
-from ros2_http_client import RobotRosClient
 
 
 def main() -> None:
     args = parse_args()
     map_dir = resolve_map_dir(args.map_dir)
     params_path = args.params.resolve()
+
+    import rclpy
+    from rclpy.executors import MultiThreadedExecutor
+    from ros2_http_client import RobotRosClient
 
     rclpy.init(args=None)
     ros_client = RobotRosClient(

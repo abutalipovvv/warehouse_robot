@@ -12,11 +12,13 @@ from urllib.parse import parse_qs, unquote, urlparse
 import webbrowser
 
 from .map_cache import MapCache
+from .fleet_manager_app import DEFAULT_FLEET_MAP_DIR, FLEET_MANAGER_ID, OperatorFleetManager
 from .models import KnownRobot
 from .registry import RobotRegistry, default_registry_path
 from .robot_client import RobotClient, RobotProbeError
 
 DEFAULT_STATIC_DIR = Path(__file__).resolve().parent / "static"
+DEFAULT_FLEET_PARAMS_PATH = Path(__file__).resolve().parents[1] / "fleet_manager" / "params.yaml"
 
 
 def utc_now() -> str:
@@ -24,17 +26,20 @@ def utc_now() -> str:
 
 
 class OperatorAppState:
-    def __init__(self, registry_path: Path, probe_timeout: float) -> None:
+    def __init__(self, registry_path: Path, probe_timeout: float, fleet_params_path: Path, fleet_map_dir: Path) -> None:
         self.registry = RobotRegistry(registry_path)
         self.map_cache = MapCache()
         self.client = RobotClient(timeout=probe_timeout)
         self.map_timeout = max(10.0, float(probe_timeout) * 10.0)
+        self.fleet_params_path = Path(fleet_params_path).expanduser().resolve()
+        self.fleet_manager = OperatorFleetManager(fleet_map_dir, self.fleet_params_path)
         self._lock = Lock()
 
     def list_robots_payload(self) -> dict[str, Any]:
         with self._lock:
             robots = self.registry.load()
-        items = [self._robot_payload(robot) for robot in robots]
+        items = [self.fleet_manager.sidebar_payload()]
+        items.extend(self._robot_payload(robot) for robot in robots)
         return {"ok": True, "robots": items}
 
     def probe_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
@@ -75,6 +80,8 @@ class OperatorAppState:
         }
 
     def delete_robot_payload(self, robot_id: str) -> dict[str, Any]:
+        if robot_id == FLEET_MANAGER_ID:
+            raise ValueError("fleet manager is a system entry and cannot be removed")
         with self._lock:
             deleted = self.registry.remove(robot_id)
         if not deleted:
@@ -150,6 +157,296 @@ class OperatorAppState:
     def robot_maps_active_payload(self, robot_id: str) -> dict[str, Any]:
         robot = self.get_robot(robot_id)
         return self.client.request_json(robot.base_url, "/api/maps/active", timeout=self.map_timeout)
+
+    def robot_params_payload(self, robot_id: str) -> dict[str, Any]:
+        robot = self.get_robot(robot_id)
+        params = self.client.request_json(robot.base_url, "/api/params", timeout=self.map_timeout)
+        return {"ok": True, "robotId": robot_id, "path": "/api/params", "params": params}
+
+    def save_robot_params_payload(self, robot_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        robot = self.get_robot(robot_id)
+        params_payload = payload.get("params")
+        if not isinstance(params_payload, dict):
+            params_payload = payload
+        result = self.client.request_json(
+            robot.base_url,
+            "/api/params",
+            method="POST",
+            payload=params_payload,
+            timeout=self.map_timeout,
+        )
+        return {"ok": True, "robotId": robot_id, "saved": result}
+
+    def fleet_params_payload(self) -> dict[str, Any]:
+        return self.fleet_manager.params_payload()
+
+    def save_fleet_params_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return self.fleet_manager.save_params_payload(payload)
+
+    def fleet_manager_get_payload(self, action: str, arg: str = "") -> dict[str, Any]:
+        if action == "identity":
+            return self.fleet_manager.sidebar_payload()
+        if action == "status":
+            return self.fleet_manager.state_payload()
+        if action == "state":
+            return self.fleet_manager.state_payload()
+        if action == "mode":
+            return self.fleet_manager.mode_payload()
+        if action == "map":
+            return self.fleet_manager.map_payload()
+        if action == "maps_list":
+            return self.fleet_manager.maps_list_payload()
+        if action == "maps_active":
+            return self.fleet_manager.maps_active_payload()
+        if action == "maps_pull":
+            return self.fleet_pull_map_payload({"mapName": arg})
+        if action == "maps_local_list":
+            return self.fleet_local_maps_payload()
+        if action == "maps_local_active":
+            return self.fleet_local_active_map_payload()
+        if action == "maps_local_get":
+            return self.fleet_local_map_payload(arg)
+        if action == "params":
+            return self.fleet_manager.params_payload()
+        raise ValueError(f"unknown fleet manager action: {action}")
+
+    def fleet_manager_post_payload(self, action: str, payload: dict[str, Any]) -> dict[str, Any]:
+        if action == "mode":
+            return self.fleet_manager.set_mode_payload(payload)
+        if action == "params":
+            return self.fleet_manager.save_params_payload(payload)
+        if action == "plan":
+            return self.fleet_manager.plan_payload(payload)
+        if action == "tick":
+            return self.fleet_manager.tick_payload(payload)
+        if action == "world":
+            return self.fleet_manager.world_payload(payload)
+        if action == "check":
+            return self.fleet_manager.check_payload(payload)
+        if action == "maps_load":
+            return self.fleet_manager.load_map_payload(payload)
+        if action == "maps_save":
+            return self.fleet_manager.save_map_payload(payload)
+        if action == "maps_local_save":
+            return self.fleet_save_local_map_payload(payload)
+        if action == "maps_local_activate":
+            return self.fleet_activate_local_map_payload(payload)
+        if action == "maps_pull":
+            return self.fleet_pull_map_payload(payload)
+        if action == "maps_pull_sync":
+            return self.fleet_pull_sync_payload()
+        if action == "maps_push":
+            return self.fleet_push_map_payload(payload)
+        if action == "maps_push_sync":
+            return self.fleet_push_sync_payload()
+        if action == "robots_add":
+            return self.fleet_manager.add_robot_payload(payload)
+        if action == "robots_remove":
+            return self.fleet_manager.remove_robot_payload(payload)
+        if action == "robots_update":
+            return self.fleet_manager.update_robot_payload(payload)
+        if action == "robots_stop":
+            return self.fleet_manager.stop_robot_payload(payload)
+        if action == "robots_reset":
+            return self.fleet_manager.reset_robot_payload(payload)
+        raise ValueError(f"unknown fleet manager action: {action}")
+
+    def fleet_local_maps_payload(self) -> dict[str, Any]:
+        return {
+            "ok": True,
+            "activeMapName": self.map_cache.active_map_name(FLEET_MANAGER_ID),
+            "maps": self.map_cache.list_maps(FLEET_MANAGER_ID),
+        }
+
+    def fleet_local_active_map_payload(self) -> dict[str, Any]:
+        active_name = self.map_cache.active_map_name(FLEET_MANAGER_ID)
+        active_payload = self.map_cache.load_active_map(FLEET_MANAGER_ID)
+        robot_active = self.fleet_manager.maps_active_payload()
+        robot_active_name = str(robot_active.get("mapName") or "").strip()
+        robot_signature = str(robot_active.get("signature") or "").strip()
+        if isinstance(active_payload, dict):
+            local_signature = str(active_payload.get("signature") or "").strip()
+            active_payload["robotSignature"] = str(active_payload.get("robotSignature") or robot_signature)
+            active_payload["robotMapName"] = str(active_payload.get("robotMapName") or robot_active_name)
+            active_payload["hasLocalChanges"] = bool(
+                (local_signature and robot_signature and local_signature != robot_signature)
+                or (robot_active_name and str(active_payload.get("mapName") or "").strip() != robot_active_name)
+            )
+        return {
+            "ok": True,
+            "activeMapName": active_name,
+            "map": active_payload.get("map") if isinstance(active_payload, dict) else None,
+            "sourceMapName": str(active_payload.get("sourceMapName") or "") if isinstance(active_payload, dict) else "",
+            "signature": str(active_payload.get("signature") or "") if isinstance(active_payload, dict) else "",
+            "robotSignature": str(active_payload.get("robotSignature") or robot_signature) if isinstance(active_payload, dict) else robot_signature,
+            "robotMapName": str(active_payload.get("robotMapName") or robot_active_name) if isinstance(active_payload, dict) else robot_active_name,
+            "hasLocalChanges": bool(active_payload.get("hasLocalChanges")) if isinstance(active_payload, dict) else False,
+        }
+
+    def fleet_local_map_payload(self, map_name: str) -> dict[str, Any]:
+        payload = self.map_cache.load_map(FLEET_MANAGER_ID, map_name)
+        return {"ok": True, **payload}
+
+    def fleet_save_local_map_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
+        map_name = str(payload.get("mapName") or "").strip()
+        editable_map = payload.get("map")
+        if not map_name:
+            raise ValueError("mapName is required")
+        if not isinstance(editable_map, dict):
+            raise ValueError("map payload is required")
+        saved = self.map_cache.save_map(
+            FLEET_MANAGER_ID,
+            map_name,
+            editable_map,
+            source_map_name=str(payload.get("sourceMapName") or map_name),
+            activate=bool(payload.get("activate", True)),
+        )
+        return {"ok": True, "local": saved}
+
+    def fleet_activate_local_map_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
+        map_name = str(payload.get("mapName") or "").strip()
+        if not map_name:
+            raise ValueError("mapName is required")
+        self.map_cache.load_map(FLEET_MANAGER_ID, map_name)
+        self.map_cache.set_active_map(FLEET_MANAGER_ID, map_name)
+        return {"ok": True, "activeMapName": map_name}
+
+    def fleet_pull_map_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
+        map_name = str(payload.get("mapName") or "").strip()
+        result = self.fleet_manager.pull_map_payload(map_name)
+        local_name = str(result.get("mapName") or map_name or "active").strip() or "active"
+        cached = self.map_cache.save_pulled_map(FLEET_MANAGER_ID, result, activate=True)
+        return {
+            "ok": True,
+            "pulled": result,
+            "local": {
+                "mapName": str(cached.get("mapName") or local_name),
+                "savedAt": str(cached.get("savedAt") or ""),
+            },
+        }
+
+    def fleet_push_map_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
+        editable_map = payload.get("map")
+        if not isinstance(editable_map, dict):
+            local_name = str(payload.get("localMapName") or payload.get("mapName") or "").strip()
+            cached = self.map_cache.load_map(FLEET_MANAGER_ID, local_name)
+            editable_map = cached.get("map")
+            payload = {
+                **payload,
+                "sourceMapName": str(payload.get("sourceMapName") or cached.get("sourceMapName") or local_name),
+            }
+        if not isinstance(editable_map, dict):
+            raise ValueError("map payload is required")
+        target_map_name = str(payload.get("mapName") or editable_map.get("mapName") or "").strip()
+        source_map_name = str(payload.get("sourceMapName") or target_map_name).strip()
+        output_name = str(payload.get("outputName") or "").strip()
+        if not output_name and target_map_name and source_map_name and target_map_name != source_map_name:
+            output_name = target_map_name
+        result = self.fleet_manager.push_map_payload(
+            {
+                "map": editable_map,
+                "mapName": target_map_name,
+                "sourceMapName": source_map_name,
+                "outputName": output_name,
+                "overwriteOutput": bool(payload.get("overwriteOutput", False)),
+            }
+        )
+        local_name = str(result.get("mapName") or output_name or target_map_name or "map").strip()
+        cached = self.map_cache.save_map(
+            FLEET_MANAGER_ID,
+            local_name,
+            result,
+            source_map_name=str(result.get("mapName") or local_name),
+        )
+        return {"ok": True, "pushed": result, "local": cached}
+
+    def fleet_pull_sync_payload(self) -> dict[str, Any]:
+        robot_active = self.fleet_manager.maps_active_payload()
+        robot_active_name = str(robot_active.get("mapName") or "").strip()
+        local_active = self.map_cache.load_active_map(FLEET_MANAGER_ID)
+        robot_current = self.fleet_manager.pull_map_payload(robot_active_name)
+        local_signature = ""
+        if isinstance(local_active, dict):
+            local_map = local_active.get("map")
+            if isinstance(local_map, dict):
+                local_signature = str(local_map.get("signature") or "").strip()
+        robot_signature = str(robot_current.get("signature") or "").strip()
+        local_active_name = str(local_active.get("mapName") or "") if isinstance(local_active, dict) else ""
+        if robot_active_name and robot_active_name == local_active_name and local_signature and local_signature == robot_signature:
+            return {
+                "ok": True,
+                "changed": False,
+                "message": f"Operator already has active Fleet Manager map {robot_active_name}.",
+                "robotActiveMapName": robot_active_name,
+                "localActiveMapName": local_active_name,
+            }
+        cached = self.map_cache.save_pulled_map(FLEET_MANAGER_ID, robot_current, activate=True)
+        pulled = {
+            "ok": True,
+            "pulled": robot_current,
+            "local": {
+                "mapName": str(cached.get("mapName") or robot_active_name),
+                "savedAt": str(cached.get("savedAt") or ""),
+            },
+        }
+        return {
+            "ok": True,
+            "changed": True,
+            "message": f"Pulled active Fleet Manager map {robot_active_name}.",
+            "robotActiveMapName": robot_active_name,
+            "localActiveMapName": str(pulled.get("local", {}).get("mapName") or robot_active_name),
+            **pulled,
+        }
+
+    def fleet_push_sync_payload(self) -> dict[str, Any]:
+        robot_active = self.fleet_manager.maps_active_payload()
+        robot_active_name = str(robot_active.get("mapName") or "").strip()
+        local_active = self.map_cache.load_active_map(FLEET_MANAGER_ID)
+        if not isinstance(local_active, dict):
+            raise ValueError("operator has no active local map")
+        local_map_name = str(local_active.get("mapName") or "").strip()
+        if not local_map_name:
+            raise ValueError("operator active local map is invalid")
+        local_map_payload = local_active.get("map")
+        local_signature = str(local_map_payload.get("signature") or "").strip() if isinstance(local_map_payload, dict) else ""
+        has_local_changes = bool(local_active.get("hasLocalChanges"))
+        robot_current = self.fleet_manager.pull_map_payload(robot_active_name)
+        robot_signature = str(robot_current.get("signature") or "").strip()
+        if (not has_local_changes) and local_map_name == robot_active_name and local_signature and local_signature == robot_signature:
+            return {
+                "ok": True,
+                "changed": False,
+                "message": f"Fleet Manager already uses {robot_active_name}.",
+                "robotActiveMapName": robot_active_name,
+                "localActiveMapName": local_map_name,
+            }
+        pushed = self.fleet_push_map_payload(
+            {
+                "localMapName": local_map_name,
+                "mapName": local_map_name,
+                "sourceMapName": str(local_active.get("sourceMapName") or local_map_name),
+                "outputName": local_map_name if local_map_name != str(local_active.get("sourceMapName") or local_map_name) else "",
+            },
+        )
+        loaded = self.fleet_manager.load_map_payload({"mapName": local_map_name})
+        local_signature_after_push = str((pushed.get("pushed") or {}).get("signature") or local_signature).strip()
+        synced_local = self.map_cache.mark_synced(
+            FLEET_MANAGER_ID,
+            local_map_name,
+            robot_signature=local_signature_after_push,
+            robot_map_name=str(loaded.get("mapName") or local_map_name),
+            activate=True,
+        )
+        return {
+            "ok": True,
+            "changed": True,
+            "message": f"Pushed and activated {local_map_name} on Fleet Manager.",
+            "robotActiveMapName": str(loaded.get("mapName") or local_map_name),
+            "localActiveMapName": local_map_name,
+            "pushed": pushed.get("pushed"),
+            "local": synced_local,
+            "loaded": loaded,
+        }
 
     def pull_robot_map_payload(self, robot_id: str, payload: dict[str, Any]) -> dict[str, Any]:
         robot = self.get_robot(robot_id)
@@ -253,11 +550,16 @@ class OperatorAppState:
             }
         if not isinstance(editable_map, dict):
             raise ValueError("map payload is required")
+        target_map_name = str(payload.get("mapName") or editable_map.get("mapName") or "").strip()
+        source_map_name = str(payload.get("sourceMapName") or target_map_name).strip()
+        output_name = str(payload.get("outputName") or "").strip()
+        if not output_name and target_map_name and source_map_name and target_map_name != source_map_name:
+            output_name = target_map_name
         request_payload = {
             "map": editable_map,
-            "mapName": str(payload.get("mapName") or editable_map.get("mapName") or "").strip(),
-            "sourceMapName": str(payload.get("sourceMapName") or payload.get("mapName") or "").strip(),
-            "outputName": str(payload.get("outputName") or "").strip(),
+            "mapName": target_map_name,
+            "sourceMapName": source_map_name,
+            "outputName": output_name,
             "overwriteOutput": bool(payload.get("overwriteOutput", False)),
         }
         result = self.client.request_json(
@@ -355,6 +657,7 @@ class OperatorAppState:
                 "localMapName": local_map_name,
                 "mapName": local_map_name,
                 "sourceMapName": str(local_active.get("sourceMapName") or local_map_name),
+                "outputName": local_map_name if local_map_name != str(local_active.get("sourceMapName") or local_map_name) else "",
             },
         )
         loaded = self.load_robot_map_payload(robot_id, {"mapName": local_map_name})
@@ -421,6 +724,18 @@ class OperatorRequestHandler(SimpleHTTPRequestHandler):
             if path == "/api/robots":
                 self._send_json(self._require_state().list_robots_payload())
                 return
+            if path == "/api/fleet/params":
+                self._send_json(self._require_state().fleet_params_payload())
+                return
+            fleet_target = self._parse_fleet_manager_api(parsed)
+            if fleet_target is not None:
+                action, arg = fleet_target
+                self._handle_fleet_manager_get(action, arg)
+                return
+            params_target = self._parse_robot_params_api(parsed)
+            if params_target is not None:
+                self._send_json(self._require_state().robot_params_payload(params_target))
+                return
             map_target = self._parse_robot_maps_api(parsed)
             if map_target is not None:
                 robot_id, action, arg = map_target
@@ -445,6 +760,19 @@ class OperatorRequestHandler(SimpleHTTPRequestHandler):
                 return
             if path == "/api/robots":
                 self._handle_json(self._require_state().add_robot_payload)
+                return
+            if path == "/api/fleet/params":
+                self._handle_json(self._require_state().save_fleet_params_payload)
+                return
+            fleet_target = self._parse_fleet_manager_api(parsed)
+            if fleet_target is not None:
+                action, arg = fleet_target
+                del arg
+                self._handle_fleet_manager_post(action)
+                return
+            params_target = self._parse_robot_params_api(parsed)
+            if params_target is not None:
+                self._handle_robot_params_post(params_target)
                 return
             map_target = self._parse_robot_maps_api(parsed)
             if map_target is not None:
@@ -475,6 +803,95 @@ class OperatorRequestHandler(SimpleHTTPRequestHandler):
             return
         self._send_error_json(404, "not found")
 
+    def _parse_fleet_manager_api(self, parsed) -> tuple[str, str] | None:
+        path = parsed.path
+        if not path.startswith("/api/fleet-manager"):
+            return None
+        tail = path.removeprefix("/api/fleet-manager").strip("/")
+        parts = [item for item in tail.split("/") if item]
+        if not parts:
+            return "identity", ""
+        if parts == ["identity"]:
+            return "identity", ""
+        if parts == ["status"]:
+            return "status", ""
+        if parts == ["state"]:
+            return "state", ""
+        if parts == ["mode"]:
+            return "mode", ""
+        if parts == ["map"]:
+            return "map", ""
+        if parts == ["params"]:
+            return "params", ""
+        if parts == ["plan"]:
+            return "plan", ""
+        if parts == ["tick"]:
+            return "tick", ""
+        if parts == ["world"]:
+            return "world", ""
+        if parts == ["check"]:
+            return "check", ""
+        if parts == ["maps", "list"]:
+            return "maps_list", ""
+        if parts == ["maps", "active"]:
+            return "maps_active", ""
+        if parts == ["maps", "pull"]:
+            map_name = str(parse_qs(parsed.query).get("name", [""])[0] or "").strip()
+            return "maps_pull", map_name
+        if parts == ["maps", "local"]:
+            return "maps_local_list", ""
+        if parts == ["maps", "local", "active"]:
+            return "maps_local_active", ""
+        if parts == ["maps", "local", "save"]:
+            return "maps_local_save", ""
+        if parts == ["maps", "local", "activate"]:
+            return "maps_local_activate", ""
+        if len(parts) == 3 and parts[1] == "local":
+            return "maps_local_get", unquote(parts[2]).strip()
+        if parts == ["maps", "pull-sync"]:
+            return "maps_pull_sync", ""
+        if parts == ["maps", "push"]:
+            return "maps_push", ""
+        if parts == ["maps", "push-sync"]:
+            return "maps_push_sync", ""
+        if parts == ["maps", "load"]:
+            return "maps_load", ""
+        if parts == ["maps", "save"]:
+            return "maps_save", ""
+        if parts == ["robots"]:
+            return "robots_add", ""
+        if parts == ["robots", "remove"]:
+            return "robots_remove", ""
+        if parts == ["robots", "update"]:
+            return "robots_update", ""
+        if parts == ["robots", "stop"]:
+            return "robots_stop", ""
+        if parts == ["robots", "reset"]:
+            return "robots_reset", ""
+        return None
+
+    def _handle_fleet_manager_get(self, action: str, arg: str) -> None:
+        try:
+            self._send_json(self._require_state().fleet_manager_get_payload(action, arg))
+        except ValueError as exc:
+            self._send_error_json(400, str(exc))
+        except Exception as exc:  # pragma: no cover - defensive server path
+            self._send_error_json(500, str(exc))
+
+    def _handle_fleet_manager_post(self, action: str) -> None:
+        payload = self._read_json_payload()
+        if payload is None:
+            return
+        if not isinstance(payload, dict):
+            self._send_error_json(400, "expected object payload")
+            return
+        try:
+            self._send_json(self._require_state().fleet_manager_post_payload(action, payload))
+        except ValueError as exc:
+            self._send_error_json(400, str(exc))
+        except Exception as exc:  # pragma: no cover - defensive server path
+            self._send_error_json(500, str(exc))
+
     def _proxy_robot_request(self, method: str, robot_id: str, robot_path: str) -> None:
         request_headers = {}
         content_type = self.headers.get("Content-Type", "").strip()
@@ -500,30 +917,12 @@ class OperatorRequestHandler(SimpleHTTPRequestHandler):
             self._send_error_json(502, str(exc))
             return
 
-        response_body, content_type = self._rewrite_proxy_content(robot_path, response_headers, response_body)
+        content_type = str(response_headers.get("Content-Type") or "application/octet-stream")
         self.send_response(status)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(response_body)))
         self.end_headers()
         self.wfile.write(response_body)
-
-    def _rewrite_proxy_content(
-        self,
-        robot_path: str,
-        response_headers: dict[str, str],
-        response_body: bytes,
-    ) -> tuple[bytes, str]:
-        content_type = str(response_headers.get("Content-Type") or "application/octet-stream")
-        if "text/html" in content_type:
-            text = response_body.decode("utf-8")
-            text = text.replace('src="/demo-data.js"', 'src="demo-data.js"')
-            return text.encode("utf-8"), "text/html; charset=utf-8"
-        if robot_path.endswith("/app.js") and "javascript" in content_type:
-            text = response_body.decode("utf-8")
-            text = text.replace('"/api/', '"api/')
-            text = text.replace("'/api/", "'api/")
-            return text.encode("utf-8"), "application/javascript; charset=utf-8"
-        return response_body, content_type
 
     def _parse_robot_maps_api(self, parsed) -> tuple[str, str, str] | None:
         path = parsed.path
@@ -565,6 +964,35 @@ class OperatorRequestHandler(SimpleHTTPRequestHandler):
         if parts == ["maps", "load"]:
             return robot_id, "load", ""
         return None
+
+    def _parse_robot_params_api(self, parsed) -> str | None:
+        path = parsed.path
+        if not path.startswith("/api/robots/"):
+            return None
+        remainder = path.removeprefix("/api/robots/")
+        robot_part, sep, tail = remainder.partition("/")
+        if not sep:
+            return None
+        robot_id = unquote(robot_part).strip()
+        if not robot_id or tail.strip("/") != "params":
+            return None
+        return robot_id
+
+    def _handle_robot_params_post(self, robot_id: str) -> None:
+        payload = self._read_json_payload()
+        if payload is None:
+            return
+        if not isinstance(payload, dict):
+            self._send_error_json(400, "expected object payload")
+            return
+        try:
+            self._send_json(self._require_state().save_robot_params_payload(robot_id, payload))
+        except ValueError as exc:
+            self._send_error_json(400, str(exc))
+        except RobotProbeError as exc:
+            self._send_error_json(502, str(exc))
+        except Exception as exc:  # pragma: no cover - defensive server path
+            self._send_error_json(500, str(exc))
 
     def _handle_robot_maps_get(self, robot_id: str, action: str, arg: str) -> None:
         try:
@@ -702,6 +1130,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--port", default=8780, type=int)
     parser.add_argument("--registry", default=default_registry_path(), type=Path)
     parser.add_argument("--probe-timeout", default=1.0, type=float)
+    parser.add_argument("--fleet-params", default=DEFAULT_FLEET_PARAMS_PATH, type=Path)
+    parser.add_argument("--fleet-map-dir", "--map-dir", dest="fleet_map_dir", default=DEFAULT_FLEET_MAP_DIR, type=Path)
+    parser.add_argument("--start", default=None, help=argparse.SUPPRESS)
+    parser.add_argument("--goal", default=None, help=argparse.SUPPRESS)
+    parser.add_argument("--output", default=None, help=argparse.SUPPRESS)
     parser.add_argument("--open", action="store_true")
     return parser.parse_args()
 
@@ -714,13 +1147,20 @@ def browser_url(host: str, port: int) -> str:
 
 def main() -> None:
     args = parse_args()
-    state = OperatorAppState(registry_path=args.registry, probe_timeout=args.probe_timeout)
+    state = OperatorAppState(
+        registry_path=args.registry,
+        probe_timeout=args.probe_timeout,
+        fleet_params_path=args.fleet_params,
+        fleet_map_dir=args.fleet_map_dir,
+    )
     OperatorRequestHandler.app_state = state
     handler = partial(OperatorRequestHandler, directory=str(DEFAULT_STATIC_DIR.resolve()))
     server = ThreadingHTTPServer((args.host, args.port), handler)
     url = browser_url(args.host, args.port)
     print(f"Serving operator app: {url}")
     print(f"Registry path: {args.registry.expanduser()}")
+    print(f"Fleet params path: {state.fleet_params_path}")
+    print(f"Fleet map dir: {state.fleet_manager.map_dir}")
     if args.open:
         webbrowser.open(url)
     try:

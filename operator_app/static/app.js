@@ -1,17 +1,472 @@
+class FleetRobotModelEditor {
+  constructor(dom, onChange) {
+    this.dom = dom;
+    this.onChange = onChange;
+    this.center = { x: 260, y: 230 };
+    this.scale = 330;
+    this.view = { zoom: 1, panX: 0, panY: 0 };
+    this.drag = null;
+    this.panDrag = null;
+    this.snapTolerance = 0.025;
+    this.frameOrder = [
+      ["lidar", "LiDAR"],
+      ["imu", "IMU"],
+      ["wheel_left", "Wheel L"],
+      ["wheel_right", "Wheel R"],
+    ];
+    this.model = this.defaultModel();
+  }
+
+  defaultModel() {
+    return {
+      footprint: [
+        { x: 0.35, y: 0.275 },
+        { x: 0.35, y: -0.275 },
+        { x: -0.35, y: -0.275 },
+        { x: -0.35, y: 0.275 },
+      ],
+      frames: {
+        lidar: { x: 0.28, y: 0, label: "LiDAR", color: "#1f6feb" },
+        imu: { x: 0, y: 0, label: "IMU", color: "#d95521" },
+        wheel_left: { x: 0, y: 0.225, label: "WL", color: "#2f3a4a" },
+        wheel_right: { x: 0, y: -0.225, label: "WR", color: "#2f3a4a" },
+      },
+    };
+  }
+
+  init() {
+    this.dom.zoomIn.addEventListener("click", () => this.zoom(1.18));
+    this.dom.zoomOut.addEventListener("click", () => this.zoom(0.85));
+    this.dom.resetView.addEventListener("click", () => this.resetView());
+    this.dom.resetModel.addEventListener("click", () => {
+      this.model = this.defaultModel();
+      this.render();
+      this.emitChange();
+    });
+    this.attachPointerEvents();
+    this.render();
+  }
+
+  setModel(model) {
+    if (!model || !Array.isArray(model.footprint) || !model.frames) {
+      return;
+    }
+    const defaults = this.defaultModel();
+    this.model = {
+      footprint: model.footprint.map((point) => ({
+        x: this.round(Number(point.x || 0)),
+        y: this.round(Number(point.y || 0)),
+      })),
+      frames: { ...defaults.frames },
+    };
+    for (const [name, frame] of Object.entries(model.frames || {})) {
+      const fallback = defaults.frames[name] || { x: 0, y: 0, label: name, color: "#2f3a4a" };
+      this.model.frames[name] = {
+        ...fallback,
+        ...frame,
+        x: this.round(Number(frame.x ?? fallback.x)),
+        y: this.round(Number(frame.y ?? fallback.y)),
+      };
+    }
+    this.constrainAllFrames();
+    this.render();
+  }
+
+  getModel() {
+    return {
+      footprint: this.model.footprint.map((point) => ({ ...point })),
+      frames: Object.fromEntries(Object.entries(this.model.frames).map(([name, frame]) => [name, { ...frame }])),
+    };
+  }
+
+  attachPointerEvents() {
+    const svg = this.dom.svg;
+    svg.addEventListener("pointerdown", (event) => {
+      if (event.button !== 0) {
+        return;
+      }
+      event.preventDefault();
+      const target = event.target.closest("[data-model-drag]");
+      if (target) {
+        this.drag = {
+          kind: target.dataset.modelDrag,
+          index: target.dataset.index ? Number(target.dataset.index) : null,
+          frame: target.dataset.frame || "",
+        };
+        svg.setPointerCapture(event.pointerId);
+        this.applyDrag(event);
+        return;
+      }
+      this.panDrag = { x: event.clientX, y: event.clientY };
+      svg.setPointerCapture(event.pointerId);
+    });
+    svg.addEventListener("pointermove", (event) => {
+      if (this.drag) {
+        event.preventDefault();
+        this.applyDrag(event);
+        return;
+      }
+      if (this.panDrag) {
+        event.preventDefault();
+        const prev = this.eventToSvg({ clientX: this.panDrag.x, clientY: this.panDrag.y });
+        const curr = this.eventToSvg(event);
+        if (prev && curr) {
+          this.view.panX += curr.x - prev.x;
+          this.view.panY += curr.y - prev.y;
+          this.panDrag = { x: event.clientX, y: event.clientY };
+          this.renderSvg();
+        }
+      }
+    });
+    const stop = (event) => {
+      this.drag = null;
+      this.panDrag = null;
+      if (svg.hasPointerCapture(event.pointerId)) {
+        svg.releasePointerCapture(event.pointerId);
+      }
+    };
+    svg.addEventListener("pointerup", stop);
+    svg.addEventListener("pointercancel", stop);
+    svg.addEventListener("wheel", (event) => {
+      event.preventDefault();
+      this.zoom(event.deltaY < 0 ? 1.12 : 0.9);
+    }, { passive: false });
+  }
+
+  createSvg(tag, attrs) {
+    const element = document.createElementNS("http://www.w3.org/2000/svg", tag);
+    for (const [key, value] of Object.entries(attrs)) {
+      element.setAttribute(key, String(value));
+    }
+    return element;
+  }
+
+  toSvg(point) {
+    const scale = this.scale * this.view.zoom;
+    return {
+      x: this.center.x + this.view.panX + (point.x * scale),
+      y: this.center.y + this.view.panY - (point.y * scale),
+    };
+  }
+
+  eventToSvg(event) {
+    const ctm = this.dom.svg.getScreenCTM();
+    if (!ctm) {
+      return null;
+    }
+    return new DOMPoint(event.clientX, event.clientY).matrixTransform(ctm.inverse());
+  }
+
+  eventToLocal(event) {
+    const point = this.eventToSvg(event);
+    if (!point) {
+      return null;
+    }
+    const scale = this.scale * this.view.zoom;
+    return {
+      x: this.clamp((point.x - this.center.x - this.view.panX) / scale, -1.4, 1.4),
+      y: this.clamp((this.center.y + this.view.panY - point.y) / scale, -1.1, 1.1),
+    };
+  }
+
+  applyDrag(event) {
+    const point = this.eventToLocal(event);
+    if (!point || !this.drag) {
+      return;
+    }
+    if (this.drag.kind === "footprint") {
+      const snapped = this.snapPoint(point, this.drag.index);
+      this.model.footprint[this.drag.index] = { x: this.round(snapped.x), y: this.round(snapped.y) };
+      this.constrainAllFrames();
+    }
+    if (this.drag.kind === "frame") {
+      const snapped = this.snapPoint(point);
+      const kept = this.keepInsideFootprint(snapped);
+      this.model.frames[this.drag.frame].x = this.round(kept.x);
+      this.model.frames[this.drag.frame].y = this.round(kept.y);
+    }
+    this.render();
+    this.emitChange();
+  }
+
+  snapPoint(point, index = null) {
+    const snapped = { ...point };
+    if (Math.abs(snapped.x) <= this.snapTolerance) {
+      snapped.x = 0;
+    }
+    if (Math.abs(snapped.y) <= this.snapTolerance) {
+      snapped.y = 0;
+    }
+    for (let i = 0; i < this.model.footprint.length; i += 1) {
+      if (i === index) {
+        continue;
+      }
+      const other = this.model.footprint[i];
+      if (Math.abs(snapped.x - other.x) <= this.snapTolerance) {
+        snapped.x = other.x;
+      }
+      if (Math.abs(snapped.y - other.y) <= this.snapTolerance) {
+        snapped.y = other.y;
+      }
+    }
+    for (const frame of Object.values(this.model.frames)) {
+      if (Math.abs(snapped.x - frame.x) <= this.snapTolerance) {
+        snapped.x = frame.x;
+      }
+      if (Math.abs(snapped.y - frame.y) <= this.snapTolerance) {
+        snapped.y = frame.y;
+      }
+    }
+    return snapped;
+  }
+
+  keepInsideFootprint(point) {
+    if (this.pointInPolygon(point, this.model.footprint)) {
+      return point;
+    }
+    const boundary = this.nearestPointOnPolygon(point, this.model.footprint);
+    const center = this.footprintCentroid();
+    return {
+      x: boundary.x + ((center.x - boundary.x) * 0.01),
+      y: boundary.y + ((center.y - boundary.y) * 0.01),
+    };
+  }
+
+  constrainAllFrames() {
+    for (const frame of Object.values(this.model.frames)) {
+      const kept = this.keepInsideFootprint(frame);
+      frame.x = this.round(kept.x);
+      frame.y = this.round(kept.y);
+    }
+  }
+
+  render() {
+    this.renderSvg();
+    this.renderFields();
+  }
+
+  renderSvg() {
+    const svg = this.dom.svg;
+    svg.innerHTML = "";
+    const bounds = { left: 18, right: 502, top: 18, bottom: 442 };
+    svg.append(this.createSvg("rect", { x: 0, y: 0, width: 520, height: 460, class: "model-pan-surface" }));
+    for (let value = -1.2; value <= 1.2001; value += 0.1) {
+      const rounded = Math.round(value * 10) / 10;
+      const vertical = this.toSvg({ x: rounded, y: 0 });
+      const horizontal = this.toSvg({ x: 0, y: rounded });
+      const major = Math.abs((rounded * 10) % 2) < 0.0001;
+      if (vertical.x >= bounds.left && vertical.x <= bounds.right) {
+        svg.append(this.createSvg("line", { x1: vertical.x, y1: bounds.top, x2: vertical.x, y2: bounds.bottom, class: major ? "model-grid-line model-grid-major" : "model-grid-line" }));
+      }
+      if (horizontal.y >= bounds.top && horizontal.y <= bounds.bottom) {
+        svg.append(this.createSvg("line", { x1: bounds.left, y1: horizontal.y, x2: bounds.right, y2: horizontal.y, class: major ? "model-grid-line model-grid-major" : "model-grid-line" }));
+      }
+    }
+    const origin = this.toSvg({ x: 0, y: 0 });
+    svg.append(this.createSvg("line", { x1: bounds.left, y1: origin.y, x2: bounds.right, y2: origin.y, class: "model-axis" }));
+    svg.append(this.createSvg("line", { x1: origin.x, y1: bounds.top, x2: origin.x, y2: bounds.bottom, class: "model-axis" }));
+    for (let value = -1.0; value <= 1.0001; value += 0.2) {
+      const rounded = Math.round(value * 10) / 10;
+      if (Math.abs(rounded) < 0.0001) {
+        continue;
+      }
+      const xPos = this.toSvg({ x: rounded, y: 0 });
+      const yPos = this.toSvg({ x: 0, y: rounded });
+      if (xPos.x >= bounds.left && xPos.x <= bounds.right) {
+        const label = this.createSvg("text", { x: xPos.x, y: origin.y + 18, class: "model-axis-number" });
+        label.textContent = rounded.toFixed(1);
+        svg.append(label);
+      }
+      if (yPos.y >= bounds.top && yPos.y <= bounds.bottom) {
+        const label = this.createSvg("text", { x: origin.x - 22, y: yPos.y + 4, class: "model-axis-number" });
+        label.textContent = rounded.toFixed(1);
+        svg.append(label);
+      }
+    }
+    const polygon = this.model.footprint.map((point) => this.toSvg(point)).map((point) => `${point.x},${point.y}`).join(" ");
+    svg.append(this.createSvg("polygon", { points: polygon, class: "model-footprint" }));
+    this.model.footprint.forEach((point, index) => {
+      const pos = this.toSvg(point);
+      svg.append(this.createSvg("circle", { cx: pos.x, cy: pos.y, r: 7, class: "model-handle", "data-model-drag": "footprint", "data-index": index }));
+      const label = this.createSvg("text", { x: pos.x, y: pos.y - 10, class: "model-label" });
+      label.textContent = `V${index + 1}`;
+      svg.append(label);
+    });
+    svg.append(this.createSvg("circle", { cx: origin.x, cy: origin.y, r: 4, fill: "#111827" }));
+    for (const [name] of this.frameOrder) {
+      const frame = this.model.frames[name];
+      const pos = this.toSvg(frame);
+      svg.append(this.createSvg("circle", { cx: pos.x, cy: pos.y, r: 8, fill: frame.color, class: "model-marker", "data-model-drag": "frame", "data-frame": name }));
+      const label = this.createSvg("text", { x: pos.x, y: pos.y + 22, class: "model-label" });
+      label.textContent = frame.label;
+      svg.append(label);
+    }
+  }
+
+  renderFields() {
+    this.dom.footprintFields.innerHTML = "";
+    this.model.footprint.forEach((point, index) => {
+      this.dom.footprintFields.append(this.pointRow(`V${index + 1}`, point, (axis, value) => {
+        this.model.footprint[index][axis] = value;
+        this.model.footprint[index] = this.snapPoint(this.model.footprint[index], index);
+        this.model.footprint[index].x = this.round(this.model.footprint[index].x);
+        this.model.footprint[index].y = this.round(this.model.footprint[index].y);
+        this.constrainAllFrames();
+      }));
+    });
+    this.dom.tfFields.innerHTML = "";
+    for (const [name, label] of this.frameOrder) {
+      this.dom.tfFields.append(this.pointRow(label, this.model.frames[name], (axis, value) => {
+        this.model.frames[name][axis] = value;
+        const kept = this.keepInsideFootprint(this.snapPoint(this.model.frames[name]));
+        this.model.frames[name].x = this.round(kept.x);
+        this.model.frames[name].y = this.round(kept.y);
+      }));
+    }
+  }
+
+  pointRow(name, point, setter) {
+    const row = document.createElement("div");
+    row.className = "model-field-row";
+    const title = document.createElement("strong");
+    title.textContent = name;
+    row.append(title, this.numberInput(point.x, (value) => setter("x", value)), this.numberInput(point.y, (value) => setter("y", value)));
+    return row;
+  }
+
+  numberInput(value, onChange) {
+    const input = document.createElement("input");
+    input.type = "number";
+    input.step = "0.001";
+    input.value = Number(value || 0).toFixed(3);
+    input.addEventListener("change", () => {
+      onChange(this.round(Number(input.value || 0)));
+      this.render();
+      this.emitChange();
+    });
+    return input;
+  }
+
+  emitChange() {
+    if (this.onChange) {
+      this.onChange(this.getModel());
+    }
+  }
+
+  zoom(multiplier) {
+    this.view.zoom = this.clamp(this.view.zoom * multiplier, 0.45, 4);
+    this.renderSvg();
+  }
+
+  resetView() {
+    this.view = { zoom: 1, panX: 0, panY: 0 };
+    this.renderSvg();
+  }
+
+  pointInPolygon(point, polygon) {
+    let inside = false;
+    for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i, i += 1) {
+      const a = polygon[i];
+      const b = polygon[j];
+      const crosses = ((a.y > point.y) !== (b.y > point.y)) &&
+        (point.x < ((b.x - a.x) * (point.y - a.y)) / ((b.y - a.y) || 0.000001) + a.x);
+      if (crosses) {
+        inside = !inside;
+      }
+    }
+    return inside;
+  }
+
+  nearestPointOnPolygon(point, polygon) {
+    let best = polygon[0];
+    let bestDistance = Number.POSITIVE_INFINITY;
+    for (let i = 0; i < polygon.length; i += 1) {
+      const candidate = this.nearestPointOnSegment(point, polygon[i], polygon[(i + 1) % polygon.length]);
+      const distance = Math.hypot(point.x - candidate.x, point.y - candidate.y);
+      if (distance < bestDistance) {
+        best = candidate;
+        bestDistance = distance;
+      }
+    }
+    return best;
+  }
+
+  nearestPointOnSegment(point, start, end) {
+    const dx = end.x - start.x;
+    const dy = end.y - start.y;
+    const lengthSq = (dx * dx) + (dy * dy);
+    if (lengthSq <= 0.000001) {
+      return start;
+    }
+    const t = Math.max(0, Math.min(1, (((point.x - start.x) * dx) + ((point.y - start.y) * dy)) / lengthSq));
+    return { x: start.x + (dx * t), y: start.y + (dy * t) };
+  }
+
+  footprintCentroid() {
+    const total = this.model.footprint.reduce((acc, point) => ({ x: acc.x + point.x, y: acc.y + point.y }), { x: 0, y: 0 });
+    return { x: total.x / this.model.footprint.length, y: total.y / this.model.footprint.length };
+  }
+
+  clamp(value, min, max) {
+    return Math.min(max, Math.max(min, value));
+  }
+
+  round(value) {
+    return Math.round(Number(value || 0) * 1000) / 1000;
+  }
+}
+
 class OperatorApp {
   constructor() {
+    this.fleetManagerId = "__fleet_manager__";
     this.robots = [];
     this.selectedRobotId = window.localStorage.getItem("operator:selectedRobotId") || "";
+    this.selectedFleetRobotName = window.localStorage.getItem("operator:selectedFleetRobotName") || "";
     this.lastProbe = null;
     this.sidebarOpen = !this.selectedRobotId;
-    this.robotMapState = {
-      robotActiveMapName: "",
-      operatorActiveMapName: "",
-      robotSignature: "",
-      operatorSignature: "",
-      sourceRobotMapName: "",
-      hasLocalChanges: false,
+    this.pendingRobotMaps = [];
+    this.operatorMapPayload = null;
+    this.operatorMapSignature = "";
+    this.currentStatus = null;
+    this.currentRoute = null;
+    this.statusRequestPending = false;
+    this.navigateMode = false;
+    this.pendingFleetAction = "";
+    this.pendingFleetRobotName = "";
+    this.fleetQueue = this.loadFleetQueue();
+    this.fleetQueueSequence = this.fleetQueue.reduce((max, item) => Math.max(max, Number(item.seq || 0)), 0);
+    this.fleetParams = null;
+    this.fleetParamsLoaded = false;
+    this.fleetNameEdited = false;
+    this.fleetTickPending = false;
+    this.fleetManualRobotName = "";
+    this.fleetManualLastAt = 0;
+    this.fleetManualLookahead = null;
+    this.fleetActiveTab = window.localStorage.getItem("operator:fleetActiveTab") || "fleet";
+    this.fleetMapEditorActive = false;
+    this.fleetMapTool = "select";
+    this.fleetMapDraft = null;
+    this.fleetMapDirty = false;
+    this.fleetSelectedLmName = "";
+    this.fleetSelectedEdgeKey = "";
+    this.fleetEditorEdgeDrag = null;
+    this.fleetEditorLmDrag = null;
+    this.fleetEditorBezierDrag = null;
+    this.fleetEditorPreview = null;
+    this.fleetEditorGuideWorld = null;
+    this.fleetEditorFieldSyncing = false;
+    this.fleetModelEditor = null;
+    this.mapDrag = null;
+    this.mapClickConsumed = false;
+    this.manualKeys = new Set();
+    this.teleopPending = false;
+    this.mapView = {
+      scale: 1,
+      tx: 0,
+      ty: 0,
+      follow: true,
     };
+    this.robotMapState = this.emptyMapState();
 
     this.robotsList = document.getElementById("robotsList");
     this.robotCountText = document.getElementById("robotCountText");
@@ -21,16 +476,91 @@ class OperatorApp {
     this.closeSidebarButton = document.getElementById("closeSidebarButton");
     this.emptyState = document.getElementById("emptyState");
     this.robotView = document.getElementById("robotView");
-    this.robotFrame = document.getElementById("robotFrame");
     this.robotActiveMapText = document.getElementById("robotActiveMapText");
     this.operatorActiveMapText = document.getElementById("operatorActiveMapText");
+    this.robotStateText = document.getElementById("robotStateText");
+    this.nearestLmText = document.getElementById("nearestLmText");
+    this.navigateRobotButton = document.getElementById("navigateRobotButton");
+    this.cancelRouteButton = document.getElementById("cancelRouteButton");
+    this.stopRobotButton = document.getElementById("stopRobotButton");
+    this.refreshRobotStatusButton = document.getElementById("refreshRobotStatusButton");
     this.editMapButton = document.getElementById("editMapButton");
     this.controlPullMapButton = document.getElementById("controlPullMapButton");
     this.controlPushMapButton = document.getElementById("controlPushMapButton");
     this.controlLoadMapButton = document.getElementById("controlLoadMapButton");
     this.mapSyncStatus = document.getElementById("mapSyncStatus");
+    this.fleetControlPanel = document.getElementById("fleetControlPanel");
+    this.fleetModeSelect = document.getElementById("fleetModeSelect");
+    this.fleetRobotNameInput = document.getElementById("fleetRobotNameInput");
+    this.fleetSpawnLmSelect = document.getElementById("fleetSpawnLmSelect");
+    this.fleetAddRobotButton = document.getElementById("fleetAddRobotButton");
+    this.fleetRobotList = document.getElementById("fleetRobotList");
+    this.fleetQueueGoalButton = document.getElementById("fleetQueueGoalButton");
+    this.fleetStartQueueButton = document.getElementById("fleetStartQueueButton");
+    this.fleetClearQueueButton = document.getElementById("fleetClearQueueButton");
+    this.fleetQueueList = document.getElementById("fleetQueueList");
+    this.fleetPlanDebug = document.getElementById("fleetPlanDebug");
+    this.fleetRouteSpeedInput = document.getElementById("fleetRouteSpeedInput");
+    this.fleetManualLinearInput = document.getElementById("fleetManualLinearInput");
+    this.fleetManualAngularInput = document.getElementById("fleetManualAngularInput");
+    this.fleetManualLookaheadInput = document.getElementById("fleetManualLookaheadInput");
+    this.fleetManualStepInput = document.getElementById("fleetManualStepInput");
+    this.fleetSaveParamsButton = document.getElementById("fleetSaveParamsButton");
+    this.fleetTabButtons = Array.from(document.querySelectorAll("[data-fleet-tab]"));
+    this.fleetTabFleet = document.getElementById("fleetTabFleet");
+    this.fleetTabModel = document.getElementById("fleetTabModel");
+    this.fleetTabMap = document.getElementById("fleetTabMap");
+    this.fleetRobotModelSvg = document.getElementById("fleetRobotModelSvg");
+    this.fleetFootprintFields = document.getElementById("fleetFootprintFields");
+    this.fleetTfFields = document.getElementById("fleetTfFields");
+    this.fleetModelZoomInButton = document.getElementById("fleetModelZoomInButton");
+    this.fleetModelZoomOutButton = document.getElementById("fleetModelZoomOutButton");
+    this.fleetModelResetViewButton = document.getElementById("fleetModelResetViewButton");
+    this.fleetModelResetButton = document.getElementById("fleetModelResetButton");
+    this.fleetModelSaveButton = document.getElementById("fleetModelSaveButton");
+    this.fleetMapToolButtons = Array.from(document.querySelectorAll("[data-fleet-map-tool]"));
+    this.fleetMapEditorHelp = document.getElementById("fleetMapEditorHelp");
+    this.fleetEditorLmNameInput = document.getElementById("fleetEditorLmNameInput");
+    this.fleetEditorLmXInput = document.getElementById("fleetEditorLmXInput");
+    this.fleetEditorLmYInput = document.getElementById("fleetEditorLmYInput");
+    this.fleetEditorApplyLmButton = document.getElementById("fleetEditorApplyLmButton");
+    this.fleetEditorEdgeFromInput = document.getElementById("fleetEditorEdgeFromInput");
+    this.fleetEditorEdgeToInput = document.getElementById("fleetEditorEdgeToInput");
+    this.fleetEditorEdgeTrafficSelect = document.getElementById("fleetEditorEdgeTrafficSelect");
+    this.fleetEditorEdgeMotionSelect = document.getElementById("fleetEditorEdgeMotionSelect");
+    this.fleetEditorApplyEdgeButton = document.getElementById("fleetEditorApplyEdgeButton");
+    this.fleetMapSaveButton = document.getElementById("fleetMapSaveButton");
+    this.fleetMapSaveAsButton = document.getElementById("fleetMapSaveAsButton");
+    this.fleetMapReloadButton = document.getElementById("fleetMapReloadButton");
     this.refreshButton = document.getElementById("refreshButton");
     this.addRobotButton = document.getElementById("addRobotButton");
+
+    this.operatorMapSvg = document.getElementById("operatorMapSvg");
+    this.operatorViewport = document.getElementById("operatorViewport");
+    this.operatorMapImage = document.getElementById("operatorMapImage");
+    this.operatorGraphLayer = document.getElementById("operatorGraphLayer");
+    this.operatorRouteLayer = document.getElementById("operatorRouteLayer");
+    this.operatorLookaheadLayer = document.getElementById("operatorLookaheadLayer");
+    this.operatorLandmarkLayer = document.getElementById("operatorLandmarkLayer");
+    this.operatorEditorLayer = document.getElementById("operatorEditorLayer");
+    this.operatorRobotLayer = document.getElementById("operatorRobotLayer");
+    this.operatorZoomInButton = document.getElementById("operatorZoomInButton");
+    this.operatorZoomOutButton = document.getElementById("operatorZoomOutButton");
+    this.operatorResetViewButton = document.getElementById("operatorResetViewButton");
+    this.operatorFollowRobotButton = document.getElementById("operatorFollowRobotButton");
+    this.manualPad = document.getElementById("manualPad");
+
+    this.inspectorRobotText = document.getElementById("inspectorRobotText");
+    this.connectionText = document.getElementById("connectionText");
+    this.localizationText = document.getElementById("localizationText");
+    this.targetLmText = document.getElementById("targetLmText");
+    this.currentEdgeText = document.getElementById("currentEdgeText");
+    this.routeProgressText = document.getElementById("routeProgressText");
+    this.poseText = document.getElementById("poseText");
+    this.velocityText = document.getElementById("velocityText");
+    this.robotMessageText = document.getElementById("robotMessageText");
+    this.routeNodesText = document.getElementById("routeNodesText");
+    this.robotEventsLog = document.getElementById("robotEventsLog");
 
     this.addRobotDialog = document.getElementById("addRobotDialog");
     this.closeDialogButton = document.getElementById("closeDialogButton");
@@ -46,18 +576,24 @@ class OperatorApp {
     this.closeLoadMapDialogButton = document.getElementById("closeLoadMapDialogButton");
     this.cancelLoadMapButton = document.getElementById("cancelLoadMapButton");
     this.confirmLoadMapButton = document.getElementById("confirmLoadMapButton");
-
-    this.frameUrl = "";
-    this.frameOnline = false;
-    this.pendingRobotMaps = [];
   }
 
   async init() {
     this.bindEvents();
+    this.initFleetModelEditor();
     await this.refreshRobots();
     window.setInterval(() => {
       this.refreshRobots({ quiet: true }).catch(() => {});
     }, 5000);
+    window.setInterval(() => {
+      this.fetchSelectedRobotStatus(true).catch(() => {});
+    }, 800);
+    window.setInterval(() => {
+      this.tickFleetIfSelected().catch(() => {});
+    }, 80);
+    window.setInterval(() => {
+      this.sendTeleopIfNeeded().catch(() => {});
+    }, 120);
   }
 
   bindEvents() {
@@ -66,10 +602,35 @@ class OperatorApp {
     this.sidebarBackdrop.addEventListener("click", () => this.closeSidebar());
     this.refreshButton.addEventListener("click", () => this.refreshRobots());
     this.addRobotButton.addEventListener("click", () => this.openAddRobotDialog());
-    this.editMapButton.addEventListener("click", () => this.openMapEditor());
+    this.navigateRobotButton.addEventListener("click", () => this.toggleNavigateMode());
+    this.cancelRouteButton.addEventListener("click", () => this.cancelRoute());
+    this.stopRobotButton.addEventListener("click", () => this.stopRobot());
+    this.refreshRobotStatusButton.addEventListener("click", () => this.fetchSelectedRobotStatus(false));
+    this.editMapButton.addEventListener("click", () => this.handleEditMapButton());
     this.controlPullMapButton.addEventListener("click", () => this.handlePullMap());
     this.controlPushMapButton.addEventListener("click", () => this.handlePushMap());
     this.controlLoadMapButton.addEventListener("click", () => this.handleLoadMap());
+    this.fleetModeSelect.addEventListener("change", () => this.handleFleetModeChange());
+    this.fleetRobotNameInput.addEventListener("input", () => {
+      this.fleetNameEdited = true;
+    });
+    this.fleetAddRobotButton.addEventListener("click", () => this.handleFleetAddRobot());
+    this.fleetQueueGoalButton.addEventListener("click", () => this.toggleFleetQueueMode());
+    this.fleetStartQueueButton.addEventListener("click", () => this.startQueuedFleetPlan());
+    this.fleetClearQueueButton.addEventListener("click", () => this.clearFleetQueue());
+    this.fleetSaveParamsButton.addEventListener("click", () => this.saveFleetParams());
+    this.fleetModelSaveButton.addEventListener("click", () => this.saveFleetParams());
+    this.fleetTabButtons.forEach((button) => {
+      button.addEventListener("click", () => this.setFleetTab(button.dataset.fleetTab || "fleet"));
+    });
+    this.fleetMapToolButtons.forEach((button) => {
+      button.addEventListener("click", () => this.setFleetMapTool(button.dataset.fleetMapTool || "select"));
+    });
+    this.fleetEditorApplyLmButton.addEventListener("click", () => this.applyFleetEditorLmFields());
+    this.fleetEditorApplyEdgeButton.addEventListener("click", () => this.applyFleetEditorEdgeFields());
+    this.fleetMapSaveButton.addEventListener("click", () => this.saveFleetMap(false));
+    this.fleetMapSaveAsButton.addEventListener("click", () => this.saveFleetMap(true));
+    this.fleetMapReloadButton.addEventListener("click", () => this.reloadFleetMapDraft());
     this.closeDialogButton.addEventListener("click", () => this.addRobotDialog.close());
     this.probeRobotButton.addEventListener("click", () => this.handleProbe());
     this.saveRobotButton.addEventListener("click", async (event) => {
@@ -79,10 +640,162 @@ class OperatorApp {
     this.closeLoadMapDialogButton.addEventListener("click", () => this.loadMapDialog.close());
     this.cancelLoadMapButton.addEventListener("click", () => this.loadMapDialog.close());
     this.confirmLoadMapButton.addEventListener("click", () => this.confirmLoadMap());
+
+    this.operatorZoomInButton.addEventListener("click", () => this.zoomMap(1.16));
+    this.operatorZoomOutButton.addEventListener("click", () => this.zoomMap(0.86));
+    this.operatorResetViewButton.addEventListener("click", () => this.resetMapView(false));
+    this.operatorFollowRobotButton.addEventListener("click", () => {
+      this.mapView.follow = !this.mapView.follow;
+      this.syncMapControls();
+      this.renderOperatorMap();
+    });
+    this.operatorMapSvg.addEventListener("pointerdown", (event) => this.handleMapPointerDown(event));
+    this.operatorMapSvg.addEventListener("pointermove", (event) => this.handleMapPointerMove(event));
+    this.operatorMapSvg.addEventListener("pointerup", (event) => this.handleMapPointerUp(event));
+    this.operatorMapSvg.addEventListener("pointercancel", (event) => this.handleMapPointerUp(event));
+    this.operatorMapSvg.addEventListener("wheel", (event) => this.handleMapWheel(event), { passive: false });
+    this.operatorMapSvg.addEventListener("click", (event) => this.handleMapClick(event));
+    this.operatorMapSvg.addEventListener("contextmenu", (event) => this.handleMapContextMenu(event));
+
+    document.querySelectorAll("[data-manual-key]").forEach((button) => {
+      button.addEventListener("pointerdown", () => this.setManualKey(button.dataset.manualKey, true));
+      button.addEventListener("pointerup", () => this.setManualKey(button.dataset.manualKey, false));
+      button.addEventListener("pointerleave", () => this.setManualKey(button.dataset.manualKey, false));
+    });
+    window.addEventListener("keydown", (event) => {
+      if (this.isTypingTarget(event.target)) {
+        return;
+      }
+      const key = event.key.toLowerCase();
+      if (!["w", "a", "s", "d"].includes(key)) {
+        return;
+      }
+      event.preventDefault();
+      this.setManualKey(key, true);
+    });
+    window.addEventListener("keyup", (event) => {
+      if (this.isTypingTarget(event.target)) {
+        return;
+      }
+      const key = event.key.toLowerCase();
+      if (!["w", "a", "s", "d"].includes(key)) {
+        return;
+      }
+      this.setManualKey(key, false);
+    });
+  }
+
+  isTypingTarget(target) {
+    return Boolean(target && ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName));
+  }
+
+  initFleetModelEditor() {
+    if (!this.fleetRobotModelSvg) {
+      return;
+    }
+    this.fleetModelEditor = new FleetRobotModelEditor(
+      {
+        svg: this.fleetRobotModelSvg,
+        footprintFields: this.fleetFootprintFields,
+        tfFields: this.fleetTfFields,
+        zoomIn: this.fleetModelZoomInButton,
+        zoomOut: this.fleetModelZoomOutButton,
+        resetView: this.fleetModelResetViewButton,
+        resetModel: this.fleetModelResetButton,
+      },
+      (model) => {
+        this.fleetParams = this.fleetParams || {};
+        this.fleetParams.robot_model = model;
+      }
+    );
+    this.fleetModelEditor.init();
+  }
+
+  setFleetTab(tabName) {
+    const tab = ["fleet", "model", "map"].includes(tabName) ? tabName : "fleet";
+    this.fleetActiveTab = tab;
+    window.localStorage.setItem("operator:fleetActiveTab", tab);
+    this.fleetTabButtons.forEach((button) => button.classList.toggle("active", button.dataset.fleetTab === tab));
+    this.fleetTabFleet.classList.toggle("active", tab === "fleet");
+    this.fleetTabModel.classList.toggle("active", tab === "model");
+    this.fleetTabMap.classList.toggle("active", tab === "map");
+    this.fleetMapEditorActive = tab === "map";
+    this.operatorMapSvg.classList.toggle("fleet-map-editor-active", this.fleetMapEditorActive);
+    this.editMapButton.classList.toggle("primary", this.fleetMapEditorActive);
+    if (tab === "map") {
+      this.navigateMode = false;
+      this.pendingFleetAction = "";
+      this.pendingFleetRobotName = "";
+      this.syncModeButtons();
+      this.ensureFleetMapDraft();
+      this.robotMessageText.textContent = "Fleet map editor active.";
+    }
+    this.renderOperatorMap();
+  }
+
+  setFleetMapTool(tool) {
+    this.fleetMapTool = ["select", "lm", "edge"].includes(tool) ? tool : "select";
+    this.fleetMapToolButtons.forEach((button) => button.classList.toggle("active", button.dataset.fleetMapTool === this.fleetMapTool));
+    const hints = {
+      select: "Select LM/edge. Drag LM. Drag Bezier handles. Right-click LM/edge deletes.",
+      lm: "Click empty map space to add an LM.",
+      edge: "Hold an LM and drag through other LMs to create edges.",
+    };
+    this.fleetMapEditorHelp.textContent = hints[this.fleetMapTool] || hints.select;
+    this.renderOperatorMap();
+  }
+
+  emptyMapState() {
+    return {
+      robotActiveMapName: "",
+      operatorActiveMapName: "",
+      robotSignature: "",
+      operatorSignature: "",
+      sourceRobotMapName: "",
+      hasLocalChanges: false,
+    };
+  }
+
+  loadFleetQueue() {
+    try {
+      const stored = window.localStorage.getItem("operator:fleetQueue");
+      const parsed = stored ? JSON.parse(stored) : [];
+      if (Array.isArray(parsed)) {
+        return parsed
+          .filter((item) => item && item.robotName && item.goalLm)
+          .map((item, index) => ({
+            robotName: String(item.robotName),
+            goalLm: String(item.goalLm),
+            seq: Number(item.seq || index + 1),
+          }));
+      }
+    } catch (_) {
+      window.localStorage.removeItem("operator:fleetQueue");
+    }
+    return [];
+  }
+
+  saveFleetQueue() {
+    window.localStorage.setItem("operator:fleetQueue", JSON.stringify(this.fleetQueue));
   }
 
   selectedRobot() {
     return this.robots.find((robot) => robot.id === this.selectedRobotId) || null;
+  }
+
+  isFleetManager(robot = this.selectedRobot()) {
+    return Boolean(robot && (robot.id === this.fleetManagerId || robot.type === "fleet_manager"));
+  }
+
+  robotApiPath(path) {
+    const robot = this.selectedRobot();
+    if (!robot) {
+      throw new Error("No robot selected.");
+    }
+    if (this.isFleetManager(robot)) {
+      throw new Error("Fleet Manager uses fleet-manager API.");
+    }
+    return `/robots/${encodeURIComponent(robot.id)}${path}`;
   }
 
   async refreshRobots(options = {}) {
@@ -97,6 +810,7 @@ class OperatorApp {
       window.localStorage.setItem("operator:selectedRobotId", this.selectedRobotId);
     }
     await this.refreshRobotMapState({ quiet: true });
+    await this.fetchSelectedRobotStatus(true);
     this.render();
     await this.maybePromptPendingPush();
     if (!options.quiet) {
@@ -107,14 +821,52 @@ class OperatorApp {
   async refreshRobotMapState(options = {}) {
     const robot = this.selectedRobot();
     if (!robot) {
-      this.robotMapState = {
-        robotActiveMapName: "",
-        operatorActiveMapName: "",
-        robotSignature: "",
-        operatorSignature: "",
-        sourceRobotMapName: "",
-        hasLocalChanges: false,
-      };
+      this.robotMapState = this.emptyMapState();
+      this.operatorMapPayload = null;
+      this.operatorMapSignature = "";
+      return;
+    }
+    if (this.isFleetManager(robot)) {
+      try {
+        const robotActive = await this.getJson("/api/fleet-manager/maps/active");
+        let localActive = await this.getJson("/api/fleet-manager/maps/local/active");
+        if (!localActive.map) {
+          await this.postJson("/api/fleet-manager/maps/pull-sync", {});
+          localActive = await this.getJson("/api/fleet-manager/maps/local/active");
+        }
+        const nextSignature = String(localActive.signature || "").trim();
+        if (nextSignature && nextSignature !== this.operatorMapSignature) {
+          this.resetMapView(true);
+        }
+        this.operatorMapPayload = localActive.map && typeof localActive.map === "object" ? localActive.map : null;
+        this.operatorMapSignature = nextSignature;
+        const robotActiveName = String(robotActive.mapName || localActive.robotMapName || "").trim();
+        const localActiveName = String(localActive.activeMapName || "").trim();
+        this.robotMapState = {
+          robotActiveMapName: robotActiveName,
+          operatorActiveMapName: localActiveName,
+          robotSignature: String(robotActive.signature || localActive.robotSignature || "").trim(),
+          operatorSignature: nextSignature,
+          sourceRobotMapName: String(localActive.robotMapName || localActive.sourceMapName || robotActiveName).trim(),
+          hasLocalChanges: Boolean(
+            localActiveName &&
+            (
+              Boolean(localActive.hasLocalChanges) ||
+              (nextSignature &&
+               String(robotActive.signature || localActive.robotSignature || "").trim() &&
+               nextSignature !== String(robotActive.signature || localActive.robotSignature || "").trim()) ||
+              (localActiveName && robotActiveName && localActiveName !== robotActiveName)
+            )
+          ),
+        };
+      } catch (error) {
+        this.robotMapState = this.emptyMapState();
+        this.operatorMapPayload = null;
+        this.operatorMapSignature = "";
+        if (!options.quiet) {
+          window.alert(error.message || String(error));
+        }
+      }
       return;
     }
     try {
@@ -122,19 +874,25 @@ class OperatorApp {
         this.getJson(`/api/robots/${encodeURIComponent(robot.id)}/maps/active`),
         this.getJson(`/api/robots/${encodeURIComponent(robot.id)}/maps/local/active`),
       ]);
+      const nextSignature = String(localActive.signature || "").trim();
+      if (nextSignature && nextSignature !== this.operatorMapSignature) {
+        this.resetMapView(true);
+      }
+      this.operatorMapPayload = localActive.map && typeof localActive.map === "object" ? localActive.map : null;
+      this.operatorMapSignature = nextSignature;
       this.robotMapState = {
         robotActiveMapName: String(robotActive.mapName || "").trim(),
         operatorActiveMapName: String(localActive.activeMapName || "").trim(),
-        robotSignature: String(robotActive.signature || "").trim(),
-        operatorSignature: String(localActive.signature || "").trim(),
+        robotSignature: String(robotActive.signature || localActive.robotSignature || "").trim(),
+        operatorSignature: nextSignature,
         sourceRobotMapName: String(localActive.robotMapName || localActive.sourceMapName || "").trim(),
         hasLocalChanges: Boolean(
           localActive.activeMapName &&
           (
             Boolean(localActive.hasLocalChanges) ||
-            (String(localActive.signature || "").trim() &&
-             String(robotActive.signature || "").trim() &&
-             String(localActive.signature || "").trim() !== String(robotActive.signature || "").trim()) ||
+            (nextSignature &&
+             String(robotActive.signature || localActive.robotSignature || "").trim() &&
+             nextSignature !== String(robotActive.signature || localActive.robotSignature || "").trim()) ||
             (String(localActive.activeMapName || "").trim() &&
              String(robotActive.mapName || "").trim() &&
              String(localActive.activeMapName || "").trim() !== String(robotActive.mapName || "").trim())
@@ -142,18 +900,90 @@ class OperatorApp {
         ),
       };
     } catch (error) {
-      this.robotMapState = {
-        robotActiveMapName: "",
-        operatorActiveMapName: "",
-        robotSignature: "",
-        operatorSignature: "",
-        sourceRobotMapName: "",
-        hasLocalChanges: false,
-      };
+      this.robotMapState = this.emptyMapState();
+      this.operatorMapPayload = null;
+      this.operatorMapSignature = "";
       if (!options.quiet) {
         window.alert(error.message || String(error));
       }
     }
+  }
+
+  async fetchSelectedRobotStatus(silent = false) {
+    const robot = this.selectedRobot();
+    if (!robot || this.statusRequestPending) {
+      return;
+    }
+    this.statusRequestPending = true;
+    try {
+      if (this.isFleetManager(robot)) {
+        await this.ensureFleetParamsLoaded();
+      }
+      const result = this.isFleetManager(robot)
+        ? await this.getJson("/api/fleet-manager/state")
+        : await this.getJson(this.robotApiPath("/api/robot/status"));
+      this.currentStatus = result;
+      if (result && result.route) {
+        this.currentRoute = result.route;
+      }
+      this.renderSelectedRobot();
+    } catch (error) {
+      if (!silent) {
+        window.alert(error.message || String(error));
+      }
+      this.currentStatus = {
+        robot: {
+          connected: false,
+          state: "OFFLINE",
+          message: error.message || String(error),
+        },
+        events: [],
+        route: null,
+      };
+      this.renderSelectedRobot();
+    } finally {
+      this.statusRequestPending = false;
+    }
+  }
+
+  async tickFleetIfSelected() {
+    if (!this.selectedRobot() || !this.isFleetManager() || this.fleetTickPending || this.manualKeys.size) {
+      return;
+    }
+    this.fleetTickPending = true;
+    try {
+      const result = await this.postJson("/api/fleet-manager/tick", {});
+      this.currentStatus = this.mergeFleetTickState(result);
+      this.renderFleetRuntimeTick();
+    } finally {
+      this.fleetTickPending = false;
+    }
+  }
+
+  mergeFleetTickState(tickState) {
+    const previous = this.currentStatus || {};
+    const previousRobots = new Map((Array.isArray(previous.robots) ? previous.robots : []).map((robot) => [robot.name, robot]));
+    const nextRobots = (Array.isArray(tickState.robots) ? tickState.robots : []).map((robot) => {
+      const prior = previousRobots.get(robot.name) || {};
+      return {
+        ...prior,
+        ...robot,
+        trajectory: Array.isArray(robot.trajectory) && robot.trajectory.length
+          ? robot.trajectory
+          : (Array.isArray(prior.trajectory) ? prior.trajectory : []),
+        planNodes: Array.isArray(robot.planNodes) && robot.planNodes.length
+          ? robot.planNodes
+          : (Array.isArray(prior.planNodes) ? prior.planNodes : []),
+      };
+    });
+    return {
+      ...previous,
+      ...tickState,
+      robots: nextRobots,
+      events: Array.isArray(tickState.events) && tickState.events.length
+        ? tickState.events
+        : (Array.isArray(previous.events) ? previous.events : []),
+    };
   }
 
   render() {
@@ -173,38 +1003,53 @@ class OperatorApp {
     }
 
     for (const robot of this.robots) {
-      const button = document.createElement("button");
-      button.type = "button";
+      const isFleet = this.isFleetManager(robot);
+      const button = document.createElement("div");
       button.className = "robot-card";
+      button.tabIndex = 0;
+      button.setAttribute("role", "button");
       if (robot.id === this.selectedRobotId) {
         button.classList.add("active");
       }
-      button.addEventListener("click", () => {
+      const selectRobot = async () => {
         this.selectedRobotId = robot.id;
         window.localStorage.setItem("operator:selectedRobotId", robot.id);
+        this.currentStatus = null;
+        this.currentRoute = null;
         this.closeSidebar();
-        this.refreshRobotMapState({ quiet: true }).then(() => this.render()).catch(() => this.render());
+        await this.refreshRobotMapState({ quiet: true });
+        await this.fetchSelectedRobotStatus(true);
+        this.render();
+      };
+      button.addEventListener("click", selectRobot);
+      button.addEventListener("keydown", async (event) => {
+        if (event.key !== "Enter" && event.key !== " ") {
+          return;
+        }
+        event.preventDefault();
+        await selectRobot();
       });
 
       const identity = robot.identity || robot.lastIdentity || {};
       const status = robot.status || {};
       const chipClass = robot.online ? "robot-chip online" : "robot-chip offline";
-      const chipText = robot.online ? "online" : "offline";
+      const chipText = isFleet ? "system" : (robot.online ? "online" : "offline");
       button.innerHTML = `
         <div class="robot-card-header">
           <div>
             <strong>${this.escapeHtml(robot.name || identity.robotId || robot.id)}</strong>
-            <p>${this.escapeHtml(robot.host)}:${this.escapeHtml(String(robot.port))}</p>
+            <p>${isFleet ? "local fleet controller" : `${this.escapeHtml(robot.host)}:${this.escapeHtml(String(robot.port))}`}</p>
           </div>
           <div class="robot-card-actions">
             <span class="${chipClass}">${chipText}</span>
-            <button class="robot-card-remove" type="button" aria-label="Remove robot">Delete</button>
+            ${isFleet ? "" : '<button class="robot-card-remove" type="button" aria-label="Remove robot">Delete</button>'}
           </div>
         </div>
         <div class="robot-card-meta">
           <div>Robot ID: ${this.escapeHtml(identity.robotId || "-")}</div>
           <div>Map: ${this.escapeHtml(identity.mapId || "-")}</div>
           <div>State: ${this.escapeHtml(status.state || status.stateText || "-")}</div>
+          ${isFleet ? `<div>Fleet robots: ${this.escapeHtml(String(status.robots || 0))}</div>` : ""}
         </div>
       `;
       const removeButton = button.querySelector(".robot-card-remove");
@@ -224,11 +1069,10 @@ class OperatorApp {
     if (!robot) {
       this.emptyState.classList.remove("hidden");
       this.robotView.classList.add("hidden");
-      this.robotFrame.removeAttribute("src");
-      this.frameUrl = "";
-      this.frameOnline = false;
       this.robotActiveMapText.textContent = "-";
       this.operatorActiveMapText.textContent = "-";
+      this.robotStateText.textContent = "-";
+      this.nearestLmText.textContent = "-";
       this.mapSyncStatus.className = "probe-result neutral";
       this.mapSyncStatus.textContent = "Select a robot to see map sync state.";
       return;
@@ -239,46 +1083,2289 @@ class OperatorApp {
     this.robotActiveMapText.textContent = this.robotMapState.robotActiveMapName || "-";
     this.operatorActiveMapText.textContent = this.robotMapState.operatorActiveMapName || "-";
     this.renderMapSyncStatus();
-
-    if (this.frameUrl !== robot.baseUrl || (robot.online && !this.frameOnline)) {
-      this.setRobotFrameUrl(robot.baseUrl);
-    }
-    this.frameOnline = Boolean(robot.online);
+    this.renderRobotConsole();
   }
 
   renderMapSyncStatus() {
+    const selected = this.selectedRobot();
+    const isFleet = this.isFleetManager(selected);
+    this.fleetControlPanel.classList.toggle("hidden", !isFleet);
+    this.manualPad.classList.toggle("hidden", false);
+    this.editMapButton.classList.toggle("hidden", false);
+    this.controlPullMapButton.classList.toggle("hidden", false);
+    this.controlPushMapButton.classList.toggle("hidden", false);
+    this.cancelRouteButton.textContent = isFleet ? "Stop Active" : "Cancel Route";
+    this.stopRobotButton.textContent = isFleet ? "Stop Fleet" : "Stop";
+    this.navigateRobotButton.textContent = this.navigateMode ? "Cancel Navigate" : "Navigate To LM";
+    if (isFleet) {
+      this.editMapButton.textContent = this.fleetActiveTab === "map" ? "Close Editor" : "Map Editor";
+      this.setFleetTab(this.fleetActiveTab);
+    } else {
+      this.operatorMapSvg.classList.remove("fleet-map-editor-active");
+      this.editMapButton.textContent = "Edit Map";
+    }
     const hasLocal = Boolean(this.robotMapState.operatorActiveMapName);
     const hasChanges = Boolean(this.robotMapState.hasLocalChanges);
     if (!hasLocal) {
       this.mapSyncStatus.className = "probe-result neutral";
-      this.mapSyncStatus.textContent = "Operator has no local active map yet. Use Pull Map first.";
+      this.mapSyncStatus.textContent = `${isFleet ? "Operator has no local Fleet Manager map yet" : "Operator has no local active map yet"}. Use Pull Map first.`;
       this.controlPushMapButton.classList.remove("primary");
       return;
     }
     if (hasChanges) {
       const source = this.robotMapState.sourceRobotMapName || this.robotMapState.robotActiveMapName || "-";
       this.mapSyncStatus.className = "probe-result warning";
-      this.mapSyncStatus.textContent = `Local map differs from robot map ${source}. Use Push Map to apply local changes to the robot.`;
+      this.mapSyncStatus.textContent = `Local map differs from ${isFleet ? "Fleet Manager" : "robot"} map ${source}. Use Push Map to apply local changes.`;
       this.controlPushMapButton.classList.add("primary");
       return;
     }
     this.mapSyncStatus.className = "probe-result success";
-    this.mapSyncStatus.textContent = "Operator local map matches the current robot map.";
+    this.mapSyncStatus.textContent = `Operator local map matches the current ${isFleet ? "Fleet Manager" : "robot"} map.`;
     this.controlPushMapButton.classList.remove("primary");
   }
 
-  setRobotFrameUrl(baseUrl, { forceReload = false } = {}) {
-    const url = forceReload ? `${baseUrl}${baseUrl.includes("?") ? "&" : "?"}_ts=${Date.now()}` : baseUrl;
-    this.robotFrame.src = url;
-    this.frameUrl = baseUrl;
+  renderRobotConsole() {
+    if (this.isFleetManager()) {
+      this.renderFleetConsole();
+      return;
+    }
+    const selected = this.selectedRobot();
+    const status = this.currentStatus || {};
+    const robot = status.robot || {};
+    const route = status.route || this.currentRoute || null;
+    const pose = robot.pose || null;
+    const connected = Boolean(robot.connected);
+    const state = String(robot.state || (selected && selected.online ? "ONLINE" : "OFFLINE") || "-");
+
+    this.robotStateText.textContent = state;
+    this.nearestLmText.textContent = robot.nearestLm || "-";
+    this.inspectorRobotText.textContent = robot.robotId || selected?.name || selected?.id || "-";
+    this.connectionText.textContent = connected ? "online" : "offline";
+    this.localizationText.textContent = robot.localizationOk
+      ? `ok (${Number(robot.localizationAgeSec || 0).toFixed(2)} s)`
+      : "waiting";
+    this.targetLmText.textContent = robot.targetLm || "-";
+    this.currentEdgeText.textContent = robot.currentEdgeId || "-";
+    this.routeProgressText.textContent = `${Math.round(Number(robot.routeProgress || 0) * 100)}%`;
+    this.poseText.textContent = pose
+      ? `x: ${Number(pose.x).toFixed(3)}, y: ${Number(pose.y).toFixed(3)}, yaw: ${Number(pose.yaw).toFixed(3)}`
+      : "x: -, y: -, yaw: -";
+    this.velocityText.textContent = robot.velocity
+      ? `v: ${Number(robot.velocity.linear || 0).toFixed(3)}, w: ${Number(robot.velocity.angular || 0).toFixed(3)}`
+      : "v: -, w: -";
+    this.robotMessageText.textContent = robot.message || (this.operatorMapPayload ? "Robot status ready." : "Pull the active robot map to display Map & Control.");
+    this.routeNodesText.textContent = route && Array.isArray(route.nodes) && route.nodes.length
+      ? route.nodes.join(" -> ")
+      : "No route planned.";
+    this.renderEvents(Array.isArray(status.events) ? status.events : []);
+    this.syncModeButtons();
+    this.syncManualButtons();
+    this.renderOperatorMap();
   }
 
-  reloadRobotFrame() {
-    const robot = this.selectedRobot();
+  renderFleetConsole() {
+    const status = this.currentStatus || {};
+    const robots = Array.isArray(status.robots) ? status.robots : [];
+    const selectedFleetRobot = this.selectedFleetRobot(robots);
+    const mode = String(status.mode || "simulation");
+
+    this.fleetModeSelect.value = mode;
+    this.robotStateText.textContent = mode.toUpperCase();
+    this.nearestLmText.textContent = `${robots.length} robots`;
+    this.inspectorRobotText.textContent = "Fleet Manager";
+    this.connectionText.textContent = "local";
+    this.localizationText.textContent = mode;
+    this.targetLmText.textContent = selectedFleetRobot ? (selectedFleetRobot.targetLm || "-") : "-";
+    this.currentEdgeText.textContent = selectedFleetRobot ? (selectedFleetRobot.currentLm || "-") : "-";
+    this.routeProgressText.textContent = selectedFleetRobot ? String(selectedFleetRobot.status || "-") : "-";
+    this.poseText.textContent = selectedFleetRobot && selectedFleetRobot.pose
+      ? `x: ${Number(selectedFleetRobot.pose.x).toFixed(3)}, y: ${Number(selectedFleetRobot.pose.y).toFixed(3)}, yaw: ${Number(selectedFleetRobot.pose.yaw || 0).toFixed(3)}`
+      : "x: -, y: -, yaw: -";
+    this.velocityText.textContent = selectedFleetRobot
+      ? `reason: ${selectedFleetRobot.reason || selectedFleetRobot.routeNote || "-"}`
+      : `mode: ${mode}`;
+    this.robotMessageText.textContent = robots.length
+      ? `Fleet Manager is supervising ${robots.length} robot(s).`
+      : "Add a simulation robot from a spawn LM.";
+    this.routeNodesText.textContent = selectedFleetRobot && Array.isArray(selectedFleetRobot.planNodes) && selectedFleetRobot.planNodes.length
+      ? selectedFleetRobot.planNodes.join(" -> ")
+      : "No active fleet route.";
+
+    this.renderFleetControls(robots);
+    this.renderFleetQueue();
+    this.renderFleetPlanDebug();
+    this.renderEvents(Array.isArray(status.events) ? status.events : []);
+    this.syncModeButtons();
+    this.syncManualButtons();
+    this.renderOperatorMap();
+  }
+
+  renderFleetRuntimeTick() {
+    if (!this.isFleetManager()) {
+      this.renderSelectedRobot();
+      return;
+    }
+    const status = this.currentStatus || {};
+    const robots = Array.isArray(status.robots) ? status.robots : [];
+    const selectedFleetRobot = this.selectedFleetRobot(robots);
+    const mode = String(status.mode || "simulation");
+
+    this.robotStateText.textContent = mode.toUpperCase();
+    this.nearestLmText.textContent = `${robots.length} robots`;
+    this.targetLmText.textContent = selectedFleetRobot ? (selectedFleetRobot.targetLm || "-") : "-";
+    this.currentEdgeText.textContent = selectedFleetRobot ? (selectedFleetRobot.currentLm || "-") : "-";
+    this.routeProgressText.textContent = selectedFleetRobot ? String(selectedFleetRobot.status || "-") : "-";
+    this.poseText.textContent = selectedFleetRobot && selectedFleetRobot.pose
+      ? `x: ${Number(selectedFleetRobot.pose.x).toFixed(3)}, y: ${Number(selectedFleetRobot.pose.y).toFixed(3)}, yaw: ${Number(selectedFleetRobot.pose.yaw || 0).toFixed(3)}`
+      : "x: -, y: -, yaw: -";
+    this.velocityText.textContent = selectedFleetRobot
+      ? `reason: ${selectedFleetRobot.reason || selectedFleetRobot.routeNote || "-"}`
+      : `mode: ${mode}`;
+    this.routeNodesText.textContent = selectedFleetRobot && Array.isArray(selectedFleetRobot.planNodes) && selectedFleetRobot.planNodes.length
+      ? selectedFleetRobot.planNodes.join(" -> ")
+      : "No active fleet route.";
+    this.renderFleetPlanDebug();
+    this.syncModeButtons();
+    this.syncManualButtons();
+    this.drawRoute();
+    this.drawLookahead();
+    this.drawRobot();
+    this.syncMapControls();
+  }
+
+  selectedFleetRobot(robots = null) {
+    const items = robots || (Array.isArray(this.currentStatus?.robots) ? this.currentStatus.robots : []);
+    if (!items.length) {
+      return null;
+    }
+    const selected = items.find((robot) => robot.name === this.selectedFleetRobotName);
+    return selected || items[0];
+  }
+
+  renderFleetControls(robots) {
+    const lms = Array.isArray(this.operatorMapPayload?.lms) ? this.operatorMapPayload.lms : [];
+    const previousSpawn = this.fleetSpawnLmSelect.value;
+    const selectedFleetRobot = this.selectedFleetRobot(robots);
+
+    this.fillSelect(this.fleetSpawnLmSelect, lms.map((lm) => lm.name), previousSpawn || (lms[0]?.name || ""));
+    if (selectedFleetRobot) {
+      this.selectedFleetRobotName = selectedFleetRobot.name;
+      window.localStorage.setItem("operator:selectedFleetRobotName", this.selectedFleetRobotName);
+    }
+    if (!this.fleetNameEdited || this.robotNameExists(this.fleetRobotNameInput.value, robots)) {
+      this.fleetRobotNameInput.value = this.nextFleetRobotName(robots);
+      this.fleetNameEdited = false;
+    }
+    this.renderFleetRobotList(robots);
+  }
+
+  robotNameExists(name, robots = null) {
+    const value = String(name || "").trim();
+    if (!value) {
+      return false;
+    }
+    const items = robots || (Array.isArray(this.currentStatus?.robots) ? this.currentStatus.robots : []);
+    return items.some((robot) => robot.name === value);
+  }
+
+  nextFleetRobotName(robots = null) {
+    const items = robots || (Array.isArray(this.currentStatus?.robots) ? this.currentStatus.robots : []);
+    let maxIndex = 0;
+    for (const robot of items) {
+      const match = String(robot.name || "").match(/^robot(\d+)$/i);
+      if (match) {
+        maxIndex = Math.max(maxIndex, Number(match[1] || 0));
+      }
+    }
+    return `robot${maxIndex + 1}`;
+  }
+
+  fillSelect(select, values, selectedValue) {
+    const current = String(selectedValue || "");
+    select.innerHTML = "";
+    for (const value of values) {
+      const option = document.createElement("option");
+      option.value = value;
+      option.textContent = value;
+      option.selected = value === current;
+      select.append(option);
+    }
+  }
+
+  renderFleetRobotList(robots) {
+    if (!this.fleetRobotList) {
+      return;
+    }
+    this.fleetRobotList.innerHTML = "";
+    if (!robots.length) {
+      const empty = document.createElement("div");
+      empty.className = "probe-result neutral compact";
+      empty.textContent = "No robots yet. Add a robot from a Spawn LM.";
+      this.fleetRobotList.append(empty);
+      return;
+    }
+    for (const robot of robots) {
+      const row = document.createElement("div");
+      row.className = robot.name === this.selectedFleetRobotName ? "fleet-list-item active" : "fleet-list-item";
+
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "fleet-list-main";
+      const selectFleetRobot = () => {
+        this.selectedFleetRobotName = robot.name;
+        if (this.navigateMode && this.pendingFleetAction) {
+          this.pendingFleetRobotName = robot.name;
+        }
+        window.localStorage.setItem("operator:selectedFleetRobotName", robot.name);
+        this.renderSelectedRobot();
+      };
+      button.addEventListener("pointerdown", (event) => {
+        if (event.button !== 0) {
+          return;
+        }
+        event.preventDefault();
+        event.stopPropagation();
+        selectFleetRobot();
+      });
+      button.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        selectFleetRobot();
+      });
+
+      const color = document.createElement("span");
+      color.className = "fleet-list-color";
+      color.style.background = robot.name === this.selectedFleetRobotName ? "#2368ff" : "#d37a22";
+      button.append(color);
+
+      const info = document.createElement("span");
+      info.className = "fleet-list-name";
+      const title = document.createElement("strong");
+      title.textContent = robot.name || "-";
+      const subtitle = document.createElement("span");
+      subtitle.textContent = `${robot.currentLm || "-"} -> ${robot.targetLm || "-"}`;
+      if (this.queuedGoalFor(robot.name)) {
+        subtitle.textContent = `${subtitle.textContent} | queued ${this.queuedGoalFor(robot.name)}`;
+      }
+      info.append(title, subtitle);
+      button.append(info);
+
+      const state = document.createElement("span");
+      state.className = "fleet-list-state";
+      state.textContent = robot.status || "IDLE";
+      button.append(state);
+
+      const removeButton = document.createElement("button");
+      removeButton.type = "button";
+      removeButton.className = "fleet-list-remove";
+      removeButton.textContent = "-";
+      removeButton.title = `Remove ${robot.name}`;
+      removeButton.addEventListener("pointerdown", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+      });
+      removeButton.addEventListener("click", (event) => {
+        event.stopPropagation();
+        this.handleFleetRemoveRobot(robot.name);
+      });
+
+      row.append(button, removeButton);
+      this.fleetRobotList.append(row);
+    }
+  }
+
+  queuedGoalFor(robotName) {
+    const item = this.fleetQueue.find((entry) => entry.robotName === robotName);
+    return item ? item.goalLm : "";
+  }
+
+  renderFleetQueue() {
+    if (!this.fleetQueueList) {
+      return;
+    }
+    this.fleetQueueList.innerHTML = "";
+    if (!this.fleetQueue.length) {
+      this.fleetQueueList.textContent = "No queued goals.";
+      return;
+    }
+    for (const item of this.fleetQueue.slice().sort((a, b) => Number(a.seq || 0) - Number(b.seq || 0))) {
+      const row = document.createElement("div");
+      row.className = "fleet-queue-item";
+      const text = document.createElement("span");
+      text.textContent = `${item.robotName} -> ${item.goalLm}`;
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.textContent = "x";
+      remove.title = "Remove queued goal";
+      remove.addEventListener("click", () => {
+        this.fleetQueue = this.fleetQueue.filter((entry) => entry.robotName !== item.robotName);
+        this.saveFleetQueue();
+        this.renderSelectedRobot();
+      });
+      row.append(text, remove);
+      this.fleetQueueList.append(row);
+    }
+  }
+
+  renderFleetPlanDebug() {
+    if (!this.fleetPlanDebug) {
+      return;
+    }
+    const status = this.currentStatus || {};
+    const robots = Array.isArray(status.robots) ? status.robots : [];
+    const selected = this.selectedFleetRobot(robots);
+    if (!selected) {
+      this.fleetPlanDebug.textContent = "Planner idle.";
+      return;
+    }
+    const reason = selected.reason || selected.routeNote || "ready";
+    const nodes = Array.isArray(selected.planNodes) && selected.planNodes.length
+      ? selected.planNodes.join(" -> ")
+      : "no route";
+    this.fleetPlanDebug.textContent = `${selected.name}: ${selected.status || "IDLE"} | ${reason} | ${nodes}`;
+  }
+
+  targetFleetRobot() {
+    const robots = Array.isArray(this.currentStatus?.robots) ? this.currentStatus.robots : [];
+    if (this.pendingFleetRobotName) {
+      const pending = robots.find((robot) => robot.name === this.pendingFleetRobotName);
+      if (pending) {
+        return pending;
+      }
+    }
+    return this.selectedFleetRobot(robots);
+  }
+
+  queueFleetGoal(goalLm) {
+    const robot = this.targetFleetRobot();
+    if (!robot) {
+      this.robotMessageText.textContent = "Select a fleet robot first.";
+      return;
+    }
+    this.fleetQueue = this.fleetQueue.filter((item) => item.robotName !== robot.name);
+    this.fleetQueue.push({
+      robotName: robot.name,
+      goalLm,
+      seq: ++this.fleetQueueSequence,
+    });
+    this.saveFleetQueue();
+    this.navigateMode = false;
+    this.pendingFleetAction = "";
+    this.pendingFleetRobotName = "";
+    this.robotMessageText.textContent = `Queued ${robot.name} -> ${goalLm}.`;
+    this.renderSelectedRobot();
+  }
+
+  clearFleetQueue() {
+    const hadQueue = this.fleetQueue.length > 0;
+    this.fleetQueue = [];
+    this.saveFleetQueue();
+    if (this.pendingFleetAction === "queue") {
+      this.navigateMode = false;
+      this.pendingFleetAction = "";
+      this.pendingFleetRobotName = "";
+    }
+    this.robotMessageText.textContent = hadQueue ? "Fleet queue cleared." : "Fleet queue is empty.";
+    this.renderSelectedRobot();
+  }
+
+  async startQueuedFleetPlan() {
+    const robots = Array.isArray(this.currentStatus?.robots) ? this.currentStatus.robots : [];
+    const robotByName = new Map(robots.map((robot) => [robot.name, robot]));
+    const requests = this.fleetQueue
+      .slice()
+      .sort((a, b) => Number(a.seq || 0) - Number(b.seq || 0))
+      .map((item) => {
+        const robot = robotByName.get(item.robotName);
+        if (!robot) {
+          return null;
+        }
+        return this.fleetPlanRequest(robot, item.goalLm);
+      })
+      .filter(Boolean);
+    if (!requests.length) {
+      this.robotMessageText.textContent = "Fleet queue is empty.";
+      return;
+    }
+    await this.releaseFleetManualControl();
+    try {
+      const result = await this.postJson("/api/fleet-manager/plan", {
+        speed: this.fleetRouteSpeed(),
+        robots: requests,
+      });
+      this.currentStatus = result.state || await this.getJson("/api/fleet-manager/state");
+      const planned = new Set((result.plans || []).map((plan) => plan.robot));
+      this.fleetQueue = this.fleetQueue.filter((item) => !planned.has(item.robotName));
+      this.saveFleetQueue();
+      this.robotMessageText.textContent = `Fleet queue dispatched: ${planned.size} order(s).`;
+      this.renderSelectedRobot();
+    } catch (error) {
+      this.robotMessageText.textContent = `Fleet queue failed: ${error.message || error}`;
+    }
+  }
+
+  renderEvents(events) {
+    this.robotEventsLog.innerHTML = "";
+    if (!events.length) {
+      this.robotEventsLog.textContent = "No events yet.";
+      return;
+    }
+    for (const event of events.slice().reverse().slice(0, 80)) {
+      const row = document.createElement("div");
+      row.className = `event-row ${String(event.level || "info").toLowerCase()}`;
+      const stamp = event.stamp ? new Date(Number(event.stamp) * 1000).toLocaleTimeString([], { hour12: false }) : "--:--:--";
+      row.textContent = `${stamp} ${event.level || "info"} ${event.message || ""}`;
+      this.robotEventsLog.append(row);
+    }
+  }
+
+  renderOperatorMap() {
+    const payload = this.activeOperatorMapPayload();
+    if (!payload || !payload.map) {
+      this.operatorMapSvg.setAttribute("viewBox", "0 0 100 100");
+      this.operatorMapImage.removeAttribute("href");
+      this.operatorGraphLayer.innerHTML = "";
+      this.operatorRouteLayer.innerHTML = "";
+      this.operatorLookaheadLayer.innerHTML = "";
+      this.operatorLandmarkLayer.innerHTML = "";
+      this.operatorEditorLayer.innerHTML = "";
+      this.operatorRobotLayer.innerHTML = "";
+      return;
+    }
+    const map = payload.map;
+    this.operatorMapSvg.setAttribute("viewBox", `0 0 ${Number(map.viewWidth || 100)} ${Number(map.viewHeight || 100)}`);
+    this.operatorMapImage.setAttribute("x", String(Number(map.viewPadding || 0)));
+    this.operatorMapImage.setAttribute("y", String(Number(map.viewPadding || 0)));
+    this.operatorMapImage.setAttribute("width", String(Number(map.width || 0)));
+    this.operatorMapImage.setAttribute("height", String(Number(map.height || 0)));
+    this.operatorMapImage.setAttribute("href", String(map.imageDataUrl || ""));
+    this.applyMapTransform();
+    this.drawGraph();
+    this.drawRoute();
+    this.drawLookahead();
+    this.drawLandmarks();
+    this.drawFleetEditorOverlay();
+    this.drawRobot();
+    this.syncMapControls();
+  }
+
+  activeOperatorMapPayload() {
+    if (this.isFleetManager() && this.fleetMapEditorActive && this.fleetMapDraft) {
+      return this.fleetMapDraft;
+    }
+    return this.operatorMapPayload;
+  }
+
+  drawGraph() {
+    const payload = this.activeOperatorMapPayload();
+    const landmarks = this.landmarkIndex();
+    this.operatorGraphLayer.innerHTML = "";
+    for (const edge of payload.edges || []) {
+      const element = document.createElementNS("http://www.w3.org/2000/svg", edge.geometry === "bezier" ? "path" : "line");
+      const edgeKey = this.edgeKey(edge.from, edge.to);
+      element.setAttribute("class", [
+        "graph-edge",
+        this.fleetMapEditorActive ? "editable" : "",
+        edgeKey === this.fleetSelectedEdgeKey ? "selected" : "",
+      ].filter(Boolean).join(" "));
+      element.dataset.edgeKey = edgeKey;
+      element.addEventListener("pointerdown", (event) => {
+        if (!this.fleetMapEditorActive || event.button !== 0) {
+          return;
+        }
+        event.preventDefault();
+        event.stopPropagation();
+        this.selectFleetEditorEdge(edgeKey);
+      });
+      if (edge.geometry === "bezier" && Array.isArray(edge.control_points) && edge.control_points.length === 4) {
+        const points = edge.control_points.map((point) => this.worldToPixel(point));
+        element.setAttribute("d", `M ${points[0].x} ${points[0].y} C ${points[1].x} ${points[1].y}, ${points[2].x} ${points[2].y}, ${points[3].x} ${points[3].y}`);
+      } else {
+        const start = landmarks.get(edge.from);
+        const goal = landmarks.get(edge.to);
+        if (!start || !goal) {
+          continue;
+        }
+        const startPx = this.worldToPixel(start);
+        const goalPx = this.worldToPixel(goal);
+        element.setAttribute("x1", String(startPx.x));
+        element.setAttribute("y1", String(startPx.y));
+        element.setAttribute("x2", String(goalPx.x));
+        element.setAttribute("y2", String(goalPx.y));
+      }
+      this.operatorGraphLayer.append(element);
+      const arrow = this.directionArrow(edge, landmarks);
+      if (arrow) {
+        this.operatorGraphLayer.append(arrow);
+      }
+    }
+  }
+
+  drawRoute() {
+    this.operatorRouteLayer.innerHTML = "";
+    if (this.isFleetManager()) {
+      const robots = Array.isArray(this.currentStatus?.robots) ? this.currentStatus.robots : [];
+      for (const robot of robots) {
+        if (!Array.isArray(robot.trajectory) || robot.trajectory.length < 2) {
+          continue;
+        }
+        this.drawFleetRoute(robot);
+      }
+      return;
+    }
+    const route = (this.currentStatus && this.currentStatus.route) || this.currentRoute;
+    if (!route || !Array.isArray(route.trajectory) || route.trajectory.length < 2) {
+      return;
+    }
+    const polyline = document.createElementNS("http://www.w3.org/2000/svg", "polyline");
+    polyline.setAttribute("class", "planned-route");
+    polyline.setAttribute("points", route.trajectory.map((point) => {
+      const px = this.worldToPixel(point);
+      return `${px.x},${px.y}`;
+    }).join(" "));
+    this.operatorRouteLayer.append(polyline);
+  }
+
+  drawFleetRoute(robot) {
+    const trajectory = robot.trajectory || [];
+    const active = robot.name === this.selectedFleetRobotName;
+    this.appendRoutePolyline(trajectory, active ? "fleet-route-plan active" : "fleet-route-plan");
+    if (!active) {
+      return;
+    }
+    const clock = Math.max(0, Number(robot.routeClock || 0));
+    const finalTime = Math.max(...trajectory.map((point, index) => Number(point.t ?? index)));
+    const done = this.sliceTrajectoryByTime(trajectory, 0, clock);
+    const remaining = this.sliceTrajectoryByTime(trajectory, clock, finalTime);
+    if (done.length > 1) {
+      this.appendRoutePolyline(done, "fleet-route-done");
+    }
+    if (remaining.length > 1) {
+      this.appendRoutePolyline(remaining, "fleet-route-active");
+    }
+  }
+
+  appendRoutePolyline(points, className) {
+    if (!Array.isArray(points) || points.length < 2) {
+      return;
+    }
+    const polyline = document.createElementNS("http://www.w3.org/2000/svg", "polyline");
+    polyline.setAttribute("class", className);
+    polyline.setAttribute("points", points.map((point) => {
+      const px = this.worldToPixel(point);
+      return `${px.x},${px.y}`;
+    }).join(" "));
+    this.operatorRouteLayer.append(polyline);
+  }
+
+  sliceTrajectoryByTime(points, startTime, endTime) {
+    if (!Array.isArray(points) || points.length < 2 || endTime <= startTime) {
+      return [];
+    }
+    const result = [];
+    const startPose = this.interpolateTrajectory(points, startTime);
+    if (startPose) {
+      result.push(startPose);
+    }
+    for (const point of points) {
+      const t = Number(point.t ?? 0);
+      if (t > startTime && t < endTime) {
+        result.push(point);
+      }
+    }
+    const endPose = this.interpolateTrajectory(points, endTime);
+    if (endPose) {
+      result.push(endPose);
+    }
+    return result;
+  }
+
+  interpolateTrajectory(points, targetTime) {
+    if (!points.length) {
+      return null;
+    }
+    const firstTime = Number(points[0].t ?? 0);
+    if (targetTime <= firstTime) {
+      return points[0];
+    }
+    const last = points[points.length - 1];
+    const lastTime = Number(last.t ?? points.length - 1);
+    if (targetTime >= lastTime) {
+      return last;
+    }
+    for (let index = 0; index < points.length - 1; index += 1) {
+      const start = points[index];
+      const goal = points[index + 1];
+      const t0 = Number(start.t ?? index);
+      const t1 = Number(goal.t ?? index + 1);
+      if (targetTime < t0 || targetTime > t1) {
+        continue;
+      }
+      const ratio = (targetTime - t0) / Math.max(0.000001, t1 - t0);
+      return {
+        ...start,
+        x: Number(start.x || 0) + ((Number(goal.x || 0) - Number(start.x || 0)) * ratio),
+        y: Number(start.y || 0) + ((Number(goal.y || 0) - Number(start.y || 0)) * ratio),
+        yaw: this.interpolateAngle(Number(start.yaw || 0), Number(goal.yaw || 0), ratio),
+        t: targetTime,
+      };
+    }
+    return last;
+  }
+
+  interpolateAngle(start, goal, ratio) {
+    const delta = ((goal - start + Math.PI) % (Math.PI * 2)) - Math.PI;
+    return start + (delta * ratio);
+  }
+
+  drawLookahead() {
+    if (!this.operatorLookaheadLayer) {
+      return;
+    }
+    this.operatorLookaheadLayer.innerHTML = "";
+    if (!this.isFleetManager() || !this.fleetManualLookahead || !Array.isArray(this.fleetManualLookahead.poses)) {
+      return;
+    }
+    const poses = this.fleetManualLookahead.poses;
+    if (poses.length < 2) {
+      return;
+    }
+    poses.slice(1).forEach((pose, index) => {
+      if (index % 2 !== 0 && index !== poses.length - 2) {
+        return;
+      }
+      const footprint = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
+      footprint.setAttribute("class", this.fleetManualLookahead.blocked ? "lookahead-footprint blocked" : "lookahead-footprint");
+      footprint.setAttribute("points", this.robotFootprintPoints(pose));
+      this.operatorLookaheadLayer.append(footprint);
+    });
+    const polyline = document.createElementNS("http://www.w3.org/2000/svg", "polyline");
+    polyline.setAttribute("class", this.fleetManualLookahead.blocked ? "lookahead-route blocked" : "lookahead-route");
+    polyline.setAttribute("points", poses.map((point) => {
+      const px = this.worldToPixel(point);
+      return `${px.x},${px.y}`;
+    }).join(" "));
+    this.operatorLookaheadLayer.append(polyline);
+    const last = this.worldToPixel(poses[poses.length - 1]);
+    const marker = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+    marker.setAttribute("class", this.fleetManualLookahead.blocked ? "lookahead-marker blocked" : "lookahead-marker");
+    marker.setAttribute("cx", String(last.x));
+    marker.setAttribute("cy", String(last.y));
+    marker.setAttribute("r", "6");
+    this.operatorLookaheadLayer.append(marker);
+  }
+
+  drawLandmarks() {
+    const statusRobot = this.currentStatus && this.currentStatus.robot ? this.currentStatus.robot : {};
+    const fleetRobot = this.isFleetManager() ? this.selectedFleetRobot() : null;
+    const target = fleetRobot ? (fleetRobot.targetLm || "") : (statusRobot.targetLm || (this.currentRoute && this.currentRoute.goalLm) || "");
+    const nearest = fleetRobot ? (fleetRobot.currentLm || "") : statusRobot.nearestLm;
+    this.operatorLandmarkLayer.innerHTML = "";
+    for (const landmark of this.activeOperatorMapPayload().lms || []) {
+      const px = this.worldToPixel(landmark);
+      const group = document.createElementNS("http://www.w3.org/2000/svg", "g");
+      group.setAttribute("class", [
+        "landmark",
+        landmark.name === nearest ? "nearest" : "",
+        landmark.name === target ? "target" : "",
+        this.fleetMapEditorActive && landmark.name === this.fleetSelectedLmName ? "selected" : "",
+        this.navigateMode ? "armed" : "",
+      ].filter(Boolean).join(" "));
+      group.dataset.lmName = landmark.name;
+      group.addEventListener("pointerdown", (event) => {
+        if (this.fleetMapEditorActive) {
+          return;
+        }
+        if (event.button !== 0 || !this.navigateMode) {
+          return;
+        }
+        event.preventDefault();
+        event.stopPropagation();
+        this.mapClickConsumed = true;
+        this.handleLandmarkTarget(landmark.name);
+        window.setTimeout(() => {
+          this.mapClickConsumed = false;
+        }, 150);
+      });
+      group.addEventListener("click", (event) => {
+        if (this.fleetMapEditorActive) {
+          event.preventDefault();
+          event.stopPropagation();
+          return;
+        }
+        event.preventDefault();
+        event.stopPropagation();
+        if (this.navigateMode && !this.mapClickConsumed) {
+          this.handleLandmarkTarget(landmark.name);
+        }
+        window.setTimeout(() => {
+          this.mapClickConsumed = false;
+        }, 0);
+      });
+      const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+      circle.setAttribute("cx", String(px.x));
+      circle.setAttribute("cy", String(px.y));
+      circle.setAttribute("r", "5.5");
+      group.append(circle);
+      const label = document.createElementNS("http://www.w3.org/2000/svg", "text");
+      label.setAttribute("x", String(px.x));
+      label.setAttribute("y", String(px.y + 18));
+      label.textContent = landmark.name;
+      group.append(label);
+      this.operatorLandmarkLayer.append(group);
+    }
+  }
+
+  drawRobot() {
+    this.operatorRobotLayer.innerHTML = "";
+    if (this.isFleetManager()) {
+      const robots = Array.isArray(this.currentStatus?.robots) ? this.currentStatus.robots : [];
+      let focused = false;
+      for (const robot of robots) {
+        const pose = robot && robot.pose ? robot.pose : null;
+        if (!pose) {
+          continue;
+        }
+        const center = this.worldToPixel(pose);
+        if (!focused && this.mapView.follow && robot.name === this.selectedFleetRobotName) {
+          this.focusMapOn(center);
+          focused = true;
+        }
+        const group = document.createElementNS("http://www.w3.org/2000/svg", "g");
+        group.setAttribute("class", robot.name === this.selectedFleetRobotName ? "fleet-robot active" : "fleet-robot");
+        group.dataset.robotName = robot.name || "";
+        const selectRobot = (event) => {
+          if (this.fleetMapEditorActive) {
+            return;
+          }
+          event.preventDefault();
+          event.stopPropagation();
+          this.selectedFleetRobotName = robot.name || "";
+          if (this.navigateMode && this.pendingFleetAction) {
+            this.pendingFleetRobotName = this.selectedFleetRobotName;
+          }
+          window.localStorage.setItem("operator:selectedFleetRobotName", this.selectedFleetRobotName);
+          this.renderSelectedRobot();
+        };
+        group.addEventListener("pointerdown", (event) => {
+          if (event.button !== 0) {
+            return;
+          }
+          selectRobot(event);
+        });
+        group.addEventListener("click", selectRobot);
+        const footprint = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
+        footprint.setAttribute("class", "robot-footprint");
+        footprint.setAttribute("points", this.robotFootprintPoints(pose));
+        group.append(footprint);
+        const centerDot = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+        centerDot.setAttribute("class", "robot-center-dot");
+        centerDot.setAttribute("cx", String(center.x));
+        centerDot.setAttribute("cy", String(center.y));
+        centerDot.setAttribute("r", "4");
+        group.append(centerDot);
+        const heading = document.createElementNS("http://www.w3.org/2000/svg", "line");
+        heading.setAttribute("class", "robot-heading");
+        heading.setAttribute("x1", String(center.x));
+        heading.setAttribute("y1", String(center.y));
+        heading.setAttribute("x2", String(center.x + Math.cos(Number(pose.yaw || 0)) * 18));
+        heading.setAttribute("y2", String(center.y - Math.sin(Number(pose.yaw || 0)) * 18));
+        group.append(heading);
+        const label = document.createElementNS("http://www.w3.org/2000/svg", "text");
+        label.setAttribute("x", String(center.x));
+        label.setAttribute("y", String(center.y + 25));
+        label.textContent = robot.name || "";
+        group.append(label);
+        this.operatorRobotLayer.append(group);
+      }
+      return;
+    }
+    const robot = this.currentStatus && this.currentStatus.robot ? this.currentStatus.robot : null;
+    const pose = robot && robot.pose ? robot.pose : null;
+    if (!pose) {
+      return;
+    }
+    const center = this.worldToPixel(pose);
+    if (this.mapView.follow) {
+      this.focusMapOn(center);
+    }
+    const group = document.createElementNS("http://www.w3.org/2000/svg", "g");
+    const body = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+    body.setAttribute("class", "robot-body");
+    body.setAttribute("cx", String(center.x));
+    body.setAttribute("cy", String(center.y));
+    body.setAttribute("r", "12");
+    group.append(body);
+    const heading = document.createElementNS("http://www.w3.org/2000/svg", "line");
+    heading.setAttribute("class", "robot-heading");
+    heading.setAttribute("x1", String(center.x));
+    heading.setAttribute("y1", String(center.y));
+    heading.setAttribute("x2", String(center.x + Math.cos(Number(pose.yaw || 0)) * 20));
+    heading.setAttribute("y2", String(center.y - Math.sin(Number(pose.yaw || 0)) * 20));
+    group.append(heading);
+    this.operatorRobotLayer.append(group);
+  }
+
+  robotFootprintPoints(pose) {
+    const model = this.fleetParams?.robot_model || this.fleetModelEditor?.getModel() || {};
+    const footprint = Array.isArray(model.footprint) && model.footprint.length >= 3
+      ? model.footprint
+      : [
+        { x: 0.35, y: 0.275 },
+        { x: 0.35, y: -0.275 },
+        { x: -0.35, y: -0.275 },
+        { x: -0.35, y: 0.275 },
+      ];
+    const yaw = Number(pose.yaw || 0);
+    const cos = Math.cos(yaw);
+    const sin = Math.sin(yaw);
+    return footprint.map((point) => {
+      const world = {
+        x: Number(pose.x || 0) + (Number(point.x || 0) * cos) - (Number(point.y || 0) * sin),
+        y: Number(pose.y || 0) + (Number(point.x || 0) * sin) + (Number(point.y || 0) * cos),
+      };
+      const pixel = this.worldToPixel(world);
+      return `${pixel.x},${pixel.y}`;
+    }).join(" ");
+  }
+
+  landmarkIndex() {
+    return new Map((this.activeOperatorMapPayload()?.lms || []).map((lm) => [lm.name, lm]));
+  }
+
+  worldToPixel(point) {
+    const map = this.activeOperatorMapPayload()?.map || {};
+    const origin = Array.isArray(map.origin) ? map.origin : [0, 0, 0];
+    const resolution = Number(map.resolution || 1);
+    const padding = Number(map.viewPadding || 0);
+    const height = Number(map.height || 0);
+    return {
+      x: padding + ((Number(point.x || 0) - Number(origin[0] || 0)) / resolution),
+      y: padding + (height - 1) - ((Number(point.y || 0) - Number(origin[1] || 0)) / resolution),
+    };
+  }
+
+  pixelToWorld(point) {
+    const map = this.activeOperatorMapPayload()?.map || {};
+    const origin = Array.isArray(map.origin) ? map.origin : [0, 0, 0];
+    const resolution = Number(map.resolution || 1);
+    const padding = Number(map.viewPadding || 0);
+    const height = Number(map.height || 0);
+    return {
+      x: ((point.x - padding) * resolution) + Number(origin[0] || 0),
+      y: ((height - 1) - (point.y - padding)) * resolution + Number(origin[1] || 0),
+    };
+  }
+
+  directionArrow(edge, landmarks) {
+    let point = null;
+    let tangent = null;
+    if (edge.geometry === "bezier" && Array.isArray(edge.control_points) && edge.control_points.length === 4) {
+      const points = edge.control_points.map((item) => this.worldToPixel(item));
+      point = this.bezierPoint(points, 0.5);
+      tangent = this.bezierTangent(points, 0.5);
+    } else {
+      const start = landmarks.get(edge.from);
+      const goal = landmarks.get(edge.to);
+      if (!start || !goal) {
+        return null;
+      }
+      const s = this.worldToPixel(start);
+      const g = this.worldToPixel(goal);
+      point = { x: (s.x + g.x) / 2, y: (s.y + g.y) / 2 };
+      tangent = { x: g.x - s.x, y: g.y - s.y };
+    }
+    const length = Math.hypot(tangent.x, tangent.y);
+    if (length <= 0.001) {
+      return null;
+    }
+    const ux = tangent.x / length;
+    const uy = tangent.y / length;
+    const px = -uy;
+    const py = ux;
+    const tip = { x: point.x + ux * 8, y: point.y + uy * 8 };
+    const base = { x: point.x - ux * 8, y: point.y - uy * 8 };
+    const left = { x: base.x + px * 5, y: base.y + py * 5 };
+    const right = { x: base.x - px * 5, y: base.y - py * 5 };
+    const polygon = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
+    polygon.setAttribute("class", "graph-direction");
+    polygon.setAttribute("points", `${tip.x},${tip.y} ${left.x},${left.y} ${right.x},${right.y}`);
+    return polygon;
+  }
+
+  bezierPoint(points, t) {
+    const [p0, p1, p2, p3] = points;
+    const u = 1 - t;
+    return {
+      x: (u ** 3 * p0.x) + (3 * u * u * t * p1.x) + (3 * u * t * t * p2.x) + (t ** 3 * p3.x),
+      y: (u ** 3 * p0.y) + (3 * u * u * t * p1.y) + (3 * u * t * t * p2.y) + (t ** 3 * p3.y),
+    };
+  }
+
+  bezierTangent(points, t) {
+    const [p0, p1, p2, p3] = points;
+    const u = 1 - t;
+    return {
+      x: (3 * u * u * (p1.x - p0.x)) + (6 * u * t * (p2.x - p1.x)) + (3 * t * t * (p3.x - p2.x)),
+      y: (3 * u * u * (p1.y - p0.y)) + (6 * u * t * (p2.y - p1.y)) + (3 * t * t * (p3.y - p2.y)),
+    };
+  }
+
+  handleMapPointerDown(event) {
+    if (this.isFleetManager() && this.fleetMapEditorActive) {
+      this.handleFleetEditorPointerDown(event);
+      return;
+    }
+    if (event.button !== 0 || this.navigateMode || event.target.closest(".landmark")) {
+      return;
+    }
+    event.preventDefault();
+    const point = this.screenToSvg(event.clientX, event.clientY);
+    if (!point) {
+      return;
+    }
+    this.mapDrag = { pointerId: event.pointerId, last: point };
+    this.operatorMapSvg.classList.add("dragging");
+    this.operatorMapSvg.setPointerCapture(event.pointerId);
+  }
+
+  handleMapPointerMove(event) {
+    if (this.isFleetManager() && this.fleetMapEditorActive) {
+      this.handleFleetEditorPointerMove(event);
+      return;
+    }
+    this.applyMapDragMove(event);
+  }
+
+  applyMapDragMove(event) {
+    if (!this.mapDrag || this.mapDrag.pointerId !== event.pointerId) {
+      return;
+    }
+    event.preventDefault();
+    const point = this.screenToSvg(event.clientX, event.clientY);
+    if (!point) {
+      return;
+    }
+    const dx = point.x - this.mapDrag.last.x;
+    const dy = point.y - this.mapDrag.last.y;
+    if (Math.abs(dx) > 0.001 || Math.abs(dy) > 0.001) {
+      this.mapView.follow = false;
+      this.mapView.tx += dx;
+      this.mapView.ty += dy;
+      this.mapDrag.last = point;
+      this.mapClickConsumed = true;
+      this.applyMapTransform();
+      this.syncMapControls();
+    }
+  }
+
+  handleMapPointerUp(event) {
+    if (this.isFleetManager() && this.fleetMapEditorActive) {
+      this.handleFleetEditorPointerUp(event);
+      return;
+    }
+    if (this.mapDrag && this.mapDrag.pointerId === event.pointerId) {
+      if (this.operatorMapSvg.hasPointerCapture(event.pointerId)) {
+        this.operatorMapSvg.releasePointerCapture(event.pointerId);
+      }
+      this.mapDrag = null;
+      this.operatorMapSvg.classList.remove("dragging");
+      window.setTimeout(() => {
+        this.mapClickConsumed = false;
+      }, 0);
+    }
+  }
+
+  handleMapWheel(event) {
+    event.preventDefault();
+    const anchor = this.screenToSvg(event.clientX, event.clientY);
+    this.zoomMap(event.deltaY < 0 ? 1.12 : 0.88, anchor);
+  }
+
+  handleMapClick(event) {
+    if (this.isFleetManager() && this.fleetMapEditorActive) {
+      return;
+    }
+    if (this.mapClickConsumed) {
+      this.mapClickConsumed = false;
+      return;
+    }
+    if (!this.navigateMode || event.target.closest(".landmark")) {
+      return;
+    }
+    const point = this.screenToSvg(event.clientX, event.clientY);
+    if (!point) {
+      return;
+    }
+    const world = this.pixelToWorld({
+      x: (point.x - this.mapView.tx) / this.mapView.scale,
+      y: (point.y - this.mapView.ty) / this.mapView.scale,
+    });
+    const nearest = this.nearestLandmark(world);
+    if (!nearest || nearest.distance > 1.2) {
+      this.robotMessageText.textContent = "Navigate armed: click closer to a landmark.";
+      return;
+    }
+    this.handleLandmarkTarget(nearest.landmark.name);
+  }
+
+  handleMapContextMenu(event) {
+    if (!this.isFleetManager() || !this.fleetMapEditorActive) {
+      return;
+    }
+    event.preventDefault();
+    const lmName = event.target.closest(".landmark")?.dataset?.lmName || "";
+    if (lmName && window.confirm(`Delete ${lmName}?`)) {
+      this.deleteFleetEditorLm(lmName);
+      return;
+    }
+    const edgeKey = event.target.closest(".graph-edge")?.dataset?.edgeKey || "";
+    if (edgeKey && window.confirm(`Delete edge ${edgeKey}?`)) {
+      this.deleteFleetEditorEdge(edgeKey);
+    }
+  }
+
+  ensureFleetMapDraft() {
+    if (!this.fleetMapDraft && this.operatorMapPayload) {
+      this.fleetMapDraft = this.cloneJson(this.operatorMapPayload);
+      this.fleetMapDirty = false;
+    }
+    return this.fleetMapDraft;
+  }
+
+  reloadFleetMapDraft() {
+    if (this.fleetMapDirty && !window.confirm("Discard unsaved fleet map changes?")) {
+      return;
+    }
+    this.fleetMapDraft = this.cloneJson(this.operatorMapPayload);
+    this.fleetMapDirty = false;
+    this.fleetSelectedLmName = "";
+    this.fleetSelectedEdgeKey = "";
+    this.syncFleetEditorFields();
+    this.renderOperatorMap();
+    this.robotMessageText.textContent = "Fleet map draft reloaded.";
+  }
+
+  cloneJson(value) {
+    return JSON.parse(JSON.stringify(value || {}));
+  }
+
+  handleFleetEditorPointerDown(event) {
+    if (!this.fleetMapEditorActive || event.button !== 0) {
+      return;
+    }
+    const draft = this.ensureFleetMapDraft();
+    if (!draft) {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    const world = this.eventToMapWorld(event);
+    const bezierHandle = event.target.closest("[data-bezier-index]");
+    const lmName = event.target.closest(".landmark")?.dataset?.lmName || "";
+    const edgeKey = event.target.closest(".graph-edge")?.dataset?.edgeKey || "";
+
+    if (bezierHandle) {
+      const handleEdgeKey = bezierHandle.dataset.edgeKey || this.fleetSelectedEdgeKey;
+      this.selectFleetEditorEdge(handleEdgeKey);
+      this.fleetEditorBezierDrag = {
+        pointerId: event.pointerId,
+        edgeKey: handleEdgeKey,
+        index: Number(bezierHandle.dataset.bezierIndex || 1),
+      };
+      this.operatorMapSvg.setPointerCapture(event.pointerId);
+      return;
+    }
+
+    if (lmName) {
+      this.selectFleetEditorLm(lmName);
+      if (this.fleetMapTool === "edge") {
+        this.fleetEditorEdgeDrag = { pointerId: event.pointerId, currentLm: lmName, lastCreated: "" };
+      } else {
+        this.fleetEditorLmDrag = { pointerId: event.pointerId, name: lmName, start: world, moved: false };
+      }
+      this.operatorMapSvg.setPointerCapture(event.pointerId);
+      return;
+    }
+
+    if (edgeKey) {
+      this.selectFleetEditorEdge(edgeKey);
+      this.operatorMapSvg.setPointerCapture(event.pointerId);
+      return;
+    }
+
+    if (this.fleetMapTool === "lm" && world) {
+      const added = this.addFleetEditorLm(world);
+      this.selectFleetEditorLm(added.name);
+      this.renderOperatorMap();
+      return;
+    }
+
+    this.fleetSelectedLmName = "";
+    this.fleetSelectedEdgeKey = "";
+    this.fleetEditorGuideWorld = null;
+    this.syncFleetEditorFields();
+    this.renderOperatorMap();
+    this.mapDrag = { pointerId: event.pointerId, last: this.screenToSvg(event.clientX, event.clientY) };
+    this.operatorMapSvg.classList.add("dragging");
+    this.operatorMapSvg.setPointerCapture(event.pointerId);
+  }
+
+  handleFleetEditorPointerMove(event) {
+    if (!this.fleetMapEditorActive) {
+      return;
+    }
+    const world = this.eventToMapWorld(event);
+    if (this.fleetEditorBezierDrag && this.fleetEditorBezierDrag.pointerId === event.pointerId && world) {
+      event.preventDefault();
+      const snapped = this.snapMapPoint(world);
+      this.moveFleetEditorBezierHandle(this.fleetEditorBezierDrag.edgeKey, this.fleetEditorBezierDrag.index, snapped);
+      this.fleetEditorGuideWorld = snapped;
+      this.fleetMapDirty = true;
+      this.syncFleetEditorFields();
+      this.renderOperatorMap();
+      return;
+    }
+    if (this.fleetEditorLmDrag && this.fleetEditorLmDrag.pointerId === event.pointerId && world) {
+      event.preventDefault();
+      const snapped = this.snapMapPoint(world);
+      this.moveFleetEditorLm(this.fleetEditorLmDrag.name, snapped);
+      this.fleetEditorGuideWorld = snapped;
+      this.fleetEditorLmDrag.moved = true;
+      this.fleetMapDirty = true;
+      this.syncFleetEditorFields();
+      this.renderOperatorMap();
+      return;
+    }
+    if (this.fleetEditorEdgeDrag && this.fleetEditorEdgeDrag.pointerId === event.pointerId && world) {
+      event.preventDefault();
+      this.fleetEditorGuideWorld = world;
+      const nearest = this.nearestLandmark(world);
+      if (
+        nearest &&
+        nearest.distance <= 0.35 &&
+        nearest.landmark.name !== this.fleetEditorEdgeDrag.currentLm &&
+        nearest.landmark.name !== this.fleetEditorEdgeDrag.lastCreated
+      ) {
+        const previous = this.fleetEditorEdgeDrag.currentLm;
+        this.addFleetEditorEdge(previous, nearest.landmark.name);
+        this.fleetEditorEdgeDrag.lastCreated = previous;
+        this.fleetEditorEdgeDrag.currentLm = nearest.landmark.name;
+        this.fleetMapDirty = true;
+        this.renderOperatorMap();
+      }
+      this.drawFleetEditorPreview(this.fleetEditorEdgeDrag.currentLm, world);
+      return;
+    }
+    if (this.mapDrag && this.mapDrag.pointerId === event.pointerId) {
+      this.applyMapDragMove(event);
+    }
+  }
+
+  handleFleetEditorPointerUp(event) {
+    if (this.fleetEditorLmDrag && this.fleetEditorLmDrag.pointerId === event.pointerId) {
+      this.fleetEditorLmDrag = null;
+      this.fleetEditorGuideWorld = null;
+      this.drawFleetEditorOverlay();
+    }
+    if (this.fleetEditorEdgeDrag && this.fleetEditorEdgeDrag.pointerId === event.pointerId) {
+      this.fleetEditorEdgeDrag = null;
+      this.fleetEditorPreview = null;
+      this.fleetEditorGuideWorld = null;
+      this.drawFleetEditorOverlay();
+    }
+    if (this.fleetEditorBezierDrag && this.fleetEditorBezierDrag.pointerId === event.pointerId) {
+      this.fleetEditorBezierDrag = null;
+      this.fleetEditorGuideWorld = null;
+      this.drawFleetEditorOverlay();
+    }
+    if (this.mapDrag && this.mapDrag.pointerId === event.pointerId) {
+      if (this.operatorMapSvg.hasPointerCapture(event.pointerId)) {
+        this.operatorMapSvg.releasePointerCapture(event.pointerId);
+      }
+      this.mapDrag = null;
+      this.operatorMapSvg.classList.remove("dragging");
+    }
+    if (this.operatorMapSvg.hasPointerCapture(event.pointerId)) {
+      this.operatorMapSvg.releasePointerCapture(event.pointerId);
+    }
+  }
+
+  eventToMapWorld(event) {
+    const point = this.screenToSvg(event.clientX, event.clientY);
+    if (!point) {
+      return null;
+    }
+    return this.pixelToWorld({
+      x: (point.x - this.mapView.tx) / this.mapView.scale,
+      y: (point.y - this.mapView.ty) / this.mapView.scale,
+    });
+  }
+
+  snapMapPoint(point) {
+    const snapped = { x: Number(point.x || 0), y: Number(point.y || 0) };
+    const tolerance = 0.035;
+    for (const lm of this.fleetMapDraft?.lms || []) {
+      if (lm.name === this.fleetSelectedLmName) {
+        continue;
+      }
+      if (Math.abs(snapped.x - Number(lm.x || 0)) <= tolerance) {
+        snapped.x = Number(lm.x || 0);
+      }
+      if (Math.abs(snapped.y - Number(lm.y || 0)) <= tolerance) {
+        snapped.y = Number(lm.y || 0);
+      }
+    }
+    return {
+      x: Math.round(snapped.x * 1000) / 1000,
+      y: Math.round(snapped.y * 1000) / 1000,
+    };
+  }
+
+  addFleetEditorLm(world) {
+    const draft = this.ensureFleetMapDraft();
+    const lm = {
+      name: this.nextFleetLmName(),
+      x: Math.round(Number(world.x || 0) * 1000) / 1000,
+      y: Math.round(Number(world.y || 0) * 1000) / 1000,
+      ignoreDir: null,
+      properties: {},
+    };
+    draft.lms.push(lm);
+    this.fleetMapDirty = true;
+    return lm;
+  }
+
+  nextFleetLmName() {
+    const names = new Set((this.fleetMapDraft?.lms || []).map((lm) => lm.name));
+    let index = 1;
+    while (names.has(`LM_NEW_${index}`)) {
+      index += 1;
+    }
+    return `LM_NEW_${index}`;
+  }
+
+  moveFleetEditorLm(name, point) {
+    const lm = (this.fleetMapDraft?.lms || []).find((item) => item.name === name);
+    if (!lm) {
+      return;
+    }
+    const dx = point.x - Number(lm.x || 0);
+    const dy = point.y - Number(lm.y || 0);
+    lm.x = point.x;
+    lm.y = point.y;
+    for (const edge of this.fleetMapDraft.edges || []) {
+      if (!Array.isArray(edge.control_points) || edge.control_points.length !== 4) {
+        continue;
+      }
+      if (edge.from === name) {
+        edge.control_points[0] = { x: point.x, y: point.y };
+        edge.control_points[1] = { x: Number(edge.control_points[1].x || 0) + dx, y: Number(edge.control_points[1].y || 0) + dy };
+      }
+      if (edge.to === name) {
+        edge.control_points[3] = { x: point.x, y: point.y };
+        edge.control_points[2] = { x: Number(edge.control_points[2].x || 0) + dx, y: Number(edge.control_points[2].y || 0) + dy };
+      }
+      edge.length = this.edgeLength(edge);
+    }
+  }
+
+  addFleetEditorEdge(from, to) {
+    const draft = this.ensureFleetMapDraft();
+    if (!from || !to || from === to || this.edgeFromKey(this.edgeKey(from, to))) {
+      return;
+    }
+    const start = this.lmByName(from);
+    const goal = this.lmByName(to);
+    if (!start || !goal) {
+      return;
+    }
+    const c1 = { x: (Number(start.x) * 2 + Number(goal.x)) / 3, y: (Number(start.y) * 2 + Number(goal.y)) / 3 };
+    const c2 = { x: (Number(start.x) + Number(goal.x) * 2) / 3, y: (Number(start.y) + Number(goal.y) * 2) / 3 };
+    const edge = {
+      from,
+      to,
+      kind: "curve",
+      type: "DegenerateBezier",
+      geometry: "bezier",
+      control_points: [
+        { x: Number(start.x), y: Number(start.y) },
+        c1,
+        c2,
+        { x: Number(goal.x), y: Number(goal.y) },
+      ],
+      properties: { direction: 2, movestyle: 0 },
+      length: 0,
+    };
+    edge.length = this.edgeLength(edge);
+    draft.edges.push(edge);
+    this.selectFleetEditorEdge(this.edgeKey(from, to));
+  }
+
+  deleteFleetEditorLm(name) {
+    const draft = this.ensureFleetMapDraft();
+    draft.lms = (draft.lms || []).filter((lm) => lm.name !== name);
+    draft.edges = (draft.edges || []).filter((edge) => edge.from !== name && edge.to !== name);
+    this.fleetSelectedLmName = "";
+    this.fleetSelectedEdgeKey = "";
+    this.fleetMapDirty = true;
+    this.syncFleetEditorFields();
+    this.renderOperatorMap();
+  }
+
+  deleteFleetEditorEdge(edgeKey) {
+    const draft = this.ensureFleetMapDraft();
+    const [from, to] = edgeKey.split("->");
+    draft.edges = (draft.edges || []).filter((edge) => !(edge.from === from && edge.to === to));
+    this.fleetSelectedEdgeKey = "";
+    this.fleetMapDirty = true;
+    this.syncFleetEditorFields();
+    this.renderOperatorMap();
+  }
+
+  lmByName(name) {
+    return (this.fleetMapDraft?.lms || this.activeOperatorMapPayload()?.lms || []).find((lm) => lm.name === name);
+  }
+
+  edgeKey(from, to) {
+    return `${from}->${to}`;
+  }
+
+  edgeFromKey(edgeKey) {
+    const [from, to] = String(edgeKey || "").split("->");
+    return (this.fleetMapDraft?.edges || this.activeOperatorMapPayload()?.edges || []).find((edge) => edge.from === from && edge.to === to) || null;
+  }
+
+  selectFleetEditorLm(name) {
+    this.fleetSelectedLmName = name;
+    this.fleetSelectedEdgeKey = "";
+    this.syncFleetEditorFields();
+    this.renderOperatorMap();
+  }
+
+  selectFleetEditorEdge(edgeKey) {
+    this.fleetSelectedEdgeKey = edgeKey;
+    this.fleetSelectedLmName = "";
+    this.syncFleetEditorFields();
+    this.renderOperatorMap();
+  }
+
+  syncFleetEditorFields() {
+    this.fleetEditorFieldSyncing = true;
+    const lm = this.fleetSelectedLmName ? this.lmByName(this.fleetSelectedLmName) : null;
+    this.fleetEditorLmNameInput.value = lm ? lm.name : "";
+    this.fleetEditorLmXInput.value = lm ? Number(lm.x || 0).toFixed(3) : "";
+    this.fleetEditorLmYInput.value = lm ? Number(lm.y || 0).toFixed(3) : "";
+    const edge = this.fleetSelectedEdgeKey ? this.edgeFromKey(this.fleetSelectedEdgeKey) : null;
+    this.fleetEditorEdgeFromInput.value = edge ? edge.from : "";
+    this.fleetEditorEdgeToInput.value = edge ? edge.to : "";
+    if (edge) {
+      this.fleetEditorEdgeTrafficSelect.value = this.edgeFromKey(this.edgeKey(edge.to, edge.from)) ? "bidirectional" : "one_way";
+      this.fleetEditorEdgeMotionSelect.value = String(Number((edge.properties || {}).direction ?? 2));
+    }
+    this.fleetEditorFieldSyncing = false;
+  }
+
+  applyFleetEditorLmFields() {
+    if (this.fleetEditorFieldSyncing || !this.fleetSelectedLmName) {
+      return;
+    }
+    const draft = this.ensureFleetMapDraft();
+    const lm = this.lmByName(this.fleetSelectedLmName);
+    if (!lm) {
+      return;
+    }
+    const nextName = this.fleetEditorLmNameInput.value.trim();
+    if (!nextName) {
+      return;
+    }
+    if (nextName !== lm.name && (draft.lms || []).some((item) => item.name === nextName)) {
+      window.alert(`LM already exists: ${nextName}`);
+      return;
+    }
+    const oldName = lm.name;
+    const nextPoint = this.snapMapPoint({
+      x: Number(this.fleetEditorLmXInput.value || lm.x),
+      y: Number(this.fleetEditorLmYInput.value || lm.y),
+    });
+    this.moveFleetEditorLm(oldName, nextPoint);
+    lm.name = nextName;
+    for (const edge of draft.edges || []) {
+      if (edge.from === oldName) {
+        edge.from = nextName;
+      }
+      if (edge.to === oldName) {
+        edge.to = nextName;
+      }
+    }
+    this.fleetSelectedLmName = nextName;
+    this.fleetMapDirty = true;
+    this.syncFleetEditorFields();
+    this.renderOperatorMap();
+  }
+
+  applyFleetEditorEdgeFields() {
+    if (this.fleetEditorFieldSyncing || !this.fleetSelectedEdgeKey) {
+      return;
+    }
+    const edge = this.edgeFromKey(this.fleetSelectedEdgeKey);
+    if (!edge) {
+      return;
+    }
+    edge.properties = {
+      ...(edge.properties || {}),
+      direction: Number(this.fleetEditorEdgeMotionSelect.value || 2),
+      movestyle: Number((edge.properties || {}).movestyle || 0),
+    };
+    const reverseKey = this.edgeKey(edge.to, edge.from);
+    const hasReverse = Boolean(this.edgeFromKey(reverseKey));
+    if (this.fleetEditorEdgeTrafficSelect.value === "bidirectional" && !hasReverse) {
+      this.addFleetEditorEdge(edge.to, edge.from);
+      const reverse = this.edgeFromKey(reverseKey);
+      if (reverse) {
+        reverse.properties = { ...(edge.properties || {}) };
+      }
+      this.fleetSelectedEdgeKey = this.edgeKey(edge.from, edge.to);
+    }
+    if (this.fleetEditorEdgeTrafficSelect.value === "one_way" && hasReverse) {
+      this.deleteFleetEditorEdge(reverseKey);
+      this.fleetSelectedEdgeKey = this.edgeKey(edge.from, edge.to);
+    }
+    this.fleetMapDirty = true;
+    this.syncFleetEditorFields();
+    this.renderOperatorMap();
+  }
+
+  drawFleetEditorPreview(fromName = "", world = null) {
+    this.fleetEditorPreview = fromName && world ? { fromName, world: { x: Number(world.x || 0), y: Number(world.y || 0) } } : null;
+    this.drawFleetEditorOverlay();
+  }
+
+  drawFleetEditorOverlay() {
+    if (!this.operatorEditorLayer) {
+      return;
+    }
+    this.operatorEditorLayer.innerHTML = "";
+    if (!this.fleetMapEditorActive) {
+      return;
+    }
+    if (this.fleetEditorGuideWorld) {
+      this.drawFleetEditorGuide(this.fleetEditorGuideWorld);
+    }
+    const preview = this.fleetEditorPreview || {};
+    const fromName = preview.fromName || "";
+    const world = preview.world || null;
+    if (fromName && world) {
+      const from = this.lmByName(fromName);
+      if (from) {
+        const a = this.worldToPixel(from);
+        const b = this.worldToPixel(world);
+        const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+        line.setAttribute("class", "editor-preview");
+        line.setAttribute("x1", String(a.x));
+        line.setAttribute("y1", String(a.y));
+        line.setAttribute("x2", String(b.x));
+        line.setAttribute("y2", String(b.y));
+        this.operatorEditorLayer.append(line);
+      }
+    }
+    const edge = this.fleetSelectedEdgeKey ? this.edgeFromKey(this.fleetSelectedEdgeKey) : null;
+    if (!edge || !Array.isArray(edge.control_points) || edge.control_points.length !== 4) {
+      return;
+    }
+    const points = edge.control_points.map((point) => this.worldToPixel(point));
+    const handleGroup = document.createElementNS("http://www.w3.org/2000/svg", "g");
+    handleGroup.setAttribute("class", "editor-bezier");
+    const firstHandle = document.createElementNS("http://www.w3.org/2000/svg", "line");
+    firstHandle.setAttribute("class", "editor-bezier-arm");
+    firstHandle.setAttribute("x1", String(points[0].x));
+    firstHandle.setAttribute("y1", String(points[0].y));
+    firstHandle.setAttribute("x2", String(points[1].x));
+    firstHandle.setAttribute("y2", String(points[1].y));
+    handleGroup.append(firstHandle);
+    const secondHandle = document.createElementNS("http://www.w3.org/2000/svg", "line");
+    secondHandle.setAttribute("class", "editor-bezier-arm");
+    secondHandle.setAttribute("x1", String(points[3].x));
+    secondHandle.setAttribute("y1", String(points[3].y));
+    secondHandle.setAttribute("x2", String(points[2].x));
+    secondHandle.setAttribute("y2", String(points[2].y));
+    handleGroup.append(secondHandle);
+    [1, 2].forEach((index) => {
+      const handle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+      handle.setAttribute("class", "editor-bezier-handle");
+      handle.setAttribute("cx", String(points[index].x));
+      handle.setAttribute("cy", String(points[index].y));
+      handle.setAttribute("r", "5");
+      handle.dataset.edgeKey = this.fleetSelectedEdgeKey;
+      handle.dataset.bezierIndex = String(index);
+      handleGroup.append(handle);
+    });
+    [0, 3].forEach((index) => {
+      const endpoint = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+      endpoint.setAttribute("class", "editor-bezier-endpoint");
+      endpoint.setAttribute("cx", String(points[index].x));
+      endpoint.setAttribute("cy", String(points[index].y));
+      endpoint.setAttribute("r", "3");
+      handleGroup.append(endpoint);
+    });
+    this.operatorEditorLayer.append(handleGroup);
+  }
+
+  drawFleetEditorGuide(world) {
+    const payload = this.activeOperatorMapPayload();
+    if (!payload || !payload.map) {
+      return;
+    }
+    const px = this.worldToPixel(world);
+    const map = payload.map;
+    const width = Number(map.viewWidth || 100);
+    const height = Number(map.viewHeight || 100);
+    const vertical = document.createElementNS("http://www.w3.org/2000/svg", "line");
+    vertical.setAttribute("class", "editor-guide-line");
+    vertical.setAttribute("x1", String(px.x));
+    vertical.setAttribute("y1", "0");
+    vertical.setAttribute("x2", String(px.x));
+    vertical.setAttribute("y2", String(height));
+    this.operatorEditorLayer.append(vertical);
+    const horizontal = document.createElementNS("http://www.w3.org/2000/svg", "line");
+    horizontal.setAttribute("class", "editor-guide-line");
+    horizontal.setAttribute("x1", "0");
+    horizontal.setAttribute("y1", String(px.y));
+    horizontal.setAttribute("x2", String(width));
+    horizontal.setAttribute("y2", String(px.y));
+    this.operatorEditorLayer.append(horizontal);
+    const label = document.createElementNS("http://www.w3.org/2000/svg", "text");
+    label.setAttribute("class", "editor-guide-label");
+    label.setAttribute("x", String(px.x + 8));
+    label.setAttribute("y", String(px.y - 8));
+    label.textContent = `x ${Number(world.x || 0).toFixed(3)} / y ${Number(world.y || 0).toFixed(3)}`;
+    this.operatorEditorLayer.append(label);
+  }
+
+  moveFleetEditorBezierHandle(edgeKey, index, point) {
+    const edge = this.edgeFromKey(edgeKey);
+    if (!edge || !Array.isArray(edge.control_points) || edge.control_points.length !== 4 || ![1, 2].includes(index)) {
+      return;
+    }
+    edge.control_points[index] = {
+      x: Math.round(Number(point.x || 0) * 1000) / 1000,
+      y: Math.round(Number(point.y || 0) * 1000) / 1000,
+    };
+    edge.length = this.edgeLength(edge);
+  }
+
+  edgeLength(edge) {
+    if (Array.isArray(edge.control_points) && edge.control_points.length === 4) {
+      let total = 0;
+      let previous = this.bezierPoint(edge.control_points, 0);
+      for (let i = 1; i <= 60; i += 1) {
+        const current = this.bezierPoint(edge.control_points, i / 60);
+        total += Math.hypot(current.x - previous.x, current.y - previous.y);
+        previous = current;
+      }
+      return Math.round(total * 1000000) / 1000000;
+    }
+    const start = this.lmByName(edge.from);
+    const goal = this.lmByName(edge.to);
+    if (!start || !goal) {
+      return Number(edge.length || 0);
+    }
+    return Math.round(Math.hypot(Number(goal.x) - Number(start.x), Number(goal.y) - Number(start.y)) * 1000000) / 1000000;
+  }
+
+  async saveFleetMap(saveAs, options = {}) {
+    const draft = this.ensureFleetMapDraft();
+    if (!draft) {
+      return;
+    }
+    let mapName = this.robotMapState.operatorActiveMapName || draft.mapName || "";
+    if (saveAs) {
+      mapName = window.prompt("Save local fleet map as", `${draft.mapName || "fleet_map"}_copy`) || "";
+      mapName = mapName.trim();
+      if (!mapName) {
+        return;
+      }
+    } else if (!options.skipConfirm && !window.confirm("Save local fleet map changes? Use Push Map to apply them to Fleet Manager.")) {
+      return;
+    }
+    try {
+      const mapPayload = this.cloneJson(draft);
+      if (saveAs) {
+        mapPayload.mapName = mapName.replace(/\.smap$/i, "");
+      }
+      await this.postJson("/api/fleet-manager/maps/local/save", {
+        mapName,
+        map: mapPayload,
+        sourceMapName: this.robotMapState.sourceRobotMapName || draft.mapName || mapName,
+        activate: true,
+      });
+      await this.refreshRobotMapState({ quiet: true });
+      this.fleetMapDraft = this.cloneJson(this.operatorMapPayload);
+      this.fleetMapDirty = false;
+      this.robotMessageText.textContent = `Local fleet map saved: ${this.robotMapState.operatorActiveMapName || mapName}. Push Map will apply it.`;
+      this.renderSelectedRobot();
+    } catch (error) {
+      this.robotMessageText.textContent = `Save local fleet map failed: ${error.message || error}`;
+    }
+  }
+
+  async handleLandmarkTarget(lmName) {
+    if (this.isFleetManager() && this.pendingFleetAction === "queue") {
+      this.queueFleetGoal(lmName);
+      return;
+    }
+    await this.startNavigation(lmName);
+  }
+
+  nearestLandmark(world) {
+    let best = null;
+    let bestDistance = Number.POSITIVE_INFINITY;
+    for (const landmark of this.activeOperatorMapPayload()?.lms || []) {
+      const distance = Math.hypot(Number(landmark.x) - world.x, Number(landmark.y) - world.y);
+      if (distance < bestDistance) {
+        best = landmark;
+        bestDistance = distance;
+      }
+    }
+    return best ? { landmark: best, distance: bestDistance } : null;
+  }
+
+  screenToSvg(clientX, clientY) {
+    const ctm = this.operatorMapSvg.getScreenCTM();
+    if (!ctm) {
+      return null;
+    }
+    return new DOMPoint(clientX, clientY).matrixTransform(ctm.inverse());
+  }
+
+  zoomMap(factor, anchor = null) {
+    const previous = this.mapView.scale;
+    const next = Math.max(1, Math.min(9, previous * factor));
+    if (Math.abs(next - previous) < 0.001) {
+      return;
+    }
+    const map = this.operatorMapPayload?.map || {};
+    const pivot = anchor || {
+      x: Number(map.viewWidth || 100) / 2,
+      y: Number(map.viewHeight || 100) / 2,
+    };
+    this.mapView.follow = false;
+    this.mapView.tx = pivot.x - ((next / previous) * (pivot.x - this.mapView.tx));
+    this.mapView.ty = pivot.y - ((next / previous) * (pivot.y - this.mapView.ty));
+    this.mapView.scale = next;
+    this.applyMapTransform();
+    this.syncMapControls();
+  }
+
+  resetMapView(keepFollow = false) {
+    this.mapView.scale = 1;
+    this.mapView.tx = 0;
+    this.mapView.ty = 0;
+    this.mapView.follow = keepFollow ? this.mapView.follow : false;
+    this.applyMapTransform();
+    this.syncMapControls();
+  }
+
+  focusMapOn(pixel) {
+    const map = this.operatorMapPayload?.map || {};
+    const center = {
+      x: Number(map.viewWidth || 100) / 2,
+      y: Number(map.viewHeight || 100) / 2,
+    };
+    this.mapView.tx = center.x - (this.mapView.scale * pixel.x);
+    this.mapView.ty = center.y - (this.mapView.scale * pixel.y);
+    this.applyMapTransform();
+  }
+
+  applyMapTransform() {
+    this.operatorViewport.setAttribute("transform", `matrix(${this.mapView.scale} 0 0 ${this.mapView.scale} ${this.mapView.tx} ${this.mapView.ty})`);
+  }
+
+  syncMapControls() {
+    this.operatorFollowRobotButton.classList.toggle("primary", this.mapView.follow);
+    this.operatorFollowRobotButton.textContent = this.mapView.follow ? "Following Robot" : "Follow Robot";
+  }
+
+  toggleNavigateMode() {
+    if (!this.operatorMapPayload || !this.operatorMapPayload.map) {
+      this.robotMessageText.textContent = "Pull or load the robot map before Navigate To LM.";
+      return;
+    }
+    if (this.isFleetManager()) {
+      if (this.navigateMode && this.pendingFleetAction === "navigate") {
+        this.navigateMode = false;
+        this.pendingFleetAction = "";
+        this.pendingFleetRobotName = "";
+      } else {
+        const robot = this.selectedFleetRobot();
+        if (!robot) {
+          this.robotMessageText.textContent = "Add or select a fleet robot first.";
+          return;
+        }
+        this.navigateMode = true;
+        this.pendingFleetAction = "navigate";
+        this.pendingFleetRobotName = robot.name;
+      }
+    } else {
+      this.navigateMode = !this.navigateMode;
+    }
+    this.syncModeButtons();
+    this.drawLandmarks();
+    const target = this.pendingFleetRobotName || "";
+    this.robotMessageText.textContent = this.navigateMode
+      ? (target ? `Navigate armed for ${target}: select an LM on the map.` : "Navigate armed: select an LM on the map.")
+      : "Navigate canceled.";
+  }
+
+  toggleFleetQueueMode() {
+    if (!this.isFleetManager()) {
+      return;
+    }
+    if (!this.operatorMapPayload || !this.operatorMapPayload.map) {
+      this.robotMessageText.textContent = "Load a fleet map before Queue Goal.";
+      return;
+    }
+    if (this.navigateMode && this.pendingFleetAction === "queue") {
+      this.navigateMode = false;
+      this.pendingFleetAction = "";
+      this.pendingFleetRobotName = "";
+    } else {
+      const robot = this.selectedFleetRobot();
+      if (!robot) {
+        this.robotMessageText.textContent = "Add or select a fleet robot first.";
+        return;
+      }
+      this.navigateMode = true;
+      this.pendingFleetAction = "queue";
+      this.pendingFleetRobotName = robot.name;
+    }
+    this.syncModeButtons();
+    this.drawLandmarks();
+    this.robotMessageText.textContent = this.navigateMode
+      ? `Queue armed for ${this.pendingFleetRobotName}: select an LM on the map.`
+      : "Queue canceled.";
+  }
+
+  syncModeButtons() {
+    const isFleet = this.isFleetManager();
+    const navigateArmed = this.navigateMode && (!isFleet || this.pendingFleetAction === "navigate");
+    const queueArmed = this.navigateMode && isFleet && this.pendingFleetAction === "queue";
+    this.navigateRobotButton.classList.toggle("primary", !navigateArmed);
+    this.navigateRobotButton.classList.toggle("danger", navigateArmed);
+    this.navigateRobotButton.textContent = navigateArmed
+      ? (this.pendingFleetRobotName ? `Select LM: ${this.pendingFleetRobotName}` : "Cancel Navigate")
+      : "Navigate To LM";
+    if (this.fleetQueueGoalButton) {
+      this.fleetQueueGoalButton.classList.toggle("primary", queueArmed);
+      this.fleetQueueGoalButton.classList.toggle("danger", queueArmed);
+      this.fleetQueueGoalButton.textContent = queueArmed
+        ? `Queue LM: ${this.pendingFleetRobotName || "robot"}`
+        : "Queue Goal";
+    }
+  }
+
+  async startNavigation(goalLm) {
+    if (!this.selectedRobot()) {
+      return;
+    }
+    if (this.isFleetManager()) {
+      await this.startFleetNavigation(goalLm);
+      return;
+    }
+    this.navigateMode = false;
+    this.syncModeButtons();
+    this.releaseManualControl();
+    const robot = this.currentStatus && this.currentStatus.robot ? this.currentStatus.robot : {};
+    const payload = { goalLm };
+    if (robot.pose) {
+      payload.startPose = {
+        x: Number(robot.pose.x || 0),
+        y: Number(robot.pose.y || 0),
+        yaw: Number(robot.pose.yaw || 0),
+      };
+    }
+    if (robot.nearestLm) {
+      payload.startLm = robot.nearestLm;
+    }
+    try {
+      const result = await this.postJson(this.robotApiPath("/api/robot/route/execute"), payload);
+      if (result && result.route) {
+        this.currentRoute = result.route;
+      }
+      this.robotMessageText.textContent = `Route execution started to ${goalLm}.`;
+      await this.fetchSelectedRobotStatus(true);
+    } catch (error) {
+      this.robotMessageText.textContent = `Navigate failed: ${error.message || error}`;
+    }
+  }
+
+  async startFleetNavigation(goalLm) {
+    const robot = this.targetFleetRobot();
+    if (!robot) {
+      this.robotMessageText.textContent = "Add or select a fleet robot first.";
+      return;
+    }
+    this.navigateMode = false;
+    this.pendingFleetAction = "";
+    this.pendingFleetRobotName = "";
+    this.syncModeButtons();
+    await this.releaseFleetManualControl();
+    try {
+      const result = await this.postJson("/api/fleet-manager/plan", {
+        speed: this.fleetRouteSpeed(),
+        robots: [this.fleetPlanRequest(robot, goalLm)],
+      });
+      this.currentStatus = result.state || await this.getJson("/api/fleet-manager/state");
+      this.selectedFleetRobotName = robot.name;
+      window.localStorage.setItem("operator:selectedFleetRobotName", this.selectedFleetRobotName);
+      this.robotMessageText.textContent = `${robot.name} planned to ${goalLm}.`;
+      this.renderSelectedRobot();
+    } catch (error) {
+      this.robotMessageText.textContent = `Fleet navigate failed: ${error.message || error}`;
+    }
+  }
+
+  fleetPlanRequest(robot, goalLm) {
+    const startLm = this.startLmForFleetRobot(robot);
+    const request = {
+      name: robot.name,
+      startLm,
+      goalLm,
+    };
+    if (robot.pose) {
+      request.startPose = {
+        x: Number(robot.pose.x || 0),
+        y: Number(robot.pose.y || 0),
+        yaw: Number(robot.pose.yaw || 0),
+      };
+    }
+    return request;
+  }
+
+  startLmForFleetRobot(robot) {
+    if (robot.currentLm) {
+      return robot.currentLm;
+    }
+    if (robot.pose) {
+      const nearest = this.nearestLandmark(robot.pose);
+      if (nearest && nearest.landmark) {
+        return nearest.landmark.name;
+      }
+    }
+    const first = this.operatorMapPayload?.lms?.[0];
+    return first ? first.name : "";
+  }
+
+  fleetRouteSpeed() {
+    return Math.max(0.02, Number(this.fleetRouteSpeedInput?.value || 0.4) || 0.4);
+  }
+
+  fleetManualParams() {
+    return {
+      linearSpeed: Math.max(0.02, Number(this.fleetManualLinearInput?.value || 0.25) || 0.25),
+      angularSpeed: Math.max(0.05, Number(this.fleetManualAngularInput?.value || 0.9) || 0.9),
+      predictionTime: Math.max(0.1, Number(this.fleetManualLookaheadInput?.value || 1.0) || 1.0),
+      predictionStep: Math.max(0.03, Number(this.fleetManualStepInput?.value || 0.1) || 0.1),
+    };
+  }
+
+  async ensureFleetParamsLoaded(force = false) {
+    if (!this.isFleetManager() || (this.fleetParamsLoaded && !force)) {
+      return;
+    }
+    const payload = await this.getJson("/api/fleet-manager/params");
+    this.fleetParams = payload.params || {};
+    this.fleetParamsLoaded = true;
+    this.applyFleetParams(this.fleetParams);
+  }
+
+  applyFleetParams(params) {
+    const navigation = params.navigation || {};
+    const manual = params.manual || {};
+    if (this.fleetRouteSpeedInput && navigation.route_speed !== undefined) {
+      this.fleetRouteSpeedInput.value = String(navigation.route_speed);
+    }
+    if (this.fleetManualLinearInput && manual.linear_speed !== undefined) {
+      this.fleetManualLinearInput.value = String(manual.linear_speed);
+    }
+    if (this.fleetManualAngularInput && manual.angular_speed !== undefined) {
+      this.fleetManualAngularInput.value = String(manual.angular_speed);
+    }
+    if (this.fleetManualLookaheadInput && manual.prediction_time !== undefined) {
+      this.fleetManualLookaheadInput.value = String(manual.prediction_time);
+    }
+    if (this.fleetManualStepInput && manual.prediction_step !== undefined) {
+      this.fleetManualStepInput.value = String(manual.prediction_step);
+    }
+    if (this.fleetModelEditor && params.robot_model) {
+      this.fleetModelEditor.setModel(params.robot_model);
+    }
+  }
+
+  collectFleetParams() {
+    const params = JSON.parse(JSON.stringify(this.fleetParams || {}));
+    if (this.fleetModelEditor) {
+      params.robot_model = this.fleetModelEditor.getModel();
+    }
+    params.navigation = {
+      ...(params.navigation || {}),
+      route_speed: this.fleetRouteSpeed(),
+    };
+    const manual = this.fleetManualParams();
+    params.manual = {
+      ...(params.manual || {}),
+      linear_speed: manual.linearSpeed,
+      angular_speed: manual.angularSpeed,
+      prediction_time: manual.predictionTime,
+      prediction_step: manual.predictionStep,
+    };
+    return params;
+  }
+
+  async saveFleetParams() {
+    try {
+      const params = this.collectFleetParams();
+      const result = await this.postJson("/api/fleet-manager/params", { params });
+      this.fleetParams = result.params || params;
+      this.fleetParamsLoaded = true;
+      this.robotMessageText.textContent = "Fleet params saved.";
+    } catch (error) {
+      this.robotMessageText.textContent = `Save params failed: ${error.message || error}`;
+    }
+  }
+
+  async handleFleetModeChange() {
+    try {
+      const result = await this.postJson("/api/fleet-manager/mode", { mode: this.fleetModeSelect.value });
+      this.currentStatus = {
+        ...(this.currentStatus || {}),
+        mode: result.mode || this.fleetModeSelect.value,
+      };
+      await this.refreshRobots({ quiet: true });
+      await this.fetchSelectedRobotStatus(true);
+    } catch (error) {
+      window.alert(error.message || String(error));
+    }
+  }
+
+  async handleFleetAddRobot() {
+    const name = String(this.fleetRobotNameInput.value || "").trim();
+    const spawnLm = String(this.fleetSpawnLmSelect.value || "").trim();
+    if (!name || !spawnLm) {
+      window.alert("Robot name and Spawn LM are required.");
+      return;
+    }
+    try {
+      const result = await this.postJson("/api/fleet-manager/robots", { name, spawnLm });
+      this.selectedFleetRobotName = name;
+      window.localStorage.setItem("operator:selectedFleetRobotName", name);
+      this.currentStatus = result.state || await this.getJson("/api/fleet-manager/state");
+      this.fleetNameEdited = false;
+      this.fleetRobotNameInput.value = this.nextFleetRobotName(Array.isArray(this.currentStatus?.robots) ? this.currentStatus.robots : []);
+      await this.refreshRobots({ quiet: true });
+      this.renderSelectedRobot();
+    } catch (error) {
+      window.alert(error.message || String(error));
+    }
+  }
+
+  async handleFleetRemoveRobot(robotName = "") {
+    const robot = robotName
+      ? (Array.isArray(this.currentStatus?.robots) ? this.currentStatus.robots : []).find((item) => item.name === robotName)
+      : this.selectedFleetRobot();
     if (!robot) {
       return;
     }
-    this.setRobotFrameUrl(robot.baseUrl, { forceReload: true });
+    const confirmed = window.confirm(`Remove ${robot.name} from Fleet Manager?`);
+    if (!confirmed) {
+      return;
+    }
+    try {
+      const result = await this.postJson("/api/fleet-manager/robots/remove", { name: robot.name });
+      this.selectedFleetRobotName = "";
+      window.localStorage.removeItem("operator:selectedFleetRobotName");
+      this.fleetQueue = this.fleetQueue.filter((item) => item.robotName !== robot.name);
+      this.saveFleetQueue();
+      this.currentStatus = result.state || await this.getJson("/api/fleet-manager/state");
+      this.fleetNameEdited = false;
+      await this.refreshRobots({ quiet: true });
+      this.renderSelectedRobot();
+    } catch (error) {
+      window.alert(error.message || String(error));
+    }
+  }
+
+  async stopFleetRobot(all) {
+    const robot = this.selectedFleetRobot();
+    const payload = all || !robot ? {} : { name: robot.name };
+    try {
+      const result = await this.postJson("/api/fleet-manager/robots/stop", payload);
+      this.currentStatus = result.state || await this.getJson("/api/fleet-manager/state");
+      this.currentRoute = null;
+      this.fleetManualLookahead = null;
+      this.fleetManualRobotName = "";
+      this.pendingFleetAction = "";
+      this.pendingFleetRobotName = "";
+      this.renderSelectedRobot();
+    } catch (error) {
+      window.alert(error.message || String(error));
+    }
+  }
+
+  async cancelRoute() {
+    this.navigateMode = false;
+    this.pendingFleetAction = "";
+    this.pendingFleetRobotName = "";
+    this.syncModeButtons();
+    if (this.isFleetManager()) {
+      await this.stopFleetRobot(false);
+      return;
+    }
+    try {
+      await this.postJson(this.robotApiPath("/api/robot/route/cancel"), {});
+      this.currentRoute = null;
+      await this.fetchSelectedRobotStatus(true);
+    } catch (error) {
+      window.alert(error.message || String(error));
+    }
+  }
+
+  async stopRobot() {
+    this.navigateMode = false;
+    this.pendingFleetAction = "";
+    this.pendingFleetRobotName = "";
+    this.releaseManualControl();
+    this.syncModeButtons();
+    if (this.isFleetManager()) {
+      await this.stopFleetRobot(true);
+      return;
+    }
+    try {
+      await this.postJson(this.robotApiPath("/api/robot/stop"), {});
+      this.currentRoute = null;
+      await this.fetchSelectedRobotStatus(true);
+    } catch (error) {
+      window.alert(error.message || String(error));
+    }
+  }
+
+  setManualKey(key, active) {
+    if (!["w", "a", "s", "d"].includes(key)) {
+      return;
+    }
+    if (!this.selectedRobot()) {
+      return;
+    }
+    if (active) {
+      this.manualKeys.add(key);
+      if (this.isFleetManager()) {
+        this.navigateMode = false;
+        this.pendingFleetAction = "";
+        this.pendingFleetRobotName = "";
+        this.syncModeButtons();
+      }
+    } else {
+      this.manualKeys.delete(key);
+      if (!this.manualKeys.size) {
+        if (this.isFleetManager()) {
+          this.releaseFleetManualControl().catch(() => {});
+        } else {
+          this.postJson(this.robotApiPath("/api/robot/teleop/stop"), {}).catch(() => {});
+        }
+      }
+    }
+    this.syncManualButtons();
+  }
+
+  syncManualButtons() {
+    document.querySelectorAll("[data-manual-key]").forEach((button) => {
+      button.classList.toggle("active", this.manualKeys.has(button.dataset.manualKey));
+    });
+  }
+
+  manualTwist() {
+    const manual = this.isFleetManager()
+      ? this.fleetManualParams()
+      : { linearSpeed: 0.25, angularSpeed: 0.9 };
+    const linearSpeed = manual.linearSpeed;
+    const angularSpeed = manual.angularSpeed;
+    const forward = this.manualKeys.has("w") ? 1 : 0;
+    const backward = this.manualKeys.has("s") ? 1 : 0;
+    const left = this.manualKeys.has("a") ? 1 : 0;
+    const right = this.manualKeys.has("d") ? 1 : 0;
+    return {
+      linear: (forward - backward) * linearSpeed,
+      angular: (left - right) * angularSpeed,
+      params: manual,
+    };
+  }
+
+  async sendTeleopIfNeeded() {
+    if (!this.manualKeys.size || this.teleopPending || !this.selectedRobot()) {
+      return;
+    }
+    const twist = this.manualTwist();
+    if (Math.abs(twist.linear) < 0.0001 && Math.abs(twist.angular) < 0.0001) {
+      return;
+    }
+    this.teleopPending = true;
+    try {
+      if (this.isFleetManager()) {
+        await this.sendFleetManualStep(twist);
+        return;
+      }
+      await this.postJson(this.robotApiPath("/api/robot/teleop"), {
+        linear: twist.linear,
+        angular: twist.angular,
+        timeoutMs: 350,
+      });
+    } finally {
+      this.teleopPending = false;
+    }
+  }
+
+  releaseManualControl() {
+    this.manualKeys.clear();
+    this.syncManualButtons();
+    if (this.selectedRobot() && !this.isFleetManager()) {
+      this.postJson(this.robotApiPath("/api/robot/teleop/stop"), {}).catch(() => {});
+    }
+    if (this.isFleetManager()) {
+      this.releaseFleetManualControl().catch(() => {});
+    }
+  }
+
+  async sendFleetManualStep(twist) {
+    const robot = this.selectedFleetRobot();
+    if (!robot) {
+      this.robotMessageText.textContent = "Select a fleet robot for manual control.";
+      return;
+    }
+    if (this.fleetManualRobotName !== robot.name) {
+      await this.postJson("/api/fleet-manager/robots/stop", { name: robot.name });
+      this.fleetManualRobotName = robot.name;
+      this.fleetManualLastAt = performance.now();
+      this.currentStatus = await this.getJson("/api/fleet-manager/state");
+    }
+    const pose = robot.pose || this.poseForLm(robot.currentLm);
+    if (!pose) {
+      this.robotMessageText.textContent = `${robot.name}: no pose for manual control.`;
+      return;
+    }
+    const now = performance.now();
+    const dt = Math.min(0.16, Math.max(0.02, (now - (this.fleetManualLastAt || now)) / 1000));
+    this.fleetManualLastAt = now;
+
+    const prediction = this.predictManualTrajectory(
+      pose,
+      twist.linear,
+      twist.angular,
+      twist.params.predictionTime,
+      twist.params.predictionStep
+    );
+    const check = await this.postJson("/api/fleet-manager/check", {
+      name: robot.name,
+      poses: prediction,
+    });
+    this.fleetManualLookahead = {
+      poses: prediction,
+      blocked: Boolean(check.blocked),
+      reason: check.reason || "",
+    };
+    if (check.blocked) {
+      await this.postJson("/api/fleet-manager/robots/update", {
+        name: robot.name,
+        status: "MANUAL_BLOCKED",
+        targetLm: "",
+        pose,
+        currentLm: this.currentLmForPose(pose, 0.25),
+      });
+      this.currentStatus = await this.getJson("/api/fleet-manager/state");
+      this.robotMessageText.textContent = `${robot.name} manual blocked: ${check.reason || "collision"}.`;
+      this.renderSelectedRobot();
+      return;
+    }
+
+    const nextPose = this.integratePose(pose, twist.linear, twist.angular, dt);
+    const currentLm = this.currentLmForPose(nextPose, 0.25);
+    const result = await this.postJson("/api/fleet-manager/robots/update", {
+      name: robot.name,
+      status: "MANUAL",
+      targetLm: "",
+      currentLm,
+      pose: nextPose,
+    });
+    this.currentStatus = result.state || await this.getJson("/api/fleet-manager/state");
+    this.robotMessageText.textContent = `${robot.name} manual control active.`;
+    this.renderSelectedRobot();
+  }
+
+  async releaseFleetManualControl() {
+    if (!this.fleetManualRobotName) {
+      this.fleetManualLookahead = null;
+      this.renderOperatorMap();
+      return;
+    }
+    const robot = this.selectedFleetRobot();
+    if (robot && robot.name === this.fleetManualRobotName) {
+      const pose = robot.pose || null;
+      const payload = {
+        name: robot.name,
+        status: "IDLE",
+        targetLm: "",
+        currentLm: pose ? this.currentLmForPose(pose, 0.25) : (robot.currentLm || ""),
+      };
+      if (pose) {
+        payload.pose = pose;
+      }
+      const result = await this.postJson("/api/fleet-manager/robots/update", payload);
+      this.currentStatus = result.state || await this.getJson("/api/fleet-manager/state");
+    }
+    this.fleetManualRobotName = "";
+    this.fleetManualLastAt = 0;
+    this.fleetManualLookahead = null;
+    this.renderSelectedRobot();
+  }
+
+  predictManualTrajectory(pose, linear, angular, horizon, step) {
+    const poses = [{ ...pose }];
+    let current = { ...pose };
+    for (let elapsed = 0; elapsed < horizon; elapsed += step) {
+      current = this.integratePose(current, linear, angular, step);
+      poses.push(current);
+    }
+    return poses;
+  }
+
+  integratePose(pose, linear, angular, dt) {
+    const yaw = this.normalizeAngle(Number(pose.yaw || 0) + (angular * dt));
+    const midYaw = this.normalizeAngle(Number(pose.yaw || 0) + ((angular * dt) / 2));
+    return {
+      x: Number(pose.x || 0) + (linear * Math.cos(midYaw) * dt),
+      y: Number(pose.y || 0) + (linear * Math.sin(midYaw) * dt),
+      yaw,
+    };
+  }
+
+  normalizeAngle(angle) {
+    let value = Number(angle || 0);
+    while (value > Math.PI) {
+      value -= Math.PI * 2;
+    }
+    while (value < -Math.PI) {
+      value += Math.PI * 2;
+    }
+    return value;
+  }
+
+  poseForLm(lmName) {
+    const landmark = (this.operatorMapPayload?.lms || []).find((lm) => lm.name === lmName);
+    return landmark ? { x: Number(landmark.x || 0), y: Number(landmark.y || 0), yaw: 0 } : null;
+  }
+
+  currentLmForPose(pose, tolerance = 0.25) {
+    const nearest = this.nearestLandmark(pose);
+    return nearest && nearest.distance <= tolerance ? nearest.landmark.name : "";
   }
 
   renderSidebar() {
@@ -294,6 +3381,27 @@ class OperatorApp {
   closeSidebar() {
     this.sidebarOpen = false;
     this.renderSidebar();
+  }
+
+  async handleEditMapButton() {
+    if (this.isFleetManager()) {
+      if (this.fleetActiveTab === "map" && this.fleetMapDirty) {
+        const shouldSave = window.confirm("Save fleet map changes before closing the editor?");
+        if (shouldSave) {
+          await this.saveFleetMap(false, { skipConfirm: true });
+        } else {
+          this.fleetMapDraft = this.cloneJson(this.operatorMapPayload);
+          this.fleetMapDirty = false;
+          this.fleetSelectedLmName = "";
+          this.fleetSelectedEdgeKey = "";
+          this.syncFleetEditorFields();
+        }
+      }
+      this.setFleetTab(this.fleetActiveTab === "map" ? "fleet" : "map");
+      this.renderMapSyncStatus();
+      return;
+    }
+    this.openMapEditor();
   }
 
   openAddRobotDialog() {
@@ -313,10 +3421,7 @@ class OperatorApp {
       this.lastProbe = result.probe;
       const identity = result.probe.identity || {};
       const status = result.probe.status || {};
-      this.showProbeResult(
-        "success",
-        `Found ${identity.robotId || "robot"} on map ${identity.mapId || "-"}. Current state: ${status.state || "-"}`
-      );
+      this.showProbeResult("success", `Found ${identity.robotId || "robot"} on map ${identity.mapId || "-"}. Current state: ${status.state || "-"}`);
       if (!this.robotNameInput.value.trim()) {
         this.robotNameInput.value = identity.robotId || "";
       }
@@ -335,8 +3440,6 @@ class OperatorApp {
       window.localStorage.setItem("operator:selectedRobotId", this.selectedRobotId);
       this.closeSidebar();
       await this.refreshRobots({ quiet: true });
-      await this.refreshRobotMapState({ quiet: true });
-      this.render();
       if (result.pulled && result.pulled.local && result.pulled.local.mapName) {
         this.showProbeResult("success", `Robot saved and active map ${result.pulled.local.mapName} pulled into operator cache.`);
       }
@@ -370,6 +3473,10 @@ class OperatorApp {
     if (!robot) {
       return;
     }
+    if (this.isFleetManager(robot)) {
+      this.setFleetTab("map");
+      return;
+    }
     const robotName = robot.name || robot.identity?.robotId || robot.id;
     const url = `/map-editor.html?robot_id=${encodeURIComponent(robot.id)}&robot_name=${encodeURIComponent(robotName)}`;
     window.location.assign(url);
@@ -381,8 +3488,11 @@ class OperatorApp {
       return;
     }
     try {
-      const result = await this.postJson(`/api/robots/${encodeURIComponent(robot.id)}/maps/pull-sync`, {});
+      const result = this.isFleetManager(robot)
+        ? await this.postJson("/api/fleet-manager/maps/pull-sync", {})
+        : await this.postJson(`/api/robots/${encodeURIComponent(robot.id)}/maps/pull-sync`, {});
       await this.refreshRobotMapState({ quiet: true });
+      await this.fetchSelectedRobotStatus(true);
       this.renderSelectedRobot();
       window.alert(result.message || "Pull map completed.");
     } catch (error) {
@@ -396,10 +3506,12 @@ class OperatorApp {
       return;
     }
     try {
-      const result = await this.postJson(`/api/robots/${encodeURIComponent(robot.id)}/maps/push-sync`, {});
+      const result = this.isFleetManager(robot)
+        ? await this.postJson("/api/fleet-manager/maps/push-sync", {})
+        : await this.postJson(`/api/robots/${encodeURIComponent(robot.id)}/maps/push-sync`, {});
       await this.refreshRobotMapState({ quiet: true });
       await this.refreshRobots({ quiet: true });
-      this.reloadRobotFrame();
+      await this.fetchSelectedRobotStatus(true);
       window.alert(result.message || "Push map completed.");
     } catch (error) {
       window.alert(error.message || String(error));
@@ -409,7 +3521,7 @@ class OperatorApp {
   async maybePromptPendingPush() {
     const pendingRobotId = window.sessionStorage.getItem("operator:pendingPushRobotId") || "";
     const robot = this.selectedRobot();
-    if (!robot || !pendingRobotId || pendingRobotId !== robot.id) {
+    if (!robot || this.isFleetManager(robot) || !pendingRobotId || pendingRobotId !== robot.id) {
       return;
     }
     window.sessionStorage.removeItem("operator:pendingPushRobotId");
@@ -429,23 +3541,28 @@ class OperatorApp {
       return;
     }
     try {
-      const robotMaps = await this.getJson(`/api/robots/${encodeURIComponent(robot.id)}/maps/list`);
+      const robotMaps = this.isFleetManager(robot)
+        ? await this.getJson("/api/fleet-manager/maps/list")
+        : await this.getJson(`/api/robots/${encodeURIComponent(robot.id)}/maps/list`);
       const maps = Array.isArray(robotMaps.maps) ? robotMaps.maps : [];
       if (!maps.length) {
-        window.alert("Robot has no editable maps.");
+        window.alert(this.isFleetManager(robot) ? "Fleet Manager has no maps." : "Robot has no editable maps.");
         return;
       }
       this.pendingRobotMaps = maps;
       this.loadMapSelect.innerHTML = "";
       for (const item of maps) {
         const option = document.createElement("option");
-        option.value = item.name || item.folder || "";
-        option.textContent = item.active ? `${item.name} (active)` : `${item.name}`;
+        const name = item.name || item.folder || "";
+        option.value = name;
+        option.textContent = item.active ? `${name} (active)` : `${name}`;
         option.selected = Boolean(item.active) || option.value === this.robotMapState.robotActiveMapName;
         this.loadMapSelect.appendChild(option);
       }
       this.loadMapHint.className = "probe-result neutral";
-      this.loadMapHint.textContent = "Choose one of the maps available on the robot.";
+      this.loadMapHint.textContent = this.isFleetManager(robot)
+        ? "Choose one of the maps available in Fleet Manager."
+        : "Choose one of the maps available on the robot.";
       this.loadMapDialog.showModal();
     } catch (error) {
       window.alert(error.message || String(error));
@@ -464,12 +3581,19 @@ class OperatorApp {
       return;
     }
     try {
-      const result = await this.postJson(`/api/robots/${encodeURIComponent(robot.id)}/maps/load`, { mapName });
+      let result = null;
+      if (this.isFleetManager(robot)) {
+        result = await this.postJson("/api/fleet-manager/maps/load", { mapName });
+        await this.postJson("/api/fleet-manager/maps/pull-sync", {});
+      } else {
+        result = await this.postJson(`/api/robots/${encodeURIComponent(robot.id)}/maps/load`, { mapName });
+        await this.postJson(`/api/robots/${encodeURIComponent(robot.id)}/maps/pull-sync`, {});
+      }
       this.loadMapDialog.close();
       await this.refreshRobotMapState({ quiet: true });
       await this.refreshRobots({ quiet: true });
-      this.reloadRobotFrame();
-      window.alert(`Robot active map changed to ${result.mapName || mapName}.`);
+      await this.fetchSelectedRobotStatus(true);
+      window.alert(`${this.isFleetManager(robot) ? "Fleet Manager" : "Robot"} active map changed to ${result.mapName || mapName}.`);
     } catch (error) {
       this.loadMapHint.className = "probe-result error";
       this.loadMapHint.textContent = error.message || String(error);
@@ -490,7 +3614,7 @@ class OperatorApp {
   }
 
   async getJson(url) {
-    const response = await fetch(url);
+    const response = await fetch(url, { cache: "no-store" });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok || payload.ok === false) {
       throw new Error(payload.error || `Request failed: ${response.status}`);

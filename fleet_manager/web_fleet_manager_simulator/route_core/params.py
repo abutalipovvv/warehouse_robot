@@ -7,27 +7,7 @@ from typing import Any
 import yaml
 
 
-def _discover_default_params_path() -> Path:
-    module_path = Path(__file__).resolve()
-    for parent in module_path.parents:
-        candidate = parent / "params.yaml"
-        if (parent / "robot_planner").exists() and (parent / "robot_map_manager").exists():
-            return candidate
-        if candidate.exists() and (parent / "robot_map_manager").exists():
-            return candidate
-    for parent in module_path.parents:
-        candidate = parent / "params.yaml"
-        if candidate.exists() and (parent / "map_data").exists():
-            return candidate
-    cwd_candidate = Path.cwd() / "params.yaml"
-    if cwd_candidate.exists():
-        return cwd_candidate.resolve()
-    if len(module_path.parents) > 3:
-        return module_path.parents[3] / "params.yaml"
-    return module_path.parents[1] / "params.yaml"
-
-
-DEFAULT_PARAMS_PATH = _discover_default_params_path()
+DEFAULT_PARAMS_PATH = Path(__file__).resolve().parents[2] / "params.yaml"
 
 DEFAULT_ROUTE_PARAMS: dict[str, Any] = {
     "robot_model": {
@@ -77,6 +57,18 @@ DEFAULT_ROUTE_PARAMS: dict[str, Any] = {
         "angular_speed": 0.90,
         "prediction_time": 1.00,
         "prediction_step": 0.10,
+    },
+    "fleet": {
+        "reservation_time_step_sec": 1.00,
+        "reservation_horizon_sec": 8.00,
+        "reservation_safety_time_sec": 0.35,
+        "continuous_collision_step_sec": 0.10,
+        "wait_time_sec": 1.00,
+        "wait_cost": 6,
+        "replan_interval_sec": 1.00,
+        "cbs_low_level_max_time": 160,
+        "cbs_max_high_level_nodes": 2000,
+        "cbs_max_planning_time_sec": 5.00,
     },
 }
 
