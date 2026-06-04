@@ -6,6 +6,14 @@ from robot_msgs.srv._execute_route import ExecuteRoute  # noqa: F401
 from robot_msgs.srv._execute_route import ExecuteRoute_Event  # noqa: F401
 from robot_msgs.srv._execute_route import ExecuteRoute_Request  # noqa: F401
 from robot_msgs.srv._execute_route import ExecuteRoute_Response  # noqa: F401
+from robot_msgs.srv._get_robot_map_state import GetRobotMapState  # noqa: F401
+from robot_msgs.srv._get_robot_map_state import GetRobotMapState_Event  # noqa: F401
+from robot_msgs.srv._get_robot_map_state import GetRobotMapState_Request  # noqa: F401
+from robot_msgs.srv._get_robot_map_state import GetRobotMapState_Response  # noqa: F401
+from robot_msgs.srv._load_robot_map import LoadRobotMap  # noqa: F401
+from robot_msgs.srv._load_robot_map import LoadRobotMap_Event  # noqa: F401
+from robot_msgs.srv._load_robot_map import LoadRobotMap_Request  # noqa: F401
+from robot_msgs.srv._load_robot_map import LoadRobotMap_Response  # noqa: F401
 from robot_msgs.srv._plan_route import PlanRoute  # noqa: F401
 from robot_msgs.srv._plan_route import PlanRoute_Event  # noqa: F401
 from robot_msgs.srv._plan_route import PlanRoute_Request  # noqa: F401

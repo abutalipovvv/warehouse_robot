@@ -352,6 +352,262 @@ impl rosidl_runtime_rs::Message for CancelRoute_Response {
 }
 
 
+// Corresponds to robot_msgs__srv__LoadRobotMap_Request
+
+// This struct is not documented.
+#[allow(missing_docs)]
+
+#[allow(non_camel_case_types)]
+#[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
+#[derive(Clone, Debug, PartialEq, PartialOrd)]
+pub struct LoadRobotMap_Request {
+
+    // This member is not documented.
+    #[allow(missing_docs)]
+    pub map_name: std::string::String,
+
+
+    // This member is not documented.
+    #[allow(missing_docs)]
+    pub map_dir: std::string::String,
+
+}
+
+
+
+impl Default for LoadRobotMap_Request {
+  fn default() -> Self {
+    <Self as rosidl_runtime_rs::Message>::from_rmw_message(super::srv::rmw::LoadRobotMap_Request::default())
+  }
+}
+
+impl rosidl_runtime_rs::Message for LoadRobotMap_Request {
+  type RmwMsg = super::srv::rmw::LoadRobotMap_Request;
+
+  fn into_rmw_message(msg_cow: std::borrow::Cow<'_, Self>) -> std::borrow::Cow<'_, Self::RmwMsg> {
+    match msg_cow {
+      std::borrow::Cow::Owned(msg) => std::borrow::Cow::Owned(Self::RmwMsg {
+        map_name: msg.map_name.as_str().into(),
+        map_dir: msg.map_dir.as_str().into(),
+      }),
+      std::borrow::Cow::Borrowed(msg) => std::borrow::Cow::Owned(Self::RmwMsg {
+        map_name: msg.map_name.as_str().into(),
+        map_dir: msg.map_dir.as_str().into(),
+      })
+    }
+  }
+
+  fn from_rmw_message(msg: Self::RmwMsg) -> Self {
+    Self {
+      map_name: msg.map_name.to_string(),
+      map_dir: msg.map_dir.to_string(),
+    }
+  }
+}
+
+
+// Corresponds to robot_msgs__srv__LoadRobotMap_Response
+
+// This struct is not documented.
+#[allow(missing_docs)]
+
+#[allow(non_camel_case_types)]
+#[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
+#[derive(Clone, Debug, PartialEq, PartialOrd)]
+pub struct LoadRobotMap_Response {
+
+    // This member is not documented.
+    #[allow(missing_docs)]
+    pub ok: bool,
+
+
+    // This member is not documented.
+    #[allow(missing_docs)]
+    pub error: std::string::String,
+
+
+    // This member is not documented.
+    #[allow(missing_docs)]
+    pub map_name: std::string::String,
+
+
+    // This member is not documented.
+    #[allow(missing_docs)]
+    pub map_dir: std::string::String,
+
+
+    // This member is not documented.
+    #[allow(missing_docs)]
+    pub map_id: std::string::String,
+
+}
+
+
+
+impl Default for LoadRobotMap_Response {
+  fn default() -> Self {
+    <Self as rosidl_runtime_rs::Message>::from_rmw_message(super::srv::rmw::LoadRobotMap_Response::default())
+  }
+}
+
+impl rosidl_runtime_rs::Message for LoadRobotMap_Response {
+  type RmwMsg = super::srv::rmw::LoadRobotMap_Response;
+
+  fn into_rmw_message(msg_cow: std::borrow::Cow<'_, Self>) -> std::borrow::Cow<'_, Self::RmwMsg> {
+    match msg_cow {
+      std::borrow::Cow::Owned(msg) => std::borrow::Cow::Owned(Self::RmwMsg {
+        ok: msg.ok,
+        error: msg.error.as_str().into(),
+        map_name: msg.map_name.as_str().into(),
+        map_dir: msg.map_dir.as_str().into(),
+        map_id: msg.map_id.as_str().into(),
+      }),
+      std::borrow::Cow::Borrowed(msg) => std::borrow::Cow::Owned(Self::RmwMsg {
+      ok: msg.ok,
+        error: msg.error.as_str().into(),
+        map_name: msg.map_name.as_str().into(),
+        map_dir: msg.map_dir.as_str().into(),
+        map_id: msg.map_id.as_str().into(),
+      })
+    }
+  }
+
+  fn from_rmw_message(msg: Self::RmwMsg) -> Self {
+    Self {
+      ok: msg.ok,
+      error: msg.error.to_string(),
+      map_name: msg.map_name.to_string(),
+      map_dir: msg.map_dir.to_string(),
+      map_id: msg.map_id.to_string(),
+    }
+  }
+}
+
+
+// Corresponds to robot_msgs__srv__GetRobotMapState_Request
+
+// This struct is not documented.
+#[allow(missing_docs)]
+
+#[allow(non_camel_case_types)]
+#[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
+#[derive(Clone, Debug, PartialEq, PartialOrd)]
+pub struct GetRobotMapState_Request {
+
+    // This member is not documented.
+    #[allow(missing_docs)]
+    pub structure_needs_at_least_one_member: u8,
+
+}
+
+
+
+impl Default for GetRobotMapState_Request {
+  fn default() -> Self {
+    <Self as rosidl_runtime_rs::Message>::from_rmw_message(super::srv::rmw::GetRobotMapState_Request::default())
+  }
+}
+
+impl rosidl_runtime_rs::Message for GetRobotMapState_Request {
+  type RmwMsg = super::srv::rmw::GetRobotMapState_Request;
+
+  fn into_rmw_message(msg_cow: std::borrow::Cow<'_, Self>) -> std::borrow::Cow<'_, Self::RmwMsg> {
+    match msg_cow {
+      std::borrow::Cow::Owned(msg) => std::borrow::Cow::Owned(Self::RmwMsg {
+        structure_needs_at_least_one_member: msg.structure_needs_at_least_one_member,
+      }),
+      std::borrow::Cow::Borrowed(msg) => std::borrow::Cow::Owned(Self::RmwMsg {
+      structure_needs_at_least_one_member: msg.structure_needs_at_least_one_member,
+      })
+    }
+  }
+
+  fn from_rmw_message(msg: Self::RmwMsg) -> Self {
+    Self {
+      structure_needs_at_least_one_member: msg.structure_needs_at_least_one_member,
+    }
+  }
+}
+
+
+// Corresponds to robot_msgs__srv__GetRobotMapState_Response
+
+// This struct is not documented.
+#[allow(missing_docs)]
+
+#[allow(non_camel_case_types)]
+#[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
+#[derive(Clone, Debug, PartialEq, PartialOrd)]
+pub struct GetRobotMapState_Response {
+
+    // This member is not documented.
+    #[allow(missing_docs)]
+    pub ok: bool,
+
+
+    // This member is not documented.
+    #[allow(missing_docs)]
+    pub error: std::string::String,
+
+
+    // This member is not documented.
+    #[allow(missing_docs)]
+    pub map_name: std::string::String,
+
+
+    // This member is not documented.
+    #[allow(missing_docs)]
+    pub map_dir: std::string::String,
+
+
+    // This member is not documented.
+    #[allow(missing_docs)]
+    pub map_id: std::string::String,
+
+}
+
+
+
+impl Default for GetRobotMapState_Response {
+  fn default() -> Self {
+    <Self as rosidl_runtime_rs::Message>::from_rmw_message(super::srv::rmw::GetRobotMapState_Response::default())
+  }
+}
+
+impl rosidl_runtime_rs::Message for GetRobotMapState_Response {
+  type RmwMsg = super::srv::rmw::GetRobotMapState_Response;
+
+  fn into_rmw_message(msg_cow: std::borrow::Cow<'_, Self>) -> std::borrow::Cow<'_, Self::RmwMsg> {
+    match msg_cow {
+      std::borrow::Cow::Owned(msg) => std::borrow::Cow::Owned(Self::RmwMsg {
+        ok: msg.ok,
+        error: msg.error.as_str().into(),
+        map_name: msg.map_name.as_str().into(),
+        map_dir: msg.map_dir.as_str().into(),
+        map_id: msg.map_id.as_str().into(),
+      }),
+      std::borrow::Cow::Borrowed(msg) => std::borrow::Cow::Owned(Self::RmwMsg {
+      ok: msg.ok,
+        error: msg.error.as_str().into(),
+        map_name: msg.map_name.as_str().into(),
+        map_dir: msg.map_dir.as_str().into(),
+        map_id: msg.map_id.as_str().into(),
+      })
+    }
+  }
+
+  fn from_rmw_message(msg: Self::RmwMsg) -> Self {
+    Self {
+      ok: msg.ok,
+      error: msg.error.to_string(),
+      map_name: msg.map_name.to_string(),
+      map_dir: msg.map_dir.to_string(),
+      map_id: msg.map_id.to_string(),
+    }
+  }
+}
+
+
 
 
 
@@ -416,6 +672,50 @@ impl rosidl_runtime_rs::Service for CancelRoute {
     fn get_type_support() -> *const std::ffi::c_void {
         // SAFETY: No preconditions for this function.
         unsafe { rosidl_typesupport_c__get_service_type_support_handle__robot_msgs__srv__CancelRoute() }
+    }
+}
+
+
+
+
+#[link(name = "robot_msgs__rosidl_typesupport_c")]
+extern "C" {
+    fn rosidl_typesupport_c__get_service_type_support_handle__robot_msgs__srv__LoadRobotMap() -> *const std::ffi::c_void;
+}
+
+// Corresponds to robot_msgs__srv__LoadRobotMap
+#[allow(missing_docs, non_camel_case_types)]
+pub struct LoadRobotMap;
+
+impl rosidl_runtime_rs::Service for LoadRobotMap {
+    type Request = LoadRobotMap_Request;
+    type Response = LoadRobotMap_Response;
+
+    fn get_type_support() -> *const std::ffi::c_void {
+        // SAFETY: No preconditions for this function.
+        unsafe { rosidl_typesupport_c__get_service_type_support_handle__robot_msgs__srv__LoadRobotMap() }
+    }
+}
+
+
+
+
+#[link(name = "robot_msgs__rosidl_typesupport_c")]
+extern "C" {
+    fn rosidl_typesupport_c__get_service_type_support_handle__robot_msgs__srv__GetRobotMapState() -> *const std::ffi::c_void;
+}
+
+// Corresponds to robot_msgs__srv__GetRobotMapState
+#[allow(missing_docs, non_camel_case_types)]
+pub struct GetRobotMapState;
+
+impl rosidl_runtime_rs::Service for GetRobotMapState {
+    type Request = GetRobotMapState_Request;
+    type Response = GetRobotMapState_Response;
+
+    fn get_type_support() -> *const std::ffi::c_void {
+        // SAFETY: No preconditions for this function.
+        unsafe { rosidl_typesupport_c__get_service_type_support_handle__robot_msgs__srv__GetRobotMapState() }
     }
 }
 

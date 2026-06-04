@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+from pathlib import Path
 from typing import Any
 
 from .route_core import LmRoutePlanner, WarehouseMapLoader, load_route_params
@@ -22,7 +23,8 @@ class RobotTrajectoryPlanner:
         map_dir: Path,
         params_path: Path,
     ) -> None:
-        self.loaded_map = WarehouseMapLoader(map_dir).load()
+        self.map_dir = Path(map_dir).resolve()
+        self.loaded_map = WarehouseMapLoader(self.map_dir).load()
         self.params_path = params_path
         self._params_mtime_ns: int | None = None
         self.params = load_route_params(params_path, create=True)
@@ -39,6 +41,15 @@ class RobotTrajectoryPlanner:
 
     def update_params(self, params: dict[str, Any]) -> None:
         self.params = params
+        self.planner = LmRoutePlanner(
+            self.loaded_map.landmarks,
+            self.loaded_map.edges,
+            params=self.params,
+        )
+
+    def reload_map(self, map_dir: Path) -> None:
+        self.map_dir = Path(map_dir).resolve()
+        self.loaded_map = WarehouseMapLoader(self.map_dir).load()
         self.planner = LmRoutePlanner(
             self.loaded_map.landmarks,
             self.loaded_map.edges,

@@ -82,6 +82,8 @@ rosidl_typesupport_fastrtps_c/robot_msgs/msg/detail/executor_state__rosidl_types
 rosidl_typesupport_fastrtps_c/robot_msgs/msg/detail/executor_state__rosidl_typesupport_fastrtps_c.h: rosidl_adapter/robot_msgs/srv/PlanRoute.idl
 rosidl_typesupport_fastrtps_c/robot_msgs/msg/detail/executor_state__rosidl_typesupport_fastrtps_c.h: rosidl_adapter/robot_msgs/srv/ExecuteRoute.idl
 rosidl_typesupport_fastrtps_c/robot_msgs/msg/detail/executor_state__rosidl_typesupport_fastrtps_c.h: rosidl_adapter/robot_msgs/srv/CancelRoute.idl
+rosidl_typesupport_fastrtps_c/robot_msgs/msg/detail/executor_state__rosidl_typesupport_fastrtps_c.h: rosidl_adapter/robot_msgs/srv/LoadRobotMap.idl
+rosidl_typesupport_fastrtps_c/robot_msgs/msg/detail/executor_state__rosidl_typesupport_fastrtps_c.h: rosidl_adapter/robot_msgs/srv/GetRobotMapState.idl
 rosidl_typesupport_fastrtps_c/robot_msgs/msg/detail/executor_state__rosidl_typesupport_fastrtps_c.h: /opt/ros/jazzy/share/builtin_interfaces/msg/Duration.idl
 rosidl_typesupport_fastrtps_c/robot_msgs/msg/detail/executor_state__rosidl_typesupport_fastrtps_c.h: /opt/ros/jazzy/share/builtin_interfaces/msg/Time.idl
 rosidl_typesupport_fastrtps_c/robot_msgs/msg/detail/executor_state__rosidl_typesupport_fastrtps_c.h: /opt/ros/jazzy/share/geometry_msgs/msg/Accel.idl
@@ -177,6 +179,18 @@ rosidl_typesupport_fastrtps_c/robot_msgs/srv/detail/cancel_route__rosidl_typesup
 rosidl_typesupport_fastrtps_c/robot_msgs/srv/detail/cancel_route__type_support_c.cpp: rosidl_typesupport_fastrtps_c/robot_msgs/msg/detail/executor_state__rosidl_typesupport_fastrtps_c.h
 	@$(CMAKE_COMMAND) -E touch_nocreate rosidl_typesupport_fastrtps_c/robot_msgs/srv/detail/cancel_route__type_support_c.cpp
 
+rosidl_typesupport_fastrtps_c/robot_msgs/srv/detail/load_robot_map__rosidl_typesupport_fastrtps_c.h: rosidl_typesupport_fastrtps_c/robot_msgs/msg/detail/executor_state__rosidl_typesupport_fastrtps_c.h
+	@$(CMAKE_COMMAND) -E touch_nocreate rosidl_typesupport_fastrtps_c/robot_msgs/srv/detail/load_robot_map__rosidl_typesupport_fastrtps_c.h
+
+rosidl_typesupport_fastrtps_c/robot_msgs/srv/detail/load_robot_map__type_support_c.cpp: rosidl_typesupport_fastrtps_c/robot_msgs/msg/detail/executor_state__rosidl_typesupport_fastrtps_c.h
+	@$(CMAKE_COMMAND) -E touch_nocreate rosidl_typesupport_fastrtps_c/robot_msgs/srv/detail/load_robot_map__type_support_c.cpp
+
+rosidl_typesupport_fastrtps_c/robot_msgs/srv/detail/get_robot_map_state__rosidl_typesupport_fastrtps_c.h: rosidl_typesupport_fastrtps_c/robot_msgs/msg/detail/executor_state__rosidl_typesupport_fastrtps_c.h
+	@$(CMAKE_COMMAND) -E touch_nocreate rosidl_typesupport_fastrtps_c/robot_msgs/srv/detail/get_robot_map_state__rosidl_typesupport_fastrtps_c.h
+
+rosidl_typesupport_fastrtps_c/robot_msgs/srv/detail/get_robot_map_state__type_support_c.cpp: rosidl_typesupport_fastrtps_c/robot_msgs/msg/detail/executor_state__rosidl_typesupport_fastrtps_c.h
+	@$(CMAKE_COMMAND) -E touch_nocreate rosidl_typesupport_fastrtps_c/robot_msgs/srv/detail/get_robot_map_state__type_support_c.cpp
+
 CMakeFiles/robot_msgs__rosidl_typesupport_fastrtps_c.dir/rosidl_typesupport_fastrtps_c/robot_msgs/msg/detail/executor_state__type_support_c.cpp.o: CMakeFiles/robot_msgs__rosidl_typesupport_fastrtps_c.dir/flags.make
 CMakeFiles/robot_msgs__rosidl_typesupport_fastrtps_c.dir/rosidl_typesupport_fastrtps_c/robot_msgs/msg/detail/executor_state__type_support_c.cpp.o: rosidl_typesupport_fastrtps_c/robot_msgs/msg/detail/executor_state__type_support_c.cpp
 CMakeFiles/robot_msgs__rosidl_typesupport_fastrtps_c.dir/rosidl_typesupport_fastrtps_c/robot_msgs/msg/detail/executor_state__type_support_c.cpp.o: CMakeFiles/robot_msgs__rosidl_typesupport_fastrtps_c.dir/compiler_depend.ts
@@ -247,13 +261,43 @@ CMakeFiles/robot_msgs__rosidl_typesupport_fastrtps_c.dir/rosidl_typesupport_fast
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/robot_msgs__rosidl_typesupport_fastrtps_c.dir/rosidl_typesupport_fastrtps_c/robot_msgs/srv/detail/cancel_route__type_support_c.cpp.s"
 	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_typesupport_fastrtps_c/robot_msgs/srv/detail/cancel_route__type_support_c.cpp -o CMakeFiles/robot_msgs__rosidl_typesupport_fastrtps_c.dir/rosidl_typesupport_fastrtps_c/robot_msgs/srv/detail/cancel_route__type_support_c.cpp.s
 
+CMakeFiles/robot_msgs__rosidl_typesupport_fastrtps_c.dir/rosidl_typesupport_fastrtps_c/robot_msgs/srv/detail/load_robot_map__type_support_c.cpp.o: CMakeFiles/robot_msgs__rosidl_typesupport_fastrtps_c.dir/flags.make
+CMakeFiles/robot_msgs__rosidl_typesupport_fastrtps_c.dir/rosidl_typesupport_fastrtps_c/robot_msgs/srv/detail/load_robot_map__type_support_c.cpp.o: rosidl_typesupport_fastrtps_c/robot_msgs/srv/detail/load_robot_map__type_support_c.cpp
+CMakeFiles/robot_msgs__rosidl_typesupport_fastrtps_c.dir/rosidl_typesupport_fastrtps_c/robot_msgs/srv/detail/load_robot_map__type_support_c.cpp.o: CMakeFiles/robot_msgs__rosidl_typesupport_fastrtps_c.dir/compiler_depend.ts
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/kaisar/warehouse_robot/robot/build/robot_msgs/CMakeFiles --progress-num=$(CMAKE_PROGRESS_7) "Building CXX object CMakeFiles/robot_msgs__rosidl_typesupport_fastrtps_c.dir/rosidl_typesupport_fastrtps_c/robot_msgs/srv/detail/load_robot_map__type_support_c.cpp.o"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/robot_msgs__rosidl_typesupport_fastrtps_c.dir/rosidl_typesupport_fastrtps_c/robot_msgs/srv/detail/load_robot_map__type_support_c.cpp.o -MF CMakeFiles/robot_msgs__rosidl_typesupport_fastrtps_c.dir/rosidl_typesupport_fastrtps_c/robot_msgs/srv/detail/load_robot_map__type_support_c.cpp.o.d -o CMakeFiles/robot_msgs__rosidl_typesupport_fastrtps_c.dir/rosidl_typesupport_fastrtps_c/robot_msgs/srv/detail/load_robot_map__type_support_c.cpp.o -c /home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_typesupport_fastrtps_c/robot_msgs/srv/detail/load_robot_map__type_support_c.cpp
+
+CMakeFiles/robot_msgs__rosidl_typesupport_fastrtps_c.dir/rosidl_typesupport_fastrtps_c/robot_msgs/srv/detail/load_robot_map__type_support_c.cpp.i: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing CXX source to CMakeFiles/robot_msgs__rosidl_typesupport_fastrtps_c.dir/rosidl_typesupport_fastrtps_c/robot_msgs/srv/detail/load_robot_map__type_support_c.cpp.i"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_typesupport_fastrtps_c/robot_msgs/srv/detail/load_robot_map__type_support_c.cpp > CMakeFiles/robot_msgs__rosidl_typesupport_fastrtps_c.dir/rosidl_typesupport_fastrtps_c/robot_msgs/srv/detail/load_robot_map__type_support_c.cpp.i
+
+CMakeFiles/robot_msgs__rosidl_typesupport_fastrtps_c.dir/rosidl_typesupport_fastrtps_c/robot_msgs/srv/detail/load_robot_map__type_support_c.cpp.s: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/robot_msgs__rosidl_typesupport_fastrtps_c.dir/rosidl_typesupport_fastrtps_c/robot_msgs/srv/detail/load_robot_map__type_support_c.cpp.s"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_typesupport_fastrtps_c/robot_msgs/srv/detail/load_robot_map__type_support_c.cpp -o CMakeFiles/robot_msgs__rosidl_typesupport_fastrtps_c.dir/rosidl_typesupport_fastrtps_c/robot_msgs/srv/detail/load_robot_map__type_support_c.cpp.s
+
+CMakeFiles/robot_msgs__rosidl_typesupport_fastrtps_c.dir/rosidl_typesupport_fastrtps_c/robot_msgs/srv/detail/get_robot_map_state__type_support_c.cpp.o: CMakeFiles/robot_msgs__rosidl_typesupport_fastrtps_c.dir/flags.make
+CMakeFiles/robot_msgs__rosidl_typesupport_fastrtps_c.dir/rosidl_typesupport_fastrtps_c/robot_msgs/srv/detail/get_robot_map_state__type_support_c.cpp.o: rosidl_typesupport_fastrtps_c/robot_msgs/srv/detail/get_robot_map_state__type_support_c.cpp
+CMakeFiles/robot_msgs__rosidl_typesupport_fastrtps_c.dir/rosidl_typesupport_fastrtps_c/robot_msgs/srv/detail/get_robot_map_state__type_support_c.cpp.o: CMakeFiles/robot_msgs__rosidl_typesupport_fastrtps_c.dir/compiler_depend.ts
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/kaisar/warehouse_robot/robot/build/robot_msgs/CMakeFiles --progress-num=$(CMAKE_PROGRESS_8) "Building CXX object CMakeFiles/robot_msgs__rosidl_typesupport_fastrtps_c.dir/rosidl_typesupport_fastrtps_c/robot_msgs/srv/detail/get_robot_map_state__type_support_c.cpp.o"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/robot_msgs__rosidl_typesupport_fastrtps_c.dir/rosidl_typesupport_fastrtps_c/robot_msgs/srv/detail/get_robot_map_state__type_support_c.cpp.o -MF CMakeFiles/robot_msgs__rosidl_typesupport_fastrtps_c.dir/rosidl_typesupport_fastrtps_c/robot_msgs/srv/detail/get_robot_map_state__type_support_c.cpp.o.d -o CMakeFiles/robot_msgs__rosidl_typesupport_fastrtps_c.dir/rosidl_typesupport_fastrtps_c/robot_msgs/srv/detail/get_robot_map_state__type_support_c.cpp.o -c /home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_typesupport_fastrtps_c/robot_msgs/srv/detail/get_robot_map_state__type_support_c.cpp
+
+CMakeFiles/robot_msgs__rosidl_typesupport_fastrtps_c.dir/rosidl_typesupport_fastrtps_c/robot_msgs/srv/detail/get_robot_map_state__type_support_c.cpp.i: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing CXX source to CMakeFiles/robot_msgs__rosidl_typesupport_fastrtps_c.dir/rosidl_typesupport_fastrtps_c/robot_msgs/srv/detail/get_robot_map_state__type_support_c.cpp.i"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_typesupport_fastrtps_c/robot_msgs/srv/detail/get_robot_map_state__type_support_c.cpp > CMakeFiles/robot_msgs__rosidl_typesupport_fastrtps_c.dir/rosidl_typesupport_fastrtps_c/robot_msgs/srv/detail/get_robot_map_state__type_support_c.cpp.i
+
+CMakeFiles/robot_msgs__rosidl_typesupport_fastrtps_c.dir/rosidl_typesupport_fastrtps_c/robot_msgs/srv/detail/get_robot_map_state__type_support_c.cpp.s: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/robot_msgs__rosidl_typesupport_fastrtps_c.dir/rosidl_typesupport_fastrtps_c/robot_msgs/srv/detail/get_robot_map_state__type_support_c.cpp.s"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_typesupport_fastrtps_c/robot_msgs/srv/detail/get_robot_map_state__type_support_c.cpp -o CMakeFiles/robot_msgs__rosidl_typesupport_fastrtps_c.dir/rosidl_typesupport_fastrtps_c/robot_msgs/srv/detail/get_robot_map_state__type_support_c.cpp.s
+
 # Object files for target robot_msgs__rosidl_typesupport_fastrtps_c
 robot_msgs__rosidl_typesupport_fastrtps_c_OBJECTS = \
 "CMakeFiles/robot_msgs__rosidl_typesupport_fastrtps_c.dir/rosidl_typesupport_fastrtps_c/robot_msgs/msg/detail/executor_state__type_support_c.cpp.o" \
 "CMakeFiles/robot_msgs__rosidl_typesupport_fastrtps_c.dir/rosidl_typesupport_fastrtps_c/robot_msgs/msg/detail/robot_status__type_support_c.cpp.o" \
 "CMakeFiles/robot_msgs__rosidl_typesupport_fastrtps_c.dir/rosidl_typesupport_fastrtps_c/robot_msgs/srv/detail/plan_route__type_support_c.cpp.o" \
 "CMakeFiles/robot_msgs__rosidl_typesupport_fastrtps_c.dir/rosidl_typesupport_fastrtps_c/robot_msgs/srv/detail/execute_route__type_support_c.cpp.o" \
-"CMakeFiles/robot_msgs__rosidl_typesupport_fastrtps_c.dir/rosidl_typesupport_fastrtps_c/robot_msgs/srv/detail/cancel_route__type_support_c.cpp.o"
+"CMakeFiles/robot_msgs__rosidl_typesupport_fastrtps_c.dir/rosidl_typesupport_fastrtps_c/robot_msgs/srv/detail/cancel_route__type_support_c.cpp.o" \
+"CMakeFiles/robot_msgs__rosidl_typesupport_fastrtps_c.dir/rosidl_typesupport_fastrtps_c/robot_msgs/srv/detail/load_robot_map__type_support_c.cpp.o" \
+"CMakeFiles/robot_msgs__rosidl_typesupport_fastrtps_c.dir/rosidl_typesupport_fastrtps_c/robot_msgs/srv/detail/get_robot_map_state__type_support_c.cpp.o"
 
 # External object files for target robot_msgs__rosidl_typesupport_fastrtps_c
 robot_msgs__rosidl_typesupport_fastrtps_c_EXTERNAL_OBJECTS =
@@ -263,6 +307,8 @@ librobot_msgs__rosidl_typesupport_fastrtps_c.so: CMakeFiles/robot_msgs__rosidl_t
 librobot_msgs__rosidl_typesupport_fastrtps_c.so: CMakeFiles/robot_msgs__rosidl_typesupport_fastrtps_c.dir/rosidl_typesupport_fastrtps_c/robot_msgs/srv/detail/plan_route__type_support_c.cpp.o
 librobot_msgs__rosidl_typesupport_fastrtps_c.so: CMakeFiles/robot_msgs__rosidl_typesupport_fastrtps_c.dir/rosidl_typesupport_fastrtps_c/robot_msgs/srv/detail/execute_route__type_support_c.cpp.o
 librobot_msgs__rosidl_typesupport_fastrtps_c.so: CMakeFiles/robot_msgs__rosidl_typesupport_fastrtps_c.dir/rosidl_typesupport_fastrtps_c/robot_msgs/srv/detail/cancel_route__type_support_c.cpp.o
+librobot_msgs__rosidl_typesupport_fastrtps_c.so: CMakeFiles/robot_msgs__rosidl_typesupport_fastrtps_c.dir/rosidl_typesupport_fastrtps_c/robot_msgs/srv/detail/load_robot_map__type_support_c.cpp.o
+librobot_msgs__rosidl_typesupport_fastrtps_c.so: CMakeFiles/robot_msgs__rosidl_typesupport_fastrtps_c.dir/rosidl_typesupport_fastrtps_c/robot_msgs/srv/detail/get_robot_map_state__type_support_c.cpp.o
 librobot_msgs__rosidl_typesupport_fastrtps_c.so: CMakeFiles/robot_msgs__rosidl_typesupport_fastrtps_c.dir/build.make
 librobot_msgs__rosidl_typesupport_fastrtps_c.so: librobot_msgs__rosidl_generator_c.so
 librobot_msgs__rosidl_typesupport_fastrtps_c.so: /opt/ros/jazzy/lib/libgeometry_msgs__rosidl_typesupport_fastrtps_c.so
@@ -281,7 +327,7 @@ librobot_msgs__rosidl_typesupport_fastrtps_c.so: /opt/ros/jazzy/lib/libbuiltin_i
 librobot_msgs__rosidl_typesupport_fastrtps_c.so: /opt/ros/jazzy/lib/librosidl_runtime_c.so
 librobot_msgs__rosidl_typesupport_fastrtps_c.so: /opt/ros/jazzy/lib/librcutils.so
 librobot_msgs__rosidl_typesupport_fastrtps_c.so: CMakeFiles/robot_msgs__rosidl_typesupport_fastrtps_c.dir/link.txt
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --bold --progress-dir=/home/kaisar/warehouse_robot/robot/build/robot_msgs/CMakeFiles --progress-num=$(CMAKE_PROGRESS_7) "Linking CXX shared library librobot_msgs__rosidl_typesupport_fastrtps_c.so"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --bold --progress-dir=/home/kaisar/warehouse_robot/robot/build/robot_msgs/CMakeFiles --progress-num=$(CMAKE_PROGRESS_9) "Linking CXX shared library librobot_msgs__rosidl_typesupport_fastrtps_c.so"
 	$(CMAKE_COMMAND) -E cmake_link_script CMakeFiles/robot_msgs__rosidl_typesupport_fastrtps_c.dir/link.txt --verbose=$(VERBOSE)
 
 # Rule to build all files generated by this target.
@@ -300,6 +346,10 @@ CMakeFiles/robot_msgs__rosidl_typesupport_fastrtps_c.dir/depend: rosidl_typesupp
 CMakeFiles/robot_msgs__rosidl_typesupport_fastrtps_c.dir/depend: rosidl_typesupport_fastrtps_c/robot_msgs/srv/detail/cancel_route__type_support_c.cpp
 CMakeFiles/robot_msgs__rosidl_typesupport_fastrtps_c.dir/depend: rosidl_typesupport_fastrtps_c/robot_msgs/srv/detail/execute_route__rosidl_typesupport_fastrtps_c.h
 CMakeFiles/robot_msgs__rosidl_typesupport_fastrtps_c.dir/depend: rosidl_typesupport_fastrtps_c/robot_msgs/srv/detail/execute_route__type_support_c.cpp
+CMakeFiles/robot_msgs__rosidl_typesupport_fastrtps_c.dir/depend: rosidl_typesupport_fastrtps_c/robot_msgs/srv/detail/get_robot_map_state__rosidl_typesupport_fastrtps_c.h
+CMakeFiles/robot_msgs__rosidl_typesupport_fastrtps_c.dir/depend: rosidl_typesupport_fastrtps_c/robot_msgs/srv/detail/get_robot_map_state__type_support_c.cpp
+CMakeFiles/robot_msgs__rosidl_typesupport_fastrtps_c.dir/depend: rosidl_typesupport_fastrtps_c/robot_msgs/srv/detail/load_robot_map__rosidl_typesupport_fastrtps_c.h
+CMakeFiles/robot_msgs__rosidl_typesupport_fastrtps_c.dir/depend: rosidl_typesupport_fastrtps_c/robot_msgs/srv/detail/load_robot_map__type_support_c.cpp
 CMakeFiles/robot_msgs__rosidl_typesupport_fastrtps_c.dir/depend: rosidl_typesupport_fastrtps_c/robot_msgs/srv/detail/plan_route__rosidl_typesupport_fastrtps_c.h
 CMakeFiles/robot_msgs__rosidl_typesupport_fastrtps_c.dir/depend: rosidl_typesupport_fastrtps_c/robot_msgs/srv/detail/plan_route__type_support_c.cpp
 	cd /home/kaisar/warehouse_robot/robot/build/robot_msgs && $(CMAKE_COMMAND) -E cmake_depends "Unix Makefiles" /home/kaisar/warehouse_robot/robot/ws/src/robot_msgs /home/kaisar/warehouse_robot/robot/ws/src/robot_msgs /home/kaisar/warehouse_robot/robot/build/robot_msgs /home/kaisar/warehouse_robot/robot/build/robot_msgs /home/kaisar/warehouse_robot/robot/build/robot_msgs/CMakeFiles/robot_msgs__rosidl_typesupport_fastrtps_c.dir/DependInfo.cmake "--color=$(COLOR)"

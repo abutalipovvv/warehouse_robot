@@ -1,0 +1,28 @@
+[0.025s] Invoking command in '/home/kaisar/warehouse_robot/robot/build/robot_msgs': CMAKE_PREFIX_PATH=/home/kaisar/warehouse_robot/robot/install/trp1_description:/home/kaisar/warehouse_robot/robot/install/stage_ros2:/home/kaisar/warehouse_robot/robot/install/ros2_http_client:/home/kaisar/warehouse_robot/robot/install/robot_status:/home/kaisar/warehouse_robot/robot/install/robot_map_manager:/home/kaisar/warehouse_robot/robot/install/robot_planner:/opt/ros/jazzy:/home/kaisar/warehouse_robot/robot/install/stage:/home/kaisar/warehouse_robot/robot/install/robot_launch:/home/kaisar/warehouse_robot/robot/install/robot_msgs:/home/kaisar/warehouse_robot/robot/install/nav2:/opt/ros/jazzy/opt/gz_sim_vendor:/opt/ros/jazzy/opt/gz_sensors_vendor:/opt/ros/jazzy/opt/gz_physics_vendor:/opt/ros/jazzy/opt/sdformat_vendor:/opt/ros/jazzy/opt/gz_gui_vendor:/opt/ros/jazzy/opt/gz_transport_vendor:/opt/ros/jazzy/opt/gz_rendering_vendor:/opt/ros/jazzy/opt/gz_plugin_vendor:/opt/ros/jazzy/opt/gz_fuel_tools_vendor:/opt/ros/jazzy/opt/gz_msgs_vendor:/opt/ros/jazzy/opt/gz_common_vendor:/opt/ros/jazzy/opt/gz_math_vendor:/opt/ros/jazzy/opt/gz_utils_vendor:/opt/ros/jazzy/opt/gz_tools_vendor:/opt/ros/jazzy/opt/gz_ogre_next_vendor:/opt/ros/jazzy/opt/gz_dartsim_vendor:/opt/ros/jazzy/opt/gz_cmake_vendor DEBUGINFOD_URLS=https://debuginfod.ubuntu.com /usr/bin/cmake --build /home/kaisar/warehouse_robot/robot/build/robot_msgs -- -j12 -l12
+[0.103s] [  1%] Built target robot_msgs__rosidl_generator_type_description
+[0.104s] [  2%] Built target robot_msgs__rs
+[0.117s] [  2%] Built target ament_cmake_python_symlink_robot_msgs
+[0.142s] [  3%] Built target robot_msgs__cpp
+[0.165s] [ 27%] Built target robot_msgs__rosidl_generator_c
+[0.245s] [ 36%] Built target robot_msgs__rosidl_typesupport_cpp
+[0.268s] [ 46%] Built target robot_msgs__rosidl_typesupport_c
+[0.274s] [ 55%] Built target robot_msgs__rosidl_typesupport_introspection_cpp
+[0.281s] [ 65%] Built target robot_msgs__rosidl_typesupport_introspection_c
+[0.285s] [ 84%] Built target robot_msgs__rosidl_typesupport_fastrtps_cpp
+[0.285s] [ 84%] Built target robot_msgs__rosidl_typesupport_fastrtps_c
+[0.384s] [ 84%] Built target robot_msgs
+[0.393s] [ 85%] Built target robot_msgs__py
+[0.394s] [ 93%] Built target robot_msgs__rosidl_generator_py
+[0.411s] [ 95%] Built target robot_msgs_s__rosidl_typesupport_introspection_c
+[0.416s] [100%] Built target robot_msgs_s__rosidl_typesupport_fastrtps_c
+[0.416s] [100%] Built target robot_msgs_s__rosidl_typesupport_c
+[0.541s] running egg_info
+[0.575s] writing robot_msgs.egg-info/PKG-INFO
+[0.576s] writing dependency_links to robot_msgs.egg-info/dependency_links.txt
+[0.576s] writing top-level names to robot_msgs.egg-info/top_level.txt
+[0.711s] reading manifest file 'robot_msgs.egg-info/SOURCES.txt'
+[0.712s] writing manifest file 'robot_msgs.egg-info/SOURCES.txt'
+[0.730s] gmake[2]: *** [CMakeFiles/ament_cmake_python_build_robot_msgs_egg.dir/build.make:70: CMakeFiles/ament_cmake_python_build_robot_msgs_egg] Interrupt
+[0.730s] gmake[1]: *** [CMakeFiles/Makefile2:497: CMakeFiles/ament_cmake_python_build_robot_msgs_egg.dir/all] Interrupt
+[0.730s] gmake: *** [Makefile:146: all] Interrupt
+[0.732s] Invoked command in '/home/kaisar/warehouse_robot/robot/build/robot_msgs' returned '-2': CMAKE_PREFIX_PATH=/home/kaisar/warehouse_robot/robot/install/trp1_description:/home/kaisar/warehouse_robot/robot/install/stage_ros2:/home/kaisar/warehouse_robot/robot/install/ros2_http_client:/home/kaisar/warehouse_robot/robot/install/robot_status:/home/kaisar/warehouse_robot/robot/install/robot_map_manager:/home/kaisar/warehouse_robot/robot/install/robot_planner:/opt/ros/jazzy:/home/kaisar/warehouse_robot/robot/install/stage:/home/kaisar/warehouse_robot/robot/install/robot_launch:/home/kaisar/warehouse_robot/robot/install/robot_msgs:/home/kaisar/warehouse_robot/robot/install/nav2:/opt/ros/jazzy/opt/gz_sim_vendor:/opt/ros/jazzy/opt/gz_sensors_vendor:/opt/ros/jazzy/opt/gz_physics_vendor:/opt/ros/jazzy/opt/sdformat_vendor:/opt/ros/jazzy/opt/gz_gui_vendor:/opt/ros/jazzy/opt/gz_transport_vendor:/opt/ros/jazzy/opt/gz_rendering_vendor:/opt/ros/jazzy/opt/gz_plugin_vendor:/opt/ros/jazzy/opt/gz_fuel_tools_vendor:/opt/ros/jazzy/opt/gz_msgs_vendor:/opt/ros/jazzy/opt/gz_common_vendor:/opt/ros/jazzy/opt/gz_math_vendor:/opt/ros/jazzy/opt/gz_utils_vendor:/opt/ros/jazzy/opt/gz_tools_vendor:/opt/ros/jazzy/opt/gz_ogre_next_vendor:/opt/ros/jazzy/opt/gz_dartsim_vendor:/opt/ros/jazzy/opt/gz_cmake_vendor DEBUGINFOD_URLS=https://debuginfod.ubuntu.com /usr/bin/cmake --build /home/kaisar/warehouse_robot/robot/build/robot_msgs -- -j12 -l12

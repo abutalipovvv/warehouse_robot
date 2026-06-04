@@ -333,6 +333,12 @@ ament_cmake_symlink_install_files("/home/kaisar/warehouse_robot/robot/ws/src/rob
 # install(FILES "/home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_generator_type_description/robot_msgs/srv/CancelRoute.json" "DESTINATION" "share/robot_msgs/srv")
 ament_cmake_symlink_install_files("/home/kaisar/warehouse_robot/robot/ws/src/robot_msgs" FILES "/home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_generator_type_description/robot_msgs/srv/CancelRoute.json" "DESTINATION" "share/robot_msgs/srv")
 
+# install(FILES "/home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_generator_type_description/robot_msgs/srv/LoadRobotMap.json" "DESTINATION" "share/robot_msgs/srv")
+ament_cmake_symlink_install_files("/home/kaisar/warehouse_robot/robot/ws/src/robot_msgs" FILES "/home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_generator_type_description/robot_msgs/srv/LoadRobotMap.json" "DESTINATION" "share/robot_msgs/srv")
+
+# install(FILES "/home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_generator_type_description/robot_msgs/srv/GetRobotMapState.json" "DESTINATION" "share/robot_msgs/srv")
+ament_cmake_symlink_install_files("/home/kaisar/warehouse_robot/robot/ws/src/robot_msgs" FILES "/home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_generator_type_description/robot_msgs/srv/GetRobotMapState.json" "DESTINATION" "share/robot_msgs/srv")
+
 # install(DIRECTORY "/home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_generator_c/robot_msgs/" "DESTINATION" "include/robot_msgs/robot_msgs" "PATTERN" "*.h")
 ament_cmake_symlink_install_directory("/home/kaisar/warehouse_robot/robot/ws/src/robot_msgs" DIRECTORY "/home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_generator_c/robot_msgs/" "DESTINATION" "include/robot_msgs/robot_msgs" "PATTERN" "*.h")
 
@@ -399,6 +405,12 @@ ament_cmake_symlink_install_files("/home/kaisar/warehouse_robot/robot/ws/src/rob
 # install(FILES "/home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_adapter/robot_msgs/srv/CancelRoute.idl" "DESTINATION" "share/robot_msgs/srv")
 ament_cmake_symlink_install_files("/home/kaisar/warehouse_robot/robot/ws/src/robot_msgs" FILES "/home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_adapter/robot_msgs/srv/CancelRoute.idl" "DESTINATION" "share/robot_msgs/srv")
 
+# install(FILES "/home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_adapter/robot_msgs/srv/LoadRobotMap.idl" "DESTINATION" "share/robot_msgs/srv")
+ament_cmake_symlink_install_files("/home/kaisar/warehouse_robot/robot/ws/src/robot_msgs" FILES "/home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_adapter/robot_msgs/srv/LoadRobotMap.idl" "DESTINATION" "share/robot_msgs/srv")
+
+# install(FILES "/home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_adapter/robot_msgs/srv/GetRobotMapState.idl" "DESTINATION" "share/robot_msgs/srv")
+ament_cmake_symlink_install_files("/home/kaisar/warehouse_robot/robot/ws/src/robot_msgs" FILES "/home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_adapter/robot_msgs/srv/GetRobotMapState.idl" "DESTINATION" "share/robot_msgs/srv")
+
 # install(FILES "/home/kaisar/warehouse_robot/robot/ws/src/robot_msgs/msg/ExecutorState.msg" "DESTINATION" "share/robot_msgs/msg")
 ament_cmake_symlink_install_files("/home/kaisar/warehouse_robot/robot/ws/src/robot_msgs" FILES "/home/kaisar/warehouse_robot/robot/ws/src/robot_msgs/msg/ExecutorState.msg" "DESTINATION" "share/robot_msgs/msg")
 
@@ -413,6 +425,12 @@ ament_cmake_symlink_install_files("/home/kaisar/warehouse_robot/robot/ws/src/rob
 
 # install(FILES "/home/kaisar/warehouse_robot/robot/ws/src/robot_msgs/srv/CancelRoute.srv" "DESTINATION" "share/robot_msgs/srv")
 ament_cmake_symlink_install_files("/home/kaisar/warehouse_robot/robot/ws/src/robot_msgs" FILES "/home/kaisar/warehouse_robot/robot/ws/src/robot_msgs/srv/CancelRoute.srv" "DESTINATION" "share/robot_msgs/srv")
+
+# install(FILES "/home/kaisar/warehouse_robot/robot/ws/src/robot_msgs/srv/LoadRobotMap.srv" "DESTINATION" "share/robot_msgs/srv")
+ament_cmake_symlink_install_files("/home/kaisar/warehouse_robot/robot/ws/src/robot_msgs" FILES "/home/kaisar/warehouse_robot/robot/ws/src/robot_msgs/srv/LoadRobotMap.srv" "DESTINATION" "share/robot_msgs/srv")
+
+# install(FILES "/home/kaisar/warehouse_robot/robot/ws/src/robot_msgs/srv/GetRobotMapState.srv" "DESTINATION" "share/robot_msgs/srv")
+ament_cmake_symlink_install_files("/home/kaisar/warehouse_robot/robot/ws/src/robot_msgs" FILES "/home/kaisar/warehouse_robot/robot/ws/src/robot_msgs/srv/GetRobotMapState.srv" "DESTINATION" "share/robot_msgs/srv")
 
 # install(FILES "/home/kaisar/warehouse_robot/robot/build/robot_msgs/ament_cmake_index/share/ament_index/resource_index/package_run_dependencies/robot_msgs" "DESTINATION" "share/ament_index/resource_index/package_run_dependencies")
 ament_cmake_symlink_install_files("/home/kaisar/warehouse_robot/robot/ws/src/robot_msgs" FILES "/home/kaisar/warehouse_robot/robot/build/robot_msgs/ament_cmake_index/share/ament_index/resource_index/package_run_dependencies/robot_msgs" "DESTINATION" "share/ament_index/resource_index/package_run_dependencies")

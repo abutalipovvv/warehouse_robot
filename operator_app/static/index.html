@@ -40,11 +40,33 @@
       <section class="detail-panel">
         <div id="emptyState" class="empty-state">
           <h2>Select a robot</h2>
-          <p>Add a robot by IP address, then open its live robot-side UI here. The robot view will use the full workspace.</p>
+          <p>Add a robot by IP address, then open its control view or map editor here.</p>
         </div>
 
         <div id="robotView" class="robot-view hidden">
-          <iframe id="robotFrame" title="Robot control view"></iframe>
+          <div class="robot-view-shell">
+            <div class="robot-control-bar">
+              <div class="robot-control-summary">
+                <div class="summary-card">
+                  <span>Robot Active Map</span>
+                  <strong id="robotActiveMapText">-</strong>
+                </div>
+                <div class="summary-card">
+                  <span>Operator Active Map</span>
+                  <strong id="operatorActiveMapText">-</strong>
+                </div>
+              </div>
+              <div class="robot-control-actions">
+                <button id="editMapButton" type="button">Edit Map</button>
+                <button id="controlPullMapButton" type="button">Pull Map</button>
+                <button id="controlPushMapButton" type="button">Push Map</button>
+                <button id="controlLoadMapButton" type="button">Load Map</button>
+              </div>
+            </div>
+            <div class="robot-frame-shell">
+              <iframe id="robotFrame" title="Robot control view"></iframe>
+            </div>
+          </div>
         </div>
       </section>
     </main>
@@ -85,6 +107,27 @@
       <div class="dialog-actions">
         <button id="probeRobotButton" type="button">Check Robot</button>
         <button id="saveRobotButton" class="primary" type="button">Save Robot</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="loadMapDialog">
+    <form method="dialog" class="dialog-card">
+      <div class="dialog-head">
+        <div>
+          <div class="eyebrow">Load Map</div>
+          <h2>Select Robot Map</h2>
+        </div>
+        <button id="closeLoadMapDialogButton" class="ghost-button" type="button" aria-label="Close">x</button>
+      </div>
+      <label>
+        Available Maps
+        <select id="loadMapSelect" size="8"></select>
+      </label>
+      <div id="loadMapHint" class="probe-result neutral">Choose one of the maps available on the robot.</div>
+      <div class="dialog-actions">
+        <button id="cancelLoadMapButton" type="button">Cancel</button>
+        <button id="confirmLoadMapButton" class="primary" type="button">Load Map</button>
       </div>
     </form>
   </dialog>

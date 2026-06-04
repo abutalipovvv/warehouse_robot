@@ -6,5 +6,9 @@ srv/CancelRoute.idl
 srv/CancelRoute.srv
 srv/ExecuteRoute.idl
 srv/ExecuteRoute.srv
+srv/GetRobotMapState.idl
+srv/GetRobotMapState.srv
+srv/LoadRobotMap.idl
+srv/LoadRobotMap.srv
 srv/PlanRoute.idl
 srv/PlanRoute.srv

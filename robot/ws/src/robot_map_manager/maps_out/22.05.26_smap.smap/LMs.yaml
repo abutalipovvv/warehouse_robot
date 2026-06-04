@@ -1,0 +1,686 @@
+mapName: testtt
+LMs:
+- name: LM101
+  x: -2.024
+  y: 1.353
+  ignoreDir: null
+  properties:
+    spin: false
+- name: LM102
+  x: -1.584
+  y: 1.352
+  ignoreDir: null
+  properties:
+    spin: false
+- name: LM103
+  x: -1.144
+  y: 1.351
+  ignoreDir: null
+  properties:
+    spin: false
+- name: LM104
+  x: -0.704
+  y: 1.35
+  ignoreDir: null
+  properties:
+    spin: false
+- name: LM105
+  x: -0.264
+  y: 1.349
+  ignoreDir: null
+  properties:
+    spin: false
+- name: LM106
+  x: 0.176
+  y: 1.348
+  ignoreDir: null
+  properties:
+    spin: false
+- name: LM111
+  x: 0.919
+  y: 1.346
+  ignoreDir: null
+  properties:
+    spin: false
+- name: LM112
+  x: 1.359
+  y: 1.345
+  ignoreDir: null
+  properties:
+    spin: false
+- name: LM113
+  x: 1.799
+  y: 1.344
+  ignoreDir: null
+  properties:
+    spin: false
+- name: LM114
+  x: 2.239
+  y: 1.343
+  ignoreDir: null
+  properties:
+    spin: false
+- name: LM115
+  x: 2.679
+  y: 1.342
+  ignoreDir: null
+  properties:
+    spin: false
+- name: LM116
+  x: 3.089
+  y: 1.341
+  ignoreDir: null
+  properties:
+    spin: false
+- name: LM121
+  x: 3.797
+  y: 1.338
+  ignoreDir: null
+  properties:
+    spin: false
+- name: LM122
+  x: 4.237
+  y: 1.337
+  ignoreDir: null
+  properties:
+    spin: false
+- name: LM123
+  x: 4.676
+  y: 1.336
+  ignoreDir: null
+  properties:
+    spin: false
+- name: LM124
+  x: 5.116
+  y: 1.334
+  ignoreDir: null
+  properties:
+    spin: false
+- name: LM125
+  x: 5.556
+  y: 1.333
+  ignoreDir: null
+  properties:
+    spin: false
+- name: LM126
+  x: 5.996
+  y: 1.332
+  ignoreDir: null
+  properties:
+    spin: false
+- name: LM131
+  x: -4.227
+  y: 3.883
+  ignoreDir: null
+  properties:
+    spin: false
+- name: LM132
+  x: -3.787
+  y: 3.882
+  ignoreDir: null
+  properties:
+    spin: false
+- name: LM133
+  x: -3.347
+  y: 3.881
+  ignoreDir: null
+  properties:
+    spin: false
+- name: LM134
+  x: -2.907
+  y: 3.88
+  ignoreDir: null
+  properties:
+    spin: false
+- name: LM135
+  x: -2.467
+  y: 3.879
+  ignoreDir: null
+  properties:
+    spin: false
+- name: LM136
+  x: -2.067
+  y: 3.878
+  ignoreDir: null
+  properties:
+    spin: false
+- name: LM141
+  x: -1.349
+  y: 3.875
+  ignoreDir: null
+  properties:
+    spin: false
+- name: LM142
+  x: -0.909
+  y: 3.874
+  ignoreDir: null
+  properties:
+    spin: false
+- name: LM143
+  x: -0.469
+  y: 3.873
+  ignoreDir: null
+  properties:
+    spin: false
+- name: LM144
+  x: -0.029
+  y: 3.871
+  ignoreDir: null
+  properties:
+    spin: false
+- name: LM145
+  x: 0.411
+  y: 3.87
+  ignoreDir: null
+  properties:
+    spin: false
+- name: LM146
+  x: 0.851
+  y: 3.869
+  ignoreDir: null
+  properties:
+    spin: false
+- name: LM151
+  x: 1.593
+  y: 3.867
+  ignoreDir: null
+  properties:
+    spin: false
+- name: LM152
+  x: 2.033
+  y: 3.866
+  ignoreDir: null
+  properties:
+    spin: false
+- name: LM153
+  x: 2.473
+  y: 3.865
+  ignoreDir: null
+  properties:
+    spin: false
+- name: LM154
+  x: 2.913
+  y: 3.864
+  ignoreDir: null
+  properties:
+    spin: false
+- name: LM155
+  x: 3.353
+  y: 3.863
+  ignoreDir: null
+  properties:
+    spin: false
+- name: LM156
+  x: 3.793
+  y: 3.862
+  ignoreDir: null
+  properties:
+    spin: false
+- name: LM161
+  x: 4.471
+  y: 3.859
+  ignoreDir: null
+  properties:
+    spin: false
+- name: LM162
+  x: 4.911
+  y: 3.858
+  ignoreDir: null
+  properties:
+    spin: false
+- name: LM163
+  x: 5.351
+  y: 3.857
+  ignoreDir: null
+  properties:
+    spin: false
+- name: LM164
+  x: 5.791
+  y: 3.856
+  ignoreDir: null
+  properties:
+    spin: false
+- name: LM165
+  x: 6.231
+  y: 3.855
+  ignoreDir: null
+  properties:
+    spin: false
+- name: LM166
+  x: 6.671
+  y: 3.854
+  ignoreDir: null
+  properties:
+    spin: false
+- name: LM280
+  x: -6.529
+  y: 2.765
+  ignoreDir: true
+  properties:
+    spin: false
+- name: LM281
+  x: -6.529
+  y: 1.332
+  ignoreDir: true
+  properties:
+    spin: false
+- name: LM282
+  x: -6.529
+  y: -0.193
+  ignoreDir: true
+  properties:
+    spin: false
+- name: LM286
+  x: 9.157
+  y: 2.85
+  ignoreDir: true
+  properties:
+    spin: false
+- name: LM287
+  x: 9.157
+  y: 1.332
+  ignoreDir: true
+  properties:
+    spin: false
+- name: LM292
+  x: -8.115
+  y: 1.332
+  ignoreDir: true
+  properties:
+    spin: false
+- name: LM293
+  x: -8.115
+  y: -0.203
+  ignoreDir: true
+  properties:
+    spin: false
+- name: LM295
+  x: -2.42
+  y: 5.31
+  ignoreDir: null
+  properties:
+    spin: false
+- name: LM296
+  x: -1.98
+  y: 5.311
+  ignoreDir: null
+  properties:
+    spin: false
+- name: LM297
+  x: -1.54
+  y: 5.312
+  ignoreDir: null
+  properties:
+    spin: false
+- name: LM298
+  x: -1.1
+  y: 5.314
+  ignoreDir: null
+  properties:
+    spin: false
+- name: LM299
+  x: -0.66
+  y: 5.315
+  ignoreDir: null
+  properties:
+    spin: false
+- name: LM300
+  x: -0.22
+  y: 5.316
+  ignoreDir: null
+  properties:
+    spin: false
+- name: LM301
+  x: 0.372
+  y: 5.317
+  ignoreDir: null
+  properties:
+    spin: false
+- name: LM302
+  x: 0.812
+  y: 5.318
+  ignoreDir: null
+  properties:
+    spin: false
+- name: LM303
+  x: 1.252
+  y: 5.319
+  ignoreDir: null
+  properties:
+    spin: false
+- name: LM304
+  x: 1.692
+  y: 5.32
+  ignoreDir: null
+  properties:
+    spin: false
+- name: LM305
+  x: 2.132
+  y: 5.321
+  ignoreDir: null
+  properties:
+    spin: false
+- name: LM306
+  x: 2.572
+  y: 5.322
+  ignoreDir: null
+  properties:
+    spin: false
+- name: LM307
+  x: 3.122
+  y: 5.323
+  ignoreDir: null
+  properties:
+    spin: false
+- name: LM308
+  x: 3.572
+  y: 5.324
+  ignoreDir: null
+  properties:
+    spin: false
+- name: LM309
+  x: 4.022
+  y: 5.325
+  ignoreDir: null
+  properties:
+    spin: false
+- name: LM310
+  x: 4.472
+  y: 5.327
+  ignoreDir: null
+  properties:
+    spin: false
+- name: LM311
+  x: 4.922
+  y: 5.328
+  ignoreDir: null
+  properties:
+    spin: false
+- name: LM312
+  x: 5.372
+  y: 5.329
+  ignoreDir: null
+  properties:
+    spin: false
+- name: LM313
+  x: 5.922
+  y: 5.33
+  ignoreDir: null
+  properties:
+    spin: false
+- name: LM314
+  x: 6.362
+  y: 5.331
+  ignoreDir: null
+  properties:
+    spin: false
+- name: LM315
+  x: 6.802
+  y: 5.332
+  ignoreDir: null
+  properties:
+    spin: false
+- name: LM316
+  x: 7.242
+  y: 5.333
+  ignoreDir: null
+  properties:
+    spin: false
+- name: LM317
+  x: 7.682
+  y: 5.334
+  ignoreDir: null
+  properties:
+    spin: false
+- name: LM318
+  x: 8.122
+  y: 5.335
+  ignoreDir: null
+  properties:
+    spin: false
+- name: LM319
+  x: 9.157
+  y: 5.34
+  ignoreDir: null
+  properties:
+    spin: false
+- name: LM320
+  x: -4.903
+  y: 5.309
+  ignoreDir: true
+  properties:
+    spin: false
+- name: LM321
+  x: -6.529
+  y: 4.356
+  ignoreDir: true
+  properties:
+    spin: false
+- name: LM322
+  x: -6.529
+  y: 4.257
+  ignoreDir: true
+  properties:
+    spin: false
+- name: LM323
+  x: -8.115
+  y: 4.257
+  ignoreDir: true
+  properties:
+    spin: false
+- name: LM324
+  x: -5.129
+  y: 4.653
+  ignoreDir: null
+  properties:
+    spin: false
+- name: LM325
+  x: -4.462
+  y: 4.742
+  ignoreDir: null
+  properties:
+    spin: false
+- name: LM326
+  x: -3.663
+  y: 4.653
+  ignoreDir: null
+  properties:
+    spin: false
+- name: LM327
+  x: -2.431
+  y: 4.448
+  ignoreDir: null
+  properties:
+    spin: false
+- name: LM51
+  x: -4.191
+  y: -0.174
+  ignoreDir: null
+  properties:
+    spin: false
+- name: LM52
+  x: -3.751
+  y: -0.175
+  ignoreDir: null
+  properties:
+    spin: false
+- name: LM53
+  x: -3.311
+  y: -0.176
+  ignoreDir: null
+  properties:
+    spin: false
+- name: LM54
+  x: -2.871
+  y: -0.177
+  ignoreDir: null
+  properties:
+    spin: false
+- name: LM55
+  x: -2.431
+  y: -0.178
+  ignoreDir: null
+  properties:
+    spin: false
+- name: LM56
+  x: -2.011
+  y: -0.179
+  ignoreDir: null
+  properties:
+    spin: false
+- name: LM61
+  x: -1.283
+  y: -0.182
+  ignoreDir: null
+  properties:
+    spin: false
+- name: LM62
+  x: -0.843
+  y: -0.183
+  ignoreDir: null
+  properties:
+    spin: false
+- name: LM63
+  x: -0.403
+  y: -0.184
+  ignoreDir: null
+  properties:
+    spin: false
+- name: LM64
+  x: 0.037
+  y: -0.186
+  ignoreDir: null
+  properties:
+    spin: false
+- name: LM65
+  x: 0.477
+  y: -0.187
+  ignoreDir: null
+  properties:
+    spin: false
+- name: LM66
+  x: 0.917
+  y: -0.188
+  ignoreDir: null
+  properties:
+    spin: false
+- name: LM71
+  x: 1.659
+  y: -0.19
+  ignoreDir: null
+  properties:
+    spin: false
+- name: LM72
+  x: 2.099
+  y: -0.191
+  ignoreDir: null
+  properties:
+    spin: false
+- name: LM73
+  x: 2.539
+  y: -0.192
+  ignoreDir: null
+  properties:
+    spin: false
+- name: LM74
+  x: 2.939
+  y: -0.193
+  ignoreDir: null
+  properties:
+    spin: false
+- name: LM75
+  x: 3.379
+  y: -0.194
+  ignoreDir: null
+  properties:
+    spin: false
+- name: LM76
+  x: 3.819
+  y: -0.195
+  ignoreDir: null
+  properties:
+    spin: false
+- name: LM81
+  x: 4.537
+  y: -0.198
+  ignoreDir: null
+  properties:
+    spin: false
+- name: LM82
+  x: 4.977
+  y: -0.199
+  ignoreDir: null
+  properties:
+    spin: false
+- name: LM83
+  x: 5.417
+  y: -0.2
+  ignoreDir: null
+  properties:
+    spin: false
+- name: LM84
+  x: 5.857
+  y: -0.201
+  ignoreDir: null
+  properties:
+    spin: false
+- name: LM85
+  x: 6.297
+  y: -0.202
+  ignoreDir: null
+  properties:
+    spin: false
+- name: LM86
+  x: 6.737
+  y: -0.203
+  ignoreDir: null
+  properties:
+    spin: false
+- name: LM91
+  x: -4.902
+  y: 1.362
+  ignoreDir: null
+  properties:
+    spin: false
+- name: LM92
+  x: -4.462
+  y: 1.361
+  ignoreDir: null
+  properties:
+    spin: false
+- name: LM93
+  x: -4.022
+  y: 1.36
+  ignoreDir: null
+  properties:
+    spin: false
+- name: LM94
+  x: -3.582
+  y: 1.359
+  ignoreDir: null
+  properties:
+    spin: false
+- name: LM95
+  x: -3.142
+  y: 1.358
+  ignoreDir: null
+  properties:
+    spin: false
+- name: LM96
+  x: -2.722
+  y: 1.357
+  ignoreDir: null
+  properties:
+    spin: false
+- name: LM328
+  x: -1.1
+  y: 4.448
+  ignoreDir: null
+  properties:
+    spin: false
+- name: LM329
+  x: 0.274
+  y: 5.065
+  ignoreDir: null
+  properties:
+    spin: false

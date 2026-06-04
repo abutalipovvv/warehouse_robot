@@ -1,0 +1,13 @@
+package.xml
+setup.cfg
+setup.py
+resource/robot_map_manager
+robot_map_manager/__init__.py
+robot_map_manager/node.py
+robot_map_manager.egg-info/PKG-INFO
+robot_map_manager.egg-info/SOURCES.txt
+robot_map_manager.egg-info/dependency_links.txt
+robot_map_manager.egg-info/entry_points.txt
+robot_map_manager.egg-info/requires.txt
+robot_map_manager.egg-info/top_level.txt
+robot_map_manager.egg-info/zip-safe

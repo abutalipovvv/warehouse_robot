@@ -91,6 +91,16 @@ CMakeFiles/robot_msgs__cpp: rosidl_generator_cpp/robot_msgs/srv/detail/cancel_ro
 CMakeFiles/robot_msgs__cpp: rosidl_generator_cpp/robot_msgs/srv/detail/cancel_route__struct.hpp
 CMakeFiles/robot_msgs__cpp: rosidl_generator_cpp/robot_msgs/srv/detail/cancel_route__traits.hpp
 CMakeFiles/robot_msgs__cpp: rosidl_generator_cpp/robot_msgs/srv/detail/cancel_route__type_support.hpp
+CMakeFiles/robot_msgs__cpp: rosidl_generator_cpp/robot_msgs/srv/load_robot_map.hpp
+CMakeFiles/robot_msgs__cpp: rosidl_generator_cpp/robot_msgs/srv/detail/load_robot_map__builder.hpp
+CMakeFiles/robot_msgs__cpp: rosidl_generator_cpp/robot_msgs/srv/detail/load_robot_map__struct.hpp
+CMakeFiles/robot_msgs__cpp: rosidl_generator_cpp/robot_msgs/srv/detail/load_robot_map__traits.hpp
+CMakeFiles/robot_msgs__cpp: rosidl_generator_cpp/robot_msgs/srv/detail/load_robot_map__type_support.hpp
+CMakeFiles/robot_msgs__cpp: rosidl_generator_cpp/robot_msgs/srv/get_robot_map_state.hpp
+CMakeFiles/robot_msgs__cpp: rosidl_generator_cpp/robot_msgs/srv/detail/get_robot_map_state__builder.hpp
+CMakeFiles/robot_msgs__cpp: rosidl_generator_cpp/robot_msgs/srv/detail/get_robot_map_state__struct.hpp
+CMakeFiles/robot_msgs__cpp: rosidl_generator_cpp/robot_msgs/srv/detail/get_robot_map_state__traits.hpp
+CMakeFiles/robot_msgs__cpp: rosidl_generator_cpp/robot_msgs/srv/detail/get_robot_map_state__type_support.hpp
 CMakeFiles/robot_msgs__cpp: rosidl_generator_cpp/robot_msgs/msg/rosidl_generator_cpp__visibility_control.hpp
 
 rosidl_generator_cpp/robot_msgs/msg/executor_state.hpp: /opt/ros/jazzy/lib/rosidl_generator_cpp/rosidl_generator_cpp
@@ -117,6 +127,8 @@ rosidl_generator_cpp/robot_msgs/msg/executor_state.hpp: rosidl_adapter/robot_msg
 rosidl_generator_cpp/robot_msgs/msg/executor_state.hpp: rosidl_adapter/robot_msgs/srv/PlanRoute.idl
 rosidl_generator_cpp/robot_msgs/msg/executor_state.hpp: rosidl_adapter/robot_msgs/srv/ExecuteRoute.idl
 rosidl_generator_cpp/robot_msgs/msg/executor_state.hpp: rosidl_adapter/robot_msgs/srv/CancelRoute.idl
+rosidl_generator_cpp/robot_msgs/msg/executor_state.hpp: rosidl_adapter/robot_msgs/srv/LoadRobotMap.idl
+rosidl_generator_cpp/robot_msgs/msg/executor_state.hpp: rosidl_adapter/robot_msgs/srv/GetRobotMapState.idl
 rosidl_generator_cpp/robot_msgs/msg/executor_state.hpp: /opt/ros/jazzy/share/builtin_interfaces/msg/Duration.idl
 rosidl_generator_cpp/robot_msgs/msg/executor_state.hpp: /opt/ros/jazzy/share/builtin_interfaces/msg/Time.idl
 rosidl_generator_cpp/robot_msgs/msg/executor_state.hpp: /opt/ros/jazzy/share/geometry_msgs/msg/Accel.idl
@@ -257,6 +269,36 @@ rosidl_generator_cpp/robot_msgs/srv/detail/cancel_route__traits.hpp: rosidl_gene
 rosidl_generator_cpp/robot_msgs/srv/detail/cancel_route__type_support.hpp: rosidl_generator_cpp/robot_msgs/msg/executor_state.hpp
 	@$(CMAKE_COMMAND) -E touch_nocreate rosidl_generator_cpp/robot_msgs/srv/detail/cancel_route__type_support.hpp
 
+rosidl_generator_cpp/robot_msgs/srv/load_robot_map.hpp: rosidl_generator_cpp/robot_msgs/msg/executor_state.hpp
+	@$(CMAKE_COMMAND) -E touch_nocreate rosidl_generator_cpp/robot_msgs/srv/load_robot_map.hpp
+
+rosidl_generator_cpp/robot_msgs/srv/detail/load_robot_map__builder.hpp: rosidl_generator_cpp/robot_msgs/msg/executor_state.hpp
+	@$(CMAKE_COMMAND) -E touch_nocreate rosidl_generator_cpp/robot_msgs/srv/detail/load_robot_map__builder.hpp
+
+rosidl_generator_cpp/robot_msgs/srv/detail/load_robot_map__struct.hpp: rosidl_generator_cpp/robot_msgs/msg/executor_state.hpp
+	@$(CMAKE_COMMAND) -E touch_nocreate rosidl_generator_cpp/robot_msgs/srv/detail/load_robot_map__struct.hpp
+
+rosidl_generator_cpp/robot_msgs/srv/detail/load_robot_map__traits.hpp: rosidl_generator_cpp/robot_msgs/msg/executor_state.hpp
+	@$(CMAKE_COMMAND) -E touch_nocreate rosidl_generator_cpp/robot_msgs/srv/detail/load_robot_map__traits.hpp
+
+rosidl_generator_cpp/robot_msgs/srv/detail/load_robot_map__type_support.hpp: rosidl_generator_cpp/robot_msgs/msg/executor_state.hpp
+	@$(CMAKE_COMMAND) -E touch_nocreate rosidl_generator_cpp/robot_msgs/srv/detail/load_robot_map__type_support.hpp
+
+rosidl_generator_cpp/robot_msgs/srv/get_robot_map_state.hpp: rosidl_generator_cpp/robot_msgs/msg/executor_state.hpp
+	@$(CMAKE_COMMAND) -E touch_nocreate rosidl_generator_cpp/robot_msgs/srv/get_robot_map_state.hpp
+
+rosidl_generator_cpp/robot_msgs/srv/detail/get_robot_map_state__builder.hpp: rosidl_generator_cpp/robot_msgs/msg/executor_state.hpp
+	@$(CMAKE_COMMAND) -E touch_nocreate rosidl_generator_cpp/robot_msgs/srv/detail/get_robot_map_state__builder.hpp
+
+rosidl_generator_cpp/robot_msgs/srv/detail/get_robot_map_state__struct.hpp: rosidl_generator_cpp/robot_msgs/msg/executor_state.hpp
+	@$(CMAKE_COMMAND) -E touch_nocreate rosidl_generator_cpp/robot_msgs/srv/detail/get_robot_map_state__struct.hpp
+
+rosidl_generator_cpp/robot_msgs/srv/detail/get_robot_map_state__traits.hpp: rosidl_generator_cpp/robot_msgs/msg/executor_state.hpp
+	@$(CMAKE_COMMAND) -E touch_nocreate rosidl_generator_cpp/robot_msgs/srv/detail/get_robot_map_state__traits.hpp
+
+rosidl_generator_cpp/robot_msgs/srv/detail/get_robot_map_state__type_support.hpp: rosidl_generator_cpp/robot_msgs/msg/executor_state.hpp
+	@$(CMAKE_COMMAND) -E touch_nocreate rosidl_generator_cpp/robot_msgs/srv/detail/get_robot_map_state__type_support.hpp
+
 rosidl_generator_cpp/robot_msgs/msg/rosidl_generator_cpp__visibility_control.hpp: rosidl_generator_cpp/robot_msgs/msg/executor_state.hpp
 	@$(CMAKE_COMMAND) -E touch_nocreate rosidl_generator_cpp/robot_msgs/msg/rosidl_generator_cpp__visibility_control.hpp
 
@@ -281,11 +323,21 @@ robot_msgs__cpp: rosidl_generator_cpp/robot_msgs/srv/detail/execute_route__build
 robot_msgs__cpp: rosidl_generator_cpp/robot_msgs/srv/detail/execute_route__struct.hpp
 robot_msgs__cpp: rosidl_generator_cpp/robot_msgs/srv/detail/execute_route__traits.hpp
 robot_msgs__cpp: rosidl_generator_cpp/robot_msgs/srv/detail/execute_route__type_support.hpp
+robot_msgs__cpp: rosidl_generator_cpp/robot_msgs/srv/detail/get_robot_map_state__builder.hpp
+robot_msgs__cpp: rosidl_generator_cpp/robot_msgs/srv/detail/get_robot_map_state__struct.hpp
+robot_msgs__cpp: rosidl_generator_cpp/robot_msgs/srv/detail/get_robot_map_state__traits.hpp
+robot_msgs__cpp: rosidl_generator_cpp/robot_msgs/srv/detail/get_robot_map_state__type_support.hpp
+robot_msgs__cpp: rosidl_generator_cpp/robot_msgs/srv/detail/load_robot_map__builder.hpp
+robot_msgs__cpp: rosidl_generator_cpp/robot_msgs/srv/detail/load_robot_map__struct.hpp
+robot_msgs__cpp: rosidl_generator_cpp/robot_msgs/srv/detail/load_robot_map__traits.hpp
+robot_msgs__cpp: rosidl_generator_cpp/robot_msgs/srv/detail/load_robot_map__type_support.hpp
 robot_msgs__cpp: rosidl_generator_cpp/robot_msgs/srv/detail/plan_route__builder.hpp
 robot_msgs__cpp: rosidl_generator_cpp/robot_msgs/srv/detail/plan_route__struct.hpp
 robot_msgs__cpp: rosidl_generator_cpp/robot_msgs/srv/detail/plan_route__traits.hpp
 robot_msgs__cpp: rosidl_generator_cpp/robot_msgs/srv/detail/plan_route__type_support.hpp
 robot_msgs__cpp: rosidl_generator_cpp/robot_msgs/srv/execute_route.hpp
+robot_msgs__cpp: rosidl_generator_cpp/robot_msgs/srv/get_robot_map_state.hpp
+robot_msgs__cpp: rosidl_generator_cpp/robot_msgs/srv/load_robot_map.hpp
 robot_msgs__cpp: rosidl_generator_cpp/robot_msgs/srv/plan_route.hpp
 robot_msgs__cpp: CMakeFiles/robot_msgs__cpp.dir/build.make
 .PHONY : robot_msgs__cpp

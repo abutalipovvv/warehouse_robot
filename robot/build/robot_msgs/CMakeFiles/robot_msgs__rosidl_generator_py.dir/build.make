@@ -139,13 +139,43 @@ CMakeFiles/robot_msgs__rosidl_generator_py.dir/rosidl_generator_py/robot_msgs/sr
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling C source to assembly CMakeFiles/robot_msgs__rosidl_generator_py.dir/rosidl_generator_py/robot_msgs/srv/_cancel_route_s.c.s"
 	/usr/bin/cc $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -S /home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_generator_py/robot_msgs/srv/_cancel_route_s.c -o CMakeFiles/robot_msgs__rosidl_generator_py.dir/rosidl_generator_py/robot_msgs/srv/_cancel_route_s.c.s
 
+CMakeFiles/robot_msgs__rosidl_generator_py.dir/rosidl_generator_py/robot_msgs/srv/_load_robot_map_s.c.o: CMakeFiles/robot_msgs__rosidl_generator_py.dir/flags.make
+CMakeFiles/robot_msgs__rosidl_generator_py.dir/rosidl_generator_py/robot_msgs/srv/_load_robot_map_s.c.o: rosidl_generator_py/robot_msgs/srv/_load_robot_map_s.c
+CMakeFiles/robot_msgs__rosidl_generator_py.dir/rosidl_generator_py/robot_msgs/srv/_load_robot_map_s.c.o: CMakeFiles/robot_msgs__rosidl_generator_py.dir/compiler_depend.ts
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/kaisar/warehouse_robot/robot/build/robot_msgs/CMakeFiles --progress-num=$(CMAKE_PROGRESS_6) "Building C object CMakeFiles/robot_msgs__rosidl_generator_py.dir/rosidl_generator_py/robot_msgs/srv/_load_robot_map_s.c.o"
+	/usr/bin/cc $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -MD -MT CMakeFiles/robot_msgs__rosidl_generator_py.dir/rosidl_generator_py/robot_msgs/srv/_load_robot_map_s.c.o -MF CMakeFiles/robot_msgs__rosidl_generator_py.dir/rosidl_generator_py/robot_msgs/srv/_load_robot_map_s.c.o.d -o CMakeFiles/robot_msgs__rosidl_generator_py.dir/rosidl_generator_py/robot_msgs/srv/_load_robot_map_s.c.o -c /home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_generator_py/robot_msgs/srv/_load_robot_map_s.c
+
+CMakeFiles/robot_msgs__rosidl_generator_py.dir/rosidl_generator_py/robot_msgs/srv/_load_robot_map_s.c.i: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing C source to CMakeFiles/robot_msgs__rosidl_generator_py.dir/rosidl_generator_py/robot_msgs/srv/_load_robot_map_s.c.i"
+	/usr/bin/cc $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -E /home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_generator_py/robot_msgs/srv/_load_robot_map_s.c > CMakeFiles/robot_msgs__rosidl_generator_py.dir/rosidl_generator_py/robot_msgs/srv/_load_robot_map_s.c.i
+
+CMakeFiles/robot_msgs__rosidl_generator_py.dir/rosidl_generator_py/robot_msgs/srv/_load_robot_map_s.c.s: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling C source to assembly CMakeFiles/robot_msgs__rosidl_generator_py.dir/rosidl_generator_py/robot_msgs/srv/_load_robot_map_s.c.s"
+	/usr/bin/cc $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -S /home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_generator_py/robot_msgs/srv/_load_robot_map_s.c -o CMakeFiles/robot_msgs__rosidl_generator_py.dir/rosidl_generator_py/robot_msgs/srv/_load_robot_map_s.c.s
+
+CMakeFiles/robot_msgs__rosidl_generator_py.dir/rosidl_generator_py/robot_msgs/srv/_get_robot_map_state_s.c.o: CMakeFiles/robot_msgs__rosidl_generator_py.dir/flags.make
+CMakeFiles/robot_msgs__rosidl_generator_py.dir/rosidl_generator_py/robot_msgs/srv/_get_robot_map_state_s.c.o: rosidl_generator_py/robot_msgs/srv/_get_robot_map_state_s.c
+CMakeFiles/robot_msgs__rosidl_generator_py.dir/rosidl_generator_py/robot_msgs/srv/_get_robot_map_state_s.c.o: CMakeFiles/robot_msgs__rosidl_generator_py.dir/compiler_depend.ts
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/kaisar/warehouse_robot/robot/build/robot_msgs/CMakeFiles --progress-num=$(CMAKE_PROGRESS_7) "Building C object CMakeFiles/robot_msgs__rosidl_generator_py.dir/rosidl_generator_py/robot_msgs/srv/_get_robot_map_state_s.c.o"
+	/usr/bin/cc $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -MD -MT CMakeFiles/robot_msgs__rosidl_generator_py.dir/rosidl_generator_py/robot_msgs/srv/_get_robot_map_state_s.c.o -MF CMakeFiles/robot_msgs__rosidl_generator_py.dir/rosidl_generator_py/robot_msgs/srv/_get_robot_map_state_s.c.o.d -o CMakeFiles/robot_msgs__rosidl_generator_py.dir/rosidl_generator_py/robot_msgs/srv/_get_robot_map_state_s.c.o -c /home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_generator_py/robot_msgs/srv/_get_robot_map_state_s.c
+
+CMakeFiles/robot_msgs__rosidl_generator_py.dir/rosidl_generator_py/robot_msgs/srv/_get_robot_map_state_s.c.i: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing C source to CMakeFiles/robot_msgs__rosidl_generator_py.dir/rosidl_generator_py/robot_msgs/srv/_get_robot_map_state_s.c.i"
+	/usr/bin/cc $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -E /home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_generator_py/robot_msgs/srv/_get_robot_map_state_s.c > CMakeFiles/robot_msgs__rosidl_generator_py.dir/rosidl_generator_py/robot_msgs/srv/_get_robot_map_state_s.c.i
+
+CMakeFiles/robot_msgs__rosidl_generator_py.dir/rosidl_generator_py/robot_msgs/srv/_get_robot_map_state_s.c.s: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling C source to assembly CMakeFiles/robot_msgs__rosidl_generator_py.dir/rosidl_generator_py/robot_msgs/srv/_get_robot_map_state_s.c.s"
+	/usr/bin/cc $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -S /home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_generator_py/robot_msgs/srv/_get_robot_map_state_s.c -o CMakeFiles/robot_msgs__rosidl_generator_py.dir/rosidl_generator_py/robot_msgs/srv/_get_robot_map_state_s.c.s
+
 # Object files for target robot_msgs__rosidl_generator_py
 robot_msgs__rosidl_generator_py_OBJECTS = \
 "CMakeFiles/robot_msgs__rosidl_generator_py.dir/rosidl_generator_py/robot_msgs/msg/_executor_state_s.c.o" \
 "CMakeFiles/robot_msgs__rosidl_generator_py.dir/rosidl_generator_py/robot_msgs/msg/_robot_status_s.c.o" \
 "CMakeFiles/robot_msgs__rosidl_generator_py.dir/rosidl_generator_py/robot_msgs/srv/_plan_route_s.c.o" \
 "CMakeFiles/robot_msgs__rosidl_generator_py.dir/rosidl_generator_py/robot_msgs/srv/_execute_route_s.c.o" \
-"CMakeFiles/robot_msgs__rosidl_generator_py.dir/rosidl_generator_py/robot_msgs/srv/_cancel_route_s.c.o"
+"CMakeFiles/robot_msgs__rosidl_generator_py.dir/rosidl_generator_py/robot_msgs/srv/_cancel_route_s.c.o" \
+"CMakeFiles/robot_msgs__rosidl_generator_py.dir/rosidl_generator_py/robot_msgs/srv/_load_robot_map_s.c.o" \
+"CMakeFiles/robot_msgs__rosidl_generator_py.dir/rosidl_generator_py/robot_msgs/srv/_get_robot_map_state_s.c.o"
 
 # External object files for target robot_msgs__rosidl_generator_py
 robot_msgs__rosidl_generator_py_EXTERNAL_OBJECTS =
@@ -155,6 +185,8 @@ librobot_msgs__rosidl_generator_py.so: CMakeFiles/robot_msgs__rosidl_generator_p
 librobot_msgs__rosidl_generator_py.so: CMakeFiles/robot_msgs__rosidl_generator_py.dir/rosidl_generator_py/robot_msgs/srv/_plan_route_s.c.o
 librobot_msgs__rosidl_generator_py.so: CMakeFiles/robot_msgs__rosidl_generator_py.dir/rosidl_generator_py/robot_msgs/srv/_execute_route_s.c.o
 librobot_msgs__rosidl_generator_py.so: CMakeFiles/robot_msgs__rosidl_generator_py.dir/rosidl_generator_py/robot_msgs/srv/_cancel_route_s.c.o
+librobot_msgs__rosidl_generator_py.so: CMakeFiles/robot_msgs__rosidl_generator_py.dir/rosidl_generator_py/robot_msgs/srv/_load_robot_map_s.c.o
+librobot_msgs__rosidl_generator_py.so: CMakeFiles/robot_msgs__rosidl_generator_py.dir/rosidl_generator_py/robot_msgs/srv/_get_robot_map_state_s.c.o
 librobot_msgs__rosidl_generator_py.so: CMakeFiles/robot_msgs__rosidl_generator_py.dir/build.make
 librobot_msgs__rosidl_generator_py.so: librobot_msgs__rosidl_typesupport_c.so
 librobot_msgs__rosidl_generator_py.so: /opt/ros/jazzy/lib/libgeometry_msgs__rosidl_typesupport_fastrtps_c.so
@@ -201,7 +233,7 @@ librobot_msgs__rosidl_generator_py.so: /opt/ros/jazzy/lib/libbuiltin_interfaces_
 librobot_msgs__rosidl_generator_py.so: /opt/ros/jazzy/lib/librosidl_runtime_c.so
 librobot_msgs__rosidl_generator_py.so: /opt/ros/jazzy/lib/librcutils.so
 librobot_msgs__rosidl_generator_py.so: CMakeFiles/robot_msgs__rosidl_generator_py.dir/link.txt
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --bold --progress-dir=/home/kaisar/warehouse_robot/robot/build/robot_msgs/CMakeFiles --progress-num=$(CMAKE_PROGRESS_6) "Linking C shared library librobot_msgs__rosidl_generator_py.so"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --bold --progress-dir=/home/kaisar/warehouse_robot/robot/build/robot_msgs/CMakeFiles --progress-num=$(CMAKE_PROGRESS_8) "Linking C shared library librobot_msgs__rosidl_generator_py.so"
 	$(CMAKE_COMMAND) -E cmake_link_script CMakeFiles/robot_msgs__rosidl_generator_py.dir/link.txt --verbose=$(VERBOSE)
 
 # Rule to build all files generated by this target.

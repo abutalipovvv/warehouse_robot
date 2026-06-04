@@ -13,6 +13,7 @@
   <depend>launch_ros</depend>
   <depend>robot_status</depend>
   <depend>robot_planner</depend>
+  <depend>robot_map_manager</depend>
 
 
   <test_depend>ament_lint_auto</test_depend>

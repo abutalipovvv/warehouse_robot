@@ -1,0 +1,26 @@
+{
+  "type_description_msg": {
+    "type_description": {
+      "type_name": "robot_msgs/srv/GetRobotMapState_Request",
+      "fields": [
+        {
+          "name": "structure_needs_at_least_one_member",
+          "type": {
+            "type_id": 3,
+            "capacity": 0,
+            "string_capacity": 0,
+            "nested_type_name": ""
+          },
+          "default_value": ""
+        }
+      ]
+    },
+    "referenced_type_descriptions": []
+  },
+  "type_hashes": [
+    {
+      "type_name": "robot_msgs/srv/GetRobotMapState_Request",
+      "hash_string": "RIHS01_ec00d1e163ad80fe16a6425d71db5b229507223c4000fdd8220c8a65c1a69258"
+    }
+  ]
+}

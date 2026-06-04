@@ -4,9 +4,9 @@
 
 #include <string.h>
 
-#include "robot_msgs/msg/detail/executor_state__functions.h"
 #include "robot_msgs/msg/detail/executor_state__struct.h"
 #include "rosidl_typesupport_interface/macros.h"
+#include "robot_msgs/msg/detail/executor_state__functions.h"
 #include "robot_msgs/msg/detail/executor_state__type_support.h"
 
 #ifdef __cplusplus

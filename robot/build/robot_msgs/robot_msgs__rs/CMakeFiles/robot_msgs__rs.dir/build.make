@@ -91,11 +91,15 @@ rosidl_generator_rs/robot_msgs/rust/src/lib.rs: rosidl_adapter/robot_msgs/msg/Ro
 rosidl_generator_rs/robot_msgs/rust/src/lib.rs: rosidl_adapter/robot_msgs/srv/PlanRoute.idl
 rosidl_generator_rs/robot_msgs/rust/src/lib.rs: rosidl_adapter/robot_msgs/srv/ExecuteRoute.idl
 rosidl_generator_rs/robot_msgs/rust/src/lib.rs: rosidl_adapter/robot_msgs/srv/CancelRoute.idl
+rosidl_generator_rs/robot_msgs/rust/src/lib.rs: rosidl_adapter/robot_msgs/srv/LoadRobotMap.idl
+rosidl_generator_rs/robot_msgs/rust/src/lib.rs: rosidl_adapter/robot_msgs/srv/GetRobotMapState.idl
 rosidl_generator_rs/robot_msgs/rust/src/lib.rs: rosidl_adapter/robot_msgs/msg/ExecutorState.idl
 rosidl_generator_rs/robot_msgs/rust/src/lib.rs: rosidl_adapter/robot_msgs/msg/RobotStatus.idl
 rosidl_generator_rs/robot_msgs/rust/src/lib.rs: rosidl_adapter/robot_msgs/srv/PlanRoute.idl
 rosidl_generator_rs/robot_msgs/rust/src/lib.rs: rosidl_adapter/robot_msgs/srv/ExecuteRoute.idl
 rosidl_generator_rs/robot_msgs/rust/src/lib.rs: rosidl_adapter/robot_msgs/srv/CancelRoute.idl
+rosidl_generator_rs/robot_msgs/rust/src/lib.rs: rosidl_adapter/robot_msgs/srv/LoadRobotMap.idl
+rosidl_generator_rs/robot_msgs/rust/src/lib.rs: rosidl_adapter/robot_msgs/srv/GetRobotMapState.idl
 rosidl_generator_rs/robot_msgs/rust/src/lib.rs: /opt/ros/jazzy/share/builtin_interfaces/msg/Duration.idl
 rosidl_generator_rs/robot_msgs/rust/src/lib.rs: /opt/ros/jazzy/share/builtin_interfaces/msg/Time.idl
 rosidl_generator_rs/robot_msgs/rust/src/lib.rs: /opt/ros/jazzy/share/geometry_msgs/msg/Accel.idl

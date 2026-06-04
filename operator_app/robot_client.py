@@ -37,13 +37,14 @@ class RobotClient:
         method: str = "GET",
         headers: dict[str, str] | None = None,
         body: bytes | None = None,
+        timeout: float | None = None,
     ) -> tuple[int, dict[str, str], bytes]:
         url = f"{base_url.rstrip('/')}{path}"
         request = Request(url, data=body, method=method.upper())
         for key, value in (headers or {}).items():
             request.add_header(key, value)
         try:
-            with urlopen(request, timeout=self.timeout) as response:
+            with urlopen(request, timeout=self.timeout if timeout is None else max(0.2, float(timeout))) as response:
                 raw = response.read()
                 response_headers = {key: value for key, value in response.headers.items()}
                 return int(response.status), response_headers, raw
@@ -55,10 +56,42 @@ class RobotClient:
             reason = getattr(exc, "reason", exc)
             raise RobotProbeError(f"Network error: {reason}") from exc
 
-    def _get_json(self, url: str) -> dict[str, Any]:
+    def request_json(
+        self,
+        base_url: str,
+        path: str,
+        *,
+        method: str = "GET",
+        payload: dict[str, Any] | None = None,
+        timeout: float | None = None,
+    ) -> dict[str, Any]:
+        headers = {"Accept": "application/json"}
+        body = None
+        if payload is not None:
+            headers["Content-Type"] = "application/json"
+            body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        status, _response_headers, raw = self.request(
+            base_url,
+            path,
+            method=method,
+            headers=headers,
+            body=body,
+            timeout=timeout,
+        )
+        try:
+            decoded = json.loads(raw.decode("utf-8"))
+        except json.JSONDecodeError as exc:
+            raise RobotProbeError(f"Invalid JSON from {base_url}{path}") from exc
+        if not isinstance(decoded, dict):
+            raise RobotProbeError(f"Unexpected payload from {base_url}{path}")
+        if status >= 400 or decoded.get("ok") is False:
+            raise RobotProbeError(str(decoded.get("error") or f"HTTP {status}"))
+        return decoded
+
+    def _get_json(self, url: str, *, timeout: float | None = None) -> dict[str, Any]:
         request = Request(url, headers={"Accept": "application/json"})
         try:
-            with urlopen(request, timeout=self.timeout) as response:
+            with urlopen(request, timeout=self.timeout if timeout is None else max(0.2, float(timeout))) as response:
                 raw = response.read()
         except HTTPError as exc:
             raise RobotProbeError(f"HTTP {exc.code} from {url}") from exc

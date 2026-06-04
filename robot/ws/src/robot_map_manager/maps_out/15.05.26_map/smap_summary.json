@@ -1,0 +1,76 @@
+{
+  "header": {
+    "mapType": "2D-Map",
+    "mapName": "DEMO 17.04.2026 LM NAmes and position MAP",
+    "minPos": {
+      "x": -22.936,
+      "y": -4.689
+    },
+    "maxPos": {
+      "x": 10.804,
+      "y": 8.29
+    },
+    "resolution": 0.02,
+    "version": "1.0.6"
+  },
+  "counts": {
+    "normalPosList_total": 62827,
+    "normalPosList_used": 62825,
+    "normalPosList_skipped": 2,
+    "advancedLineList_total": 177,
+    "lines_used": 175,
+    "lines_skipped": 2,
+    "advancedCurveList_total": 146,
+    "curves_used": 146,
+    "curves_skipped": 0,
+    "advancedPointList_total": 135,
+    "LMs_found": 135,
+    "edges_total": 294,
+    "grid": {
+      "width": 1688,
+      "height": 650
+    }
+  },
+  "lengths_m": {
+    "lines": {
+      "count": 175,
+      "sum": 155.1814632632258,
+      "min": 0.0731095069057371,
+      "max": 17.00802825138764,
+      "mean": 0.8867512186470046
+    },
+    "curves": {
+      "count": 146,
+      "sum": 124.48042601604662,
+      "min": 0.3400017631819158,
+      "max": 4.334563499105043,
+      "mean": 0.852605657644155
+    },
+    "all": {
+      "count": 321,
+      "sum": 279.66188927927243,
+      "min": 0.0731095069057371,
+      "max": 17.00802825138764,
+      "mean": 0.8712208388762381
+    },
+    "line_type_sum": {
+      "FeatureLine": 155.18146326322588
+    }
+  },
+  "top_level_keys": [
+    "advancedCurveList",
+    "advancedLineList",
+    "advancedPointList",
+    "header",
+    "normalPosList"
+  ],
+  "outputs": {
+    "pgm": "DEMO 17.04.2026 LM NAmes and position MAP.pgm",
+    "ros_map_yaml": "DEMO 17.04.2026 LM NAmes and position MAP.yaml",
+    "LMs_yaml": "LMs.yaml",
+    "graphs_yaml": "graphs.yaml",
+    "graph_edges_lengths_yaml": "graph_edges_lengths.yaml",
+    "primitives_lengths_csv": "primitives_lengths.csv",
+    "summary_json": "smap_summary.json"
+  }
+}

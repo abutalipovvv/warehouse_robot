@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Robot Map Editor</title>
+  <link rel="stylesheet" href="map-editor.css" />
+</head>
+<body>
+  <div class="editor-shell">
+    <header class="editor-topbar">
+      <div class="editor-title">
+        <div class="eyebrow">Robot Map Editor</div>
+        <h1 id="editorRobotTitle">Select robot</h1>
+        <p id="editorStatusText">Waiting for robot map data.</p>
+      </div>
+      <div class="editor-actions">
+        <button id="refreshMapsButton" type="button">Refresh</button>
+        <button id="saveLocalButton" class="primary" type="button">Save Local</button>
+        <button id="saveAsButton" type="button">Save As</button>
+        <button id="closeEditorButton" type="button">Close Editor</button>
+      </div>
+    </header>
+
+    <main class="editor-workspace">
+      <aside class="editor-sidebar">
+        <section class="editor-panel">
+          <div class="panel-head">
+            <div>
+              <div class="eyebrow">Source Map</div>
+              <strong id="activeRobotMapText">-</strong>
+            </div>
+          </div>
+          <div class="hint-text">Use Control to pull, push, or load maps on the robot. This page edits only local drafts in Operator App.</div>
+          <div id="robotMapsList" class="map-list"></div>
+        </section>
+
+        <section class="editor-panel">
+          <div class="panel-head">
+            <div>
+              <div class="eyebrow">Local Drafts</div>
+              <strong id="localDraftCountText">0 saved</strong>
+            </div>
+          </div>
+          <div id="localMapsList" class="map-list"></div>
+        </section>
+
+        <section class="editor-panel">
+          <div class="panel-head">
+            <div>
+              <div class="eyebrow">Current Draft</div>
+              <strong id="currentDraftText">-</strong>
+            </div>
+            <span id="draftStateChip" class="state-chip">clean</span>
+          </div>
+          <div id="draftMetaText" class="hint-text">No local draft loaded.</div>
+        </section>
+      </aside>
+
+      <section class="editor-map-panel">
+        <div class="map-toolbar">
+          <div class="tool-group">
+            <button id="toolSelectButton" class="active" type="button" data-tool="select">Select</button>
+            <button id="toolLmButton" type="button" data-tool="lm">LM</button>
+            <button id="toolEdgeButton" type="button" data-tool="edge">Edge</button>
+          </div>
+          <div class="tool-group">
+            <button id="zoomInButton" type="button">Zoom +</button>
+            <button id="zoomOutButton" type="button">Zoom -</button>
+            <button id="resetViewButton" type="button">Reset View</button>
+            <button id="deleteSelectionButton" class="danger" type="button">Delete Selected</button>
+          </div>
+        </div>
+        <svg id="editorSvg" class="editor-svg">
+          <defs>
+            <marker id="edgeArrow" markerWidth="9" markerHeight="9" refX="6" refY="4.5" orient="auto">
+              <path d="M0,0 L9,4.5 L0,9 Z" fill="#2a6cff"></path>
+            </marker>
+          </defs>
+          <g id="editorViewport">
+            <image id="editorMapImage" preserveAspectRatio="none"></image>
+            <g id="editorGridLayer"></g>
+            <g id="editorEdgeLayer"></g>
+            <g id="editorPreviewLayer"></g>
+            <g id="editorLmLayer"></g>
+            <g id="editorHandleLayer"></g>
+          </g>
+        </svg>
+      </section>
+
+      <aside class="editor-sidebar inspector-sidebar">
+        <section class="editor-panel">
+          <div class="panel-head">
+            <div>
+              <div class="eyebrow">Selection</div>
+              <strong id="selectionTitleText">Nothing selected</strong>
+            </div>
+          </div>
+          <div id="selectionEmptyText" class="hint-text">Use Select to inspect, LM to add landmarks, or Edge to connect landmarks.</div>
+
+          <div id="landmarkInspector" class="inspector-form hidden">
+            <label>
+              LM Name
+              <input id="landmarkNameInput" type="text" />
+            </label>
+            <div class="two-col">
+              <label>
+                X
+                <input id="landmarkXInput" type="number" step="0.001" />
+              </label>
+              <label>
+                Y
+                <input id="landmarkYInput" type="number" step="0.001" />
+              </label>
+            </div>
+            <label>
+              ignoreDir
+              <input id="landmarkIgnoreDirInput" type="text" />
+            </label>
+          </div>
+
+          <div id="edgeInspector" class="inspector-form hidden">
+            <div class="readout-row">
+              <span>From</span>
+              <strong id="edgeFromText">-</strong>
+            </div>
+            <div class="readout-row">
+              <span>To</span>
+              <strong id="edgeToText">-</strong>
+            </div>
+            <label>
+              Kind
+              <select id="edgeKindSelect">
+                <option value="line">line</option>
+                <option value="curve">curve</option>
+              </select>
+            </label>
+            <label>
+              Type
+              <input id="edgeTypeInput" type="text" />
+            </label>
+            <label>
+              Direction
+              <select id="edgeDirectionSelect">
+                <option value="2">not_specified</option>
+                <option value="0">forward</option>
+                <option value="1">backward</option>
+              </select>
+            </label>
+            <div class="readout-row">
+              <span>Length</span>
+              <strong id="edgeLengthText">0.00 m</strong>
+            </div>
+            <div id="edgeCurveHint" class="hint-text hidden">Drag the blue control handles on the map to shape the curve.</div>
+          </div>
+        </section>
+
+        <section class="editor-panel">
+          <div class="panel-head">
+            <div>
+              <div class="eyebrow">Log</div>
+              <strong>Editor Events</strong>
+            </div>
+          </div>
+          <div id="editorLog" class="editor-log"></div>
+        </section>
+      </aside>
+    </main>
+  </div>
+
+  <script src="map-editor.js"></script>
+</body>
+</html>

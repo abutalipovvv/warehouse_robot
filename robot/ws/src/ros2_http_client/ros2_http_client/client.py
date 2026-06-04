@@ -10,7 +10,7 @@ from geometry_msgs.msg import Twist
 from rclpy.node import Node
 
 from robot_msgs.msg import RobotStatus
-from robot_msgs.srv import CancelRoute, ExecuteRoute, PlanRoute
+from robot_msgs.srv import CancelRoute, ExecuteRoute, GetRobotMapState, LoadRobotMap, PlanRoute
 from robot_planner import (
     PlannedRobotRoute,
     Pose2D,
@@ -32,6 +32,8 @@ class RobotRosClient:
         plan_service_name: str,
         execute_service_name: str,
         cancel_service_name: str,
+        map_state_service_name: str,
+        map_load_service_name: str,
     ) -> None:
         self.robot_id = robot_id
         self.params_path = Path(params_path).resolve()
@@ -52,6 +54,8 @@ class RobotRosClient:
         self._plan_route_client = self.node.create_client(PlanRoute, plan_service_name)
         self._execute_route_client = self.node.create_client(ExecuteRoute, execute_service_name)
         self._cancel_route_client = self.node.create_client(CancelRoute, cancel_service_name)
+        self._map_state_client = self.node.create_client(GetRobotMapState, map_state_service_name)
+        self._map_load_client = self.node.create_client(LoadRobotMap, map_load_service_name)
         self._cmd_vel_pub = self.node.create_publisher(Twist, cmd_vel_topic, 20)
         self.node.create_subscription(RobotStatus, status_topic, self._on_robot_status, 20)
         self.node.create_timer(0.05, self._teleop_watchdog)
@@ -61,6 +65,25 @@ class RobotRosClient:
 
     def site_payload(self) -> dict[str, Any]:
         return self.route_planner.site_payload(self.robot_id)
+
+    def active_map_payload(self) -> dict[str, Any]:
+        request = GetRobotMapState.Request()
+        response = self._call_service(self._map_state_client, request, "map state")
+        if not bool(response.ok):
+            raise ValueError(str(response.error or "map state failed"))
+        return {
+            "ok": True,
+            "mapName": str(response.map_name or ""),
+            "mapDir": str(response.map_dir or ""),
+            "mapId": str(response.map_id or ""),
+        }
+
+    def sync_active_map_context(self) -> None:
+        active = self.active_map_payload()
+        map_dir = str(active.get("mapDir") or "").strip()
+        if not map_dir:
+            return
+        self.reload_map_context(Path(map_dir))
 
     def params_payload(self) -> dict[str, Any]:
         return load_route_params(self.params_path, create=True)
@@ -159,6 +182,18 @@ class RobotRosClient:
         self._active_route = route
         return route
 
+    def plan_route_payload(self, *, pose: dict[str, float], goal_lm: str, start_lm: str | None) -> dict[str, Any]:
+        route = self.plan_route(
+            pose=Pose2D(
+                x=float(pose.get("x", 0.0) or 0.0),
+                y=float(pose.get("y", 0.0) or 0.0),
+                yaw=float(pose.get("yaw", 0.0) or 0.0),
+            ),
+            goal_lm=goal_lm,
+            start_lm=start_lm,
+        )
+        return route.to_dict()
+
     def execute_route(self, route: PlannedRobotRoute) -> None:
         request = ExecuteRoute.Request()
         request.route_json = json.dumps(route.to_dict(), ensure_ascii=False)
@@ -166,6 +201,34 @@ class RobotRosClient:
         if not bool(response.ok):
             raise ValueError(str(response.error or "route execute failed"))
         self._active_route = route
+
+    def execute_route_payload(self, route_payload: dict[str, Any]) -> dict[str, Any]:
+        route = PlannedRobotRoute.from_dict(route_payload)
+        if not route.goal_lm:
+            raise ValueError("route.goalLm is required")
+        self.execute_route(route)
+        return route.to_dict()
+
+    def load_map(self, map_name: str) -> dict[str, Any]:
+        request = LoadRobotMap.Request()
+        request.map_name = str(map_name)
+        request.map_dir = ""
+        response = self._call_service(self._map_load_client, request, "map load")
+        if not bool(response.ok):
+            raise ValueError(str(response.error or "map load failed"))
+        self.reload_map_context(Path(str(response.map_dir)))
+        self._active_route = None
+        self.add_event("warn", f"active map changed: {response.map_name}")
+        return {
+            "ok": True,
+            "mapName": str(response.map_name or ""),
+            "mapDir": str(response.map_dir or ""),
+            "mapId": str(response.map_id or ""),
+        }
+
+    def reload_map_context(self, map_dir: Path) -> None:
+        self.route_planner.reload_map(Path(map_dir).resolve())
+        self.map_id = self.route_planner.map_id
 
     def cancel_route(self, message: str = "Route canceled.") -> None:
         request = CancelRoute.Request()

@@ -16,6 +16,8 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "srv/PlanRoute.srv"
   "srv/ExecuteRoute.srv"
   "srv/CancelRoute.srv"
+  "srv/LoadRobotMap.srv"
+  "srv/GetRobotMapState.srv"
   DEPENDENCIES
     builtin_interfaces
     geometry_msgs

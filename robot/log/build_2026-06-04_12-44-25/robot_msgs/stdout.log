@@ -1,0 +1,23 @@
+[  1%] Built target robot_msgs__rosidl_generator_type_description
+[  2%] Built target robot_msgs__rs
+[  2%] Built target ament_cmake_python_symlink_robot_msgs
+[  3%] Built target robot_msgs__cpp
+[ 27%] Built target robot_msgs__rosidl_generator_c
+[ 36%] Built target robot_msgs__rosidl_typesupport_cpp
+[ 46%] Built target robot_msgs__rosidl_typesupport_c
+[ 55%] Built target robot_msgs__rosidl_typesupport_introspection_cpp
+[ 65%] Built target robot_msgs__rosidl_typesupport_introspection_c
+[ 84%] Built target robot_msgs__rosidl_typesupport_fastrtps_cpp
+[ 84%] Built target robot_msgs__rosidl_typesupport_fastrtps_c
+[ 84%] Built target robot_msgs
+[ 85%] Built target robot_msgs__py
+[ 93%] Built target robot_msgs__rosidl_generator_py
+[ 95%] Built target robot_msgs_s__rosidl_typesupport_introspection_c
+[100%] Built target robot_msgs_s__rosidl_typesupport_fastrtps_c
+[100%] Built target robot_msgs_s__rosidl_typesupport_c
+running egg_info
+writing robot_msgs.egg-info/PKG-INFO
+writing dependency_links to robot_msgs.egg-info/dependency_links.txt
+writing top-level names to robot_msgs.egg-info/top_level.txt
+reading manifest file 'robot_msgs.egg-info/SOURCES.txt'
+writing manifest file 'robot_msgs.egg-info/SOURCES.txt'

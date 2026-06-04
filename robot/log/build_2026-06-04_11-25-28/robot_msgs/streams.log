@@ -1,0 +1,374 @@
+[0.016s] Invoking command in '/home/kaisar/warehouse_robot/robot/build/robot_msgs': CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}:/opt/ros/jazzy DEBUGINFOD_URLS=https://debuginfod.ubuntu.com /usr/bin/cmake /home/kaisar/warehouse_robot/robot/ws/src/robot_msgs -DCMAKE_INSTALL_PREFIX=/home/kaisar/warehouse_robot/robot/install/robot_msgs
+[0.061s] -- Found ament_cmake: 2.5.6 (/opt/ros/jazzy/share/ament_cmake/cmake)
+[0.188s] -- Override CMake install command with custom implementation using symlinks instead of copying resources
+[0.214s] -- Found builtin_interfaces: 2.0.3 (/opt/ros/jazzy/share/builtin_interfaces/cmake)
+[0.258s] -- Found rosidl_generator_c: 4.6.7 (/opt/ros/jazzy/share/rosidl_generator_c/cmake)
+[0.272s] -- Found rosidl_generator_cpp: 4.6.7 (/opt/ros/jazzy/share/rosidl_generator_cpp/cmake)
+[0.293s] -- Using all available rosidl_typesupport_c: rosidl_typesupport_fastrtps_c;rosidl_typesupport_introspection_c
+[0.314s] -- Using all available rosidl_typesupport_cpp: rosidl_typesupport_fastrtps_cpp;rosidl_typesupport_introspection_cpp
+[0.331s] -- Found geometry_msgs: 5.3.7 (/opt/ros/jazzy/share/geometry_msgs/cmake)
+[0.375s] -- Found rosidl_default_generators: 1.6.0 (/opt/ros/jazzy/share/rosidl_default_generators/cmake)
+[0.393s] -- Found rosidl_adapter: 4.6.7 (/opt/ros/jazzy/share/rosidl_adapter/cmake)
+[0.796s] -- Found ament_cmake_ros: 0.12.0 (/opt/ros/jazzy/share/ament_cmake_ros/cmake)
+[1.165s] -- Using all available rosidl_typesupport_c: rosidl_typesupport_fastrtps_c;rosidl_typesupport_introspection_c
+[1.305s] -- Using all available rosidl_typesupport_cpp: rosidl_typesupport_fastrtps_cpp;rosidl_typesupport_introspection_cpp
+[1.307s] -- Found python_cmake_module: 0.11.1 (/opt/ros/jazzy/share/python_cmake_module/cmake)
+[1.679s] -- Found Python3: /usr/bin/python3 (found version "3.12.3") found components: Interpreter Development NumPy Development.Module Development.Embed 
+[1.797s] -- Found Python3: /usr/bin/python3 (found version "3.12.3") found components: Interpreter 
+[1.818s] -- Configuring done (1.8s)
+[1.907s] -- Generating done (0.1s)
+[1.926s] -- Build files have been written to: /home/kaisar/warehouse_robot/robot/build/robot_msgs
+[1.940s] Invoked command in '/home/kaisar/warehouse_robot/robot/build/robot_msgs' returned '0': CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}:/opt/ros/jazzy DEBUGINFOD_URLS=https://debuginfod.ubuntu.com /usr/bin/cmake /home/kaisar/warehouse_robot/robot/ws/src/robot_msgs -DCMAKE_INSTALL_PREFIX=/home/kaisar/warehouse_robot/robot/install/robot_msgs
+[1.941s] Invoking command in '/home/kaisar/warehouse_robot/robot/build/robot_msgs': CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}:/opt/ros/jazzy DEBUGINFOD_URLS=https://debuginfod.ubuntu.com /usr/bin/cmake --build /home/kaisar/warehouse_robot/robot/build/robot_msgs -- -j12 -l12
+[2.010s] [  1%] Generating type hashes for ROS interfaces
+[2.010s] [  2%] Generating Rust code for ROS interfaces
+[2.021s] [  2%] Built target ament_cmake_python_symlink_robot_msgs
+[2.345s] running egg_info
+[2.383s] writing robot_msgs.egg-info/PKG-INFO
+[2.384s] [  2%] Built target robot_msgs__rosidl_generator_type_description
+[2.384s] writing dependency_links to robot_msgs.egg-info/dependency_links.txt
+[2.384s] writing top-level names to robot_msgs.egg-info/top_level.txt
+[2.399s] [  3%] Generating C code for ROS interfaces
+[2.419s] [  4%] Generating C++ code for ROS interfaces
+[2.443s] [  4%] Built target robot_msgs__rs
+[2.494s] reading manifest file 'robot_msgs.egg-info/SOURCES.txt'
+[2.495s] writing manifest file 'robot_msgs.egg-info/SOURCES.txt'
+[2.548s] [  4%] Built target ament_cmake_python_build_robot_msgs_egg
+[3.222s] [  4%] Built target robot_msgs__cpp
+[3.395s] [  6%] Building C object CMakeFiles/robot_msgs__rosidl_generator_c.dir/rosidl_generator_c/robot_msgs/msg/detail/executor_state__functions.c.o
+[3.396s] [  6%] Building C object CMakeFiles/robot_msgs__rosidl_generator_c.dir/rosidl_generator_c/robot_msgs/msg/detail/executor_state__description.c.o
+[3.398s] [  8%] Building C object CMakeFiles/robot_msgs__rosidl_generator_c.dir/rosidl_generator_c/robot_msgs/srv/detail/plan_route__description.c.o
+[3.399s] [  8%] Building C object CMakeFiles/robot_msgs__rosidl_generator_c.dir/rosidl_generator_c/robot_msgs/msg/detail/robot_status__type_support.c.o
+[3.399s] [  9%] Building C object CMakeFiles/robot_msgs__rosidl_generator_c.dir/rosidl_generator_c/robot_msgs/msg/detail/robot_status__functions.c.o
+[3.399s] [ 10%] Building C object CMakeFiles/robot_msgs__rosidl_generator_c.dir/rosidl_generator_c/robot_msgs/msg/detail/executor_state__type_support.c.o
+[3.403s] [ 11%] Building C object CMakeFiles/robot_msgs__rosidl_generator_c.dir/rosidl_generator_c/robot_msgs/msg/detail/robot_status__description.c.o
+[3.404s] [ 12%] Building C object CMakeFiles/robot_msgs__rosidl_generator_c.dir/rosidl_generator_c/robot_msgs/srv/detail/plan_route__type_support.c.o
+[3.410s] [ 13%] Building C object CMakeFiles/robot_msgs__rosidl_generator_c.dir/rosidl_generator_c/robot_msgs/srv/detail/plan_route__functions.c.o
+[3.410s] [ 14%] Building C object CMakeFiles/robot_msgs__rosidl_generator_c.dir/rosidl_generator_c/robot_msgs/srv/detail/execute_route__functions.c.o
+[3.412s] [ 15%] Building C object CMakeFiles/robot_msgs__rosidl_generator_c.dir/rosidl_generator_c/robot_msgs/srv/detail/execute_route__description.c.o
+[3.423s] [ 16%] Building C object CMakeFiles/robot_msgs__rosidl_generator_c.dir/rosidl_generator_c/robot_msgs/srv/detail/execute_route__type_support.c.o
+[3.502s] [ 18%] Building C object CMakeFiles/robot_msgs__rosidl_generator_c.dir/rosidl_generator_c/robot_msgs/srv/detail/cancel_route__description.c.o
+[3.502s] [ 18%] Building C object CMakeFiles/robot_msgs__rosidl_generator_c.dir/rosidl_generator_c/robot_msgs/srv/detail/cancel_route__functions.c.o
+[3.522s] [ 21%] Building C object CMakeFiles/robot_msgs__rosidl_generator_c.dir/rosidl_generator_c/robot_msgs/srv/detail/load_robot_map__description.c.o
+[3.522s] [ 21%] Building C object CMakeFiles/robot_msgs__rosidl_generator_c.dir/rosidl_generator_c/robot_msgs/srv/detail/load_robot_map__functions.c.o
+[3.530s] [ 22%] Building C object CMakeFiles/robot_msgs__rosidl_generator_c.dir/rosidl_generator_c/robot_msgs/srv/detail/cancel_route__type_support.c.o
+[3.530s] [ 23%] Building C object CMakeFiles/robot_msgs__rosidl_generator_c.dir/rosidl_generator_c/robot_msgs/srv/detail/load_robot_map__type_support.c.o
+[3.537s] [ 24%] Building C object CMakeFiles/robot_msgs__rosidl_generator_c.dir/rosidl_generator_c/robot_msgs/srv/detail/get_robot_map_state__functions.c.o
+[3.554s] [ 25%] Building C object CMakeFiles/robot_msgs__rosidl_generator_c.dir/rosidl_generator_c/robot_msgs/srv/detail/get_robot_map_state__description.c.o
+[3.555s] [ 26%] Building C object CMakeFiles/robot_msgs__rosidl_generator_c.dir/rosidl_generator_c/robot_msgs/srv/detail/get_robot_map_state__type_support.c.o
+[3.667s] [ 27%] Linking C shared library librobot_msgs__rosidl_generator_c.so
+[3.736s] [ 27%] Built target robot_msgs__rosidl_generator_c
+[3.752s] [ 29%] Generating C type support dispatch for ROS interfaces
+[3.752s] [ 29%] Generating C type support for eProsima Fast-RTPS
+[3.755s] [ 32%] Generating C++ type support dispatch for ROS interfaces
+[3.755s] [ 32%] Generating C++ type support for eProsima Fast-RTPS
+[3.755s] [ 32%] Generating C++ introspection for ROS interfaces
+[3.755s] [ 33%] Generating C introspection for ROS interfaces
+[4.434s] [ 34%] Building CXX object CMakeFiles/robot_msgs__rosidl_typesupport_c.dir/rosidl_typesupport_c/robot_msgs/msg/robot_status__type_support.cpp.o
+[4.440s] [ 35%] Building CXX object CMakeFiles/robot_msgs__rosidl_typesupport_c.dir/rosidl_typesupport_c/robot_msgs/msg/executor_state__type_support.cpp.o
+[4.445s] [ 36%] Building CXX object CMakeFiles/robot_msgs__rosidl_typesupport_c.dir/rosidl_typesupport_c/robot_msgs/srv/plan_route__type_support.cpp.o
+[4.456s] [ 37%] Building CXX object CMakeFiles/robot_msgs__rosidl_typesupport_c.dir/rosidl_typesupport_c/robot_msgs/srv/execute_route__type_support.cpp.o
+[4.485s] [ 38%] Building CXX object CMakeFiles/robot_msgs__rosidl_typesupport_c.dir/rosidl_typesupport_c/robot_msgs/srv/load_robot_map__type_support.cpp.o
+[4.489s] [ 40%] Building CXX object CMakeFiles/robot_msgs__rosidl_typesupport_c.dir/rosidl_typesupport_c/robot_msgs/srv/cancel_route__type_support.cpp.o
+[4.501s] [ 41%] Building CXX object CMakeFiles/robot_msgs__rosidl_typesupport_introspection_cpp.dir/rosidl_typesupport_introspection_cpp/robot_msgs/msg/detail/executor_state__type_support.cpp.o
+[4.501s] [ 42%] Building CXX object CMakeFiles/robot_msgs__rosidl_typesupport_c.dir/rosidl_typesupport_c/robot_msgs/srv/get_robot_map_state__type_support.cpp.o
+[4.536s] [ 43%] Building C object CMakeFiles/robot_msgs__rosidl_typesupport_introspection_c.dir/rosidl_typesupport_introspection_c/robot_msgs/msg/detail/executor_state__type_support.c.o
+[4.553s] [ 44%] Building CXX object CMakeFiles/robot_msgs__rosidl_typesupport_cpp.dir/rosidl_typesupport_cpp/robot_msgs/msg/executor_state__type_support.cpp.o
+[4.603s] [ 45%] Building C object CMakeFiles/robot_msgs__rosidl_typesupport_introspection_c.dir/rosidl_typesupport_introspection_c/robot_msgs/msg/detail/robot_status__type_support.c.o
+[4.604s] [ 46%] Building CXX object CMakeFiles/robot_msgs__rosidl_typesupport_cpp.dir/rosidl_typesupport_cpp/robot_msgs/msg/robot_status__type_support.cpp.o
+[4.605s] [ 47%] Building C object CMakeFiles/robot_msgs__rosidl_typesupport_introspection_c.dir/rosidl_typesupport_introspection_c/robot_msgs/srv/detail/plan_route__type_support.c.o
+[4.619s] [ 48%] Building C object CMakeFiles/robot_msgs__rosidl_typesupport_introspection_c.dir/rosidl_typesupport_introspection_c/robot_msgs/srv/detail/execute_route__type_support.c.o
+[4.621s] [ 49%] Linking CXX shared library librobot_msgs__rosidl_typesupport_c.so
+[4.631s] [ 50%] Building CXX object CMakeFiles/robot_msgs__rosidl_typesupport_introspection_cpp.dir/rosidl_typesupport_introspection_cpp/robot_msgs/msg/detail/robot_status__type_support.cpp.o
+[4.631s] [ 51%] Building CXX object CMakeFiles/robot_msgs__rosidl_typesupport_cpp.dir/rosidl_typesupport_cpp/robot_msgs/srv/plan_route__type_support.cpp.o
+[4.662s] [ 52%] Building CXX object CMakeFiles/robot_msgs__rosidl_typesupport_introspection_cpp.dir/rosidl_typesupport_introspection_cpp/robot_msgs/srv/detail/plan_route__type_support.cpp.o
+[4.676s] [ 53%] Building CXX object CMakeFiles/robot_msgs__rosidl_typesupport_introspection_cpp.dir/rosidl_typesupport_introspection_cpp/robot_msgs/srv/detail/execute_route__type_support.cpp.o
+[4.730s] [ 54%] Building CXX object CMakeFiles/robot_msgs__rosidl_typesupport_introspection_cpp.dir/rosidl_typesupport_introspection_cpp/robot_msgs/srv/detail/cancel_route__type_support.cpp.o
+[4.749s] [ 55%] Building C object CMakeFiles/robot_msgs__rosidl_typesupport_introspection_c.dir/rosidl_typesupport_introspection_c/robot_msgs/srv/detail/cancel_route__type_support.c.o
+[4.754s] [ 55%] Built target robot_msgs__rosidl_typesupport_c
+[4.786s] [ 56%] Building C object CMakeFiles/robot_msgs__rosidl_typesupport_introspection_c.dir/rosidl_typesupport_introspection_c/robot_msgs/srv/detail/load_robot_map__type_support.c.o
+[4.900s] [ 57%] Building CXX object CMakeFiles/robot_msgs__rosidl_typesupport_introspection_cpp.dir/rosidl_typesupport_introspection_cpp/robot_msgs/srv/detail/load_robot_map__type_support.cpp.o
+[4.948s] [ 58%] Building C object CMakeFiles/robot_msgs__rosidl_typesupport_introspection_c.dir/rosidl_typesupport_introspection_c/robot_msgs/srv/detail/get_robot_map_state__type_support.c.o
+[5.159s] [ 60%] Linking C shared library librobot_msgs__rosidl_typesupport_introspection_c.so
+[5.245s] [ 61%] Building CXX object CMakeFiles/robot_msgs__rosidl_typesupport_fastrtps_cpp.dir/rosidl_typesupport_fastrtps_cpp/robot_msgs/msg/detail/dds_fastrtps/executor_state__type_support.cpp.o
+[5.286s] [ 62%] Building CXX object CMakeFiles/robot_msgs__rosidl_typesupport_introspection_cpp.dir/rosidl_typesupport_introspection_cpp/robot_msgs/srv/detail/get_robot_map_state__type_support.cpp.o
+[5.289s] [ 63%] Building CXX object CMakeFiles/robot_msgs__rosidl_typesupport_cpp.dir/rosidl_typesupport_cpp/robot_msgs/srv/execute_route__type_support.cpp.o
+[5.299s] [ 63%] Built target robot_msgs__rosidl_typesupport_introspection_c
+[5.308s] [ 64%] Building CXX object CMakeFiles/robot_msgs__rosidl_typesupport_fastrtps_cpp.dir/rosidl_typesupport_fastrtps_cpp/robot_msgs/msg/detail/dds_fastrtps/robot_status__type_support.cpp.o
+[5.345s] [ 65%] Building CXX object CMakeFiles/robot_msgs__rosidl_typesupport_cpp.dir/rosidl_typesupport_cpp/robot_msgs/srv/cancel_route__type_support.cpp.o
+[5.398s] [ 66%] Building CXX object CMakeFiles/robot_msgs__rosidl_typesupport_cpp.dir/rosidl_typesupport_cpp/robot_msgs/srv/load_robot_map__type_support.cpp.o
+[5.419s] [ 67%] Building CXX object CMakeFiles/robot_msgs__rosidl_typesupport_fastrtps_c.dir/rosidl_typesupport_fastrtps_c/robot_msgs/msg/detail/executor_state__type_support_c.cpp.o
+[5.503s] [ 68%] Building CXX object CMakeFiles/robot_msgs__rosidl_typesupport_fastrtps_c.dir/rosidl_typesupport_fastrtps_c/robot_msgs/msg/detail/robot_status__type_support_c.cpp.o
+[5.535s] [ 69%] Building CXX object CMakeFiles/robot_msgs__rosidl_typesupport_cpp.dir/rosidl_typesupport_cpp/robot_msgs/srv/get_robot_map_state__type_support.cpp.o
+[5.554s] [ 70%] Building CXX object CMakeFiles/robot_msgs__rosidl_typesupport_fastrtps_cpp.dir/rosidl_typesupport_fastrtps_cpp/robot_msgs/srv/detail/dds_fastrtps/plan_route__type_support.cpp.o
+[5.732s] [ 71%] Building CXX object CMakeFiles/robot_msgs__rosidl_typesupport_fastrtps_c.dir/rosidl_typesupport_fastrtps_c/robot_msgs/srv/detail/plan_route__type_support_c.cpp.o
+[6.044s] [ 72%] Building CXX object CMakeFiles/robot_msgs__rosidl_typesupport_fastrtps_cpp.dir/rosidl_typesupport_fastrtps_cpp/robot_msgs/srv/detail/dds_fastrtps/execute_route__type_support.cpp.o
+[6.164s] [ 73%] Building CXX object CMakeFiles/robot_msgs__rosidl_typesupport_fastrtps_c.dir/rosidl_typesupport_fastrtps_c/robot_msgs/srv/detail/execute_route__type_support_c.cpp.o
+[6.177s] [ 74%] Linking CXX shared library librobot_msgs__rosidl_typesupport_introspection_cpp.so
+[6.237s] [ 75%] Building CXX object CMakeFiles/robot_msgs__rosidl_typesupport_fastrtps_cpp.dir/rosidl_typesupport_fastrtps_cpp/robot_msgs/srv/detail/dds_fastrtps/cancel_route__type_support.cpp.o
+[6.337s] [ 76%] Linking CXX shared library librobot_msgs__rosidl_typesupport_cpp.so
+[6.349s] [ 77%] Building CXX object CMakeFiles/robot_msgs__rosidl_typesupport_fastrtps_c.dir/rosidl_typesupport_fastrtps_c/robot_msgs/srv/detail/cancel_route__type_support_c.cpp.o
+[6.429s] [ 78%] Building CXX object CMakeFiles/robot_msgs__rosidl_typesupport_fastrtps_c.dir/rosidl_typesupport_fastrtps_c/robot_msgs/srv/detail/load_robot_map__type_support_c.cpp.o
+[6.444s] [ 80%] Building CXX object CMakeFiles/robot_msgs__rosidl_typesupport_fastrtps_c.dir/rosidl_typesupport_fastrtps_c/robot_msgs/srv/detail/get_robot_map_state__type_support_c.cpp.o
+[6.479s] [ 80%] Built target robot_msgs__rosidl_typesupport_introspection_cpp
+[6.506s] [ 81%] Building CXX object CMakeFiles/robot_msgs__rosidl_typesupport_fastrtps_cpp.dir/rosidl_typesupport_fastrtps_cpp/robot_msgs/srv/detail/dds_fastrtps/get_robot_map_state__type_support.cpp.o
+[6.510s] [ 82%] Building CXX object CMakeFiles/robot_msgs__rosidl_typesupport_fastrtps_cpp.dir/rosidl_typesupport_fastrtps_cpp/robot_msgs/srv/detail/dds_fastrtps/load_robot_map__type_support.cpp.o
+[6.697s] [ 82%] Built target robot_msgs__rosidl_typesupport_cpp
+[7.404s] [ 83%] Linking CXX shared library librobot_msgs__rosidl_typesupport_fastrtps_c.so
+[7.485s] [ 84%] Linking CXX shared library librobot_msgs__rosidl_typesupport_fastrtps_cpp.so
+[7.529s] [ 84%] Built target robot_msgs__rosidl_typesupport_fastrtps_c
+[7.625s] [ 84%] Built target robot_msgs__rosidl_typesupport_fastrtps_cpp
+[7.653s] [ 84%] Built target robot_msgs
+[7.682s] [ 85%] Generating Python code for ROS interfaces
+[8.918s] [ 85%] Built target robot_msgs__py
+[8.971s] [ 86%] Building C object CMakeFiles/robot_msgs__rosidl_generator_py.dir/rosidl_generator_py/robot_msgs/msg/_executor_state_s.c.o
+[8.971s] [ 88%] Building C object CMakeFiles/robot_msgs__rosidl_generator_py.dir/rosidl_generator_py/robot_msgs/srv/_plan_route_s.c.o
+[8.971s] [ 88%] Building C object CMakeFiles/robot_msgs__rosidl_generator_py.dir/rosidl_generator_py/robot_msgs/srv/_execute_route_s.c.o
+[8.971s] [ 89%] Building C object CMakeFiles/robot_msgs__rosidl_generator_py.dir/rosidl_generator_py/robot_msgs/msg/_robot_status_s.c.o
+[8.971s] [ 90%] Building C object CMakeFiles/robot_msgs__rosidl_generator_py.dir/rosidl_generator_py/robot_msgs/srv/_cancel_route_s.c.o
+[8.972s] [ 91%] Building C object CMakeFiles/robot_msgs__rosidl_generator_py.dir/rosidl_generator_py/robot_msgs/srv/_get_robot_map_state_s.c.o
+[8.975s] [ 92%] Building C object CMakeFiles/robot_msgs__rosidl_generator_py.dir/rosidl_generator_py/robot_msgs/srv/_load_robot_map_s.c.o
+[9.221s] [ 93%] Linking C shared library librobot_msgs__rosidl_generator_py.so
+[9.285s] [ 93%] Built target robot_msgs__rosidl_generator_py
+[9.322s] [ 94%] Building C object CMakeFiles/robot_msgs_s__rosidl_typesupport_fastrtps_c.dir/rosidl_generator_py/robot_msgs/_robot_msgs_s.ep.rosidl_typesupport_fastrtps_c.c.o
+[9.325s] [ 96%] Building C object CMakeFiles/robot_msgs_s__rosidl_typesupport_introspection_c.dir/rosidl_generator_py/robot_msgs/_robot_msgs_s.ep.rosidl_typesupport_introspection_c.c.o
+[9.326s] [ 96%] Building C object CMakeFiles/robot_msgs_s__rosidl_typesupport_c.dir/rosidl_generator_py/robot_msgs/_robot_msgs_s.ep.rosidl_typesupport_c.c.o
+[9.505s] [ 97%] Linking C shared module rosidl_generator_py/robot_msgs/robot_msgs_s__rosidl_typesupport_c.so
+[9.524s] [100%] Linking C shared module rosidl_generator_py/robot_msgs/robot_msgs_s__rosidl_typesupport_introspection_c.so
+[9.524s] [100%] Linking C shared module rosidl_generator_py/robot_msgs/robot_msgs_s__rosidl_typesupport_fastrtps_c.so
+[9.550s] [100%] Built target robot_msgs_s__rosidl_typesupport_c
+[9.568s] [100%] Built target robot_msgs_s__rosidl_typesupport_fastrtps_c
+[9.568s] [100%] Built target robot_msgs_s__rosidl_typesupport_introspection_c
+[9.586s] Invoked command in '/home/kaisar/warehouse_robot/robot/build/robot_msgs' returned '0': CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}:/opt/ros/jazzy DEBUGINFOD_URLS=https://debuginfod.ubuntu.com /usr/bin/cmake --build /home/kaisar/warehouse_robot/robot/build/robot_msgs -- -j12 -l12
+[9.599s] Invoking command in '/home/kaisar/warehouse_robot/robot/build/robot_msgs': CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}:/opt/ros/jazzy DEBUGINFOD_URLS=https://debuginfod.ubuntu.com /usr/bin/cmake --install /home/kaisar/warehouse_robot/robot/build/robot_msgs
+[9.611s] -- Install configuration: ""
+[9.611s] -- Execute custom install script
+[9.611s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/share/ament_index/resource_index/rosidl_interfaces/robot_msgs
+[9.611s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/share/robot_msgs/msg/ExecutorState.json
+[9.612s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/share/robot_msgs/msg/RobotStatus.json
+[9.612s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/share/robot_msgs/srv/PlanRoute.json
+[9.613s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/share/robot_msgs/srv/ExecuteRoute.json
+[9.613s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/share/robot_msgs/srv/CancelRoute.json
+[9.613s] -- Symlinking: /home/kaisar/warehouse_robot/robot/install/robot_msgs/share/robot_msgs/srv/LoadRobotMap.json
+[9.628s] -- Symlinking: /home/kaisar/warehouse_robot/robot/install/robot_msgs/share/robot_msgs/srv/GetRobotMapState.json
+[9.641s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/include/robot_msgs/robot_msgs/msg/detail/executor_state__functions.h
+[9.641s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/include/robot_msgs/robot_msgs/msg/detail/executor_state__struct.h
+[9.642s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/include/robot_msgs/robot_msgs/msg/detail/executor_state__type_support.h
+[9.642s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/include/robot_msgs/robot_msgs/msg/detail/robot_status__functions.h
+[9.642s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/include/robot_msgs/robot_msgs/msg/detail/robot_status__struct.h
+[9.642s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/include/robot_msgs/robot_msgs/msg/detail/robot_status__type_support.h
+[9.643s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/include/robot_msgs/robot_msgs/msg/executor_state.h
+[9.643s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/include/robot_msgs/robot_msgs/msg/robot_status.h
+[9.643s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/include/robot_msgs/robot_msgs/msg/rosidl_generator_c__visibility_control.h
+[9.643s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/include/robot_msgs/robot_msgs/srv/cancel_route.h
+[9.643s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/include/robot_msgs/robot_msgs/srv/detail/cancel_route__functions.h
+[9.643s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/include/robot_msgs/robot_msgs/srv/detail/cancel_route__struct.h
+[9.644s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/include/robot_msgs/robot_msgs/srv/detail/cancel_route__type_support.h
+[9.644s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/include/robot_msgs/robot_msgs/srv/detail/execute_route__functions.h
+[9.644s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/include/robot_msgs/robot_msgs/srv/detail/execute_route__struct.h
+[9.644s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/include/robot_msgs/robot_msgs/srv/detail/execute_route__type_support.h
+[9.644s] -- Symlinking: /home/kaisar/warehouse_robot/robot/install/robot_msgs/include/robot_msgs/robot_msgs/srv/detail/get_robot_map_state__functions.h
+[9.657s] -- Symlinking: /home/kaisar/warehouse_robot/robot/install/robot_msgs/include/robot_msgs/robot_msgs/srv/detail/get_robot_map_state__struct.h
+[9.670s] -- Symlinking: /home/kaisar/warehouse_robot/robot/install/robot_msgs/include/robot_msgs/robot_msgs/srv/detail/get_robot_map_state__type_support.h
+[9.683s] -- Symlinking: /home/kaisar/warehouse_robot/robot/install/robot_msgs/include/robot_msgs/robot_msgs/srv/detail/load_robot_map__functions.h
+[9.696s] -- Symlinking: /home/kaisar/warehouse_robot/robot/install/robot_msgs/include/robot_msgs/robot_msgs/srv/detail/load_robot_map__struct.h
+[9.708s] -- Symlinking: /home/kaisar/warehouse_robot/robot/install/robot_msgs/include/robot_msgs/robot_msgs/srv/detail/load_robot_map__type_support.h
+[9.720s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/include/robot_msgs/robot_msgs/srv/detail/plan_route__functions.h
+[9.720s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/include/robot_msgs/robot_msgs/srv/detail/plan_route__struct.h
+[9.720s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/include/robot_msgs/robot_msgs/srv/detail/plan_route__type_support.h
+[9.720s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/include/robot_msgs/robot_msgs/srv/execute_route.h
+[9.721s] -- Symlinking: /home/kaisar/warehouse_robot/robot/install/robot_msgs/include/robot_msgs/robot_msgs/srv/get_robot_map_state.h
+[9.732s] -- Symlinking: /home/kaisar/warehouse_robot/robot/install/robot_msgs/include/robot_msgs/robot_msgs/srv/load_robot_map.h
+[9.744s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/include/robot_msgs/robot_msgs/srv/plan_route.h
+[9.745s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/share/robot_msgs/environment/library_path.sh
+[9.745s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/share/robot_msgs/environment/library_path.dsv
+[9.746s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/include/robot_msgs/robot_msgs/msg/detail/executor_state__rosidl_typesupport_fastrtps_c.h
+[9.747s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/include/robot_msgs/robot_msgs/msg/detail/robot_status__rosidl_typesupport_fastrtps_c.h
+[9.747s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/include/robot_msgs/robot_msgs/msg/rosidl_typesupport_fastrtps_c__visibility_control.h
+[9.747s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/include/robot_msgs/robot_msgs/srv/detail/cancel_route__rosidl_typesupport_fastrtps_c.h
+[9.747s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/include/robot_msgs/robot_msgs/srv/detail/execute_route__rosidl_typesupport_fastrtps_c.h
+[9.748s] -- Symlinking: /home/kaisar/warehouse_robot/robot/install/robot_msgs/include/robot_msgs/robot_msgs/srv/detail/get_robot_map_state__rosidl_typesupport_fastrtps_c.h
+[9.761s] -- Symlinking: /home/kaisar/warehouse_robot/robot/install/robot_msgs/include/robot_msgs/robot_msgs/srv/detail/load_robot_map__rosidl_typesupport_fastrtps_c.h
+[9.774s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/include/robot_msgs/robot_msgs/srv/detail/plan_route__rosidl_typesupport_fastrtps_c.h
+[9.775s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/include/robot_msgs/robot_msgs/msg/detail/executor_state__builder.hpp
+[9.775s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/include/robot_msgs/robot_msgs/msg/detail/executor_state__struct.hpp
+[9.776s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/include/robot_msgs/robot_msgs/msg/detail/executor_state__traits.hpp
+[9.776s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/include/robot_msgs/robot_msgs/msg/detail/executor_state__type_support.hpp
+[9.776s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/include/robot_msgs/robot_msgs/msg/detail/robot_status__builder.hpp
+[9.777s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/include/robot_msgs/robot_msgs/msg/detail/robot_status__struct.hpp
+[9.777s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/include/robot_msgs/robot_msgs/msg/detail/robot_status__traits.hpp
+[9.777s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/include/robot_msgs/robot_msgs/msg/detail/robot_status__type_support.hpp
+[9.778s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/include/robot_msgs/robot_msgs/msg/executor_state.hpp
+[9.778s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/include/robot_msgs/robot_msgs/msg/robot_status.hpp
+[9.779s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/include/robot_msgs/robot_msgs/msg/rosidl_generator_cpp__visibility_control.hpp
+[9.779s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/include/robot_msgs/robot_msgs/srv/cancel_route.hpp
+[9.779s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/include/robot_msgs/robot_msgs/srv/detail/cancel_route__builder.hpp
+[9.779s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/include/robot_msgs/robot_msgs/srv/detail/cancel_route__struct.hpp
+[9.779s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/include/robot_msgs/robot_msgs/srv/detail/cancel_route__traits.hpp
+[9.780s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/include/robot_msgs/robot_msgs/srv/detail/cancel_route__type_support.hpp
+[9.780s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/include/robot_msgs/robot_msgs/srv/detail/execute_route__builder.hpp
+[9.780s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/include/robot_msgs/robot_msgs/srv/detail/execute_route__struct.hpp
+[9.780s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/include/robot_msgs/robot_msgs/srv/detail/execute_route__traits.hpp
+[9.780s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/include/robot_msgs/robot_msgs/srv/detail/execute_route__type_support.hpp
+[9.780s] -- Symlinking: /home/kaisar/warehouse_robot/robot/install/robot_msgs/include/robot_msgs/robot_msgs/srv/detail/get_robot_map_state__builder.hpp
+[9.792s] -- Symlinking: /home/kaisar/warehouse_robot/robot/install/robot_msgs/include/robot_msgs/robot_msgs/srv/detail/get_robot_map_state__struct.hpp
+[9.806s] -- Symlinking: /home/kaisar/warehouse_robot/robot/install/robot_msgs/include/robot_msgs/robot_msgs/srv/detail/get_robot_map_state__traits.hpp
+[9.818s] -- Symlinking: /home/kaisar/warehouse_robot/robot/install/robot_msgs/include/robot_msgs/robot_msgs/srv/detail/get_robot_map_state__type_support.hpp
+[9.834s] -- Symlinking: /home/kaisar/warehouse_robot/robot/install/robot_msgs/include/robot_msgs/robot_msgs/srv/detail/load_robot_map__builder.hpp
+[9.848s] -- Symlinking: /home/kaisar/warehouse_robot/robot/install/robot_msgs/include/robot_msgs/robot_msgs/srv/detail/load_robot_map__struct.hpp
+[9.862s] -- Symlinking: /home/kaisar/warehouse_robot/robot/install/robot_msgs/include/robot_msgs/robot_msgs/srv/detail/load_robot_map__traits.hpp
+[9.874s] -- Symlinking: /home/kaisar/warehouse_robot/robot/install/robot_msgs/include/robot_msgs/robot_msgs/srv/detail/load_robot_map__type_support.hpp
+[9.888s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/include/robot_msgs/robot_msgs/srv/detail/plan_route__builder.hpp
+[9.888s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/include/robot_msgs/robot_msgs/srv/detail/plan_route__struct.hpp
+[9.888s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/include/robot_msgs/robot_msgs/srv/detail/plan_route__traits.hpp
+[9.888s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/include/robot_msgs/robot_msgs/srv/detail/plan_route__type_support.hpp
+[9.888s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/include/robot_msgs/robot_msgs/srv/execute_route.hpp
+[9.888s] -- Symlinking: /home/kaisar/warehouse_robot/robot/install/robot_msgs/include/robot_msgs/robot_msgs/srv/get_robot_map_state.hpp
+[9.901s] -- Symlinking: /home/kaisar/warehouse_robot/robot/install/robot_msgs/include/robot_msgs/robot_msgs/srv/load_robot_map.hpp
+[9.913s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/include/robot_msgs/robot_msgs/srv/plan_route.hpp
+[9.914s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/include/robot_msgs/robot_msgs/msg/detail/executor_state__rosidl_typesupport_fastrtps_cpp.hpp
+[9.915s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/include/robot_msgs/robot_msgs/msg/detail/robot_status__rosidl_typesupport_fastrtps_cpp.hpp
+[9.915s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/include/robot_msgs/robot_msgs/msg/rosidl_typesupport_fastrtps_cpp__visibility_control.h
+[9.915s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/include/robot_msgs/robot_msgs/srv/detail/cancel_route__rosidl_typesupport_fastrtps_cpp.hpp
+[9.915s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/include/robot_msgs/robot_msgs/srv/detail/execute_route__rosidl_typesupport_fastrtps_cpp.hpp
+[9.915s] -- Symlinking: /home/kaisar/warehouse_robot/robot/install/robot_msgs/include/robot_msgs/robot_msgs/srv/detail/get_robot_map_state__rosidl_typesupport_fastrtps_cpp.hpp
+[9.929s] -- Symlinking: /home/kaisar/warehouse_robot/robot/install/robot_msgs/include/robot_msgs/robot_msgs/srv/detail/load_robot_map__rosidl_typesupport_fastrtps_cpp.hpp
+[9.943s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/include/robot_msgs/robot_msgs/srv/detail/plan_route__rosidl_typesupport_fastrtps_cpp.hpp
+[9.944s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/include/robot_msgs/robot_msgs/msg/detail/executor_state__rosidl_typesupport_introspection_c.h
+[9.944s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/include/robot_msgs/robot_msgs/msg/detail/robot_status__rosidl_typesupport_introspection_c.h
+[9.944s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/include/robot_msgs/robot_msgs/msg/rosidl_typesupport_introspection_c__visibility_control.h
+[9.945s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/include/robot_msgs/robot_msgs/srv/detail/cancel_route__rosidl_typesupport_introspection_c.h
+[9.945s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/include/robot_msgs/robot_msgs/srv/detail/execute_route__rosidl_typesupport_introspection_c.h
+[9.945s] -- Symlinking: /home/kaisar/warehouse_robot/robot/install/robot_msgs/include/robot_msgs/robot_msgs/srv/detail/get_robot_map_state__rosidl_typesupport_introspection_c.h
+[9.957s] -- Symlinking: /home/kaisar/warehouse_robot/robot/install/robot_msgs/include/robot_msgs/robot_msgs/srv/detail/load_robot_map__rosidl_typesupport_introspection_c.h
+[9.971s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/include/robot_msgs/robot_msgs/srv/detail/plan_route__rosidl_typesupport_introspection_c.h
+[9.971s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/include/robot_msgs/robot_msgs/msg/detail/executor_state__rosidl_typesupport_introspection_cpp.hpp
+[9.971s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/include/robot_msgs/robot_msgs/msg/detail/robot_status__rosidl_typesupport_introspection_cpp.hpp
+[9.972s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/include/robot_msgs/robot_msgs/srv/detail/cancel_route__rosidl_typesupport_introspection_cpp.hpp
+[9.972s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/include/robot_msgs/robot_msgs/srv/detail/execute_route__rosidl_typesupport_introspection_cpp.hpp
+[9.972s] -- Symlinking: /home/kaisar/warehouse_robot/robot/install/robot_msgs/include/robot_msgs/robot_msgs/srv/detail/get_robot_map_state__rosidl_typesupport_introspection_cpp.hpp
+[9.987s] -- Symlinking: /home/kaisar/warehouse_robot/robot/install/robot_msgs/include/robot_msgs/robot_msgs/srv/detail/load_robot_map__rosidl_typesupport_introspection_cpp.hpp
+[10.000s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/include/robot_msgs/robot_msgs/srv/detail/plan_route__rosidl_typesupport_introspection_cpp.hpp
+[10.000s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/share/robot_msgs/environment/pythonpath.sh
+[10.000s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/share/robot_msgs/environment/pythonpath.dsv
+[10.001s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/lib/python3.12/site-packages/robot_msgs-0.0.0-py3.12.egg-info/PKG-INFO
+[10.001s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/lib/python3.12/site-packages/robot_msgs-0.0.0-py3.12.egg-info/SOURCES.txt
+[10.001s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/lib/python3.12/site-packages/robot_msgs-0.0.0-py3.12.egg-info/dependency_links.txt
+[10.001s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/lib/python3.12/site-packages/robot_msgs-0.0.0-py3.12.egg-info/top_level.txt
+[10.003s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/lib/python3.12/site-packages/robot_msgs/__init__.py
+[10.003s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/lib/python3.12/site-packages/robot_msgs/_robot_msgs_s.ep.rosidl_typesupport_c.c
+[10.003s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/lib/python3.12/site-packages/robot_msgs/_robot_msgs_s.ep.rosidl_typesupport_fastrtps_c.c
+[10.004s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/lib/python3.12/site-packages/robot_msgs/_robot_msgs_s.ep.rosidl_typesupport_introspection_c.c
+[10.004s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/lib/python3.12/site-packages/robot_msgs/msg/__init__.py
+[10.004s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/lib/python3.12/site-packages/robot_msgs/msg/_executor_state.py
+[10.004s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/lib/python3.12/site-packages/robot_msgs/msg/_executor_state_s.c
+[10.004s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/lib/python3.12/site-packages/robot_msgs/msg/_robot_status.py
+[10.005s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/lib/python3.12/site-packages/robot_msgs/msg/_robot_status_s.c
+[10.005s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/lib/python3.12/site-packages/robot_msgs/robot_msgs_s__rosidl_typesupport_c.so
+[10.005s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/lib/python3.12/site-packages/robot_msgs/robot_msgs_s__rosidl_typesupport_fastrtps_c.so
+[10.005s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/lib/python3.12/site-packages/robot_msgs/robot_msgs_s__rosidl_typesupport_introspection_c.so
+[10.005s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/lib/python3.12/site-packages/robot_msgs/srv/__init__.py
+[10.006s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/lib/python3.12/site-packages/robot_msgs/srv/_cancel_route.py
+[10.006s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/lib/python3.12/site-packages/robot_msgs/srv/_cancel_route_s.c
+[10.006s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/lib/python3.12/site-packages/robot_msgs/srv/_execute_route.py
+[10.006s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/lib/python3.12/site-packages/robot_msgs/srv/_execute_route_s.c
+[10.006s] -- Symlinking: /home/kaisar/warehouse_robot/robot/install/robot_msgs/lib/python3.12/site-packages/robot_msgs/srv/_get_robot_map_state.py
+[10.019s] -- Symlinking: /home/kaisar/warehouse_robot/robot/install/robot_msgs/lib/python3.12/site-packages/robot_msgs/srv/_get_robot_map_state_s.c
+[10.032s] -- Symlinking: /home/kaisar/warehouse_robot/robot/install/robot_msgs/lib/python3.12/site-packages/robot_msgs/srv/_load_robot_map.py
+[10.045s] -- Symlinking: /home/kaisar/warehouse_robot/robot/install/robot_msgs/lib/python3.12/site-packages/robot_msgs/srv/_load_robot_map_s.c
+[10.057s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/lib/python3.12/site-packages/robot_msgs/srv/_plan_route.py
+[10.058s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/lib/python3.12/site-packages/robot_msgs/srv/_plan_route_s.c
+[10.058s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/lib/python3.12/site-packages/robot_msgs/robot_msgs_s__rosidl_typesupport_fastrtps_c.so
+[10.058s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/lib/python3.12/site-packages/robot_msgs/robot_msgs_s__rosidl_typesupport_introspection_c.so
+[10.059s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/lib/python3.12/site-packages/robot_msgs/robot_msgs_s__rosidl_typesupport_c.so
+[10.059s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/share/ament_index/resource_index/rust_packages/robot_msgs
+[10.060s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/share/robot_msgs/rust/Cargo.toml
+[10.060s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/share/robot_msgs/rust/build.rs
+[10.060s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/share/robot_msgs/rust/src/lib.rs
+[10.060s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/share/robot_msgs/rust/src/msg.rs
+[10.061s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/share/robot_msgs/rust/src/msg/rmw.rs
+[10.061s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/share/robot_msgs/rust/src/srv.rs
+[10.061s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/share/robot_msgs/rust/src/srv/rmw.rs
+[10.061s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/share/robot_msgs/msg/ExecutorState.idl
+[10.062s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/share/robot_msgs/msg/RobotStatus.idl
+[10.062s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/share/robot_msgs/srv/PlanRoute.idl
+[10.062s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/share/robot_msgs/srv/ExecuteRoute.idl
+[10.062s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/share/robot_msgs/srv/CancelRoute.idl
+[10.062s] -- Symlinking: /home/kaisar/warehouse_robot/robot/install/robot_msgs/share/robot_msgs/srv/LoadRobotMap.idl
+[10.075s] -- Symlinking: /home/kaisar/warehouse_robot/robot/install/robot_msgs/share/robot_msgs/srv/GetRobotMapState.idl
+[10.089s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/share/robot_msgs/msg/ExecutorState.msg
+[10.089s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/share/robot_msgs/msg/RobotStatus.msg
+[10.090s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/share/robot_msgs/srv/PlanRoute.srv
+[10.091s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/share/robot_msgs/srv/ExecuteRoute.srv
+[10.091s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/share/robot_msgs/srv/CancelRoute.srv
+[10.091s] -- Symlinking: /home/kaisar/warehouse_robot/robot/install/robot_msgs/share/robot_msgs/srv/LoadRobotMap.srv
+[10.105s] -- Symlinking: /home/kaisar/warehouse_robot/robot/install/robot_msgs/share/robot_msgs/srv/GetRobotMapState.srv
+[10.117s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/share/ament_index/resource_index/package_run_dependencies/robot_msgs
+[10.117s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/share/ament_index/resource_index/parent_prefix_path/robot_msgs
+[10.117s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/share/robot_msgs/environment/ament_prefix_path.sh
+[10.117s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/share/robot_msgs/environment/ament_prefix_path.dsv
+[10.118s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/share/robot_msgs/environment/path.sh
+[10.118s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/share/robot_msgs/environment/path.dsv
+[10.118s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/share/robot_msgs/local_setup.bash
+[10.118s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/share/robot_msgs/local_setup.sh
+[10.118s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/share/robot_msgs/local_setup.zsh
+[10.119s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/share/robot_msgs/local_setup.dsv
+[10.119s] -- Symlinking: /home/kaisar/warehouse_robot/robot/install/robot_msgs/share/robot_msgs/package.dsv
+[10.133s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/share/ament_index/resource_index/packages/robot_msgs
+[10.133s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/share/robot_msgs/cmake/rosidl_cmake-extras.cmake
+[10.133s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/share/robot_msgs/cmake/ament_cmake_export_dependencies-extras.cmake
+[10.133s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/share/robot_msgs/cmake/ament_cmake_export_include_directories-extras.cmake
+[10.133s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/share/robot_msgs/cmake/ament_cmake_export_libraries-extras.cmake
+[10.134s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/share/robot_msgs/cmake/ament_cmake_export_targets-extras.cmake
+[10.134s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/share/robot_msgs/cmake/rosidl_cmake_export_typesupport_targets-extras.cmake
+[10.134s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/share/robot_msgs/cmake/rosidl_cmake_export_typesupport_libraries-extras.cmake
+[10.134s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/share/robot_msgs/cmake/robot_msgsConfig.cmake
+[10.135s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/share/robot_msgs/cmake/robot_msgsConfig-version.cmake
+[10.135s] -- Up-to-date symlink: /home/kaisar/warehouse_robot/robot/install/robot_msgs/share/robot_msgs/package.xml
+[10.135s] -- Installing: /home/kaisar/warehouse_robot/robot/install/robot_msgs/lib/librobot_msgs__rosidl_generator_c.so
+[10.136s] -- Set non-toolchain portion of runtime path of "/home/kaisar/warehouse_robot/robot/install/robot_msgs/lib/librobot_msgs__rosidl_generator_c.so" to ""
+[10.137s] -- Installing: /home/kaisar/warehouse_robot/robot/install/robot_msgs/lib/librobot_msgs__rosidl_typesupport_fastrtps_c.so
+[10.138s] -- Set non-toolchain portion of runtime path of "/home/kaisar/warehouse_robot/robot/install/robot_msgs/lib/librobot_msgs__rosidl_typesupport_fastrtps_c.so" to ""
+[10.138s] -- Installing: /home/kaisar/warehouse_robot/robot/install/robot_msgs/lib/librobot_msgs__rosidl_typesupport_fastrtps_cpp.so
+[10.140s] -- Set non-toolchain portion of runtime path of "/home/kaisar/warehouse_robot/robot/install/robot_msgs/lib/librobot_msgs__rosidl_typesupport_fastrtps_cpp.so" to ""
+[10.141s] -- Installing: /home/kaisar/warehouse_robot/robot/install/robot_msgs/lib/librobot_msgs__rosidl_typesupport_introspection_c.so
+[10.142s] -- Set non-toolchain portion of runtime path of "/home/kaisar/warehouse_robot/robot/install/robot_msgs/lib/librobot_msgs__rosidl_typesupport_introspection_c.so" to ""
+[10.142s] -- Installing: /home/kaisar/warehouse_robot/robot/install/robot_msgs/lib/librobot_msgs__rosidl_typesupport_c.so
+[10.143s] -- Set non-toolchain portion of runtime path of "/home/kaisar/warehouse_robot/robot/install/robot_msgs/lib/librobot_msgs__rosidl_typesupport_c.so" to ""
+[10.144s] -- Installing: /home/kaisar/warehouse_robot/robot/install/robot_msgs/lib/librobot_msgs__rosidl_typesupport_introspection_cpp.so
+[10.146s] -- Set non-toolchain portion of runtime path of "/home/kaisar/warehouse_robot/robot/install/robot_msgs/lib/librobot_msgs__rosidl_typesupport_introspection_cpp.so" to ""
+[10.146s] -- Installing: /home/kaisar/warehouse_robot/robot/install/robot_msgs/lib/librobot_msgs__rosidl_typesupport_cpp.so
+[10.148s] -- Set non-toolchain portion of runtime path of "/home/kaisar/warehouse_robot/robot/install/robot_msgs/lib/librobot_msgs__rosidl_typesupport_cpp.so" to ""
+[10.221s] Listing '/home/kaisar/warehouse_robot/robot/install/robot_msgs/lib/python3.12/site-packages/robot_msgs'...
+[10.221s] Compiling '/home/kaisar/warehouse_robot/robot/install/robot_msgs/lib/python3.12/site-packages/robot_msgs/__init__.py'...
+[10.221s] Listing '/home/kaisar/warehouse_robot/robot/install/robot_msgs/lib/python3.12/site-packages/robot_msgs/msg'...
+[10.221s] Compiling '/home/kaisar/warehouse_robot/robot/install/robot_msgs/lib/python3.12/site-packages/robot_msgs/msg/__init__.py'...
+[10.221s] Compiling '/home/kaisar/warehouse_robot/robot/install/robot_msgs/lib/python3.12/site-packages/robot_msgs/msg/_executor_state.py'...
+[10.221s] Compiling '/home/kaisar/warehouse_robot/robot/install/robot_msgs/lib/python3.12/site-packages/robot_msgs/msg/_robot_status.py'...
+[10.221s] Listing '/home/kaisar/warehouse_robot/robot/install/robot_msgs/lib/python3.12/site-packages/robot_msgs/srv'...
+[10.221s] Compiling '/home/kaisar/warehouse_robot/robot/install/robot_msgs/lib/python3.12/site-packages/robot_msgs/srv/__init__.py'...
+[10.221s] Compiling '/home/kaisar/warehouse_robot/robot/install/robot_msgs/lib/python3.12/site-packages/robot_msgs/srv/_cancel_route.py'...
+[10.222s] Compiling '/home/kaisar/warehouse_robot/robot/install/robot_msgs/lib/python3.12/site-packages/robot_msgs/srv/_execute_route.py'...
+[10.222s] Compiling '/home/kaisar/warehouse_robot/robot/install/robot_msgs/lib/python3.12/site-packages/robot_msgs/srv/_get_robot_map_state.py'...
+[10.222s] Compiling '/home/kaisar/warehouse_robot/robot/install/robot_msgs/lib/python3.12/site-packages/robot_msgs/srv/_load_robot_map.py'...
+[10.222s] Compiling '/home/kaisar/warehouse_robot/robot/install/robot_msgs/lib/python3.12/site-packages/robot_msgs/srv/_plan_route.py'...
+[10.231s] -- Installing: /home/kaisar/warehouse_robot/robot/install/robot_msgs/lib/librobot_msgs__rosidl_generator_py.so
+[10.232s] -- Set non-toolchain portion of runtime path of "/home/kaisar/warehouse_robot/robot/install/robot_msgs/lib/librobot_msgs__rosidl_generator_py.so" to ""
+[10.233s] -- Up-to-date: /home/kaisar/warehouse_robot/robot/install/robot_msgs/share/robot_msgs/cmake/export_robot_msgs__rosidl_generator_cExport.cmake
+[10.233s] -- Up-to-date: /home/kaisar/warehouse_robot/robot/install/robot_msgs/share/robot_msgs/cmake/export_robot_msgs__rosidl_generator_cExport-noconfig.cmake
+[10.233s] -- Up-to-date: /home/kaisar/warehouse_robot/robot/install/robot_msgs/share/robot_msgs/cmake/export_robot_msgs__rosidl_typesupport_fastrtps_cExport.cmake
+[10.233s] -- Up-to-date: /home/kaisar/warehouse_robot/robot/install/robot_msgs/share/robot_msgs/cmake/export_robot_msgs__rosidl_typesupport_fastrtps_cExport-noconfig.cmake
+[10.233s] -- Up-to-date: /home/kaisar/warehouse_robot/robot/install/robot_msgs/share/robot_msgs/cmake/export_robot_msgs__rosidl_generator_cppExport.cmake
+[10.234s] -- Up-to-date: /home/kaisar/warehouse_robot/robot/install/robot_msgs/share/robot_msgs/cmake/export_robot_msgs__rosidl_typesupport_fastrtps_cppExport.cmake
+[10.234s] -- Up-to-date: /home/kaisar/warehouse_robot/robot/install/robot_msgs/share/robot_msgs/cmake/export_robot_msgs__rosidl_typesupport_fastrtps_cppExport-noconfig.cmake
+[10.234s] -- Up-to-date: /home/kaisar/warehouse_robot/robot/install/robot_msgs/share/robot_msgs/cmake/robot_msgs__rosidl_typesupport_introspection_cExport.cmake
+[10.234s] -- Up-to-date: /home/kaisar/warehouse_robot/robot/install/robot_msgs/share/robot_msgs/cmake/robot_msgs__rosidl_typesupport_introspection_cExport-noconfig.cmake
+[10.234s] -- Up-to-date: /home/kaisar/warehouse_robot/robot/install/robot_msgs/share/robot_msgs/cmake/robot_msgs__rosidl_typesupport_cExport.cmake
+[10.234s] -- Up-to-date: /home/kaisar/warehouse_robot/robot/install/robot_msgs/share/robot_msgs/cmake/robot_msgs__rosidl_typesupport_cExport-noconfig.cmake
+[10.235s] -- Up-to-date: /home/kaisar/warehouse_robot/robot/install/robot_msgs/share/robot_msgs/cmake/robot_msgs__rosidl_typesupport_introspection_cppExport.cmake
+[10.235s] -- Up-to-date: /home/kaisar/warehouse_robot/robot/install/robot_msgs/share/robot_msgs/cmake/robot_msgs__rosidl_typesupport_introspection_cppExport-noconfig.cmake
+[10.235s] -- Up-to-date: /home/kaisar/warehouse_robot/robot/install/robot_msgs/share/robot_msgs/cmake/robot_msgs__rosidl_typesupport_cppExport.cmake
+[10.235s] -- Up-to-date: /home/kaisar/warehouse_robot/robot/install/robot_msgs/share/robot_msgs/cmake/robot_msgs__rosidl_typesupport_cppExport-noconfig.cmake
+[10.235s] -- Up-to-date: /home/kaisar/warehouse_robot/robot/install/robot_msgs/share/robot_msgs/cmake/export_robot_msgs__rosidl_generator_pyExport.cmake
+[10.236s] -- Up-to-date: /home/kaisar/warehouse_robot/robot/install/robot_msgs/share/robot_msgs/cmake/export_robot_msgs__rosidl_generator_pyExport-noconfig.cmake
+[10.238s] Invoked command in '/home/kaisar/warehouse_robot/robot/build/robot_msgs' returned '0': CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}:/opt/ros/jazzy DEBUGINFOD_URLS=https://debuginfod.ubuntu.com /usr/bin/cmake --install /home/kaisar/warehouse_robot/robot/build/robot_msgs

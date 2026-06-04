@@ -71,6 +71,8 @@ CMakeFiles/robot_msgs__rosidl_generator_type_description: rosidl_generator_type_
 CMakeFiles/robot_msgs__rosidl_generator_type_description: rosidl_generator_type_description/robot_msgs/srv/PlanRoute.json
 CMakeFiles/robot_msgs__rosidl_generator_type_description: rosidl_generator_type_description/robot_msgs/srv/ExecuteRoute.json
 CMakeFiles/robot_msgs__rosidl_generator_type_description: rosidl_generator_type_description/robot_msgs/srv/CancelRoute.json
+CMakeFiles/robot_msgs__rosidl_generator_type_description: rosidl_generator_type_description/robot_msgs/srv/LoadRobotMap.json
+CMakeFiles/robot_msgs__rosidl_generator_type_description: rosidl_generator_type_description/robot_msgs/srv/GetRobotMapState.json
 
 rosidl_generator_type_description/robot_msgs/msg/ExecutorState.json: /opt/ros/jazzy/lib/rosidl_generator_type_description/rosidl_generator_type_description
 rosidl_generator_type_description/robot_msgs/msg/ExecutorState.json: /opt/ros/jazzy/lib/python3.12/site-packages/rosidl_generator_type_description/__init__.py
@@ -79,6 +81,8 @@ rosidl_generator_type_description/robot_msgs/msg/ExecutorState.json: rosidl_adap
 rosidl_generator_type_description/robot_msgs/msg/ExecutorState.json: rosidl_adapter/robot_msgs/srv/PlanRoute.idl
 rosidl_generator_type_description/robot_msgs/msg/ExecutorState.json: rosidl_adapter/robot_msgs/srv/ExecuteRoute.idl
 rosidl_generator_type_description/robot_msgs/msg/ExecutorState.json: rosidl_adapter/robot_msgs/srv/CancelRoute.idl
+rosidl_generator_type_description/robot_msgs/msg/ExecutorState.json: rosidl_adapter/robot_msgs/srv/LoadRobotMap.idl
+rosidl_generator_type_description/robot_msgs/msg/ExecutorState.json: rosidl_adapter/robot_msgs/srv/GetRobotMapState.idl
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --blue --bold --progress-dir=/home/kaisar/warehouse_robot/robot/build/robot_msgs/CMakeFiles --progress-num=$(CMAKE_PROGRESS_1) "Generating type hashes for ROS interfaces"
 	/usr/bin/python3 /opt/ros/jazzy/lib/rosidl_generator_type_description/rosidl_generator_type_description --generator-arguments-file /home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_generator_type_description__arguments.json
 
@@ -94,11 +98,19 @@ rosidl_generator_type_description/robot_msgs/srv/ExecuteRoute.json: rosidl_gener
 rosidl_generator_type_description/robot_msgs/srv/CancelRoute.json: rosidl_generator_type_description/robot_msgs/msg/ExecutorState.json
 	@$(CMAKE_COMMAND) -E touch_nocreate rosidl_generator_type_description/robot_msgs/srv/CancelRoute.json
 
+rosidl_generator_type_description/robot_msgs/srv/LoadRobotMap.json: rosidl_generator_type_description/robot_msgs/msg/ExecutorState.json
+	@$(CMAKE_COMMAND) -E touch_nocreate rosidl_generator_type_description/robot_msgs/srv/LoadRobotMap.json
+
+rosidl_generator_type_description/robot_msgs/srv/GetRobotMapState.json: rosidl_generator_type_description/robot_msgs/msg/ExecutorState.json
+	@$(CMAKE_COMMAND) -E touch_nocreate rosidl_generator_type_description/robot_msgs/srv/GetRobotMapState.json
+
 robot_msgs__rosidl_generator_type_description: CMakeFiles/robot_msgs__rosidl_generator_type_description
 robot_msgs__rosidl_generator_type_description: rosidl_generator_type_description/robot_msgs/msg/ExecutorState.json
 robot_msgs__rosidl_generator_type_description: rosidl_generator_type_description/robot_msgs/msg/RobotStatus.json
 robot_msgs__rosidl_generator_type_description: rosidl_generator_type_description/robot_msgs/srv/CancelRoute.json
 robot_msgs__rosidl_generator_type_description: rosidl_generator_type_description/robot_msgs/srv/ExecuteRoute.json
+robot_msgs__rosidl_generator_type_description: rosidl_generator_type_description/robot_msgs/srv/GetRobotMapState.json
+robot_msgs__rosidl_generator_type_description: rosidl_generator_type_description/robot_msgs/srv/LoadRobotMap.json
 robot_msgs__rosidl_generator_type_description: rosidl_generator_type_description/robot_msgs/srv/PlanRoute.json
 robot_msgs__rosidl_generator_type_description: CMakeFiles/robot_msgs__rosidl_generator_type_description.dir/build.make
 .PHONY : robot_msgs__rosidl_generator_type_description

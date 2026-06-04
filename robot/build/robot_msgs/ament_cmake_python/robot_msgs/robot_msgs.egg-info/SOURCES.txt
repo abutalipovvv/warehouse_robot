@@ -10,4 +10,6 @@ robot_msgs/msg/_robot_status.py
 robot_msgs/srv/__init__.py
 robot_msgs/srv/_cancel_route.py
 robot_msgs/srv/_execute_route.py
+robot_msgs/srv/_get_robot_map_state.py
+robot_msgs/srv/_load_robot_map.py
 robot_msgs/srv/_plan_route.py

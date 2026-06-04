@@ -9,7 +9,7 @@ from geometry_msgs.msg import Twist
 from rclpy.node import Node
 
 from robot_msgs.msg import ExecutorState, RobotStatus
-from robot_msgs.srv import CancelRoute, ExecuteRoute, PlanRoute
+from robot_msgs.srv import CancelRoute, ExecuteRoute, LoadRobotMap, PlanRoute
 
 from .executor import RouteExecutor
 from .route_planner import RobotTrajectoryPlanner
@@ -28,6 +28,7 @@ class RobotRouteNode(Node):
         plan_service_name: str,
         execute_service_name: str,
         cancel_service_name: str,
+        load_map_service_name: str,
     ) -> None:
         super().__init__("robot_route")
         self.runtime = runtime
@@ -41,6 +42,7 @@ class RobotRouteNode(Node):
         self.create_service(PlanRoute, plan_service_name, self._handle_plan_route)
         self.create_service(ExecuteRoute, execute_service_name, self._handle_execute_route)
         self.create_service(CancelRoute, cancel_service_name, self._handle_cancel_route)
+        self.create_service(LoadRobotMap, load_map_service_name, self._handle_load_map)
         self.create_timer(0.05, self._control_step)
 
     def _on_robot_status(self, message: RobotStatus) -> None:
@@ -136,6 +138,30 @@ class RobotRouteNode(Node):
             response.error = str(exc)
         return response
 
+    def _handle_load_map(self, request, response):
+        try:
+            map_dir = Path(str(request.map_dir or "")).resolve()
+            if not map_dir.is_dir():
+                raise ValueError(f"map_dir does not exist: {map_dir}")
+            self.runtime.cancel_route("Map changed.")
+            self._publish_cmd_vel(0.0, 0.0)
+            self.route_planner.reload_map(map_dir)
+            self.runtime.set_map(self.route_planner.map_id)
+            self.runtime.add_event("warn", f"map reloaded: {self.route_planner.map_id}")
+            response.ok = True
+            response.error = ""
+            response.map_name = str(request.map_name or self.route_planner.map_id)
+            response.map_dir = str(self.route_planner.map_dir)
+            response.map_id = self.route_planner.map_id
+            self._publish_executor_state()
+        except Exception as exc:  # pragma: no cover - ROS service boundary
+            response.ok = False
+            response.error = str(exc)
+            response.map_name = ""
+            response.map_dir = ""
+            response.map_id = ""
+        return response
+
     def _publish_cmd_vel(self, linear: float, angular: float) -> None:
         message = Twist()
         message.linear.x = float(linear)
@@ -189,6 +215,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--plan-service", default="/route/plan")
     parser.add_argument("--execute-service", default="/route/execute")
     parser.add_argument("--cancel-service", default="/route/cancel")
+    parser.add_argument("--load-map-service", default="/route/load_map")
     args, _unknown = parser.parse_known_args()
     return args
 
@@ -210,6 +237,7 @@ def main() -> None:
         plan_service_name=args.plan_service,
         execute_service_name=args.execute_service,
         cancel_service_name=args.cancel_service,
+        load_map_service_name=args.load_map_service,
     )
     try:
         rclpy.spin(node)

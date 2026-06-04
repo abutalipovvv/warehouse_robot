@@ -1,0 +1,1 @@
+/home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_generator_cpp/robot_msgs/srv/detail/load_robot_map__traits.hpp

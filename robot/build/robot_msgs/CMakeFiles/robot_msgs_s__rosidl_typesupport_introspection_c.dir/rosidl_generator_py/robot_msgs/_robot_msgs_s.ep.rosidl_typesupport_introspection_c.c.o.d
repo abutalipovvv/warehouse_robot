@@ -246,4 +246,10 @@ CMakeFiles/robot_msgs_s__rosidl_typesupport_introspection_c.dir/rosidl_generator
  /home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_generator_c/robot_msgs/srv/detail/execute_route__functions.h \
  /home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_generator_c/robot_msgs/srv/detail/cancel_route__type_support.h \
  /home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_generator_c/robot_msgs/srv/detail/cancel_route__struct.h \
- /home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_generator_c/robot_msgs/srv/detail/cancel_route__functions.h
+ /home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_generator_c/robot_msgs/srv/detail/cancel_route__functions.h \
+ /home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_generator_c/robot_msgs/srv/detail/load_robot_map__type_support.h \
+ /home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_generator_c/robot_msgs/srv/detail/load_robot_map__struct.h \
+ /home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_generator_c/robot_msgs/srv/detail/load_robot_map__functions.h \
+ /home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_generator_c/robot_msgs/srv/detail/get_robot_map_state__type_support.h \
+ /home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_generator_c/robot_msgs/srv/detail/get_robot_map_state__struct.h \
+ /home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_generator_c/robot_msgs/srv/detail/get_robot_map_state__functions.h

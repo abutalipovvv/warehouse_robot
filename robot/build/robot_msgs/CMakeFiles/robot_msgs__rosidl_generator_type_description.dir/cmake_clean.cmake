@@ -4,6 +4,8 @@ file(REMOVE_RECURSE
   "rosidl_generator_type_description/robot_msgs/msg/RobotStatus.json"
   "rosidl_generator_type_description/robot_msgs/srv/CancelRoute.json"
   "rosidl_generator_type_description/robot_msgs/srv/ExecuteRoute.json"
+  "rosidl_generator_type_description/robot_msgs/srv/GetRobotMapState.json"
+  "rosidl_generator_type_description/robot_msgs/srv/LoadRobotMap.json"
   "rosidl_generator_type_description/robot_msgs/srv/PlanRoute.json"
 )
 

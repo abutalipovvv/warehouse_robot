@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+from pathlib import Path
 from time import monotonic
 
 from geometry_msgs.msg import PoseWithCovarianceStamped, Twist
@@ -11,6 +12,7 @@ from rclpy.time import Time
 from tf2_ros import Buffer, TransformException, TransformListener
 
 from robot_msgs.msg import ExecutorState, RobotStatus
+from robot_msgs.srv import LoadRobotMap
 from robot_planner import RobotTrajectoryPlanner
 
 AMCL_QOS = QoSProfile(
@@ -45,6 +47,7 @@ class RobotStatusNode(Node):
         cmd_vel_topic: str,
         status_topic: str,
         executor_status_topic: str,
+        load_map_service_name: str,
     ) -> None:
         super().__init__("robot_status")
         self.robot_id = robot_id
@@ -56,6 +59,7 @@ class RobotStatusNode(Node):
         self._tf_listener = TransformListener(self._tf_buffer, self, spin_thread=False)
         self._pose: dict[str, float] | None = None
         self._pose_updated_at: float | None = None
+        self._last_tf_pose_at: float | None = None
         self._velocity = {"linear": 0.0, "angular": 0.0}
         self._last_localization_fix_at: float | None = None
         self._last_manual_cmd_at: float | None = None
@@ -66,6 +70,7 @@ class RobotStatusNode(Node):
         self.create_subscription(Odometry, odom_topic, self._on_odom, ODOM_QOS)
         self.create_subscription(Twist, cmd_vel_topic, self._on_cmd_vel, 20)
         self.create_subscription(ExecutorState, executor_status_topic, self._on_executor_state, 20)
+        self.create_service(LoadRobotMap, load_map_service_name, self._handle_load_map)
         self.create_timer(0.03, self._publish_status)
 
     def _on_amcl_pose(self, message: PoseWithCovarianceStamped) -> None:
@@ -115,7 +120,8 @@ class RobotStatusNode(Node):
         amcl_correction_timeout = self._amcl_correction_timeout()
         has_amcl_fix = self._last_localization_fix_at is not None
         pose_fresh = pose is not None and pose_age <= pose_timeout
-        localization_ok = pose is not None and has_amcl_fix and pose_fresh
+        has_tf_pose = self._last_tf_pose_at is not None and pose_fresh
+        localization_ok = pose is not None and pose_fresh and (has_amcl_fix or has_tf_pose)
         stationary = self._is_stationary()
 
         executor_state = self._executor_state
@@ -124,13 +130,13 @@ class RobotStatusNode(Node):
         state = str(executor_state.get("state") or "IDLE")
         message = str(executor_state.get("message") or "")
 
-        if pose is None or not has_amcl_fix:
+        if pose is None:
             if route_active or manual_active:
                 state = "ERROR"
-                message = "Waiting for amcl pose."
+                message = "Waiting for map->base_link pose."
             else:
                 state = "LOCALIZING"
-                message = "Waiting for amcl pose."
+                message = "Waiting for map->base_link pose."
         elif not pose_fresh:
             if route_active or manual_active or state == "ERROR":
                 state = "ERROR"
@@ -139,6 +145,22 @@ class RobotStatusNode(Node):
             else:
                 state = "LOCALIZING"
                 message = f"Localization transform timeout: pose is stale for {pose_age:.2f}s"
+        elif not has_amcl_fix and has_tf_pose:
+            if manual_active:
+                state = "MANUAL"
+                message = "Manual control active. Using map->base_link TF pose."
+            elif route_active:
+                state = state or "EXECUTING_ROUTE"
+                if not message:
+                    target_lm = str(executor_state.get("targetLm") or "").strip()
+                    message = (
+                        f"Driving to {target_lm}. Using map->base_link TF pose."
+                        if target_lm
+                        else "Executing route. Using map->base_link TF pose."
+                    )
+            else:
+                state = "IDLE"
+                message = "Localized from map->base_link TF. Waiting for AMCL correction."
         elif manual_active:
             state = "MANUAL"
             message = "Manual control active."
@@ -201,6 +223,31 @@ class RobotStatusNode(Node):
             "routeProgress": 0.0,
         }
 
+    def _handle_load_map(self, request, response):
+        try:
+            map_dir = Path(str(request.map_dir or "")).resolve()
+            if not map_dir.is_dir():
+                raise ValueError(f"map_dir does not exist: {map_dir}")
+            self.route_planner.reload_map(map_dir)
+            self.map_id = self.route_planner.map_id
+            self._pose = None
+            self._pose_updated_at = None
+            self._last_tf_pose_at = None
+            self._last_localization_fix_at = None
+            self._executor_state = self._default_executor_state()
+            response.ok = True
+            response.error = ""
+            response.map_name = str(request.map_name or self.map_id)
+            response.map_dir = str(self.route_planner.map_dir)
+            response.map_id = self.map_id
+        except Exception as exc:  # pragma: no cover - ROS service boundary
+            response.ok = False
+            response.error = str(exc)
+            response.map_name = ""
+            response.map_dir = ""
+            response.map_id = ""
+        return response
+
     def _set_pose(self, x: float, y: float, yaw: float) -> None:
         self._pose = {
             "x": float(x),
@@ -234,6 +281,7 @@ class RobotStatusNode(Node):
         rotation = transform.transform.rotation
         yaw = quaternion_to_yaw(rotation.x, rotation.y, rotation.z, rotation.w)
         self._set_pose(float(translation.x), float(translation.y), float(yaw))
+        self._last_tf_pose_at = monotonic()
 
     def _localization_timeout(self) -> float:
         params = self.route_planner.current_params()

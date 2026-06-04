@@ -719,6 +719,150 @@ rosidl_generator_c/robot_msgs/srv/detail/execute_route__type_support.c.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/robot_msgs__rosidl_generator_c.dir/build.make CMakeFiles/robot_msgs__rosidl_generator_c.dir/rosidl_generator_c/robot_msgs/srv/detail/execute_route__type_support.c.s
 .PHONY : rosidl_generator_c/robot_msgs/srv/detail/execute_route__type_support.c.s
 
+rosidl_generator_c/robot_msgs/srv/detail/get_robot_map_state__description.o: rosidl_generator_c/robot_msgs/srv/detail/get_robot_map_state__description.c.o
+.PHONY : rosidl_generator_c/robot_msgs/srv/detail/get_robot_map_state__description.o
+
+# target to build an object file
+rosidl_generator_c/robot_msgs/srv/detail/get_robot_map_state__description.c.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/robot_msgs__rosidl_generator_c.dir/build.make CMakeFiles/robot_msgs__rosidl_generator_c.dir/rosidl_generator_c/robot_msgs/srv/detail/get_robot_map_state__description.c.o
+.PHONY : rosidl_generator_c/robot_msgs/srv/detail/get_robot_map_state__description.c.o
+
+rosidl_generator_c/robot_msgs/srv/detail/get_robot_map_state__description.i: rosidl_generator_c/robot_msgs/srv/detail/get_robot_map_state__description.c.i
+.PHONY : rosidl_generator_c/robot_msgs/srv/detail/get_robot_map_state__description.i
+
+# target to preprocess a source file
+rosidl_generator_c/robot_msgs/srv/detail/get_robot_map_state__description.c.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/robot_msgs__rosidl_generator_c.dir/build.make CMakeFiles/robot_msgs__rosidl_generator_c.dir/rosidl_generator_c/robot_msgs/srv/detail/get_robot_map_state__description.c.i
+.PHONY : rosidl_generator_c/robot_msgs/srv/detail/get_robot_map_state__description.c.i
+
+rosidl_generator_c/robot_msgs/srv/detail/get_robot_map_state__description.s: rosidl_generator_c/robot_msgs/srv/detail/get_robot_map_state__description.c.s
+.PHONY : rosidl_generator_c/robot_msgs/srv/detail/get_robot_map_state__description.s
+
+# target to generate assembly for a file
+rosidl_generator_c/robot_msgs/srv/detail/get_robot_map_state__description.c.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/robot_msgs__rosidl_generator_c.dir/build.make CMakeFiles/robot_msgs__rosidl_generator_c.dir/rosidl_generator_c/robot_msgs/srv/detail/get_robot_map_state__description.c.s
+.PHONY : rosidl_generator_c/robot_msgs/srv/detail/get_robot_map_state__description.c.s
+
+rosidl_generator_c/robot_msgs/srv/detail/get_robot_map_state__functions.o: rosidl_generator_c/robot_msgs/srv/detail/get_robot_map_state__functions.c.o
+.PHONY : rosidl_generator_c/robot_msgs/srv/detail/get_robot_map_state__functions.o
+
+# target to build an object file
+rosidl_generator_c/robot_msgs/srv/detail/get_robot_map_state__functions.c.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/robot_msgs__rosidl_generator_c.dir/build.make CMakeFiles/robot_msgs__rosidl_generator_c.dir/rosidl_generator_c/robot_msgs/srv/detail/get_robot_map_state__functions.c.o
+.PHONY : rosidl_generator_c/robot_msgs/srv/detail/get_robot_map_state__functions.c.o
+
+rosidl_generator_c/robot_msgs/srv/detail/get_robot_map_state__functions.i: rosidl_generator_c/robot_msgs/srv/detail/get_robot_map_state__functions.c.i
+.PHONY : rosidl_generator_c/robot_msgs/srv/detail/get_robot_map_state__functions.i
+
+# target to preprocess a source file
+rosidl_generator_c/robot_msgs/srv/detail/get_robot_map_state__functions.c.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/robot_msgs__rosidl_generator_c.dir/build.make CMakeFiles/robot_msgs__rosidl_generator_c.dir/rosidl_generator_c/robot_msgs/srv/detail/get_robot_map_state__functions.c.i
+.PHONY : rosidl_generator_c/robot_msgs/srv/detail/get_robot_map_state__functions.c.i
+
+rosidl_generator_c/robot_msgs/srv/detail/get_robot_map_state__functions.s: rosidl_generator_c/robot_msgs/srv/detail/get_robot_map_state__functions.c.s
+.PHONY : rosidl_generator_c/robot_msgs/srv/detail/get_robot_map_state__functions.s
+
+# target to generate assembly for a file
+rosidl_generator_c/robot_msgs/srv/detail/get_robot_map_state__functions.c.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/robot_msgs__rosidl_generator_c.dir/build.make CMakeFiles/robot_msgs__rosidl_generator_c.dir/rosidl_generator_c/robot_msgs/srv/detail/get_robot_map_state__functions.c.s
+.PHONY : rosidl_generator_c/robot_msgs/srv/detail/get_robot_map_state__functions.c.s
+
+rosidl_generator_c/robot_msgs/srv/detail/get_robot_map_state__type_support.o: rosidl_generator_c/robot_msgs/srv/detail/get_robot_map_state__type_support.c.o
+.PHONY : rosidl_generator_c/robot_msgs/srv/detail/get_robot_map_state__type_support.o
+
+# target to build an object file
+rosidl_generator_c/robot_msgs/srv/detail/get_robot_map_state__type_support.c.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/robot_msgs__rosidl_generator_c.dir/build.make CMakeFiles/robot_msgs__rosidl_generator_c.dir/rosidl_generator_c/robot_msgs/srv/detail/get_robot_map_state__type_support.c.o
+.PHONY : rosidl_generator_c/robot_msgs/srv/detail/get_robot_map_state__type_support.c.o
+
+rosidl_generator_c/robot_msgs/srv/detail/get_robot_map_state__type_support.i: rosidl_generator_c/robot_msgs/srv/detail/get_robot_map_state__type_support.c.i
+.PHONY : rosidl_generator_c/robot_msgs/srv/detail/get_robot_map_state__type_support.i
+
+# target to preprocess a source file
+rosidl_generator_c/robot_msgs/srv/detail/get_robot_map_state__type_support.c.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/robot_msgs__rosidl_generator_c.dir/build.make CMakeFiles/robot_msgs__rosidl_generator_c.dir/rosidl_generator_c/robot_msgs/srv/detail/get_robot_map_state__type_support.c.i
+.PHONY : rosidl_generator_c/robot_msgs/srv/detail/get_robot_map_state__type_support.c.i
+
+rosidl_generator_c/robot_msgs/srv/detail/get_robot_map_state__type_support.s: rosidl_generator_c/robot_msgs/srv/detail/get_robot_map_state__type_support.c.s
+.PHONY : rosidl_generator_c/robot_msgs/srv/detail/get_robot_map_state__type_support.s
+
+# target to generate assembly for a file
+rosidl_generator_c/robot_msgs/srv/detail/get_robot_map_state__type_support.c.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/robot_msgs__rosidl_generator_c.dir/build.make CMakeFiles/robot_msgs__rosidl_generator_c.dir/rosidl_generator_c/robot_msgs/srv/detail/get_robot_map_state__type_support.c.s
+.PHONY : rosidl_generator_c/robot_msgs/srv/detail/get_robot_map_state__type_support.c.s
+
+rosidl_generator_c/robot_msgs/srv/detail/load_robot_map__description.o: rosidl_generator_c/robot_msgs/srv/detail/load_robot_map__description.c.o
+.PHONY : rosidl_generator_c/robot_msgs/srv/detail/load_robot_map__description.o
+
+# target to build an object file
+rosidl_generator_c/robot_msgs/srv/detail/load_robot_map__description.c.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/robot_msgs__rosidl_generator_c.dir/build.make CMakeFiles/robot_msgs__rosidl_generator_c.dir/rosidl_generator_c/robot_msgs/srv/detail/load_robot_map__description.c.o
+.PHONY : rosidl_generator_c/robot_msgs/srv/detail/load_robot_map__description.c.o
+
+rosidl_generator_c/robot_msgs/srv/detail/load_robot_map__description.i: rosidl_generator_c/robot_msgs/srv/detail/load_robot_map__description.c.i
+.PHONY : rosidl_generator_c/robot_msgs/srv/detail/load_robot_map__description.i
+
+# target to preprocess a source file
+rosidl_generator_c/robot_msgs/srv/detail/load_robot_map__description.c.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/robot_msgs__rosidl_generator_c.dir/build.make CMakeFiles/robot_msgs__rosidl_generator_c.dir/rosidl_generator_c/robot_msgs/srv/detail/load_robot_map__description.c.i
+.PHONY : rosidl_generator_c/robot_msgs/srv/detail/load_robot_map__description.c.i
+
+rosidl_generator_c/robot_msgs/srv/detail/load_robot_map__description.s: rosidl_generator_c/robot_msgs/srv/detail/load_robot_map__description.c.s
+.PHONY : rosidl_generator_c/robot_msgs/srv/detail/load_robot_map__description.s
+
+# target to generate assembly for a file
+rosidl_generator_c/robot_msgs/srv/detail/load_robot_map__description.c.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/robot_msgs__rosidl_generator_c.dir/build.make CMakeFiles/robot_msgs__rosidl_generator_c.dir/rosidl_generator_c/robot_msgs/srv/detail/load_robot_map__description.c.s
+.PHONY : rosidl_generator_c/robot_msgs/srv/detail/load_robot_map__description.c.s
+
+rosidl_generator_c/robot_msgs/srv/detail/load_robot_map__functions.o: rosidl_generator_c/robot_msgs/srv/detail/load_robot_map__functions.c.o
+.PHONY : rosidl_generator_c/robot_msgs/srv/detail/load_robot_map__functions.o
+
+# target to build an object file
+rosidl_generator_c/robot_msgs/srv/detail/load_robot_map__functions.c.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/robot_msgs__rosidl_generator_c.dir/build.make CMakeFiles/robot_msgs__rosidl_generator_c.dir/rosidl_generator_c/robot_msgs/srv/detail/load_robot_map__functions.c.o
+.PHONY : rosidl_generator_c/robot_msgs/srv/detail/load_robot_map__functions.c.o
+
+rosidl_generator_c/robot_msgs/srv/detail/load_robot_map__functions.i: rosidl_generator_c/robot_msgs/srv/detail/load_robot_map__functions.c.i
+.PHONY : rosidl_generator_c/robot_msgs/srv/detail/load_robot_map__functions.i
+
+# target to preprocess a source file
+rosidl_generator_c/robot_msgs/srv/detail/load_robot_map__functions.c.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/robot_msgs__rosidl_generator_c.dir/build.make CMakeFiles/robot_msgs__rosidl_generator_c.dir/rosidl_generator_c/robot_msgs/srv/detail/load_robot_map__functions.c.i
+.PHONY : rosidl_generator_c/robot_msgs/srv/detail/load_robot_map__functions.c.i
+
+rosidl_generator_c/robot_msgs/srv/detail/load_robot_map__functions.s: rosidl_generator_c/robot_msgs/srv/detail/load_robot_map__functions.c.s
+.PHONY : rosidl_generator_c/robot_msgs/srv/detail/load_robot_map__functions.s
+
+# target to generate assembly for a file
+rosidl_generator_c/robot_msgs/srv/detail/load_robot_map__functions.c.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/robot_msgs__rosidl_generator_c.dir/build.make CMakeFiles/robot_msgs__rosidl_generator_c.dir/rosidl_generator_c/robot_msgs/srv/detail/load_robot_map__functions.c.s
+.PHONY : rosidl_generator_c/robot_msgs/srv/detail/load_robot_map__functions.c.s
+
+rosidl_generator_c/robot_msgs/srv/detail/load_robot_map__type_support.o: rosidl_generator_c/robot_msgs/srv/detail/load_robot_map__type_support.c.o
+.PHONY : rosidl_generator_c/robot_msgs/srv/detail/load_robot_map__type_support.o
+
+# target to build an object file
+rosidl_generator_c/robot_msgs/srv/detail/load_robot_map__type_support.c.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/robot_msgs__rosidl_generator_c.dir/build.make CMakeFiles/robot_msgs__rosidl_generator_c.dir/rosidl_generator_c/robot_msgs/srv/detail/load_robot_map__type_support.c.o
+.PHONY : rosidl_generator_c/robot_msgs/srv/detail/load_robot_map__type_support.c.o
+
+rosidl_generator_c/robot_msgs/srv/detail/load_robot_map__type_support.i: rosidl_generator_c/robot_msgs/srv/detail/load_robot_map__type_support.c.i
+.PHONY : rosidl_generator_c/robot_msgs/srv/detail/load_robot_map__type_support.i
+
+# target to preprocess a source file
+rosidl_generator_c/robot_msgs/srv/detail/load_robot_map__type_support.c.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/robot_msgs__rosidl_generator_c.dir/build.make CMakeFiles/robot_msgs__rosidl_generator_c.dir/rosidl_generator_c/robot_msgs/srv/detail/load_robot_map__type_support.c.i
+.PHONY : rosidl_generator_c/robot_msgs/srv/detail/load_robot_map__type_support.c.i
+
+rosidl_generator_c/robot_msgs/srv/detail/load_robot_map__type_support.s: rosidl_generator_c/robot_msgs/srv/detail/load_robot_map__type_support.c.s
+.PHONY : rosidl_generator_c/robot_msgs/srv/detail/load_robot_map__type_support.s
+
+# target to generate assembly for a file
+rosidl_generator_c/robot_msgs/srv/detail/load_robot_map__type_support.c.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/robot_msgs__rosidl_generator_c.dir/build.make CMakeFiles/robot_msgs__rosidl_generator_c.dir/rosidl_generator_c/robot_msgs/srv/detail/load_robot_map__type_support.c.s
+.PHONY : rosidl_generator_c/robot_msgs/srv/detail/load_robot_map__type_support.c.s
+
 rosidl_generator_c/robot_msgs/srv/detail/plan_route__description.o: rosidl_generator_c/robot_msgs/srv/detail/plan_route__description.c.o
 .PHONY : rosidl_generator_c/robot_msgs/srv/detail/plan_route__description.o
 
@@ -959,6 +1103,54 @@ rosidl_generator_py/robot_msgs/srv/_execute_route_s.c.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/robot_msgs__rosidl_generator_py.dir/build.make CMakeFiles/robot_msgs__rosidl_generator_py.dir/rosidl_generator_py/robot_msgs/srv/_execute_route_s.c.s
 .PHONY : rosidl_generator_py/robot_msgs/srv/_execute_route_s.c.s
 
+rosidl_generator_py/robot_msgs/srv/_get_robot_map_state_s.o: rosidl_generator_py/robot_msgs/srv/_get_robot_map_state_s.c.o
+.PHONY : rosidl_generator_py/robot_msgs/srv/_get_robot_map_state_s.o
+
+# target to build an object file
+rosidl_generator_py/robot_msgs/srv/_get_robot_map_state_s.c.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/robot_msgs__rosidl_generator_py.dir/build.make CMakeFiles/robot_msgs__rosidl_generator_py.dir/rosidl_generator_py/robot_msgs/srv/_get_robot_map_state_s.c.o
+.PHONY : rosidl_generator_py/robot_msgs/srv/_get_robot_map_state_s.c.o
+
+rosidl_generator_py/robot_msgs/srv/_get_robot_map_state_s.i: rosidl_generator_py/robot_msgs/srv/_get_robot_map_state_s.c.i
+.PHONY : rosidl_generator_py/robot_msgs/srv/_get_robot_map_state_s.i
+
+# target to preprocess a source file
+rosidl_generator_py/robot_msgs/srv/_get_robot_map_state_s.c.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/robot_msgs__rosidl_generator_py.dir/build.make CMakeFiles/robot_msgs__rosidl_generator_py.dir/rosidl_generator_py/robot_msgs/srv/_get_robot_map_state_s.c.i
+.PHONY : rosidl_generator_py/robot_msgs/srv/_get_robot_map_state_s.c.i
+
+rosidl_generator_py/robot_msgs/srv/_get_robot_map_state_s.s: rosidl_generator_py/robot_msgs/srv/_get_robot_map_state_s.c.s
+.PHONY : rosidl_generator_py/robot_msgs/srv/_get_robot_map_state_s.s
+
+# target to generate assembly for a file
+rosidl_generator_py/robot_msgs/srv/_get_robot_map_state_s.c.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/robot_msgs__rosidl_generator_py.dir/build.make CMakeFiles/robot_msgs__rosidl_generator_py.dir/rosidl_generator_py/robot_msgs/srv/_get_robot_map_state_s.c.s
+.PHONY : rosidl_generator_py/robot_msgs/srv/_get_robot_map_state_s.c.s
+
+rosidl_generator_py/robot_msgs/srv/_load_robot_map_s.o: rosidl_generator_py/robot_msgs/srv/_load_robot_map_s.c.o
+.PHONY : rosidl_generator_py/robot_msgs/srv/_load_robot_map_s.o
+
+# target to build an object file
+rosidl_generator_py/robot_msgs/srv/_load_robot_map_s.c.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/robot_msgs__rosidl_generator_py.dir/build.make CMakeFiles/robot_msgs__rosidl_generator_py.dir/rosidl_generator_py/robot_msgs/srv/_load_robot_map_s.c.o
+.PHONY : rosidl_generator_py/robot_msgs/srv/_load_robot_map_s.c.o
+
+rosidl_generator_py/robot_msgs/srv/_load_robot_map_s.i: rosidl_generator_py/robot_msgs/srv/_load_robot_map_s.c.i
+.PHONY : rosidl_generator_py/robot_msgs/srv/_load_robot_map_s.i
+
+# target to preprocess a source file
+rosidl_generator_py/robot_msgs/srv/_load_robot_map_s.c.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/robot_msgs__rosidl_generator_py.dir/build.make CMakeFiles/robot_msgs__rosidl_generator_py.dir/rosidl_generator_py/robot_msgs/srv/_load_robot_map_s.c.i
+.PHONY : rosidl_generator_py/robot_msgs/srv/_load_robot_map_s.c.i
+
+rosidl_generator_py/robot_msgs/srv/_load_robot_map_s.s: rosidl_generator_py/robot_msgs/srv/_load_robot_map_s.c.s
+.PHONY : rosidl_generator_py/robot_msgs/srv/_load_robot_map_s.s
+
+# target to generate assembly for a file
+rosidl_generator_py/robot_msgs/srv/_load_robot_map_s.c.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/robot_msgs__rosidl_generator_py.dir/build.make CMakeFiles/robot_msgs__rosidl_generator_py.dir/rosidl_generator_py/robot_msgs/srv/_load_robot_map_s.c.s
+.PHONY : rosidl_generator_py/robot_msgs/srv/_load_robot_map_s.c.s
+
 rosidl_generator_py/robot_msgs/srv/_plan_route_s.o: rosidl_generator_py/robot_msgs/srv/_plan_route_s.c.o
 .PHONY : rosidl_generator_py/robot_msgs/srv/_plan_route_s.o
 
@@ -1078,6 +1270,54 @@ rosidl_typesupport_c/robot_msgs/srv/execute_route__type_support.s: rosidl_typesu
 rosidl_typesupport_c/robot_msgs/srv/execute_route__type_support.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/robot_msgs__rosidl_typesupport_c.dir/build.make CMakeFiles/robot_msgs__rosidl_typesupport_c.dir/rosidl_typesupport_c/robot_msgs/srv/execute_route__type_support.cpp.s
 .PHONY : rosidl_typesupport_c/robot_msgs/srv/execute_route__type_support.cpp.s
+
+rosidl_typesupport_c/robot_msgs/srv/get_robot_map_state__type_support.o: rosidl_typesupport_c/robot_msgs/srv/get_robot_map_state__type_support.cpp.o
+.PHONY : rosidl_typesupport_c/robot_msgs/srv/get_robot_map_state__type_support.o
+
+# target to build an object file
+rosidl_typesupport_c/robot_msgs/srv/get_robot_map_state__type_support.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/robot_msgs__rosidl_typesupport_c.dir/build.make CMakeFiles/robot_msgs__rosidl_typesupport_c.dir/rosidl_typesupport_c/robot_msgs/srv/get_robot_map_state__type_support.cpp.o
+.PHONY : rosidl_typesupport_c/robot_msgs/srv/get_robot_map_state__type_support.cpp.o
+
+rosidl_typesupport_c/robot_msgs/srv/get_robot_map_state__type_support.i: rosidl_typesupport_c/robot_msgs/srv/get_robot_map_state__type_support.cpp.i
+.PHONY : rosidl_typesupport_c/robot_msgs/srv/get_robot_map_state__type_support.i
+
+# target to preprocess a source file
+rosidl_typesupport_c/robot_msgs/srv/get_robot_map_state__type_support.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/robot_msgs__rosidl_typesupport_c.dir/build.make CMakeFiles/robot_msgs__rosidl_typesupport_c.dir/rosidl_typesupport_c/robot_msgs/srv/get_robot_map_state__type_support.cpp.i
+.PHONY : rosidl_typesupport_c/robot_msgs/srv/get_robot_map_state__type_support.cpp.i
+
+rosidl_typesupport_c/robot_msgs/srv/get_robot_map_state__type_support.s: rosidl_typesupport_c/robot_msgs/srv/get_robot_map_state__type_support.cpp.s
+.PHONY : rosidl_typesupport_c/robot_msgs/srv/get_robot_map_state__type_support.s
+
+# target to generate assembly for a file
+rosidl_typesupport_c/robot_msgs/srv/get_robot_map_state__type_support.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/robot_msgs__rosidl_typesupport_c.dir/build.make CMakeFiles/robot_msgs__rosidl_typesupport_c.dir/rosidl_typesupport_c/robot_msgs/srv/get_robot_map_state__type_support.cpp.s
+.PHONY : rosidl_typesupport_c/robot_msgs/srv/get_robot_map_state__type_support.cpp.s
+
+rosidl_typesupport_c/robot_msgs/srv/load_robot_map__type_support.o: rosidl_typesupport_c/robot_msgs/srv/load_robot_map__type_support.cpp.o
+.PHONY : rosidl_typesupport_c/robot_msgs/srv/load_robot_map__type_support.o
+
+# target to build an object file
+rosidl_typesupport_c/robot_msgs/srv/load_robot_map__type_support.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/robot_msgs__rosidl_typesupport_c.dir/build.make CMakeFiles/robot_msgs__rosidl_typesupport_c.dir/rosidl_typesupport_c/robot_msgs/srv/load_robot_map__type_support.cpp.o
+.PHONY : rosidl_typesupport_c/robot_msgs/srv/load_robot_map__type_support.cpp.o
+
+rosidl_typesupport_c/robot_msgs/srv/load_robot_map__type_support.i: rosidl_typesupport_c/robot_msgs/srv/load_robot_map__type_support.cpp.i
+.PHONY : rosidl_typesupport_c/robot_msgs/srv/load_robot_map__type_support.i
+
+# target to preprocess a source file
+rosidl_typesupport_c/robot_msgs/srv/load_robot_map__type_support.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/robot_msgs__rosidl_typesupport_c.dir/build.make CMakeFiles/robot_msgs__rosidl_typesupport_c.dir/rosidl_typesupport_c/robot_msgs/srv/load_robot_map__type_support.cpp.i
+.PHONY : rosidl_typesupport_c/robot_msgs/srv/load_robot_map__type_support.cpp.i
+
+rosidl_typesupport_c/robot_msgs/srv/load_robot_map__type_support.s: rosidl_typesupport_c/robot_msgs/srv/load_robot_map__type_support.cpp.s
+.PHONY : rosidl_typesupport_c/robot_msgs/srv/load_robot_map__type_support.s
+
+# target to generate assembly for a file
+rosidl_typesupport_c/robot_msgs/srv/load_robot_map__type_support.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/robot_msgs__rosidl_typesupport_c.dir/build.make CMakeFiles/robot_msgs__rosidl_typesupport_c.dir/rosidl_typesupport_c/robot_msgs/srv/load_robot_map__type_support.cpp.s
+.PHONY : rosidl_typesupport_c/robot_msgs/srv/load_robot_map__type_support.cpp.s
 
 rosidl_typesupport_c/robot_msgs/srv/plan_route__type_support.o: rosidl_typesupport_c/robot_msgs/srv/plan_route__type_support.cpp.o
 .PHONY : rosidl_typesupport_c/robot_msgs/srv/plan_route__type_support.o
@@ -1199,6 +1439,54 @@ rosidl_typesupport_cpp/robot_msgs/srv/execute_route__type_support.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/robot_msgs__rosidl_typesupport_cpp.dir/build.make CMakeFiles/robot_msgs__rosidl_typesupport_cpp.dir/rosidl_typesupport_cpp/robot_msgs/srv/execute_route__type_support.cpp.s
 .PHONY : rosidl_typesupport_cpp/robot_msgs/srv/execute_route__type_support.cpp.s
 
+rosidl_typesupport_cpp/robot_msgs/srv/get_robot_map_state__type_support.o: rosidl_typesupport_cpp/robot_msgs/srv/get_robot_map_state__type_support.cpp.o
+.PHONY : rosidl_typesupport_cpp/robot_msgs/srv/get_robot_map_state__type_support.o
+
+# target to build an object file
+rosidl_typesupport_cpp/robot_msgs/srv/get_robot_map_state__type_support.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/robot_msgs__rosidl_typesupport_cpp.dir/build.make CMakeFiles/robot_msgs__rosidl_typesupport_cpp.dir/rosidl_typesupport_cpp/robot_msgs/srv/get_robot_map_state__type_support.cpp.o
+.PHONY : rosidl_typesupport_cpp/robot_msgs/srv/get_robot_map_state__type_support.cpp.o
+
+rosidl_typesupport_cpp/robot_msgs/srv/get_robot_map_state__type_support.i: rosidl_typesupport_cpp/robot_msgs/srv/get_robot_map_state__type_support.cpp.i
+.PHONY : rosidl_typesupport_cpp/robot_msgs/srv/get_robot_map_state__type_support.i
+
+# target to preprocess a source file
+rosidl_typesupport_cpp/robot_msgs/srv/get_robot_map_state__type_support.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/robot_msgs__rosidl_typesupport_cpp.dir/build.make CMakeFiles/robot_msgs__rosidl_typesupport_cpp.dir/rosidl_typesupport_cpp/robot_msgs/srv/get_robot_map_state__type_support.cpp.i
+.PHONY : rosidl_typesupport_cpp/robot_msgs/srv/get_robot_map_state__type_support.cpp.i
+
+rosidl_typesupport_cpp/robot_msgs/srv/get_robot_map_state__type_support.s: rosidl_typesupport_cpp/robot_msgs/srv/get_robot_map_state__type_support.cpp.s
+.PHONY : rosidl_typesupport_cpp/robot_msgs/srv/get_robot_map_state__type_support.s
+
+# target to generate assembly for a file
+rosidl_typesupport_cpp/robot_msgs/srv/get_robot_map_state__type_support.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/robot_msgs__rosidl_typesupport_cpp.dir/build.make CMakeFiles/robot_msgs__rosidl_typesupport_cpp.dir/rosidl_typesupport_cpp/robot_msgs/srv/get_robot_map_state__type_support.cpp.s
+.PHONY : rosidl_typesupport_cpp/robot_msgs/srv/get_robot_map_state__type_support.cpp.s
+
+rosidl_typesupport_cpp/robot_msgs/srv/load_robot_map__type_support.o: rosidl_typesupport_cpp/robot_msgs/srv/load_robot_map__type_support.cpp.o
+.PHONY : rosidl_typesupport_cpp/robot_msgs/srv/load_robot_map__type_support.o
+
+# target to build an object file
+rosidl_typesupport_cpp/robot_msgs/srv/load_robot_map__type_support.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/robot_msgs__rosidl_typesupport_cpp.dir/build.make CMakeFiles/robot_msgs__rosidl_typesupport_cpp.dir/rosidl_typesupport_cpp/robot_msgs/srv/load_robot_map__type_support.cpp.o
+.PHONY : rosidl_typesupport_cpp/robot_msgs/srv/load_robot_map__type_support.cpp.o
+
+rosidl_typesupport_cpp/robot_msgs/srv/load_robot_map__type_support.i: rosidl_typesupport_cpp/robot_msgs/srv/load_robot_map__type_support.cpp.i
+.PHONY : rosidl_typesupport_cpp/robot_msgs/srv/load_robot_map__type_support.i
+
+# target to preprocess a source file
+rosidl_typesupport_cpp/robot_msgs/srv/load_robot_map__type_support.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/robot_msgs__rosidl_typesupport_cpp.dir/build.make CMakeFiles/robot_msgs__rosidl_typesupport_cpp.dir/rosidl_typesupport_cpp/robot_msgs/srv/load_robot_map__type_support.cpp.i
+.PHONY : rosidl_typesupport_cpp/robot_msgs/srv/load_robot_map__type_support.cpp.i
+
+rosidl_typesupport_cpp/robot_msgs/srv/load_robot_map__type_support.s: rosidl_typesupport_cpp/robot_msgs/srv/load_robot_map__type_support.cpp.s
+.PHONY : rosidl_typesupport_cpp/robot_msgs/srv/load_robot_map__type_support.s
+
+# target to generate assembly for a file
+rosidl_typesupport_cpp/robot_msgs/srv/load_robot_map__type_support.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/robot_msgs__rosidl_typesupport_cpp.dir/build.make CMakeFiles/robot_msgs__rosidl_typesupport_cpp.dir/rosidl_typesupport_cpp/robot_msgs/srv/load_robot_map__type_support.cpp.s
+.PHONY : rosidl_typesupport_cpp/robot_msgs/srv/load_robot_map__type_support.cpp.s
+
 rosidl_typesupport_cpp/robot_msgs/srv/plan_route__type_support.o: rosidl_typesupport_cpp/robot_msgs/srv/plan_route__type_support.cpp.o
 .PHONY : rosidl_typesupport_cpp/robot_msgs/srv/plan_route__type_support.o
 
@@ -1318,6 +1606,54 @@ rosidl_typesupport_fastrtps_c/robot_msgs/srv/detail/execute_route__type_support_
 rosidl_typesupport_fastrtps_c/robot_msgs/srv/detail/execute_route__type_support_c.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/robot_msgs__rosidl_typesupport_fastrtps_c.dir/build.make CMakeFiles/robot_msgs__rosidl_typesupport_fastrtps_c.dir/rosidl_typesupport_fastrtps_c/robot_msgs/srv/detail/execute_route__type_support_c.cpp.s
 .PHONY : rosidl_typesupport_fastrtps_c/robot_msgs/srv/detail/execute_route__type_support_c.cpp.s
+
+rosidl_typesupport_fastrtps_c/robot_msgs/srv/detail/get_robot_map_state__type_support_c.o: rosidl_typesupport_fastrtps_c/robot_msgs/srv/detail/get_robot_map_state__type_support_c.cpp.o
+.PHONY : rosidl_typesupport_fastrtps_c/robot_msgs/srv/detail/get_robot_map_state__type_support_c.o
+
+# target to build an object file
+rosidl_typesupport_fastrtps_c/robot_msgs/srv/detail/get_robot_map_state__type_support_c.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/robot_msgs__rosidl_typesupport_fastrtps_c.dir/build.make CMakeFiles/robot_msgs__rosidl_typesupport_fastrtps_c.dir/rosidl_typesupport_fastrtps_c/robot_msgs/srv/detail/get_robot_map_state__type_support_c.cpp.o
+.PHONY : rosidl_typesupport_fastrtps_c/robot_msgs/srv/detail/get_robot_map_state__type_support_c.cpp.o
+
+rosidl_typesupport_fastrtps_c/robot_msgs/srv/detail/get_robot_map_state__type_support_c.i: rosidl_typesupport_fastrtps_c/robot_msgs/srv/detail/get_robot_map_state__type_support_c.cpp.i
+.PHONY : rosidl_typesupport_fastrtps_c/robot_msgs/srv/detail/get_robot_map_state__type_support_c.i
+
+# target to preprocess a source file
+rosidl_typesupport_fastrtps_c/robot_msgs/srv/detail/get_robot_map_state__type_support_c.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/robot_msgs__rosidl_typesupport_fastrtps_c.dir/build.make CMakeFiles/robot_msgs__rosidl_typesupport_fastrtps_c.dir/rosidl_typesupport_fastrtps_c/robot_msgs/srv/detail/get_robot_map_state__type_support_c.cpp.i
+.PHONY : rosidl_typesupport_fastrtps_c/robot_msgs/srv/detail/get_robot_map_state__type_support_c.cpp.i
+
+rosidl_typesupport_fastrtps_c/robot_msgs/srv/detail/get_robot_map_state__type_support_c.s: rosidl_typesupport_fastrtps_c/robot_msgs/srv/detail/get_robot_map_state__type_support_c.cpp.s
+.PHONY : rosidl_typesupport_fastrtps_c/robot_msgs/srv/detail/get_robot_map_state__type_support_c.s
+
+# target to generate assembly for a file
+rosidl_typesupport_fastrtps_c/robot_msgs/srv/detail/get_robot_map_state__type_support_c.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/robot_msgs__rosidl_typesupport_fastrtps_c.dir/build.make CMakeFiles/robot_msgs__rosidl_typesupport_fastrtps_c.dir/rosidl_typesupport_fastrtps_c/robot_msgs/srv/detail/get_robot_map_state__type_support_c.cpp.s
+.PHONY : rosidl_typesupport_fastrtps_c/robot_msgs/srv/detail/get_robot_map_state__type_support_c.cpp.s
+
+rosidl_typesupport_fastrtps_c/robot_msgs/srv/detail/load_robot_map__type_support_c.o: rosidl_typesupport_fastrtps_c/robot_msgs/srv/detail/load_robot_map__type_support_c.cpp.o
+.PHONY : rosidl_typesupport_fastrtps_c/robot_msgs/srv/detail/load_robot_map__type_support_c.o
+
+# target to build an object file
+rosidl_typesupport_fastrtps_c/robot_msgs/srv/detail/load_robot_map__type_support_c.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/robot_msgs__rosidl_typesupport_fastrtps_c.dir/build.make CMakeFiles/robot_msgs__rosidl_typesupport_fastrtps_c.dir/rosidl_typesupport_fastrtps_c/robot_msgs/srv/detail/load_robot_map__type_support_c.cpp.o
+.PHONY : rosidl_typesupport_fastrtps_c/robot_msgs/srv/detail/load_robot_map__type_support_c.cpp.o
+
+rosidl_typesupport_fastrtps_c/robot_msgs/srv/detail/load_robot_map__type_support_c.i: rosidl_typesupport_fastrtps_c/robot_msgs/srv/detail/load_robot_map__type_support_c.cpp.i
+.PHONY : rosidl_typesupport_fastrtps_c/robot_msgs/srv/detail/load_robot_map__type_support_c.i
+
+# target to preprocess a source file
+rosidl_typesupport_fastrtps_c/robot_msgs/srv/detail/load_robot_map__type_support_c.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/robot_msgs__rosidl_typesupport_fastrtps_c.dir/build.make CMakeFiles/robot_msgs__rosidl_typesupport_fastrtps_c.dir/rosidl_typesupport_fastrtps_c/robot_msgs/srv/detail/load_robot_map__type_support_c.cpp.i
+.PHONY : rosidl_typesupport_fastrtps_c/robot_msgs/srv/detail/load_robot_map__type_support_c.cpp.i
+
+rosidl_typesupport_fastrtps_c/robot_msgs/srv/detail/load_robot_map__type_support_c.s: rosidl_typesupport_fastrtps_c/robot_msgs/srv/detail/load_robot_map__type_support_c.cpp.s
+.PHONY : rosidl_typesupport_fastrtps_c/robot_msgs/srv/detail/load_robot_map__type_support_c.s
+
+# target to generate assembly for a file
+rosidl_typesupport_fastrtps_c/robot_msgs/srv/detail/load_robot_map__type_support_c.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/robot_msgs__rosidl_typesupport_fastrtps_c.dir/build.make CMakeFiles/robot_msgs__rosidl_typesupport_fastrtps_c.dir/rosidl_typesupport_fastrtps_c/robot_msgs/srv/detail/load_robot_map__type_support_c.cpp.s
+.PHONY : rosidl_typesupport_fastrtps_c/robot_msgs/srv/detail/load_robot_map__type_support_c.cpp.s
 
 rosidl_typesupport_fastrtps_c/robot_msgs/srv/detail/plan_route__type_support_c.o: rosidl_typesupport_fastrtps_c/robot_msgs/srv/detail/plan_route__type_support_c.cpp.o
 .PHONY : rosidl_typesupport_fastrtps_c/robot_msgs/srv/detail/plan_route__type_support_c.o
@@ -1439,6 +1775,54 @@ rosidl_typesupport_fastrtps_cpp/robot_msgs/srv/detail/dds_fastrtps/execute_route
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/robot_msgs__rosidl_typesupport_fastrtps_cpp.dir/build.make CMakeFiles/robot_msgs__rosidl_typesupport_fastrtps_cpp.dir/rosidl_typesupport_fastrtps_cpp/robot_msgs/srv/detail/dds_fastrtps/execute_route__type_support.cpp.s
 .PHONY : rosidl_typesupport_fastrtps_cpp/robot_msgs/srv/detail/dds_fastrtps/execute_route__type_support.cpp.s
 
+rosidl_typesupport_fastrtps_cpp/robot_msgs/srv/detail/dds_fastrtps/get_robot_map_state__type_support.o: rosidl_typesupport_fastrtps_cpp/robot_msgs/srv/detail/dds_fastrtps/get_robot_map_state__type_support.cpp.o
+.PHONY : rosidl_typesupport_fastrtps_cpp/robot_msgs/srv/detail/dds_fastrtps/get_robot_map_state__type_support.o
+
+# target to build an object file
+rosidl_typesupport_fastrtps_cpp/robot_msgs/srv/detail/dds_fastrtps/get_robot_map_state__type_support.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/robot_msgs__rosidl_typesupport_fastrtps_cpp.dir/build.make CMakeFiles/robot_msgs__rosidl_typesupport_fastrtps_cpp.dir/rosidl_typesupport_fastrtps_cpp/robot_msgs/srv/detail/dds_fastrtps/get_robot_map_state__type_support.cpp.o
+.PHONY : rosidl_typesupport_fastrtps_cpp/robot_msgs/srv/detail/dds_fastrtps/get_robot_map_state__type_support.cpp.o
+
+rosidl_typesupport_fastrtps_cpp/robot_msgs/srv/detail/dds_fastrtps/get_robot_map_state__type_support.i: rosidl_typesupport_fastrtps_cpp/robot_msgs/srv/detail/dds_fastrtps/get_robot_map_state__type_support.cpp.i
+.PHONY : rosidl_typesupport_fastrtps_cpp/robot_msgs/srv/detail/dds_fastrtps/get_robot_map_state__type_support.i
+
+# target to preprocess a source file
+rosidl_typesupport_fastrtps_cpp/robot_msgs/srv/detail/dds_fastrtps/get_robot_map_state__type_support.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/robot_msgs__rosidl_typesupport_fastrtps_cpp.dir/build.make CMakeFiles/robot_msgs__rosidl_typesupport_fastrtps_cpp.dir/rosidl_typesupport_fastrtps_cpp/robot_msgs/srv/detail/dds_fastrtps/get_robot_map_state__type_support.cpp.i
+.PHONY : rosidl_typesupport_fastrtps_cpp/robot_msgs/srv/detail/dds_fastrtps/get_robot_map_state__type_support.cpp.i
+
+rosidl_typesupport_fastrtps_cpp/robot_msgs/srv/detail/dds_fastrtps/get_robot_map_state__type_support.s: rosidl_typesupport_fastrtps_cpp/robot_msgs/srv/detail/dds_fastrtps/get_robot_map_state__type_support.cpp.s
+.PHONY : rosidl_typesupport_fastrtps_cpp/robot_msgs/srv/detail/dds_fastrtps/get_robot_map_state__type_support.s
+
+# target to generate assembly for a file
+rosidl_typesupport_fastrtps_cpp/robot_msgs/srv/detail/dds_fastrtps/get_robot_map_state__type_support.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/robot_msgs__rosidl_typesupport_fastrtps_cpp.dir/build.make CMakeFiles/robot_msgs__rosidl_typesupport_fastrtps_cpp.dir/rosidl_typesupport_fastrtps_cpp/robot_msgs/srv/detail/dds_fastrtps/get_robot_map_state__type_support.cpp.s
+.PHONY : rosidl_typesupport_fastrtps_cpp/robot_msgs/srv/detail/dds_fastrtps/get_robot_map_state__type_support.cpp.s
+
+rosidl_typesupport_fastrtps_cpp/robot_msgs/srv/detail/dds_fastrtps/load_robot_map__type_support.o: rosidl_typesupport_fastrtps_cpp/robot_msgs/srv/detail/dds_fastrtps/load_robot_map__type_support.cpp.o
+.PHONY : rosidl_typesupport_fastrtps_cpp/robot_msgs/srv/detail/dds_fastrtps/load_robot_map__type_support.o
+
+# target to build an object file
+rosidl_typesupport_fastrtps_cpp/robot_msgs/srv/detail/dds_fastrtps/load_robot_map__type_support.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/robot_msgs__rosidl_typesupport_fastrtps_cpp.dir/build.make CMakeFiles/robot_msgs__rosidl_typesupport_fastrtps_cpp.dir/rosidl_typesupport_fastrtps_cpp/robot_msgs/srv/detail/dds_fastrtps/load_robot_map__type_support.cpp.o
+.PHONY : rosidl_typesupport_fastrtps_cpp/robot_msgs/srv/detail/dds_fastrtps/load_robot_map__type_support.cpp.o
+
+rosidl_typesupport_fastrtps_cpp/robot_msgs/srv/detail/dds_fastrtps/load_robot_map__type_support.i: rosidl_typesupport_fastrtps_cpp/robot_msgs/srv/detail/dds_fastrtps/load_robot_map__type_support.cpp.i
+.PHONY : rosidl_typesupport_fastrtps_cpp/robot_msgs/srv/detail/dds_fastrtps/load_robot_map__type_support.i
+
+# target to preprocess a source file
+rosidl_typesupport_fastrtps_cpp/robot_msgs/srv/detail/dds_fastrtps/load_robot_map__type_support.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/robot_msgs__rosidl_typesupport_fastrtps_cpp.dir/build.make CMakeFiles/robot_msgs__rosidl_typesupport_fastrtps_cpp.dir/rosidl_typesupport_fastrtps_cpp/robot_msgs/srv/detail/dds_fastrtps/load_robot_map__type_support.cpp.i
+.PHONY : rosidl_typesupport_fastrtps_cpp/robot_msgs/srv/detail/dds_fastrtps/load_robot_map__type_support.cpp.i
+
+rosidl_typesupport_fastrtps_cpp/robot_msgs/srv/detail/dds_fastrtps/load_robot_map__type_support.s: rosidl_typesupport_fastrtps_cpp/robot_msgs/srv/detail/dds_fastrtps/load_robot_map__type_support.cpp.s
+.PHONY : rosidl_typesupport_fastrtps_cpp/robot_msgs/srv/detail/dds_fastrtps/load_robot_map__type_support.s
+
+# target to generate assembly for a file
+rosidl_typesupport_fastrtps_cpp/robot_msgs/srv/detail/dds_fastrtps/load_robot_map__type_support.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/robot_msgs__rosidl_typesupport_fastrtps_cpp.dir/build.make CMakeFiles/robot_msgs__rosidl_typesupport_fastrtps_cpp.dir/rosidl_typesupport_fastrtps_cpp/robot_msgs/srv/detail/dds_fastrtps/load_robot_map__type_support.cpp.s
+.PHONY : rosidl_typesupport_fastrtps_cpp/robot_msgs/srv/detail/dds_fastrtps/load_robot_map__type_support.cpp.s
+
 rosidl_typesupport_fastrtps_cpp/robot_msgs/srv/detail/dds_fastrtps/plan_route__type_support.o: rosidl_typesupport_fastrtps_cpp/robot_msgs/srv/detail/dds_fastrtps/plan_route__type_support.cpp.o
 .PHONY : rosidl_typesupport_fastrtps_cpp/robot_msgs/srv/detail/dds_fastrtps/plan_route__type_support.o
 
@@ -1558,6 +1942,54 @@ rosidl_typesupport_introspection_c/robot_msgs/srv/detail/execute_route__type_sup
 rosidl_typesupport_introspection_c/robot_msgs/srv/detail/execute_route__type_support.c.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/robot_msgs__rosidl_typesupport_introspection_c.dir/build.make CMakeFiles/robot_msgs__rosidl_typesupport_introspection_c.dir/rosidl_typesupport_introspection_c/robot_msgs/srv/detail/execute_route__type_support.c.s
 .PHONY : rosidl_typesupport_introspection_c/robot_msgs/srv/detail/execute_route__type_support.c.s
+
+rosidl_typesupport_introspection_c/robot_msgs/srv/detail/get_robot_map_state__type_support.o: rosidl_typesupport_introspection_c/robot_msgs/srv/detail/get_robot_map_state__type_support.c.o
+.PHONY : rosidl_typesupport_introspection_c/robot_msgs/srv/detail/get_robot_map_state__type_support.o
+
+# target to build an object file
+rosidl_typesupport_introspection_c/robot_msgs/srv/detail/get_robot_map_state__type_support.c.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/robot_msgs__rosidl_typesupport_introspection_c.dir/build.make CMakeFiles/robot_msgs__rosidl_typesupport_introspection_c.dir/rosidl_typesupport_introspection_c/robot_msgs/srv/detail/get_robot_map_state__type_support.c.o
+.PHONY : rosidl_typesupport_introspection_c/robot_msgs/srv/detail/get_robot_map_state__type_support.c.o
+
+rosidl_typesupport_introspection_c/robot_msgs/srv/detail/get_robot_map_state__type_support.i: rosidl_typesupport_introspection_c/robot_msgs/srv/detail/get_robot_map_state__type_support.c.i
+.PHONY : rosidl_typesupport_introspection_c/robot_msgs/srv/detail/get_robot_map_state__type_support.i
+
+# target to preprocess a source file
+rosidl_typesupport_introspection_c/robot_msgs/srv/detail/get_robot_map_state__type_support.c.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/robot_msgs__rosidl_typesupport_introspection_c.dir/build.make CMakeFiles/robot_msgs__rosidl_typesupport_introspection_c.dir/rosidl_typesupport_introspection_c/robot_msgs/srv/detail/get_robot_map_state__type_support.c.i
+.PHONY : rosidl_typesupport_introspection_c/robot_msgs/srv/detail/get_robot_map_state__type_support.c.i
+
+rosidl_typesupport_introspection_c/robot_msgs/srv/detail/get_robot_map_state__type_support.s: rosidl_typesupport_introspection_c/robot_msgs/srv/detail/get_robot_map_state__type_support.c.s
+.PHONY : rosidl_typesupport_introspection_c/robot_msgs/srv/detail/get_robot_map_state__type_support.s
+
+# target to generate assembly for a file
+rosidl_typesupport_introspection_c/robot_msgs/srv/detail/get_robot_map_state__type_support.c.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/robot_msgs__rosidl_typesupport_introspection_c.dir/build.make CMakeFiles/robot_msgs__rosidl_typesupport_introspection_c.dir/rosidl_typesupport_introspection_c/robot_msgs/srv/detail/get_robot_map_state__type_support.c.s
+.PHONY : rosidl_typesupport_introspection_c/robot_msgs/srv/detail/get_robot_map_state__type_support.c.s
+
+rosidl_typesupport_introspection_c/robot_msgs/srv/detail/load_robot_map__type_support.o: rosidl_typesupport_introspection_c/robot_msgs/srv/detail/load_robot_map__type_support.c.o
+.PHONY : rosidl_typesupport_introspection_c/robot_msgs/srv/detail/load_robot_map__type_support.o
+
+# target to build an object file
+rosidl_typesupport_introspection_c/robot_msgs/srv/detail/load_robot_map__type_support.c.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/robot_msgs__rosidl_typesupport_introspection_c.dir/build.make CMakeFiles/robot_msgs__rosidl_typesupport_introspection_c.dir/rosidl_typesupport_introspection_c/robot_msgs/srv/detail/load_robot_map__type_support.c.o
+.PHONY : rosidl_typesupport_introspection_c/robot_msgs/srv/detail/load_robot_map__type_support.c.o
+
+rosidl_typesupport_introspection_c/robot_msgs/srv/detail/load_robot_map__type_support.i: rosidl_typesupport_introspection_c/robot_msgs/srv/detail/load_robot_map__type_support.c.i
+.PHONY : rosidl_typesupport_introspection_c/robot_msgs/srv/detail/load_robot_map__type_support.i
+
+# target to preprocess a source file
+rosidl_typesupport_introspection_c/robot_msgs/srv/detail/load_robot_map__type_support.c.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/robot_msgs__rosidl_typesupport_introspection_c.dir/build.make CMakeFiles/robot_msgs__rosidl_typesupport_introspection_c.dir/rosidl_typesupport_introspection_c/robot_msgs/srv/detail/load_robot_map__type_support.c.i
+.PHONY : rosidl_typesupport_introspection_c/robot_msgs/srv/detail/load_robot_map__type_support.c.i
+
+rosidl_typesupport_introspection_c/robot_msgs/srv/detail/load_robot_map__type_support.s: rosidl_typesupport_introspection_c/robot_msgs/srv/detail/load_robot_map__type_support.c.s
+.PHONY : rosidl_typesupport_introspection_c/robot_msgs/srv/detail/load_robot_map__type_support.s
+
+# target to generate assembly for a file
+rosidl_typesupport_introspection_c/robot_msgs/srv/detail/load_robot_map__type_support.c.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/robot_msgs__rosidl_typesupport_introspection_c.dir/build.make CMakeFiles/robot_msgs__rosidl_typesupport_introspection_c.dir/rosidl_typesupport_introspection_c/robot_msgs/srv/detail/load_robot_map__type_support.c.s
+.PHONY : rosidl_typesupport_introspection_c/robot_msgs/srv/detail/load_robot_map__type_support.c.s
 
 rosidl_typesupport_introspection_c/robot_msgs/srv/detail/plan_route__type_support.o: rosidl_typesupport_introspection_c/robot_msgs/srv/detail/plan_route__type_support.c.o
 .PHONY : rosidl_typesupport_introspection_c/robot_msgs/srv/detail/plan_route__type_support.o
@@ -1679,6 +2111,54 @@ rosidl_typesupport_introspection_cpp/robot_msgs/srv/detail/execute_route__type_s
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/robot_msgs__rosidl_typesupport_introspection_cpp.dir/build.make CMakeFiles/robot_msgs__rosidl_typesupport_introspection_cpp.dir/rosidl_typesupport_introspection_cpp/robot_msgs/srv/detail/execute_route__type_support.cpp.s
 .PHONY : rosidl_typesupport_introspection_cpp/robot_msgs/srv/detail/execute_route__type_support.cpp.s
 
+rosidl_typesupport_introspection_cpp/robot_msgs/srv/detail/get_robot_map_state__type_support.o: rosidl_typesupport_introspection_cpp/robot_msgs/srv/detail/get_robot_map_state__type_support.cpp.o
+.PHONY : rosidl_typesupport_introspection_cpp/robot_msgs/srv/detail/get_robot_map_state__type_support.o
+
+# target to build an object file
+rosidl_typesupport_introspection_cpp/robot_msgs/srv/detail/get_robot_map_state__type_support.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/robot_msgs__rosidl_typesupport_introspection_cpp.dir/build.make CMakeFiles/robot_msgs__rosidl_typesupport_introspection_cpp.dir/rosidl_typesupport_introspection_cpp/robot_msgs/srv/detail/get_robot_map_state__type_support.cpp.o
+.PHONY : rosidl_typesupport_introspection_cpp/robot_msgs/srv/detail/get_robot_map_state__type_support.cpp.o
+
+rosidl_typesupport_introspection_cpp/robot_msgs/srv/detail/get_robot_map_state__type_support.i: rosidl_typesupport_introspection_cpp/robot_msgs/srv/detail/get_robot_map_state__type_support.cpp.i
+.PHONY : rosidl_typesupport_introspection_cpp/robot_msgs/srv/detail/get_robot_map_state__type_support.i
+
+# target to preprocess a source file
+rosidl_typesupport_introspection_cpp/robot_msgs/srv/detail/get_robot_map_state__type_support.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/robot_msgs__rosidl_typesupport_introspection_cpp.dir/build.make CMakeFiles/robot_msgs__rosidl_typesupport_introspection_cpp.dir/rosidl_typesupport_introspection_cpp/robot_msgs/srv/detail/get_robot_map_state__type_support.cpp.i
+.PHONY : rosidl_typesupport_introspection_cpp/robot_msgs/srv/detail/get_robot_map_state__type_support.cpp.i
+
+rosidl_typesupport_introspection_cpp/robot_msgs/srv/detail/get_robot_map_state__type_support.s: rosidl_typesupport_introspection_cpp/robot_msgs/srv/detail/get_robot_map_state__type_support.cpp.s
+.PHONY : rosidl_typesupport_introspection_cpp/robot_msgs/srv/detail/get_robot_map_state__type_support.s
+
+# target to generate assembly for a file
+rosidl_typesupport_introspection_cpp/robot_msgs/srv/detail/get_robot_map_state__type_support.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/robot_msgs__rosidl_typesupport_introspection_cpp.dir/build.make CMakeFiles/robot_msgs__rosidl_typesupport_introspection_cpp.dir/rosidl_typesupport_introspection_cpp/robot_msgs/srv/detail/get_robot_map_state__type_support.cpp.s
+.PHONY : rosidl_typesupport_introspection_cpp/robot_msgs/srv/detail/get_robot_map_state__type_support.cpp.s
+
+rosidl_typesupport_introspection_cpp/robot_msgs/srv/detail/load_robot_map__type_support.o: rosidl_typesupport_introspection_cpp/robot_msgs/srv/detail/load_robot_map__type_support.cpp.o
+.PHONY : rosidl_typesupport_introspection_cpp/robot_msgs/srv/detail/load_robot_map__type_support.o
+
+# target to build an object file
+rosidl_typesupport_introspection_cpp/robot_msgs/srv/detail/load_robot_map__type_support.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/robot_msgs__rosidl_typesupport_introspection_cpp.dir/build.make CMakeFiles/robot_msgs__rosidl_typesupport_introspection_cpp.dir/rosidl_typesupport_introspection_cpp/robot_msgs/srv/detail/load_robot_map__type_support.cpp.o
+.PHONY : rosidl_typesupport_introspection_cpp/robot_msgs/srv/detail/load_robot_map__type_support.cpp.o
+
+rosidl_typesupport_introspection_cpp/robot_msgs/srv/detail/load_robot_map__type_support.i: rosidl_typesupport_introspection_cpp/robot_msgs/srv/detail/load_robot_map__type_support.cpp.i
+.PHONY : rosidl_typesupport_introspection_cpp/robot_msgs/srv/detail/load_robot_map__type_support.i
+
+# target to preprocess a source file
+rosidl_typesupport_introspection_cpp/robot_msgs/srv/detail/load_robot_map__type_support.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/robot_msgs__rosidl_typesupport_introspection_cpp.dir/build.make CMakeFiles/robot_msgs__rosidl_typesupport_introspection_cpp.dir/rosidl_typesupport_introspection_cpp/robot_msgs/srv/detail/load_robot_map__type_support.cpp.i
+.PHONY : rosidl_typesupport_introspection_cpp/robot_msgs/srv/detail/load_robot_map__type_support.cpp.i
+
+rosidl_typesupport_introspection_cpp/robot_msgs/srv/detail/load_robot_map__type_support.s: rosidl_typesupport_introspection_cpp/robot_msgs/srv/detail/load_robot_map__type_support.cpp.s
+.PHONY : rosidl_typesupport_introspection_cpp/robot_msgs/srv/detail/load_robot_map__type_support.s
+
+# target to generate assembly for a file
+rosidl_typesupport_introspection_cpp/robot_msgs/srv/detail/load_robot_map__type_support.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/robot_msgs__rosidl_typesupport_introspection_cpp.dir/build.make CMakeFiles/robot_msgs__rosidl_typesupport_introspection_cpp.dir/rosidl_typesupport_introspection_cpp/robot_msgs/srv/detail/load_robot_map__type_support.cpp.s
+.PHONY : rosidl_typesupport_introspection_cpp/robot_msgs/srv/detail/load_robot_map__type_support.cpp.s
+
 rosidl_typesupport_introspection_cpp/robot_msgs/srv/detail/plan_route__type_support.o: rosidl_typesupport_introspection_cpp/robot_msgs/srv/detail/plan_route__type_support.cpp.o
 .PHONY : rosidl_typesupport_introspection_cpp/robot_msgs/srv/detail/plan_route__type_support.o
 
@@ -1772,6 +2252,24 @@ help:
 	@echo "... rosidl_generator_c/robot_msgs/srv/detail/execute_route__type_support.o"
 	@echo "... rosidl_generator_c/robot_msgs/srv/detail/execute_route__type_support.i"
 	@echo "... rosidl_generator_c/robot_msgs/srv/detail/execute_route__type_support.s"
+	@echo "... rosidl_generator_c/robot_msgs/srv/detail/get_robot_map_state__description.o"
+	@echo "... rosidl_generator_c/robot_msgs/srv/detail/get_robot_map_state__description.i"
+	@echo "... rosidl_generator_c/robot_msgs/srv/detail/get_robot_map_state__description.s"
+	@echo "... rosidl_generator_c/robot_msgs/srv/detail/get_robot_map_state__functions.o"
+	@echo "... rosidl_generator_c/robot_msgs/srv/detail/get_robot_map_state__functions.i"
+	@echo "... rosidl_generator_c/robot_msgs/srv/detail/get_robot_map_state__functions.s"
+	@echo "... rosidl_generator_c/robot_msgs/srv/detail/get_robot_map_state__type_support.o"
+	@echo "... rosidl_generator_c/robot_msgs/srv/detail/get_robot_map_state__type_support.i"
+	@echo "... rosidl_generator_c/robot_msgs/srv/detail/get_robot_map_state__type_support.s"
+	@echo "... rosidl_generator_c/robot_msgs/srv/detail/load_robot_map__description.o"
+	@echo "... rosidl_generator_c/robot_msgs/srv/detail/load_robot_map__description.i"
+	@echo "... rosidl_generator_c/robot_msgs/srv/detail/load_robot_map__description.s"
+	@echo "... rosidl_generator_c/robot_msgs/srv/detail/load_robot_map__functions.o"
+	@echo "... rosidl_generator_c/robot_msgs/srv/detail/load_robot_map__functions.i"
+	@echo "... rosidl_generator_c/robot_msgs/srv/detail/load_robot_map__functions.s"
+	@echo "... rosidl_generator_c/robot_msgs/srv/detail/load_robot_map__type_support.o"
+	@echo "... rosidl_generator_c/robot_msgs/srv/detail/load_robot_map__type_support.i"
+	@echo "... rosidl_generator_c/robot_msgs/srv/detail/load_robot_map__type_support.s"
 	@echo "... rosidl_generator_c/robot_msgs/srv/detail/plan_route__description.o"
 	@echo "... rosidl_generator_c/robot_msgs/srv/detail/plan_route__description.i"
 	@echo "... rosidl_generator_c/robot_msgs/srv/detail/plan_route__description.s"
@@ -1802,6 +2300,12 @@ help:
 	@echo "... rosidl_generator_py/robot_msgs/srv/_execute_route_s.o"
 	@echo "... rosidl_generator_py/robot_msgs/srv/_execute_route_s.i"
 	@echo "... rosidl_generator_py/robot_msgs/srv/_execute_route_s.s"
+	@echo "... rosidl_generator_py/robot_msgs/srv/_get_robot_map_state_s.o"
+	@echo "... rosidl_generator_py/robot_msgs/srv/_get_robot_map_state_s.i"
+	@echo "... rosidl_generator_py/robot_msgs/srv/_get_robot_map_state_s.s"
+	@echo "... rosidl_generator_py/robot_msgs/srv/_load_robot_map_s.o"
+	@echo "... rosidl_generator_py/robot_msgs/srv/_load_robot_map_s.i"
+	@echo "... rosidl_generator_py/robot_msgs/srv/_load_robot_map_s.s"
 	@echo "... rosidl_generator_py/robot_msgs/srv/_plan_route_s.o"
 	@echo "... rosidl_generator_py/robot_msgs/srv/_plan_route_s.i"
 	@echo "... rosidl_generator_py/robot_msgs/srv/_plan_route_s.s"
@@ -1817,6 +2321,12 @@ help:
 	@echo "... rosidl_typesupport_c/robot_msgs/srv/execute_route__type_support.o"
 	@echo "... rosidl_typesupport_c/robot_msgs/srv/execute_route__type_support.i"
 	@echo "... rosidl_typesupport_c/robot_msgs/srv/execute_route__type_support.s"
+	@echo "... rosidl_typesupport_c/robot_msgs/srv/get_robot_map_state__type_support.o"
+	@echo "... rosidl_typesupport_c/robot_msgs/srv/get_robot_map_state__type_support.i"
+	@echo "... rosidl_typesupport_c/robot_msgs/srv/get_robot_map_state__type_support.s"
+	@echo "... rosidl_typesupport_c/robot_msgs/srv/load_robot_map__type_support.o"
+	@echo "... rosidl_typesupport_c/robot_msgs/srv/load_robot_map__type_support.i"
+	@echo "... rosidl_typesupport_c/robot_msgs/srv/load_robot_map__type_support.s"
 	@echo "... rosidl_typesupport_c/robot_msgs/srv/plan_route__type_support.o"
 	@echo "... rosidl_typesupport_c/robot_msgs/srv/plan_route__type_support.i"
 	@echo "... rosidl_typesupport_c/robot_msgs/srv/plan_route__type_support.s"
@@ -1832,6 +2342,12 @@ help:
 	@echo "... rosidl_typesupport_cpp/robot_msgs/srv/execute_route__type_support.o"
 	@echo "... rosidl_typesupport_cpp/robot_msgs/srv/execute_route__type_support.i"
 	@echo "... rosidl_typesupport_cpp/robot_msgs/srv/execute_route__type_support.s"
+	@echo "... rosidl_typesupport_cpp/robot_msgs/srv/get_robot_map_state__type_support.o"
+	@echo "... rosidl_typesupport_cpp/robot_msgs/srv/get_robot_map_state__type_support.i"
+	@echo "... rosidl_typesupport_cpp/robot_msgs/srv/get_robot_map_state__type_support.s"
+	@echo "... rosidl_typesupport_cpp/robot_msgs/srv/load_robot_map__type_support.o"
+	@echo "... rosidl_typesupport_cpp/robot_msgs/srv/load_robot_map__type_support.i"
+	@echo "... rosidl_typesupport_cpp/robot_msgs/srv/load_robot_map__type_support.s"
 	@echo "... rosidl_typesupport_cpp/robot_msgs/srv/plan_route__type_support.o"
 	@echo "... rosidl_typesupport_cpp/robot_msgs/srv/plan_route__type_support.i"
 	@echo "... rosidl_typesupport_cpp/robot_msgs/srv/plan_route__type_support.s"
@@ -1847,6 +2363,12 @@ help:
 	@echo "... rosidl_typesupport_fastrtps_c/robot_msgs/srv/detail/execute_route__type_support_c.o"
 	@echo "... rosidl_typesupport_fastrtps_c/robot_msgs/srv/detail/execute_route__type_support_c.i"
 	@echo "... rosidl_typesupport_fastrtps_c/robot_msgs/srv/detail/execute_route__type_support_c.s"
+	@echo "... rosidl_typesupport_fastrtps_c/robot_msgs/srv/detail/get_robot_map_state__type_support_c.o"
+	@echo "... rosidl_typesupport_fastrtps_c/robot_msgs/srv/detail/get_robot_map_state__type_support_c.i"
+	@echo "... rosidl_typesupport_fastrtps_c/robot_msgs/srv/detail/get_robot_map_state__type_support_c.s"
+	@echo "... rosidl_typesupport_fastrtps_c/robot_msgs/srv/detail/load_robot_map__type_support_c.o"
+	@echo "... rosidl_typesupport_fastrtps_c/robot_msgs/srv/detail/load_robot_map__type_support_c.i"
+	@echo "... rosidl_typesupport_fastrtps_c/robot_msgs/srv/detail/load_robot_map__type_support_c.s"
 	@echo "... rosidl_typesupport_fastrtps_c/robot_msgs/srv/detail/plan_route__type_support_c.o"
 	@echo "... rosidl_typesupport_fastrtps_c/robot_msgs/srv/detail/plan_route__type_support_c.i"
 	@echo "... rosidl_typesupport_fastrtps_c/robot_msgs/srv/detail/plan_route__type_support_c.s"
@@ -1862,6 +2384,12 @@ help:
 	@echo "... rosidl_typesupport_fastrtps_cpp/robot_msgs/srv/detail/dds_fastrtps/execute_route__type_support.o"
 	@echo "... rosidl_typesupport_fastrtps_cpp/robot_msgs/srv/detail/dds_fastrtps/execute_route__type_support.i"
 	@echo "... rosidl_typesupport_fastrtps_cpp/robot_msgs/srv/detail/dds_fastrtps/execute_route__type_support.s"
+	@echo "... rosidl_typesupport_fastrtps_cpp/robot_msgs/srv/detail/dds_fastrtps/get_robot_map_state__type_support.o"
+	@echo "... rosidl_typesupport_fastrtps_cpp/robot_msgs/srv/detail/dds_fastrtps/get_robot_map_state__type_support.i"
+	@echo "... rosidl_typesupport_fastrtps_cpp/robot_msgs/srv/detail/dds_fastrtps/get_robot_map_state__type_support.s"
+	@echo "... rosidl_typesupport_fastrtps_cpp/robot_msgs/srv/detail/dds_fastrtps/load_robot_map__type_support.o"
+	@echo "... rosidl_typesupport_fastrtps_cpp/robot_msgs/srv/detail/dds_fastrtps/load_robot_map__type_support.i"
+	@echo "... rosidl_typesupport_fastrtps_cpp/robot_msgs/srv/detail/dds_fastrtps/load_robot_map__type_support.s"
 	@echo "... rosidl_typesupport_fastrtps_cpp/robot_msgs/srv/detail/dds_fastrtps/plan_route__type_support.o"
 	@echo "... rosidl_typesupport_fastrtps_cpp/robot_msgs/srv/detail/dds_fastrtps/plan_route__type_support.i"
 	@echo "... rosidl_typesupport_fastrtps_cpp/robot_msgs/srv/detail/dds_fastrtps/plan_route__type_support.s"
@@ -1877,6 +2405,12 @@ help:
 	@echo "... rosidl_typesupport_introspection_c/robot_msgs/srv/detail/execute_route__type_support.o"
 	@echo "... rosidl_typesupport_introspection_c/robot_msgs/srv/detail/execute_route__type_support.i"
 	@echo "... rosidl_typesupport_introspection_c/robot_msgs/srv/detail/execute_route__type_support.s"
+	@echo "... rosidl_typesupport_introspection_c/robot_msgs/srv/detail/get_robot_map_state__type_support.o"
+	@echo "... rosidl_typesupport_introspection_c/robot_msgs/srv/detail/get_robot_map_state__type_support.i"
+	@echo "... rosidl_typesupport_introspection_c/robot_msgs/srv/detail/get_robot_map_state__type_support.s"
+	@echo "... rosidl_typesupport_introspection_c/robot_msgs/srv/detail/load_robot_map__type_support.o"
+	@echo "... rosidl_typesupport_introspection_c/robot_msgs/srv/detail/load_robot_map__type_support.i"
+	@echo "... rosidl_typesupport_introspection_c/robot_msgs/srv/detail/load_robot_map__type_support.s"
 	@echo "... rosidl_typesupport_introspection_c/robot_msgs/srv/detail/plan_route__type_support.o"
 	@echo "... rosidl_typesupport_introspection_c/robot_msgs/srv/detail/plan_route__type_support.i"
 	@echo "... rosidl_typesupport_introspection_c/robot_msgs/srv/detail/plan_route__type_support.s"
@@ -1892,6 +2426,12 @@ help:
 	@echo "... rosidl_typesupport_introspection_cpp/robot_msgs/srv/detail/execute_route__type_support.o"
 	@echo "... rosidl_typesupport_introspection_cpp/robot_msgs/srv/detail/execute_route__type_support.i"
 	@echo "... rosidl_typesupport_introspection_cpp/robot_msgs/srv/detail/execute_route__type_support.s"
+	@echo "... rosidl_typesupport_introspection_cpp/robot_msgs/srv/detail/get_robot_map_state__type_support.o"
+	@echo "... rosidl_typesupport_introspection_cpp/robot_msgs/srv/detail/get_robot_map_state__type_support.i"
+	@echo "... rosidl_typesupport_introspection_cpp/robot_msgs/srv/detail/get_robot_map_state__type_support.s"
+	@echo "... rosidl_typesupport_introspection_cpp/robot_msgs/srv/detail/load_robot_map__type_support.o"
+	@echo "... rosidl_typesupport_introspection_cpp/robot_msgs/srv/detail/load_robot_map__type_support.i"
+	@echo "... rosidl_typesupport_introspection_cpp/robot_msgs/srv/detail/load_robot_map__type_support.s"
 	@echo "... rosidl_typesupport_introspection_cpp/robot_msgs/srv/detail/plan_route__type_support.o"
 	@echo "... rosidl_typesupport_introspection_cpp/robot_msgs/srv/detail/plan_route__type_support.i"
 	@echo "... rosidl_typesupport_introspection_cpp/robot_msgs/srv/detail/plan_route__type_support.s"

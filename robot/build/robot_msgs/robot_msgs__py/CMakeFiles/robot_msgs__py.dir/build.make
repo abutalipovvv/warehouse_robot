@@ -74,6 +74,8 @@ include /home/kaisar/warehouse_robot/robot/build/robot_msgs/robot_msgs__py/CMake
 /home/kaisar/warehouse_robot/robot/build/robot_msgs/robot_msgs__py/CMakeFiles/robot_msgs__py: rosidl_generator_py/robot_msgs/srv/_plan_route.py
 /home/kaisar/warehouse_robot/robot/build/robot_msgs/robot_msgs__py/CMakeFiles/robot_msgs__py: rosidl_generator_py/robot_msgs/srv/_execute_route.py
 /home/kaisar/warehouse_robot/robot/build/robot_msgs/robot_msgs__py/CMakeFiles/robot_msgs__py: rosidl_generator_py/robot_msgs/srv/_cancel_route.py
+/home/kaisar/warehouse_robot/robot/build/robot_msgs/robot_msgs__py/CMakeFiles/robot_msgs__py: rosidl_generator_py/robot_msgs/srv/_load_robot_map.py
+/home/kaisar/warehouse_robot/robot/build/robot_msgs/robot_msgs__py/CMakeFiles/robot_msgs__py: rosidl_generator_py/robot_msgs/srv/_get_robot_map_state.py
 /home/kaisar/warehouse_robot/robot/build/robot_msgs/robot_msgs__py/CMakeFiles/robot_msgs__py: rosidl_generator_py/robot_msgs/msg/__init__.py
 /home/kaisar/warehouse_robot/robot/build/robot_msgs/robot_msgs__py/CMakeFiles/robot_msgs__py: rosidl_generator_py/robot_msgs/srv/__init__.py
 /home/kaisar/warehouse_robot/robot/build/robot_msgs/robot_msgs__py/CMakeFiles/robot_msgs__py: rosidl_generator_py/robot_msgs/msg/_executor_state_s.c
@@ -81,6 +83,8 @@ include /home/kaisar/warehouse_robot/robot/build/robot_msgs/robot_msgs__py/CMake
 /home/kaisar/warehouse_robot/robot/build/robot_msgs/robot_msgs__py/CMakeFiles/robot_msgs__py: rosidl_generator_py/robot_msgs/srv/_plan_route_s.c
 /home/kaisar/warehouse_robot/robot/build/robot_msgs/robot_msgs__py/CMakeFiles/robot_msgs__py: rosidl_generator_py/robot_msgs/srv/_execute_route_s.c
 /home/kaisar/warehouse_robot/robot/build/robot_msgs/robot_msgs__py/CMakeFiles/robot_msgs__py: rosidl_generator_py/robot_msgs/srv/_cancel_route_s.c
+/home/kaisar/warehouse_robot/robot/build/robot_msgs/robot_msgs__py/CMakeFiles/robot_msgs__py: rosidl_generator_py/robot_msgs/srv/_load_robot_map_s.c
+/home/kaisar/warehouse_robot/robot/build/robot_msgs/robot_msgs__py/CMakeFiles/robot_msgs__py: rosidl_generator_py/robot_msgs/srv/_get_robot_map_state_s.c
 
 rosidl_generator_py/robot_msgs/_robot_msgs_s.ep.rosidl_typesupport_fastrtps_c.c: /opt/ros/jazzy/lib/rosidl_generator_py/rosidl_generator_py
 rosidl_generator_py/robot_msgs/_robot_msgs_s.ep.rosidl_typesupport_fastrtps_c.c: /opt/ros/jazzy/lib/python3.12/site-packages/rosidl_generator_py/__init__.py
@@ -100,6 +104,8 @@ rosidl_generator_py/robot_msgs/_robot_msgs_s.ep.rosidl_typesupport_fastrtps_c.c:
 rosidl_generator_py/robot_msgs/_robot_msgs_s.ep.rosidl_typesupport_fastrtps_c.c: rosidl_adapter/robot_msgs/srv/PlanRoute.idl
 rosidl_generator_py/robot_msgs/_robot_msgs_s.ep.rosidl_typesupport_fastrtps_c.c: rosidl_adapter/robot_msgs/srv/ExecuteRoute.idl
 rosidl_generator_py/robot_msgs/_robot_msgs_s.ep.rosidl_typesupport_fastrtps_c.c: rosidl_adapter/robot_msgs/srv/CancelRoute.idl
+rosidl_generator_py/robot_msgs/_robot_msgs_s.ep.rosidl_typesupport_fastrtps_c.c: rosidl_adapter/robot_msgs/srv/LoadRobotMap.idl
+rosidl_generator_py/robot_msgs/_robot_msgs_s.ep.rosidl_typesupport_fastrtps_c.c: rosidl_adapter/robot_msgs/srv/GetRobotMapState.idl
 rosidl_generator_py/robot_msgs/_robot_msgs_s.ep.rosidl_typesupport_fastrtps_c.c: /opt/ros/jazzy/share/builtin_interfaces/msg/Duration.idl
 rosidl_generator_py/robot_msgs/_robot_msgs_s.ep.rosidl_typesupport_fastrtps_c.c: /opt/ros/jazzy/share/builtin_interfaces/msg/Time.idl
 rosidl_generator_py/robot_msgs/_robot_msgs_s.ep.rosidl_typesupport_fastrtps_c.c: /opt/ros/jazzy/share/geometry_msgs/msg/Accel.idl
@@ -189,6 +195,12 @@ rosidl_generator_py/robot_msgs/srv/_execute_route.py: rosidl_generator_py/robot_
 rosidl_generator_py/robot_msgs/srv/_cancel_route.py: rosidl_generator_py/robot_msgs/_robot_msgs_s.ep.rosidl_typesupport_fastrtps_c.c
 	@$(CMAKE_COMMAND) -E touch_nocreate rosidl_generator_py/robot_msgs/srv/_cancel_route.py
 
+rosidl_generator_py/robot_msgs/srv/_load_robot_map.py: rosidl_generator_py/robot_msgs/_robot_msgs_s.ep.rosidl_typesupport_fastrtps_c.c
+	@$(CMAKE_COMMAND) -E touch_nocreate rosidl_generator_py/robot_msgs/srv/_load_robot_map.py
+
+rosidl_generator_py/robot_msgs/srv/_get_robot_map_state.py: rosidl_generator_py/robot_msgs/_robot_msgs_s.ep.rosidl_typesupport_fastrtps_c.c
+	@$(CMAKE_COMMAND) -E touch_nocreate rosidl_generator_py/robot_msgs/srv/_get_robot_map_state.py
+
 rosidl_generator_py/robot_msgs/msg/__init__.py: rosidl_generator_py/robot_msgs/_robot_msgs_s.ep.rosidl_typesupport_fastrtps_c.c
 	@$(CMAKE_COMMAND) -E touch_nocreate rosidl_generator_py/robot_msgs/msg/__init__.py
 
@@ -210,6 +222,12 @@ rosidl_generator_py/robot_msgs/srv/_execute_route_s.c: rosidl_generator_py/robot
 rosidl_generator_py/robot_msgs/srv/_cancel_route_s.c: rosidl_generator_py/robot_msgs/_robot_msgs_s.ep.rosidl_typesupport_fastrtps_c.c
 	@$(CMAKE_COMMAND) -E touch_nocreate rosidl_generator_py/robot_msgs/srv/_cancel_route_s.c
 
+rosidl_generator_py/robot_msgs/srv/_load_robot_map_s.c: rosidl_generator_py/robot_msgs/_robot_msgs_s.ep.rosidl_typesupport_fastrtps_c.c
+	@$(CMAKE_COMMAND) -E touch_nocreate rosidl_generator_py/robot_msgs/srv/_load_robot_map_s.c
+
+rosidl_generator_py/robot_msgs/srv/_get_robot_map_state_s.c: rosidl_generator_py/robot_msgs/_robot_msgs_s.ep.rosidl_typesupport_fastrtps_c.c
+	@$(CMAKE_COMMAND) -E touch_nocreate rosidl_generator_py/robot_msgs/srv/_get_robot_map_state_s.c
+
 robot_msgs__py: /home/kaisar/warehouse_robot/robot/build/robot_msgs/robot_msgs__py/CMakeFiles/robot_msgs__py
 robot_msgs__py: rosidl_generator_py/robot_msgs/_robot_msgs_s.ep.rosidl_typesupport_c.c
 robot_msgs__py: rosidl_generator_py/robot_msgs/_robot_msgs_s.ep.rosidl_typesupport_fastrtps_c.c
@@ -224,6 +242,10 @@ robot_msgs__py: rosidl_generator_py/robot_msgs/srv/_cancel_route.py
 robot_msgs__py: rosidl_generator_py/robot_msgs/srv/_cancel_route_s.c
 robot_msgs__py: rosidl_generator_py/robot_msgs/srv/_execute_route.py
 robot_msgs__py: rosidl_generator_py/robot_msgs/srv/_execute_route_s.c
+robot_msgs__py: rosidl_generator_py/robot_msgs/srv/_get_robot_map_state.py
+robot_msgs__py: rosidl_generator_py/robot_msgs/srv/_get_robot_map_state_s.c
+robot_msgs__py: rosidl_generator_py/robot_msgs/srv/_load_robot_map.py
+robot_msgs__py: rosidl_generator_py/robot_msgs/srv/_load_robot_map_s.c
 robot_msgs__py: rosidl_generator_py/robot_msgs/srv/_plan_route.py
 robot_msgs__py: rosidl_generator_py/robot_msgs/srv/_plan_route_s.c
 robot_msgs__py: /home/kaisar/warehouse_robot/robot/build/robot_msgs/robot_msgs__py/CMakeFiles/robot_msgs__py.dir/build.make

@@ -4,6 +4,7 @@ class OperatorApp {
     this.selectedRobotId = window.localStorage.getItem("operator:selectedRobotId") || "";
     this.lastProbe = null;
     this.sidebarOpen = !this.selectedRobotId;
+    this.robotMapState = { robotActiveMapName: "", operatorActiveMapName: "" };
 
     this.robotsList = document.getElementById("robotsList");
     this.robotCountText = document.getElementById("robotCountText");
@@ -14,6 +15,12 @@ class OperatorApp {
     this.emptyState = document.getElementById("emptyState");
     this.robotView = document.getElementById("robotView");
     this.robotFrame = document.getElementById("robotFrame");
+    this.robotActiveMapText = document.getElementById("robotActiveMapText");
+    this.operatorActiveMapText = document.getElementById("operatorActiveMapText");
+    this.editMapButton = document.getElementById("editMapButton");
+    this.controlPullMapButton = document.getElementById("controlPullMapButton");
+    this.controlPushMapButton = document.getElementById("controlPushMapButton");
+    this.controlLoadMapButton = document.getElementById("controlLoadMapButton");
     this.refreshButton = document.getElementById("refreshButton");
     this.addRobotButton = document.getElementById("addRobotButton");
 
@@ -25,9 +32,16 @@ class OperatorApp {
     this.probeResult = document.getElementById("probeResult");
     this.probeRobotButton = document.getElementById("probeRobotButton");
     this.saveRobotButton = document.getElementById("saveRobotButton");
+    this.loadMapDialog = document.getElementById("loadMapDialog");
+    this.loadMapSelect = document.getElementById("loadMapSelect");
+    this.loadMapHint = document.getElementById("loadMapHint");
+    this.closeLoadMapDialogButton = document.getElementById("closeLoadMapDialogButton");
+    this.cancelLoadMapButton = document.getElementById("cancelLoadMapButton");
+    this.confirmLoadMapButton = document.getElementById("confirmLoadMapButton");
 
     this.frameUrl = "";
     this.frameOnline = false;
+    this.pendingRobotMaps = [];
   }
 
   async init() {
@@ -44,12 +58,19 @@ class OperatorApp {
     this.sidebarBackdrop.addEventListener("click", () => this.closeSidebar());
     this.refreshButton.addEventListener("click", () => this.refreshRobots());
     this.addRobotButton.addEventListener("click", () => this.openAddRobotDialog());
+    this.editMapButton.addEventListener("click", () => this.openMapEditor());
+    this.controlPullMapButton.addEventListener("click", () => this.handlePullMap());
+    this.controlPushMapButton.addEventListener("click", () => this.handlePushMap());
+    this.controlLoadMapButton.addEventListener("click", () => this.handleLoadMap());
     this.closeDialogButton.addEventListener("click", () => this.addRobotDialog.close());
     this.probeRobotButton.addEventListener("click", () => this.handleProbe());
     this.saveRobotButton.addEventListener("click", async (event) => {
       event.preventDefault();
       await this.handleSaveRobot();
     });
+    this.closeLoadMapDialogButton.addEventListener("click", () => this.loadMapDialog.close());
+    this.cancelLoadMapButton.addEventListener("click", () => this.loadMapDialog.close());
+    this.confirmLoadMapButton.addEventListener("click", () => this.confirmLoadMap());
   }
 
   selectedRobot() {
@@ -67,9 +88,33 @@ class OperatorApp {
       this.selectedRobotId = this.robots[0].id;
       window.localStorage.setItem("operator:selectedRobotId", this.selectedRobotId);
     }
+    await this.refreshRobotMapState({ quiet: true });
     this.render();
     if (!options.quiet) {
       this.showProbeResult("neutral", "Robot list refreshed.");
+    }
+  }
+
+  async refreshRobotMapState(options = {}) {
+    const robot = this.selectedRobot();
+    if (!robot) {
+      this.robotMapState = { robotActiveMapName: "", operatorActiveMapName: "" };
+      return;
+    }
+    try {
+      const [robotActive, localActive] = await Promise.all([
+        this.getJson(`/api/robots/${encodeURIComponent(robot.id)}/maps/active`),
+        this.getJson(`/api/robots/${encodeURIComponent(robot.id)}/maps/local/active`),
+      ]);
+      this.robotMapState = {
+        robotActiveMapName: String(robotActive.mapName || "").trim(),
+        operatorActiveMapName: String(localActive.activeMapName || "").trim(),
+      };
+    } catch (error) {
+      this.robotMapState = { robotActiveMapName: "", operatorActiveMapName: "" };
+      if (!options.quiet) {
+        window.alert(error.message || String(error));
+      }
     }
   }
 
@@ -100,7 +145,7 @@ class OperatorApp {
         this.selectedRobotId = robot.id;
         window.localStorage.setItem("operator:selectedRobotId", robot.id);
         this.closeSidebar();
-        this.render();
+        this.refreshRobotMapState({ quiet: true }).then(() => this.render()).catch(() => this.render());
       });
 
       const identity = robot.identity || robot.lastIdentity || {};
@@ -144,17 +189,34 @@ class OperatorApp {
       this.robotFrame.removeAttribute("src");
       this.frameUrl = "";
       this.frameOnline = false;
+      this.robotActiveMapText.textContent = "-";
+      this.operatorActiveMapText.textContent = "-";
       return;
     }
 
     this.emptyState.classList.add("hidden");
     this.robotView.classList.remove("hidden");
+    this.robotActiveMapText.textContent = this.robotMapState.robotActiveMapName || "-";
+    this.operatorActiveMapText.textContent = this.robotMapState.operatorActiveMapName || "-";
 
     if (this.frameUrl !== robot.baseUrl || (robot.online && !this.frameOnline)) {
-      this.robotFrame.src = robot.baseUrl;
-      this.frameUrl = robot.baseUrl;
+      this.setRobotFrameUrl(robot.baseUrl);
     }
     this.frameOnline = Boolean(robot.online);
+  }
+
+  setRobotFrameUrl(baseUrl, { forceReload = false } = {}) {
+    const url = forceReload ? `${baseUrl}${baseUrl.includes("?") ? "&" : "?"}_ts=${Date.now()}` : baseUrl;
+    this.robotFrame.src = url;
+    this.frameUrl = baseUrl;
+  }
+
+  reloadRobotFrame() {
+    const robot = this.selectedRobot();
+    if (!robot) {
+      return;
+    }
+    this.setRobotFrameUrl(robot.baseUrl, { forceReload: true });
   }
 
   renderSidebar() {
@@ -211,6 +273,11 @@ class OperatorApp {
       window.localStorage.setItem("operator:selectedRobotId", this.selectedRobotId);
       this.closeSidebar();
       await this.refreshRobots({ quiet: true });
+      await this.refreshRobotMapState({ quiet: true });
+      this.render();
+      if (result.pulled && result.pulled.local && result.pulled.local.mapName) {
+        this.showProbeResult("success", `Robot saved and active map ${result.pulled.local.mapName} pulled into operator cache.`);
+      }
     } catch (error) {
       this.showProbeResult("error", error.message || String(error));
     }
@@ -233,6 +300,100 @@ class OperatorApp {
       await this.refreshRobots({ quiet: true });
     } catch (error) {
       window.alert(error.message || String(error));
+    }
+  }
+
+  openMapEditor() {
+    const robot = this.selectedRobot();
+    if (!robot) {
+      return;
+    }
+    const robotName = robot.name || robot.identity?.robotId || robot.id;
+    const url = `/map-editor.html?robot_id=${encodeURIComponent(robot.id)}&robot_name=${encodeURIComponent(robotName)}`;
+    window.location.assign(url);
+  }
+
+  async handlePullMap() {
+    const robot = this.selectedRobot();
+    if (!robot) {
+      return;
+    }
+    try {
+      const result = await this.postJson(`/api/robots/${encodeURIComponent(robot.id)}/maps/pull-sync`, {});
+      await this.refreshRobotMapState({ quiet: true });
+      this.renderSelectedRobot();
+      window.alert(result.message || "Pull map completed.");
+    } catch (error) {
+      window.alert(error.message || String(error));
+    }
+  }
+
+  async handlePushMap() {
+    const robot = this.selectedRobot();
+    if (!robot) {
+      return;
+    }
+    try {
+      const result = await this.postJson(`/api/robots/${encodeURIComponent(robot.id)}/maps/push-sync`, {});
+      await this.refreshRobotMapState({ quiet: true });
+      await this.refreshRobots({ quiet: true });
+      this.reloadRobotFrame();
+      window.alert(result.message || "Push map completed.");
+    } catch (error) {
+      window.alert(error.message || String(error));
+    }
+  }
+
+  async handleLoadMap() {
+    const robot = this.selectedRobot();
+    if (!robot) {
+      return;
+    }
+    try {
+      const robotMaps = await this.getJson(`/api/robots/${encodeURIComponent(robot.id)}/maps/list`);
+      const maps = Array.isArray(robotMaps.maps) ? robotMaps.maps : [];
+      if (!maps.length) {
+        window.alert("Robot has no editable maps.");
+        return;
+      }
+      this.pendingRobotMaps = maps;
+      this.loadMapSelect.innerHTML = "";
+      for (const item of maps) {
+        const option = document.createElement("option");
+        option.value = item.name || item.folder || "";
+        option.textContent = item.active ? `${item.name} (active)` : `${item.name}`;
+        option.selected = Boolean(item.active) || option.value === this.robotMapState.robotActiveMapName;
+        this.loadMapSelect.appendChild(option);
+      }
+      this.loadMapHint.className = "probe-result neutral";
+      this.loadMapHint.textContent = "Choose one of the maps available on the robot.";
+      this.loadMapDialog.showModal();
+    } catch (error) {
+      window.alert(error.message || String(error));
+    }
+  }
+
+  async confirmLoadMap() {
+    const robot = this.selectedRobot();
+    if (!robot) {
+      return;
+    }
+    const mapName = String(this.loadMapSelect.value || "").trim();
+    if (!mapName) {
+      this.loadMapHint.className = "probe-result error";
+      this.loadMapHint.textContent = "Select a map first.";
+      return;
+    }
+    try {
+      const result = await this.postJson(`/api/robots/${encodeURIComponent(robot.id)}/maps/load`, { mapName });
+      this.loadMapDialog.close();
+      await this.refreshRobotMapState({ quiet: true });
+      await this.refreshRobots({ quiet: true });
+      this.reloadRobotFrame();
+      window.alert(`Robot active map changed to ${result.mapName || mapName}.`);
+    } catch (error) {
+      this.loadMapHint.className = "probe-result error";
+      this.loadMapHint.textContent = error.message || String(error);
     }
   }
 

@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 
+import json
 import os
+from pathlib import Path
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
@@ -11,6 +13,37 @@ from launch.actions import (
 from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
+
+
+def _project_root(pkg_path: str) -> Path:
+    share_dir = Path(pkg_path)
+    for parent in share_dir.parents:
+        if (parent / "map_data").exists():
+            return parent
+    return share_dir.parents[4]
+
+
+def _default_map_yaml(pkg_path: str) -> str:
+    project_root = _project_root(pkg_path)
+    fallback_dir = project_root / "map_data" / "maps_out" / "22.05.26_smap.smap"
+    state_file = project_root / "robot" / ".active_map.json"
+    map_dir = fallback_dir
+    if state_file.exists():
+        try:
+            payload = json.loads(state_file.read_text(encoding="utf-8"))
+            candidate = Path(str(payload.get("mapDir") or "")).expanduser()
+            if candidate.is_dir():
+                map_dir = candidate
+        except (OSError, json.JSONDecodeError):
+            pass
+    candidates = sorted(
+        path
+        for path in map_dir.glob("*.yaml")
+        if path.name not in {"LMs.yaml", "graphs.yaml", "graph_edges_lengths.yaml"}
+    )
+    if candidates:
+        return str(candidates[0])
+    return os.path.join(pkg_path, "maps", "22.05.26_smap.yaml")
 
 
 
@@ -38,7 +71,7 @@ def generate_launch_description():
 
 
     nav2_launch_file = os.path.join(pkg_path, "launch", "nav2", "bringup_launch.py")
-    map_yaml_file = os.path.join(pkg_path, "maps", "22.05.26_smap.yaml")
+    map_yaml_file = _default_map_yaml(pkg_path)
     params_file = os.path.join(pkg_path, "config", "nav2_params.yaml")
 
     bringup_cmd = IncludeLaunchDescription(

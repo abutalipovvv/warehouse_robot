@@ -7,14 +7,18 @@
     "/home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_adapter/robot_msgs:msg/RobotStatus.idl",
     "/home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_adapter/robot_msgs:srv/PlanRoute.idl",
     "/home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_adapter/robot_msgs:srv/ExecuteRoute.idl",
-    "/home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_adapter/robot_msgs:srv/CancelRoute.idl"
+    "/home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_adapter/robot_msgs:srv/CancelRoute.idl",
+    "/home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_adapter/robot_msgs:srv/LoadRobotMap.idl",
+    "/home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_adapter/robot_msgs:srv/GetRobotMapState.idl"
   ],
   "ros_interface_files": [
     "/home/kaisar/warehouse_robot/robot/ws/src/robot_msgs/msg/ExecutorState.msg",
     "/home/kaisar/warehouse_robot/robot/ws/src/robot_msgs/msg/RobotStatus.msg",
     "/home/kaisar/warehouse_robot/robot/ws/src/robot_msgs/srv/PlanRoute.srv",
     "/home/kaisar/warehouse_robot/robot/ws/src/robot_msgs/srv/ExecuteRoute.srv",
-    "/home/kaisar/warehouse_robot/robot/ws/src/robot_msgs/srv/CancelRoute.srv"
+    "/home/kaisar/warehouse_robot/robot/ws/src/robot_msgs/srv/CancelRoute.srv",
+    "/home/kaisar/warehouse_robot/robot/ws/src/robot_msgs/srv/LoadRobotMap.srv",
+    "/home/kaisar/warehouse_robot/robot/ws/src/robot_msgs/srv/GetRobotMapState.srv"
   ],
   "ros_interface_dependencies": [
     "builtin_interfaces:/opt/ros/jazzy/share/builtin_interfaces/msg/Duration.idl",
@@ -108,6 +112,8 @@
     "/home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_adapter/robot_msgs/srv/PlanRoute.idl",
     "/home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_adapter/robot_msgs/srv/ExecuteRoute.idl",
     "/home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_adapter/robot_msgs/srv/CancelRoute.idl",
+    "/home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_adapter/robot_msgs/srv/LoadRobotMap.idl",
+    "/home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_adapter/robot_msgs/srv/GetRobotMapState.idl",
     "/opt/ros/jazzy/share/builtin_interfaces/msg/Duration.idl",
     "/opt/ros/jazzy/share/builtin_interfaces/msg/Time.idl",
     "/opt/ros/jazzy/share/geometry_msgs/msg/Accel.idl",
@@ -179,6 +185,8 @@
     "msg/RobotStatus.idl:/home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_generator_type_description/robot_msgs/msg/RobotStatus.json",
     "srv/PlanRoute.idl:/home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_generator_type_description/robot_msgs/srv/PlanRoute.json",
     "srv/ExecuteRoute.idl:/home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_generator_type_description/robot_msgs/srv/ExecuteRoute.json",
-    "srv/CancelRoute.idl:/home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_generator_type_description/robot_msgs/srv/CancelRoute.json"
+    "srv/CancelRoute.idl:/home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_generator_type_description/robot_msgs/srv/CancelRoute.json",
+    "srv/LoadRobotMap.idl:/home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_generator_type_description/robot_msgs/srv/LoadRobotMap.json",
+    "srv/GetRobotMapState.idl:/home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_generator_type_description/robot_msgs/srv/GetRobotMapState.json"
   ]
 }

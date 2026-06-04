@@ -1,0 +1,25 @@
+// generated from rosidl_adapter/resource/srv.idl.em
+// with input from robot_msgs/srv/LoadRobotMap.srv
+// generated code does not contain a copyright notice
+
+
+module robot_msgs {
+  module srv {
+    struct LoadRobotMap_Request {
+      string map_name;
+
+      string map_dir;
+    };
+    struct LoadRobotMap_Response {
+      boolean ok;
+
+      string error;
+
+      string map_name;
+
+      string map_dir;
+
+      string map_id;
+    };
+  };
+};

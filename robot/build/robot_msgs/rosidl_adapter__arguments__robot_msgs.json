@@ -5,6 +5,8 @@
     "/home/kaisar/warehouse_robot/robot/ws/src/robot_msgs:msg/RobotStatus.msg",
     "/home/kaisar/warehouse_robot/robot/ws/src/robot_msgs:srv/PlanRoute.srv",
     "/home/kaisar/warehouse_robot/robot/ws/src/robot_msgs:srv/ExecuteRoute.srv",
-    "/home/kaisar/warehouse_robot/robot/ws/src/robot_msgs:srv/CancelRoute.srv"
+    "/home/kaisar/warehouse_robot/robot/ws/src/robot_msgs:srv/CancelRoute.srv",
+    "/home/kaisar/warehouse_robot/robot/ws/src/robot_msgs:srv/LoadRobotMap.srv",
+    "/home/kaisar/warehouse_robot/robot/ws/src/robot_msgs:srv/GetRobotMapState.srv"
   ]
 }

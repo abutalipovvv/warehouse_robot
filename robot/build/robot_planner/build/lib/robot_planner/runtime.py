@@ -161,6 +161,16 @@ class RobotRuntime:
             self._events.append(RobotEvent(stamp=time(), level=level, message=message))
             self._events = self._events[-120:]
 
+    def set_map(self, map_id: str) -> None:
+        with self._lock:
+            self.map_id = str(map_id)
+            self._active_route = None
+            self._target_lm = ""
+            self._current_edge_id = ""
+            self._route_progress = 0.0
+            self._state = "LOCALIZING"
+            self._message = f"Map changed to {self.map_id}. Waiting for localization."
+
     def set_pose(self, x: float, y: float, yaw: float) -> None:
         with self._lock:
             self._pose = Pose2D(x=x, y=y, yaw=yaw)

@@ -20,6 +20,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--odom-topic", default="/odom")
     parser.add_argument("--status-topic", default="/robot_status")
     parser.add_argument("--executor-status-topic", default="/route/executor_state")
+    parser.add_argument("--load-map-service", default="/status/load_map")
     args, _unknown = parser.parse_known_args()
     return args
 
@@ -39,6 +40,7 @@ def main() -> None:
         cmd_vel_topic=args.cmd_vel_topic,
         status_topic=args.status_topic,
         executor_status_topic=args.executor_status_topic,
+        load_map_service_name=args.load_map_service,
     )
     try:
         rclpy.spin(node)

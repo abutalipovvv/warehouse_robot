@@ -7,6 +7,10 @@ file(REMOVE_RECURSE
   "CMakeFiles/robot_msgs__rosidl_typesupport_fastrtps_cpp.dir/rosidl_typesupport_fastrtps_cpp/robot_msgs/srv/detail/dds_fastrtps/cancel_route__type_support.cpp.o.d"
   "CMakeFiles/robot_msgs__rosidl_typesupport_fastrtps_cpp.dir/rosidl_typesupport_fastrtps_cpp/robot_msgs/srv/detail/dds_fastrtps/execute_route__type_support.cpp.o"
   "CMakeFiles/robot_msgs__rosidl_typesupport_fastrtps_cpp.dir/rosidl_typesupport_fastrtps_cpp/robot_msgs/srv/detail/dds_fastrtps/execute_route__type_support.cpp.o.d"
+  "CMakeFiles/robot_msgs__rosidl_typesupport_fastrtps_cpp.dir/rosidl_typesupport_fastrtps_cpp/robot_msgs/srv/detail/dds_fastrtps/get_robot_map_state__type_support.cpp.o"
+  "CMakeFiles/robot_msgs__rosidl_typesupport_fastrtps_cpp.dir/rosidl_typesupport_fastrtps_cpp/robot_msgs/srv/detail/dds_fastrtps/get_robot_map_state__type_support.cpp.o.d"
+  "CMakeFiles/robot_msgs__rosidl_typesupport_fastrtps_cpp.dir/rosidl_typesupport_fastrtps_cpp/robot_msgs/srv/detail/dds_fastrtps/load_robot_map__type_support.cpp.o"
+  "CMakeFiles/robot_msgs__rosidl_typesupport_fastrtps_cpp.dir/rosidl_typesupport_fastrtps_cpp/robot_msgs/srv/detail/dds_fastrtps/load_robot_map__type_support.cpp.o.d"
   "CMakeFiles/robot_msgs__rosidl_typesupport_fastrtps_cpp.dir/rosidl_typesupport_fastrtps_cpp/robot_msgs/srv/detail/dds_fastrtps/plan_route__type_support.cpp.o"
   "CMakeFiles/robot_msgs__rosidl_typesupport_fastrtps_cpp.dir/rosidl_typesupport_fastrtps_cpp/robot_msgs/srv/detail/dds_fastrtps/plan_route__type_support.cpp.o.d"
   "librobot_msgs__rosidl_typesupport_fastrtps_cpp.pdb"
@@ -18,8 +22,12 @@ file(REMOVE_RECURSE
   "rosidl_typesupport_fastrtps_cpp/robot_msgs/srv/detail/cancel_route__rosidl_typesupport_fastrtps_cpp.hpp"
   "rosidl_typesupport_fastrtps_cpp/robot_msgs/srv/detail/dds_fastrtps/cancel_route__type_support.cpp"
   "rosidl_typesupport_fastrtps_cpp/robot_msgs/srv/detail/dds_fastrtps/execute_route__type_support.cpp"
+  "rosidl_typesupport_fastrtps_cpp/robot_msgs/srv/detail/dds_fastrtps/get_robot_map_state__type_support.cpp"
+  "rosidl_typesupport_fastrtps_cpp/robot_msgs/srv/detail/dds_fastrtps/load_robot_map__type_support.cpp"
   "rosidl_typesupport_fastrtps_cpp/robot_msgs/srv/detail/dds_fastrtps/plan_route__type_support.cpp"
   "rosidl_typesupport_fastrtps_cpp/robot_msgs/srv/detail/execute_route__rosidl_typesupport_fastrtps_cpp.hpp"
+  "rosidl_typesupport_fastrtps_cpp/robot_msgs/srv/detail/get_robot_map_state__rosidl_typesupport_fastrtps_cpp.hpp"
+  "rosidl_typesupport_fastrtps_cpp/robot_msgs/srv/detail/load_robot_map__rosidl_typesupport_fastrtps_cpp.hpp"
   "rosidl_typesupport_fastrtps_cpp/robot_msgs/srv/detail/plan_route__rosidl_typesupport_fastrtps_cpp.hpp"
 )
 
