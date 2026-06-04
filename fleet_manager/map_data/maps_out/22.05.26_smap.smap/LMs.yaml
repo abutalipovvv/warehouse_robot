@@ -648,3 +648,13 @@ LMs:
   ignoreDir: null
   properties:
     spin: false
+- name: LM_NEW_1
+  x: 1.52
+  y: 4.343
+  ignoreDir: null
+  properties: {}
+- name: LM_NEW_2
+  x: 2.518
+  y: 4.303
+  ignoreDir: null
+  properties: {}
