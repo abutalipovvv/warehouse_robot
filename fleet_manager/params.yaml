@@ -30,7 +30,7 @@ robot_model:
       label: WR
       color: '#2f3a4a'
 navigation:
-  route_speed: 1
+  route_speed: 1.37
   footprint_lookahead: 0.45
   collision_margin: 0.04
   stop_distance: 0.18
