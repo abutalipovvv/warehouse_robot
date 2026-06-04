@@ -164,7 +164,7 @@ class RobotMapEditorApp {
         throw new Error("Local draft payload is invalid.");
       }
       this.currentLocalMapName = String(payload.mapName || mapName || "");
-      this.currentSourceMapName = String(payload.sourceMapName || payload.map.mapName || "");
+      this.currentSourceMapName = String(payload.robotMapName || payload.sourceMapName || payload.map.mapName || "");
       this.selectedLocalMapName = this.currentLocalMapName;
       this.loadEditableMap(payload.map);
       this.dirty = false;
@@ -198,6 +198,7 @@ class RobotMapEditorApp {
       this.currentLocalMapName = String(local.mapName || mapName);
       this.selectedLocalMapName = this.currentLocalMapName;
       this.dirty = false;
+      this.markPendingPush();
       await this.refreshLocalMaps({ silent: true });
       this.setStatus(`Saved local draft ${this.currentLocalMapName}.`);
       this.log("info", `Saved local draft ${this.currentLocalMapName}.`);
@@ -283,14 +284,10 @@ class RobotMapEditorApp {
       throw new Error("Current local draft name is empty.");
     }
     await this.saveLocalDraftAs(localName, { activate: true });
-    const targetMapName = String(this.currentSourceMapName || this.currentMap.mapName || localName).trim();
-    await this.postJson(`/api/robots/${encodeURIComponent(this.robotId)}/maps/push`, {
-      localMapName: localName,
-      mapName: targetMapName,
-      sourceMapName: this.currentSourceMapName || targetMapName,
-    });
-    this.setStatus(`Saved local draft and pushed ${targetMapName} to robot.`);
-    this.log("info", `Pushed ${targetMapName} to robot.`);
+    await this.postJson(`/api/robots/${encodeURIComponent(this.robotId)}/maps/push-sync`, {});
+    this.clearPendingPush();
+    this.setStatus(`Saved local draft and pushed ${localName} to robot.`);
+    this.log("info", `Pushed ${localName} to robot.`);
     this.closeWindow();
   }
 
@@ -800,6 +797,7 @@ class RobotMapEditorApp {
             <strong>${this.escapeHtml(item.mapName || "-")}</strong>
             <p>source: ${this.escapeHtml(item.sourceMapName || "-")}</p>
           </div>
+          <span class="state-chip ${item.hasLocalChanges ? "dirty" : "clean"}">${item.hasLocalChanges ? "not pushed" : "synced"}</span>
         </div>
         <div class="map-card-actions">
           <button type="button" data-action="open">Open</button>
@@ -1305,6 +1303,17 @@ class RobotMapEditorApp {
     });
     this.logs = this.logs.slice(0, 80);
     this.renderLogs();
+  }
+
+  markPendingPush() {
+    window.sessionStorage.setItem("operator:pendingPushRobotId", this.robotId);
+  }
+
+  clearPendingPush() {
+    const pendingRobotId = window.sessionStorage.getItem("operator:pendingPushRobotId") || "";
+    if (pendingRobotId === this.robotId) {
+      window.sessionStorage.removeItem("operator:pendingPushRobotId");
+    }
   }
 
   closeWindow() {

@@ -1,0 +1,17 @@
+running egg_info
+writing ../../../build/ros2_http_client/ros2_http_client.egg-info/PKG-INFO
+writing dependency_links to ../../../build/ros2_http_client/ros2_http_client.egg-info/dependency_links.txt
+writing requirements to ../../../build/ros2_http_client/ros2_http_client.egg-info/requires.txt
+writing top-level names to ../../../build/ros2_http_client/ros2_http_client.egg-info/top_level.txt
+reading manifest file '../../../build/ros2_http_client/ros2_http_client.egg-info/SOURCES.txt'
+writing manifest file '../../../build/ros2_http_client/ros2_http_client.egg-info/SOURCES.txt'
+running build
+running build_py
+running install
+running install_lib
+running install_data
+running install_egg_info
+removing '/home/kaisar/warehouse_robot/robot/install/ros2_http_client/lib/python3.12/site-packages/ros2_http_client-0.0.0-py3.12.egg-info' (and everything under it)
+Copying ../../../build/ros2_http_client/ros2_http_client.egg-info to /home/kaisar/warehouse_robot/robot/install/ros2_http_client/lib/python3.12/site-packages/ros2_http_client-0.0.0-py3.12.egg-info
+running install_scripts
+writing list of installed files to '/home/kaisar/warehouse_robot/robot/build/ros2_http_client/install.log'

@@ -7,6 +7,8 @@ from time import monotonic, sleep
 
 import rclpy
 from nav2_msgs.srv import LoadMap as Nav2LoadMap
+from rclpy.callback_groups import ReentrantCallbackGroup
+from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 
 from robot_msgs.srv import GetRobotMapState, LoadRobotMap
@@ -43,11 +45,34 @@ class RobotMapManagerNode(Node):
         self.state_file = Path(state_file).resolve()
         self._active_map_dir = Path(map_dir).resolve()
         self._active_map_id = self._map_id_for_dir(self._active_map_dir)
-        self._map_server_client = self.create_client(Nav2LoadMap, map_server_load_service)
-        self._route_load_client = self.create_client(LoadRobotMap, route_load_map_service)
-        self._status_load_client = self.create_client(LoadRobotMap, status_load_map_service)
-        self.create_service(LoadRobotMap, manager_load_service, self._handle_load_map)
-        self.create_service(GetRobotMapState, manager_state_service, self._handle_get_state)
+        self._callback_group = ReentrantCallbackGroup()
+        self._map_server_client = self.create_client(
+            Nav2LoadMap,
+            map_server_load_service,
+            callback_group=self._callback_group,
+        )
+        self._route_load_client = self.create_client(
+            LoadRobotMap,
+            route_load_map_service,
+            callback_group=self._callback_group,
+        )
+        self._status_load_client = self.create_client(
+            LoadRobotMap,
+            status_load_map_service,
+            callback_group=self._callback_group,
+        )
+        self.create_service(
+            LoadRobotMap,
+            manager_load_service,
+            self._handle_load_map,
+            callback_group=self._callback_group,
+        )
+        self.create_service(
+            GetRobotMapState,
+            manager_state_service,
+            self._handle_get_state,
+            callback_group=self._callback_group,
+        )
         self._persist_state()
 
     def _handle_get_state(self, _request, response):
@@ -126,11 +151,11 @@ class RobotMapManagerNode(Node):
         }
         self.state_file.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
-    def _call_service(self, client, request, service_label: str):
+    def _call_service(self, client, request, service_label: str, *, timeout_sec: float = 15.0):
         if not client.wait_for_service(timeout_sec=2.0):
             raise ValueError(f"{service_label} is not available")
         future = client.call_async(request)
-        deadline = monotonic() + 5.0
+        deadline = monotonic() + max(1.0, float(timeout_sec))
         while not future.done() and monotonic() < deadline:
             sleep(0.01)
         if not future.done():
@@ -174,9 +199,12 @@ def main() -> None:
         manager_load_service=args.manager_load_service,
         manager_state_service=args.manager_state_service,
     )
+    executor = MultiThreadedExecutor(num_threads=4)
+    executor.add_node(node)
     try:
-        rclpy.spin(node)
+        executor.spin()
     finally:
+        executor.shutdown()
         node.destroy_node()
         rclpy.shutdown()
 

@@ -181,11 +181,32 @@ class OperatorAppState:
         self.get_robot(robot_id)
         active_name = self.map_cache.active_map_name(robot_id)
         active_payload = self.map_cache.load_active_map(robot_id)
+        if isinstance(active_payload, dict):
+            robot_signature = str(active_payload.get("robotSignature") or "").strip()
+            if not robot_signature:
+                try:
+                    robot_active = self.robot_maps_active_payload(robot_id)
+                    robot_active_name = str(robot_active.get("mapName") or "").strip()
+                    robot_current = self._fetch_robot_map_payload(robot_id, robot_active_name)
+                    local_signature = str(active_payload.get("signature") or "").strip()
+                    fresh_robot_signature = str(robot_current.get("signature") or "").strip()
+                    active_payload["robotSignature"] = fresh_robot_signature
+                    active_payload["robotMapName"] = robot_active_name
+                    active_payload["hasLocalChanges"] = bool(
+                        (local_signature and fresh_robot_signature and local_signature != fresh_robot_signature)
+                        or (robot_active_name and str(active_payload.get("mapName") or "").strip() != robot_active_name)
+                    )
+                except Exception:
+                    pass
         return {
             "ok": True,
             "activeMapName": active_name,
             "map": active_payload.get("map") if isinstance(active_payload, dict) else None,
             "sourceMapName": str(active_payload.get("sourceMapName") or "") if isinstance(active_payload, dict) else "",
+            "signature": str(active_payload.get("signature") or "") if isinstance(active_payload, dict) else "",
+            "robotSignature": str(active_payload.get("robotSignature") or "") if isinstance(active_payload, dict) else "",
+            "robotMapName": str(active_payload.get("robotMapName") or "") if isinstance(active_payload, dict) else "",
+            "hasLocalChanges": bool(active_payload.get("hasLocalChanges")) if isinstance(active_payload, dict) else False,
         }
 
     def local_map_payload(self, robot_id: str, map_name: str) -> dict[str, Any]:
@@ -317,9 +338,10 @@ class OperatorAppState:
             raise ValueError("operator active local map is invalid")
         local_map_payload = local_active.get("map")
         local_signature = str(local_map_payload.get("signature") or "").strip() if isinstance(local_map_payload, dict) else ""
+        has_local_changes = bool(local_active.get("hasLocalChanges"))
         robot_current = self._fetch_robot_map_payload(robot_id, robot_active_name)
         robot_signature = str(robot_current.get("signature") or "").strip()
-        if local_map_name == robot_active_name and local_signature and local_signature == robot_signature:
+        if (not has_local_changes) and local_map_name == robot_active_name and local_signature and local_signature == robot_signature:
             return {
                 "ok": True,
                 "changed": False,
@@ -336,6 +358,14 @@ class OperatorAppState:
             },
         )
         loaded = self.load_robot_map_payload(robot_id, {"mapName": local_map_name})
+        local_signature_after_push = str((pushed.get("pushed") or {}).get("signature") or local_signature).strip()
+        synced_local = self.map_cache.mark_synced(
+            robot_id,
+            local_map_name,
+            robot_signature=local_signature_after_push,
+            robot_map_name=str(loaded.get("mapName") or local_map_name),
+            activate=True,
+        )
         return {
             "ok": True,
             "changed": True,
@@ -343,7 +373,7 @@ class OperatorAppState:
             "robotActiveMapName": str(loaded.get("mapName") or local_map_name),
             "localActiveMapName": local_map_name,
             "pushed": pushed.get("pushed"),
-            "local": pushed.get("local"),
+            "local": synced_local,
             "loaded": loaded,
         }
 

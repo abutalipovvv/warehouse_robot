@@ -44,18 +44,9 @@ class MapCache:
             map_name = str(item.get("name") or "").strip()
             if not map_name:
                 continue
-            map_dir = self._map_dir(robot_id, map_name)
-            meta = self._map_meta_payload(map_dir)
-            items.append(
-                {
-                    "mapName": map_name,
-                    "robotId": str(robot_id),
-                    "savedAt": str(meta.get("savedAt") or ""),
-                    "sourceMapName": str(meta.get("sourceMapName") or map_name),
-                    "path": str(map_dir),
-                    "active": bool(item.get("active")),
-                }
-            )
+            info = self._map_info(robot_id, map_name)
+            info["active"] = bool(item.get("active"))
+            items.append(info)
         return items
 
     def active_map_name(self, robot_id: str) -> str:
@@ -87,12 +78,23 @@ class MapCache:
             raise ValueError(f"local map not found: {map_name}")
         editable = build_editable_map_payload(map_dir)
         meta = self._map_meta_payload(map_dir)
+        local_signature = str(editable.get("signature") or "").strip()
+        robot_signature = str(meta.get("robotSignature") or "").strip()
+        robot_map_name = str(meta.get("robotMapName") or meta.get("sourceMapName") or editable.get("mapName") or map_name).strip()
+        has_local_changes = bool(
+            (local_signature and robot_signature and local_signature != robot_signature)
+            or (robot_map_name and robot_map_name != str(editable.get("mapName") or map_name).strip())
+        )
         return {
             "mapName": str(editable.get("mapName") or map_name),
             "sourceMapName": str(meta.get("sourceMapName") or editable.get("mapName") or map_name),
             "savedAt": str(meta.get("savedAt") or ""),
             "mapDir": str(map_dir),
             "map": editable,
+            "signature": local_signature,
+            "robotSignature": robot_signature,
+            "robotMapName": robot_map_name,
+            "hasLocalChanges": has_local_changes,
         }
 
     def save_pulled_map(self, robot_id: str, payload: dict[str, Any], *, activate: bool = True) -> dict[str, Any]:
@@ -108,6 +110,9 @@ class MapCache:
             {
                 "savedAt": utc_now(),
                 "sourceMapName": map_name,
+                "robotSignature": str(payload.get("signature") or "").strip(),
+                "robotMapName": map_name,
+                "lastSyncAt": utc_now(),
             },
         )
         if activate:
@@ -127,21 +132,54 @@ class MapCache:
         if not safe_name:
             raise ValueError("map name is required")
         target_dir = self._map_dir(robot_id, safe_name)
+        base_meta: dict[str, Any] = {}
         if target_dir.exists():
+            base_meta = self._map_meta_payload(target_dir)
             loaded_map = save_editable_map(target_dir, editable_map)
         else:
             base_dir = self._resolve_base_dir(robot_id, safe_name, source_map_name)
+            base_meta = self._map_meta_payload(base_dir)
             loaded_map = save_editable_map(base_dir, editable_map, output_name=target_dir.name)
         self._write_map_meta(
             loaded_map.map_dir,
             {
                 "savedAt": utc_now(),
                 "sourceMapName": str(source_map_name or safe_name),
+                "robotSignature": str(base_meta.get("robotSignature") or "").strip(),
+                "robotMapName": str(base_meta.get("robotMapName") or source_map_name or safe_name).strip(),
+                "lastSyncAt": str(base_meta.get("lastSyncAt") or ""),
             },
         )
         if activate:
             self.set_active_map(robot_id, loaded_map.map_dir.stem.replace(".smap", ""))
         return self._map_info(robot_id, loaded_map.map_dir.stem.replace(".smap", ""))
+
+    def mark_synced(
+        self,
+        robot_id: str,
+        map_name: str,
+        *,
+        robot_signature: str,
+        robot_map_name: str,
+        activate: bool | None = None,
+    ) -> dict[str, Any]:
+        map_dir = self._map_dir(robot_id, map_name)
+        if not map_dir.is_dir():
+            raise ValueError(f"local map not found: {map_name}")
+        meta = self._map_meta_payload(map_dir)
+        meta.update(
+            {
+                "savedAt": str(meta.get("savedAt") or utc_now()),
+                "sourceMapName": str(meta.get("sourceMapName") or robot_map_name or map_name),
+                "robotSignature": str(robot_signature or "").strip(),
+                "robotMapName": str(robot_map_name or map_name).strip(),
+                "lastSyncAt": utc_now(),
+            }
+        )
+        self._write_map_meta(map_dir, meta)
+        if activate is True:
+            self.set_active_map(robot_id, map_name)
+        return self._map_info(robot_id, map_name)
 
     def _resolve_base_dir(self, robot_id: str, map_name: str, source_map_name: str) -> Path:
         candidates = [
@@ -157,11 +195,29 @@ class MapCache:
     def _map_info(self, robot_id: str, map_name: str) -> dict[str, Any]:
         map_dir = self._map_dir(robot_id, map_name)
         meta = self._map_meta_payload(map_dir)
+        local_signature = ""
+        has_local_changes = False
+        robot_signature = str(meta.get("robotSignature") or "").strip()
+        robot_map_name = str(meta.get("robotMapName") or meta.get("sourceMapName") or map_name).strip()
+        if map_dir.is_dir():
+            try:
+                payload = build_editable_map_payload(map_dir)
+                local_signature = str(payload.get("signature") or "").strip()
+                has_local_changes = bool(
+                    (local_signature and robot_signature and local_signature != robot_signature)
+                    or (robot_map_name and robot_map_name != map_name)
+                )
+            except Exception:
+                local_signature = ""
         return {
             "mapName": map_name,
             "robotId": robot_id,
             "savedAt": str(meta.get("savedAt") or ""),
             "sourceMapName": str(meta.get("sourceMapName") or map_name),
+            "robotMapName": robot_map_name,
+            "signature": local_signature,
+            "robotSignature": robot_signature,
+            "hasLocalChanges": has_local_changes,
             "path": str(map_dir),
             "active": self.active_map_name(robot_id) == map_name,
         }

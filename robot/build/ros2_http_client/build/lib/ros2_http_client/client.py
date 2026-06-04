@@ -68,7 +68,7 @@ class RobotRosClient:
 
     def active_map_payload(self) -> dict[str, Any]:
         request = GetRobotMapState.Request()
-        response = self._call_service(self._map_state_client, request, "map state")
+        response = self._call_service(self._map_state_client, request, "map state", timeout_sec=5.0)
         if not bool(response.ok):
             raise ValueError(str(response.error or "map state failed"))
         return {
@@ -213,7 +213,7 @@ class RobotRosClient:
         request = LoadRobotMap.Request()
         request.map_name = str(map_name)
         request.map_dir = ""
-        response = self._call_service(self._map_load_client, request, "map load")
+        response = self._call_service(self._map_load_client, request, "map load", timeout_sec=20.0)
         if not bool(response.ok):
             raise ValueError(str(response.error or "map load failed"))
         self.reload_map_context(Path(str(response.map_dir)))
@@ -288,11 +288,11 @@ class RobotRosClient:
         self._teleop_deadline = None
         self._publish_cmd_vel(0.0, 0.0)
 
-    def _call_service(self, client, request, service_label: str):
-        if not client.wait_for_service(timeout_sec=1.0):
+    def _call_service(self, client, request, service_label: str, *, timeout_sec: float = 3.0, wait_for_service_sec: float = 1.0):
+        if not client.wait_for_service(timeout_sec=wait_for_service_sec):
             raise ValueError(f"{service_label} service is not available")
         future = client.call_async(request)
-        deadline = monotonic() + 3.0
+        deadline = monotonic() + max(0.5, float(timeout_sec))
         while not future.done() and monotonic() < deadline:
             sleep(0.01)
         if not future.done():

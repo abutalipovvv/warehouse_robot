@@ -799,7 +799,7 @@
     obsExpansion: 0
 - from: LM310
   to: LM311
-  length: 0.450001
+  length: 0.487466
   kind: curve
   type: DegenerateBezier
   properties:
@@ -808,7 +808,7 @@
     obsExpansion: 0
 - from: LM311
   to: LM312
-  length: 0.450001
+  length: 0.413587
   kind: curve
   type: DegenerateBezier
   properties:
@@ -1337,21 +1337,28 @@
     direction: 2
 - from: LM4
   to: LM5
-  length: 1.696543
+  length: 0.53097
   kind: line
   type: FeatureLine
   properties:
     direction: 2
 - from: LM5
   to: LM6
-  length: 0.954185
+  length: 0.541805
   kind: line
   type: FeatureLine
   properties:
     direction: 2
 - from: LM6
   to: LM7
-  length: 1.077286
+  length: 0.479634
+  kind: line
+  type: FeatureLine
+  properties:
+    direction: 2
+- from: LM7
+  to: LM8
+  length: 0.435718
   kind: line
   type: FeatureLine
   properties:

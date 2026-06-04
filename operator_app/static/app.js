@@ -4,7 +4,14 @@ class OperatorApp {
     this.selectedRobotId = window.localStorage.getItem("operator:selectedRobotId") || "";
     this.lastProbe = null;
     this.sidebarOpen = !this.selectedRobotId;
-    this.robotMapState = { robotActiveMapName: "", operatorActiveMapName: "" };
+    this.robotMapState = {
+      robotActiveMapName: "",
+      operatorActiveMapName: "",
+      robotSignature: "",
+      operatorSignature: "",
+      sourceRobotMapName: "",
+      hasLocalChanges: false,
+    };
 
     this.robotsList = document.getElementById("robotsList");
     this.robotCountText = document.getElementById("robotCountText");
@@ -21,6 +28,7 @@ class OperatorApp {
     this.controlPullMapButton = document.getElementById("controlPullMapButton");
     this.controlPushMapButton = document.getElementById("controlPushMapButton");
     this.controlLoadMapButton = document.getElementById("controlLoadMapButton");
+    this.mapSyncStatus = document.getElementById("mapSyncStatus");
     this.refreshButton = document.getElementById("refreshButton");
     this.addRobotButton = document.getElementById("addRobotButton");
 
@@ -90,6 +98,7 @@ class OperatorApp {
     }
     await this.refreshRobotMapState({ quiet: true });
     this.render();
+    await this.maybePromptPendingPush();
     if (!options.quiet) {
       this.showProbeResult("neutral", "Robot list refreshed.");
     }
@@ -98,7 +107,14 @@ class OperatorApp {
   async refreshRobotMapState(options = {}) {
     const robot = this.selectedRobot();
     if (!robot) {
-      this.robotMapState = { robotActiveMapName: "", operatorActiveMapName: "" };
+      this.robotMapState = {
+        robotActiveMapName: "",
+        operatorActiveMapName: "",
+        robotSignature: "",
+        operatorSignature: "",
+        sourceRobotMapName: "",
+        hasLocalChanges: false,
+      };
       return;
     }
     try {
@@ -109,9 +125,31 @@ class OperatorApp {
       this.robotMapState = {
         robotActiveMapName: String(robotActive.mapName || "").trim(),
         operatorActiveMapName: String(localActive.activeMapName || "").trim(),
+        robotSignature: String(robotActive.signature || "").trim(),
+        operatorSignature: String(localActive.signature || "").trim(),
+        sourceRobotMapName: String(localActive.robotMapName || localActive.sourceMapName || "").trim(),
+        hasLocalChanges: Boolean(
+          localActive.activeMapName &&
+          (
+            Boolean(localActive.hasLocalChanges) ||
+            (String(localActive.signature || "").trim() &&
+             String(robotActive.signature || "").trim() &&
+             String(localActive.signature || "").trim() !== String(robotActive.signature || "").trim()) ||
+            (String(localActive.activeMapName || "").trim() &&
+             String(robotActive.mapName || "").trim() &&
+             String(localActive.activeMapName || "").trim() !== String(robotActive.mapName || "").trim())
+          )
+        ),
       };
     } catch (error) {
-      this.robotMapState = { robotActiveMapName: "", operatorActiveMapName: "" };
+      this.robotMapState = {
+        robotActiveMapName: "",
+        operatorActiveMapName: "",
+        robotSignature: "",
+        operatorSignature: "",
+        sourceRobotMapName: "",
+        hasLocalChanges: false,
+      };
       if (!options.quiet) {
         window.alert(error.message || String(error));
       }
@@ -191,6 +229,8 @@ class OperatorApp {
       this.frameOnline = false;
       this.robotActiveMapText.textContent = "-";
       this.operatorActiveMapText.textContent = "-";
+      this.mapSyncStatus.className = "probe-result neutral";
+      this.mapSyncStatus.textContent = "Select a robot to see map sync state.";
       return;
     }
 
@@ -198,11 +238,33 @@ class OperatorApp {
     this.robotView.classList.remove("hidden");
     this.robotActiveMapText.textContent = this.robotMapState.robotActiveMapName || "-";
     this.operatorActiveMapText.textContent = this.robotMapState.operatorActiveMapName || "-";
+    this.renderMapSyncStatus();
 
     if (this.frameUrl !== robot.baseUrl || (robot.online && !this.frameOnline)) {
       this.setRobotFrameUrl(robot.baseUrl);
     }
     this.frameOnline = Boolean(robot.online);
+  }
+
+  renderMapSyncStatus() {
+    const hasLocal = Boolean(this.robotMapState.operatorActiveMapName);
+    const hasChanges = Boolean(this.robotMapState.hasLocalChanges);
+    if (!hasLocal) {
+      this.mapSyncStatus.className = "probe-result neutral";
+      this.mapSyncStatus.textContent = "Operator has no local active map yet. Use Pull Map first.";
+      this.controlPushMapButton.classList.remove("primary");
+      return;
+    }
+    if (hasChanges) {
+      const source = this.robotMapState.sourceRobotMapName || this.robotMapState.robotActiveMapName || "-";
+      this.mapSyncStatus.className = "probe-result warning";
+      this.mapSyncStatus.textContent = `Local map differs from robot map ${source}. Use Push Map to apply local changes to the robot.`;
+      this.controlPushMapButton.classList.add("primary");
+      return;
+    }
+    this.mapSyncStatus.className = "probe-result success";
+    this.mapSyncStatus.textContent = "Operator local map matches the current robot map.";
+    this.controlPushMapButton.classList.remove("primary");
   }
 
   setRobotFrameUrl(baseUrl, { forceReload = false } = {}) {
@@ -342,6 +404,23 @@ class OperatorApp {
     } catch (error) {
       window.alert(error.message || String(error));
     }
+  }
+
+  async maybePromptPendingPush() {
+    const pendingRobotId = window.sessionStorage.getItem("operator:pendingPushRobotId") || "";
+    const robot = this.selectedRobot();
+    if (!robot || !pendingRobotId || pendingRobotId !== robot.id) {
+      return;
+    }
+    window.sessionStorage.removeItem("operator:pendingPushRobotId");
+    if (!this.robotMapState.hasLocalChanges) {
+      return;
+    }
+    const shouldPush = window.confirm("Local map differs from the robot map. Push local changes to the robot now?");
+    if (!shouldPush) {
+      return;
+    }
+    await this.handlePushMap();
   }
 
   async handleLoadMap() {

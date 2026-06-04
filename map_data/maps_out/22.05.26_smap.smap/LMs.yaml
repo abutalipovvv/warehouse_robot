@@ -406,8 +406,8 @@ LMs:
   properties:
     spin: false
 - name: LM311
-  x: 4.922
-  y: 5.328
+  x: 4.959
+  y: 5.344
   ignoreDir: null
   properties:
     spin: false
@@ -525,8 +525,8 @@ LMs:
   ignoreDir: ''
   properties: {}
 - name: LM5
-  x: 6.479
-  y: 4.21
+  x: 5.28
+  y: 4.332
   ignoreDir: ''
   properties: {}
 - name: LM51
@@ -566,8 +566,8 @@ LMs:
   properties:
     spin: false
 - name: LM6
-  x: 7.389
-  y: 4.497
+  x: 5.607
+  y: 4.764
   ignoreDir: ''
   properties: {}
 - name: LM61
@@ -607,8 +607,8 @@ LMs:
   properties:
     spin: false
 - name: LM7
-  x: 8.404
-  y: 4.136
+  x: 5.712
+  y: 4.296
   ignoreDir: ''
   properties: {}
 - name: LM71
@@ -647,6 +647,11 @@ LMs:
   ignoreDir: null
   properties:
     spin: false
+- name: LM8
+  x: 6.147
+  y: 4.321
+  ignoreDir: ''
+  properties: {}
 - name: LM81
   x: 4.537
   y: -0.198

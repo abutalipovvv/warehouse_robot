@@ -122,6 +122,10 @@ button.danger {
   gap: 0.75rem;
 }
 
+#mapSyncStatus {
+  margin: 0 0 0.8rem;
+}
+
 .sidebar-head {
   justify-content: space-between;
 }

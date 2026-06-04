@@ -1642,8 +1642,8 @@ primitives:
       x: 4.472
       y: 5.327
     end:
-      x: 4.922
-      y: 5.328
+      x: 4.959
+      y: 5.344
     control1:
       x: 4.622
       y: 5.327
@@ -1656,13 +1656,13 @@ primitives:
     direction: 1
     movestyle: 0
     obsExpansion: 0
-  length_m: 0.450001
+  length_m: 0.487466
 - kind: curve
   curve_type: DegenerateBezier
   curve:
     start:
-      x: 4.922
-      y: 5.328
+      x: 4.959
+      y: 5.344
     end:
       x: 5.372
       y: 5.329
@@ -1678,7 +1678,7 @@ primitives:
     direction: 1
     movestyle: 0
     obsExpansion: 0
-  length_m: 0.450001
+  length_m: 0.413587
 - kind: curve
   curve_type: DegenerateBezier
   curve:
@@ -2935,36 +2935,49 @@ primitives:
     x: 4.832
     y: 4.617
   end:
-    x: 6.479
-    y: 4.21
+    x: 5.28
+    y: 4.332
   start_name: LM4
   end_name: LM5
   properties:
     direction: 2
-  length_m: 1.696543
+  length_m: 0.53097
 - kind: line
   line_type: FeatureLine
   start:
-    x: 6.479
-    y: 4.21
+    x: 5.28
+    y: 4.332
   end:
-    x: 7.389
-    y: 4.497
+    x: 5.607
+    y: 4.764
   start_name: LM5
   end_name: LM6
   properties:
     direction: 2
-  length_m: 0.954185
+  length_m: 0.541805
 - kind: line
   line_type: FeatureLine
   start:
-    x: 7.389
-    y: 4.497
+    x: 5.607
+    y: 4.764
   end:
-    x: 8.404
-    y: 4.136
+    x: 5.712
+    y: 4.296
   start_name: LM6
   end_name: LM7
   properties:
     direction: 2
-  length_m: 1.077286
+  length_m: 0.479634
+- kind: line
+  line_type: FeatureLine
+  start:
+    x: 5.712
+    y: 4.296
+  end:
+    x: 6.147
+    y: 4.321
+  start_name: LM7
+  end_name: LM8
+  properties:
+    direction: 2
+  length_m: 0.435718
