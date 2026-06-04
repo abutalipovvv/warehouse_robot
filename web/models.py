@@ -9,6 +9,7 @@ from route_core.models import GraphEdge, Landmark, MapMetadata
 @dataclass(frozen=True)
 class DemoPayload:
     map_metadata: MapMetadata
+    map_name: str
     landmarks: Sequence[Landmark]
     edges: Sequence[GraphEdge]
     route_catalog: dict[str, dict[str, object]]
@@ -18,7 +19,7 @@ class DemoPayload:
 
     def to_dict(self) -> dict[str, object]:
         return {
-            "mapName": self.map_metadata.map_name,
+            "mapName": self.map_name,
             "map": self.map_metadata.to_dict(),
             "lms": [landmark.to_dict() for landmark in self.landmarks],
             "edges": [edge.to_dict() for edge in self.edges],

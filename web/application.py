@@ -47,6 +47,7 @@ class RouteDemoApplication:
 
         payload = DemoPayload(
             map_metadata=loaded_map.map_metadata,
+            map_name=loaded_map.map_dir.stem.replace(".smap", ""),
             landmarks=[loaded_map.landmarks[name] for name in sorted(loaded_map.landmarks)],
             edges=loaded_map.edges,
             route_catalog=route_planner.build_route_catalog(),

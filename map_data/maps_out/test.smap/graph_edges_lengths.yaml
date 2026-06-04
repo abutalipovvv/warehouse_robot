@@ -1269,41 +1269,17 @@
     movestyle: 0
 - from: LM324
   to: LM325
-  length: 0.672912
-  kind: line
-  type: FeatureLine
+  length: 1.251766
+  kind: curve
+  type: DegenerateBezier
   properties:
     direction: 2
     movestyle: 0
 - from: LM325
   to: LM326
-  length: 0.803942
-  kind: line
-  type: FeatureLine
-  properties:
-    direction: 2
-    movestyle: 0
-- from: LM326
-  to: LM327
-  length: 1.248939
-  kind: line
-  type: FeatureLine
-  properties:
-    direction: 2
-    movestyle: 0
-- from: LM327
-  to: LM328
-  length: 1.331
-  kind: line
-  type: FeatureLine
-  properties:
-    direction: 2
-    movestyle: 0
-- from: LM328
-  to: LM329
-  length: 1.506176
-  kind: line
-  type: FeatureLine
+  length: 1.669252
+  kind: curve
+  type: DegenerateBezier
   properties:
     direction: 2
     movestyle: 0

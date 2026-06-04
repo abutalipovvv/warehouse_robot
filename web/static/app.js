@@ -65,18 +65,87 @@
 
   class GraphModel {
     constructor(landmarks, edges, routes) {
-      this.landmarks = landmarks;
-      this.edges = edges;
+      this.landmarks = landmarks.map((lm) => ({
+        ...lm,
+        properties: { ...(lm.properties || {}) },
+      }));
+      this.edges = edges.map((edge) => this.normalizeEdge(edge));
       this.routes = routes || {};
+      this.reindex();
+    }
+
+    reindex() {
       this.nodeByName = new Map();
       this.edgeByKey = new Map();
 
-      for (const lm of landmarks) {
+      for (const lm of this.landmarks) {
         this.nodeByName.set(lm.name, lm);
       }
-      for (const edge of edges) {
+      for (const edge of this.edges) {
         this.edgeByKey.set(`${edge.from}|${edge.to}`, edge);
       }
+    }
+
+    normalizeEdge(edge) {
+      const properties = { ...(edge.properties || {}) };
+      const direction = Number(edge.motionDirectionCode ?? properties.direction ?? 2);
+      properties.direction = Number.isFinite(direction) ? direction : 2;
+      const normalized = {
+        ...edge,
+        properties,
+        kind: edge.kind || (edge.geometry === "bezier" ? "curve" : "line"),
+        type: edge.type || edge.curve_type || edge.line_type || (edge.geometry === "bezier" ? "DegenerateBezier" : "FeatureLine"),
+        length: Number(edge.length || 0),
+        motionDirectionCode: properties.direction,
+        motionDirection: this.motionDirectionLabel(properties.direction),
+      };
+      if (Array.isArray(edge.control_points)) {
+        normalized.geometry = "bezier";
+        normalized.control_points = edge.control_points.map((point) => ({
+          x: Number(point.x || 0),
+          y: Number(point.y || 0),
+        }));
+        normalized.kind = "curve";
+      }
+      return normalized;
+    }
+
+    cloneState() {
+      return {
+        landmarks: this.landmarks.map((lm) => ({
+          ...lm,
+          properties: { ...(lm.properties || {}) },
+        })),
+        edges: this.edges.map((edge) => ({
+          ...edge,
+          properties: { ...(edge.properties || {}) },
+          control_points: Array.isArray(edge.control_points)
+            ? edge.control_points.map((point) => ({ ...point }))
+            : undefined,
+        })),
+        routes: JSON.parse(JSON.stringify(this.routes || {})),
+      };
+    }
+
+    restoreState(snapshot) {
+      this.landmarks = (snapshot.landmarks || []).map((lm) => ({
+        ...lm,
+        properties: { ...(lm.properties || {}) },
+      }));
+      this.edges = (snapshot.edges || []).map((edge) => this.normalizeEdge(edge));
+      this.routes = JSON.parse(JSON.stringify(snapshot.routes || {}));
+      this.reindex();
+    }
+
+    motionDirectionLabel(value) {
+      const code = Number(value);
+      if (code === 0) {
+        return "forward";
+      }
+      if (code === 1) {
+        return "backward";
+      }
+      return "not_specified";
     }
 
     getEdge(fromName, toName) {
@@ -87,7 +156,14 @@
       if (startName === goalName) {
         return { nodes: [startName], length: 0 };
       }
-      return this.routes[`${startName}|${goalName}`] || null;
+      let route = this.routes[`${startName}|${goalName}`] || null;
+      if (!route) {
+        route = this.findRoute(startName, goalName);
+        if (route) {
+          this.routes[`${startName}|${goalName}`] = route;
+        }
+      }
+      return route;
     }
 
     nearestLandmark(point, geometry) {
@@ -101,6 +177,266 @@
         }
       }
       return { landmark: best, distance: bestDistance };
+    }
+
+    addLandmark(landmark) {
+      if (!landmark.name || this.nodeByName.has(landmark.name)) {
+        return false;
+      }
+      this.landmarks.push({
+        name: landmark.name,
+        x: Number(landmark.x || 0),
+        y: Number(landmark.y || 0),
+        ignoreDir: landmark.ignoreDir ?? null,
+        properties: { ...(landmark.properties || {}) },
+      });
+      this.reindex();
+      this.rebuildRouteCatalog();
+      return true;
+    }
+
+    updateLandmark(oldName, patch, options = {}) {
+      const landmark = this.nodeByName.get(oldName);
+      if (!landmark) {
+        return false;
+      }
+      const previous = {
+        x: Number(landmark.x || 0),
+        y: Number(landmark.y || 0),
+      };
+      const nextName = String(patch.name || oldName).trim();
+      if (!nextName) {
+        return false;
+      }
+      if (nextName !== oldName && this.nodeByName.has(nextName)) {
+        return false;
+      }
+      landmark.name = nextName;
+      landmark.x = Number(patch.x);
+      landmark.y = Number(patch.y);
+      landmark.ignoreDir = patch.ignoreDir ?? null;
+      landmark.properties = { ...(patch.properties || {}) };
+      const delta = {
+        x: landmark.x - previous.x,
+        y: landmark.y - previous.y,
+      };
+      for (const edge of this.edges) {
+        if (edge.from === oldName) {
+          edge.from = nextName;
+          this.moveBezierEndpoint(edge, 0, landmark, delta);
+        }
+        if (edge.to === oldName) {
+          edge.to = nextName;
+          this.moveBezierEndpoint(edge, 3, landmark, delta);
+        }
+      }
+      this.recomputeEdgeLengths();
+      this.reindex();
+      if (!options.deferRoutes) {
+        this.rebuildRouteCatalog();
+      }
+      return true;
+    }
+
+    moveBezierEndpoint(edge, endpointIndex, landmark, delta) {
+      if (edge.geometry !== "bezier" || !Array.isArray(edge.control_points) || edge.control_points.length !== 4) {
+        return;
+      }
+      const handleIndex = endpointIndex === 0 ? 1 : 2;
+      edge.control_points[endpointIndex] = {
+        x: Number(landmark.x || 0),
+        y: Number(landmark.y || 0),
+      };
+      edge.control_points[handleIndex] = {
+        x: Number((edge.control_points[handleIndex].x + delta.x).toFixed(6)),
+        y: Number((edge.control_points[handleIndex].y + delta.y).toFixed(6)),
+      };
+    }
+
+    removeLandmark(name) {
+      const before = this.landmarks.length;
+      this.landmarks = this.landmarks.filter((lm) => lm.name !== name);
+      this.edges = this.edges.filter((edge) => edge.from !== name && edge.to !== name);
+      this.reindex();
+      this.rebuildRouteCatalog();
+      return this.landmarks.length !== before;
+    }
+
+    addEdge(edge) {
+      if (!edge || !edge.from || !edge.to || edge.from === edge.to || this.getEdge(edge.from, edge.to)) {
+        return false;
+      }
+      this.edges.push(this.normalizeEdge(edge));
+      this.recomputeEdgeLengths();
+      this.reindex();
+      this.rebuildRouteCatalog();
+      return true;
+    }
+
+    updateEdge(fromName, toName, patch, options = {}) {
+      const edge = this.getEdge(fromName, toName);
+      if (!edge) {
+        return false;
+      }
+      Object.assign(edge, patch);
+      edge.properties = { ...(edge.properties || {}) };
+      edge.motionDirectionCode = Number(edge.properties.direction ?? 2);
+      edge.motionDirection = this.motionDirectionLabel(edge.motionDirectionCode);
+      this.recomputeEdgeLengths();
+      this.reindex();
+      if (!options.deferRoutes) {
+        this.rebuildRouteCatalog();
+      }
+      return true;
+    }
+
+    removeEdge(fromName, toName) {
+      const before = this.edges.length;
+      this.edges = this.edges.filter((edge) => !(edge.from === fromName && edge.to === toName));
+      this.reindex();
+      this.rebuildRouteCatalog();
+      return this.edges.length !== before;
+    }
+
+    makeLineEdge(fromName, toName, properties = {}) {
+      const start = this.nodeByName.get(fromName);
+      const goal = this.nodeByName.get(toName);
+      const direction = Number(properties.direction ?? 2);
+      return this.normalizeEdge({
+        from: fromName,
+        to: toName,
+        length: start && goal ? Math.hypot(goal.x - start.x, goal.y - start.y) : 0,
+        kind: "line",
+        type: "FeatureLine",
+        properties: {
+          direction: Number.isFinite(direction) ? direction : 2,
+          movestyle: Number(properties.movestyle ?? 0),
+        },
+      });
+    }
+
+    reversedEdge(edge) {
+      const reversed = this.normalizeEdge({
+        ...edge,
+        from: edge.to,
+        to: edge.from,
+        properties: { ...(edge.properties || {}) },
+      });
+      if (Array.isArray(edge.control_points) && edge.control_points.length === 4) {
+        reversed.control_points = [
+          { ...edge.control_points[3] },
+          { ...edge.control_points[2] },
+          { ...edge.control_points[1] },
+          { ...edge.control_points[0] },
+        ];
+        reversed.geometry = "bezier";
+        reversed.kind = "curve";
+      }
+      return reversed;
+    }
+
+    setEdgeBidirectional(edge, enabled) {
+      if (!edge) {
+        return;
+      }
+      const reverse = this.getEdge(edge.to, edge.from);
+      if (enabled && !reverse) {
+        this.addEdge(this.reversedEdge(edge));
+      } else if (!enabled && reverse) {
+        this.removeEdge(reverse.from, reverse.to);
+      }
+    }
+
+    recomputeEdgeLengths() {
+      for (const edge of this.edges) {
+        edge.length = this.edgeLength(edge);
+      }
+    }
+
+    edgeLength(edge) {
+      if (edge.geometry === "bezier" && Array.isArray(edge.control_points) && edge.control_points.length === 4) {
+        let total = 0;
+        let previous = edge.control_points[0];
+        for (let index = 1; index <= 80; index += 1) {
+          const point = this.cubicBezier(edge.control_points, index / 80);
+          total += Math.hypot(point.x - previous.x, point.y - previous.y);
+          previous = point;
+        }
+        return total;
+      }
+      const start = this.nodeByName.get(edge.from);
+      const goal = this.nodeByName.get(edge.to);
+      return start && goal ? Math.hypot(goal.x - start.x, goal.y - start.y) : Number(edge.length || 0);
+    }
+
+    cubicBezier(points, t) {
+      const u = 1 - t;
+      return {
+        x: (u ** 3 * points[0].x) + (3 * u * u * t * points[1].x) + (3 * u * t * t * points[2].x) + (t ** 3 * points[3].x),
+        y: (u ** 3 * points[0].y) + (3 * u * u * t * points[1].y) + (3 * u * t * t * points[2].y) + (t ** 3 * points[3].y),
+      };
+    }
+
+    rebuildRouteCatalog() {
+      this.routes = {};
+      for (const start of this.landmarks) {
+        for (const goal of this.landmarks) {
+          const route = this.findRoute(start.name, goal.name);
+          if (route) {
+            this.routes[`${start.name}|${goal.name}`] = route;
+          }
+        }
+      }
+    }
+
+    findRoute(startName, goalName) {
+      if (!this.nodeByName.has(startName) || !this.nodeByName.has(goalName)) {
+        return null;
+      }
+      if (startName === goalName) {
+        return { nodes: [startName], length: 0 };
+      }
+      const adjacency = new Map();
+      for (const edge of this.edges) {
+        if (!adjacency.has(edge.from)) {
+          adjacency.set(edge.from, []);
+        }
+        adjacency.get(edge.from).push(edge);
+      }
+      const queue = [{ name: startName, cost: 0 }];
+      const previous = new Map();
+      const costs = new Map([[startName, 0]]);
+      while (queue.length) {
+        queue.sort((a, b) => a.cost - b.cost);
+        const current = queue.shift();
+        if (!current) {
+          break;
+        }
+        if (current.name === goalName) {
+          const edges = [];
+          let cursor = goalName;
+          while (previous.has(cursor)) {
+            const item = previous.get(cursor);
+            edges.push(item.edge);
+            cursor = item.from;
+          }
+          edges.reverse();
+          return {
+            nodes: [startName, ...edges.map((edge) => edge.to)],
+            length: costs.get(goalName) || 0,
+          };
+        }
+        for (const edge of adjacency.get(current.name) || []) {
+          const nextCost = current.cost + Number(edge.length || 0);
+          if (nextCost >= (costs.get(edge.to) ?? Number.POSITIVE_INFINITY)) {
+            continue;
+          }
+          costs.set(edge.to, nextCost);
+          previous.set(edge.to, { from: current.name, edge });
+          queue.push({ name: edge.to, cost: nextCost });
+        }
+      }
+      return null;
     }
   }
 
@@ -513,14 +849,36 @@
 
     initMap() {
       const map = demoData.map;
-      this.dom.mapTitle.textContent = demoData.mapName;
-      document.title = `${demoData.mapName} Route Simulator`;
+      this.setActiveMapName(demoData.mapName, demoData.mapDir);
       this.dom.mapSvg.setAttribute("viewBox", `0 0 ${map.viewWidth} ${map.viewHeight}`);
       this.dom.mapImage.setAttribute("x", String(map.viewPadding));
       this.dom.mapImage.setAttribute("y", String(map.viewPadding));
       this.dom.mapImage.setAttribute("width", String(map.width));
       this.dom.mapImage.setAttribute("height", String(map.height));
       this.dom.mapImage.setAttribute("href", map.imageDataUrl);
+    }
+
+    setActiveMapName(mapName, mapDir) {
+      if (!mapName) {
+        return;
+      }
+      demoData.mapName = mapName;
+      if (mapDir) {
+        demoData.mapDir = mapDir;
+      }
+      this.dom.mapTitle.textContent = mapName;
+      document.title = `${mapName} Route Simulator`;
+    }
+
+    reloadOperatorView(mapName) {
+      const activeName = mapName || demoData.mapName || "active";
+      const url = new URL(window.location.href);
+      url.searchParams.set("map", activeName);
+      url.searchParams.set("t", String(Date.now()));
+      window.location.assign(url.toString());
+      window.setTimeout(() => {
+        window.location.reload();
+      }, 500);
     }
 
     createSvgElement(tag, attrs) {
@@ -2129,6 +2487,12 @@
       this.applyTransform();
     }
 
+    panBy(deltaX, deltaY) {
+      this.view.panX += deltaX;
+      this.view.panY += deltaY;
+      this.applyTransform();
+    }
+
     reset() {
       this.view = { zoom: 1, panX: 0, panY: 0, rotation: 0 };
       this.applyTransform();
@@ -2155,6 +2519,9 @@
         downX = event.clientX;
         downY = event.clientY;
         if (this.state.navigateMode) {
+          return;
+        }
+        if (this.state.mapEditorActive) {
           return;
         }
         if (this.state.obstacleAreaMode) {
@@ -2264,6 +2631,8 @@
         navigateMode: false,
         obstacleMode: false,
         obstacleAreaMode: false,
+        mapEditorActive: false,
+        mapEditorTool: "select",
       };
       this.obstacles = [];
       this.obstacleAreas = [];
@@ -2287,6 +2656,16 @@
       this.selectedEdgeKey = "";
       this.selectedLandmark = null;
       this.selectedLandmarkName = "";
+      this.editorEdgeDrag = null;
+      this.editorLmDrag = null;
+      this.editorBezierDrag = null;
+      this.editorPreview = null;
+      this.editorPanDrag = null;
+      this.editorGuidePoint = null;
+      this.editorFieldSyncing = false;
+      this.mapEditorDirty = false;
+      this.mapEditorSnapshot = null;
+      this.mapEditorSavedCopy = false;
       this.manualKeys = new Set();
       this.manualAnimationFrame = null;
       this.manualLastTs = null;
@@ -2332,9 +2711,18 @@
         lookaheadLayer: document.getElementById("lookaheadLayer"),
         obstacleLayer: document.getElementById("obstacleLayer"),
         pointLayer: document.getElementById("pointLayer"),
+        editorLayer: document.getElementById("editorLayer"),
         robotLayer: document.getElementById("robotLayer"),
         tabButtons: Array.from(document.querySelectorAll(".tab-button")),
         tabPages: Array.from(document.querySelectorAll(".tab-page")),
+        mapEditorButton: document.getElementById("mapEditorButton"),
+        operatorLoadMapButton: document.getElementById("operatorLoadMapButton"),
+        operatorPullMapButton: document.getElementById("operatorPullMapButton"),
+        operatorPushMapButton: document.getElementById("operatorPushMapButton"),
+        mapEditorToolbar: document.getElementById("mapEditorToolbar"),
+        mapEditorToolButtons: Array.from(document.querySelectorAll("[data-map-editor-tool]")),
+        saveMapQuickButton: document.getElementById("saveMapQuickButton"),
+        exitMapEditorButton: document.getElementById("exitMapEditorButton"),
         navigateButton: document.getElementById("navigateButton"),
         cancelOrderButton: document.getElementById("cancelOrderButton"),
         obstacleModeButton: document.getElementById("obstacleModeButton"),
@@ -2409,6 +2797,29 @@
         activeRobotTaskText: document.getElementById("activeRobotTaskText"),
         fleetPlanDebug: document.getElementById("fleetPlanDebug"),
         fleetEventLog: document.getElementById("fleetEventLog"),
+        mapEditorHelpText: document.getElementById("mapEditorHelpText"),
+        editorLmNameInput: document.getElementById("editorLmNameInput"),
+        editorLmXInput: document.getElementById("editorLmXInput"),
+        editorLmYInput: document.getElementById("editorLmYInput"),
+        editorLmSpinInput: document.getElementById("editorLmSpinInput"),
+        editorLmIgnoreDirInput: document.getElementById("editorLmIgnoreDirInput"),
+        deleteLmButton: document.getElementById("deleteLmButton"),
+        editorEdgeFromInput: document.getElementById("editorEdgeFromInput"),
+        editorEdgeToInput: document.getElementById("editorEdgeToInput"),
+        editorEdgeTrafficSelect: document.getElementById("editorEdgeTrafficSelect"),
+        editorEdgeMotionSelect: document.getElementById("editorEdgeMotionSelect"),
+        editorEdgeKindSelect: document.getElementById("editorEdgeKindSelect"),
+        editorEdgeMoveStyleInput: document.getElementById("editorEdgeMoveStyleInput"),
+        editorEdgeLengthInput: document.getElementById("editorEdgeLengthInput"),
+        reverseEdgeButton: document.getElementById("reverseEdgeButton"),
+        deleteEdgeButton: document.getElementById("deleteEdgeButton"),
+        saveMapButton: document.getElementById("saveMapButton"),
+        saveMapAsButton: document.getElementById("saveMapAsButton"),
+        saveMapAsInput: document.getElementById("saveMapAsInput"),
+        mapLoadOverlay: document.getElementById("mapLoadOverlay"),
+        mapLoadSelect: document.getElementById("mapLoadSelect"),
+        mapLoadCancelButton: document.getElementById("mapLoadCancelButton"),
+        mapLoadConfirmButton: document.getElementById("mapLoadConfirmButton"),
         saveConfirmOverlay: document.getElementById("saveConfirmOverlay"),
         saveConfirmYesButton: document.getElementById("saveConfirmYesButton"),
         saveConfirmNoButton: document.getElementById("saveConfirmNoButton"),
@@ -2425,6 +2836,7 @@
       await this.loadInitialFleetState();
       this.initializeFleet();
       this.attachEvents();
+      this.syncMapEditorUi();
       this.startFleetStatePolling();
       this.scheduleWorldSync(0);
       this.updatePlannerParams();
@@ -2440,6 +2852,54 @@
     attachEvents() {
       for (const button of this.dom.tabButtons) {
         button.addEventListener("click", () => this.setActiveTab(button.dataset.tab));
+      }
+      this.dom.mapEditorButton.addEventListener("click", () => {
+        void this.toggleMapEditor();
+      });
+      for (const button of this.dom.mapEditorToolButtons) {
+        button.addEventListener("click", () => this.setMapEditorTool(button.dataset.mapEditorTool));
+      }
+      this.dom.mapSvg.addEventListener("pointerdown", (event) => this.handleEditorPointerDown(event), true);
+      this.dom.mapSvg.addEventListener("pointermove", (event) => this.handleEditorPointerMove(event), true);
+      this.dom.mapSvg.addEventListener("pointerup", (event) => this.handleEditorPointerUp(event), true);
+      this.dom.mapSvg.addEventListener("pointercancel", (event) => this.handleEditorPointerUp(event), true);
+      this.dom.mapSvg.addEventListener("contextmenu", (event) => this.handleMapContextMenu(event));
+      this.dom.operatorLoadMapButton.addEventListener("click", () => {
+        void this.openLoadMapDialog();
+      });
+      this.dom.operatorPullMapButton.addEventListener("click", () => this.pullMapFromRobot());
+      this.dom.operatorPushMapButton.addEventListener("click", () => {
+        void this.pushMapToRobot();
+      });
+      this.dom.mapLoadCancelButton.addEventListener("click", () => this.closeLoadMapDialog());
+      this.dom.mapLoadConfirmButton.addEventListener("click", () => {
+        void this.loadSelectedMap();
+      });
+      this.dom.saveMapQuickButton.addEventListener("click", () => this.saveMap(false));
+      this.dom.saveMapButton.addEventListener("click", () => this.saveMap(false));
+      this.dom.saveMapAsButton.addEventListener("click", () => this.saveMap(true));
+      this.dom.exitMapEditorButton.addEventListener("click", () => {
+        void this.closeMapEditor();
+      });
+      this.dom.deleteLmButton.addEventListener("click", () => this.deleteSelectedLandmark());
+      this.dom.deleteEdgeButton.addEventListener("click", () => this.deleteSelectedEdge());
+      this.dom.reverseEdgeButton.addEventListener("click", () => this.addReverseForSelectedEdge());
+      for (const input of [
+        this.dom.editorLmNameInput,
+        this.dom.editorLmXInput,
+        this.dom.editorLmYInput,
+        this.dom.editorLmSpinInput,
+        this.dom.editorLmIgnoreDirInput,
+      ]) {
+        input.addEventListener("change", () => this.updateSelectedLandmarkFromFields());
+      }
+      for (const input of [
+        this.dom.editorEdgeTrafficSelect,
+        this.dom.editorEdgeMotionSelect,
+        this.dom.editorEdgeKindSelect,
+        this.dom.editorEdgeMoveStyleInput,
+      ]) {
+        input.addEventListener("change", () => this.updateSelectedEdgeFromFields());
       }
       this.dom.navigateButton.addEventListener("click", () => this.toggleNavigateMode());
       this.dom.cancelOrderButton.addEventListener("click", () => this.cancelActiveOrder());
@@ -2474,6 +2934,13 @@
       this.dom.speedInput.addEventListener("change", () => this.scheduleWorldSync(0));
       this.dom.stopDistanceInput.addEventListener("change", () => this.scheduleWorldSync(0));
       this.dom.manualStepInput.addEventListener("change", () => this.scheduleWorldSync(0));
+      window.addEventListener("beforeunload", (event) => {
+        if (!this.mapEditorDirty) {
+          return;
+        }
+        event.preventDefault();
+        event.returnValue = "";
+      });
       this.attachManualEvents();
     }
 
@@ -2633,6 +3100,7 @@
       this.dom.edgeInspectorEmpty.classList.remove("hidden");
       this.dom.edgeInspectorContent.classList.add("hidden");
       this.dom.lmInspectorContent.classList.add("hidden");
+      this.syncEditorFields();
     }
 
     handleGraphEdgeClick(edge, reverse = null) {
@@ -2682,6 +3150,7 @@
       this.dom.edgeReverseText.textContent = reverse
         ? `${reverse.from} -> ${reverse.to}, ${reverseMotion}`
         : "none";
+      this.syncEditorFields();
     }
 
     handleLandmarkInspect(lmName) {
@@ -2729,6 +3198,7 @@
       this.dom.lmSpinText.textContent = this.propertyValue(properties.spin, "-");
       this.dom.lmIgnoreDirText.textContent = this.propertyValue(lm.ignoreDir, "-");
       this.dom.lmConnectionsText.textContent = connections.length ? connections.join(", ") : "none";
+      this.syncEditorFields();
     }
 
     motionDirectionLabel(value) {
@@ -3689,6 +4159,133 @@
       this.setStatus(this.state.obstacleAreaMode ? "Obstacle area drawing active." : "Obstacle area drawing off.");
     }
 
+    async toggleMapEditor() {
+      if (this.state.mapEditorActive) {
+        await this.closeMapEditor();
+      } else {
+        this.enterMapEditor();
+      }
+    }
+
+    enterMapEditor() {
+      this.state.mapEditorActive = true;
+      this.mapEditorSnapshot = this.graphModel.cloneState();
+      this.mapEditorDirty = false;
+      this.mapEditorSavedCopy = false;
+      this.pendingTargetRobotName = "";
+      this.pendingTargetAction = "";
+      this.state.navigateMode = false;
+      this.state.obstacleMode = false;
+      this.state.obstacleAreaMode = false;
+      this.obstacleAreaPreview = null;
+      this.currentMission = null;
+      this.editorEdgeDrag = null;
+      this.editorLmDrag = null;
+      this.editorBezierDrag = null;
+      this.editorPanDrag = null;
+      this.editorGuidePoint = null;
+      this.clearEditorPreview();
+      this.setActiveTab("map");
+      this.syncModeButtons();
+      this.syncMapEditorUi();
+      this.drawObstacleState();
+      this.renderLandmarks();
+      this.renderFleetRobots();
+      this.setStatus("Map editor active.");
+    }
+
+    async closeMapEditor() {
+      if (this.mapEditorDirty) {
+        const shouldSave = window.confirm("Save changes to the current map before exiting? OK = save, Cancel = discard.");
+        if (shouldSave) {
+          const saved = await this.saveMap(false, { confirm: false });
+          if (!saved) {
+            return;
+          }
+        } else {
+          this.discardMapEdits();
+        }
+      } else if (this.mapEditorSavedCopy) {
+        this.discardMapEdits();
+      }
+      this.state.mapEditorActive = false;
+      this.editorEdgeDrag = null;
+      this.editorLmDrag = null;
+      this.editorBezierDrag = null;
+      this.editorPanDrag = null;
+      this.editorGuidePoint = null;
+      this.clearEditorPreview();
+      this.mapEditorSnapshot = null;
+      this.mapEditorDirty = false;
+      this.mapEditorSavedCopy = false;
+      this.setActiveTab("fleet");
+      this.syncModeButtons();
+      this.syncMapEditorUi();
+      this.drawObstacleState();
+      this.renderLandmarks();
+      this.renderFleetRobots();
+      this.setStatus("Map editor closed.");
+    }
+
+    discardMapEdits() {
+      if (!this.mapEditorSnapshot) {
+        return;
+      }
+      this.graphModel.restoreState(this.mapEditorSnapshot);
+      this.data.lms = this.graphModel.landmarks;
+      this.data.edges = this.graphModel.edges;
+      this.data.routes = this.graphModel.routes;
+      this.selectedEdge = null;
+      this.selectedEdgeKey = "";
+      this.selectedLandmark = null;
+      this.selectedLandmarkName = "";
+      this.renderer.drawGraph("");
+      this.renderLandmarks();
+      this.renderMapInspectorEmpty();
+      this.populateFleetSpawnSelect();
+      this.mapEditorDirty = false;
+      this.setStatus("Map editor changes discarded.");
+    }
+
+    setMapEditorTool(tool) {
+      if (!["select", "lm", "edge"].includes(tool)) {
+        return;
+      }
+      this.state.mapEditorTool = tool;
+      if (!this.state.mapEditorActive) {
+        this.enterMapEditor();
+      }
+      this.editorEdgeDrag = null;
+      this.editorLmDrag = null;
+      this.editorBezierDrag = null;
+      this.editorPanDrag = null;
+      this.editorGuidePoint = null;
+      this.clearEditorPreview();
+      this.syncMapEditorUi();
+      this.syncModeButtons();
+      this.setStatus(`Map editor: ${tool}.`);
+    }
+
+    syncMapEditorUi() {
+      if (!this.dom.mapEditorButton) {
+        return;
+      }
+      this.dom.mapEditorButton.classList.toggle("active", this.state.mapEditorActive);
+      this.dom.mapEditorButton.textContent = this.state.mapEditorActive ? `Close Editor${this.mapEditorDirty ? " *" : ""}` : "Map Editor";
+      this.dom.mapEditorToolbar.hidden = !this.state.mapEditorActive;
+      document.body.classList.toggle("map-editor-mode", this.state.mapEditorActive);
+      for (const button of this.dom.mapEditorToolButtons) {
+        button.classList.toggle("active", button.dataset.mapEditorTool === this.state.mapEditorTool);
+      }
+      const help = {
+        select: "Select or drag LM. Select a Bezier edge to edit its handles. Right-click deletes.",
+        lm: "Click empty map space to add LM. Drag existing LM to move it.",
+        edge: "Hold on an LM and drag through other LMs to create a chain.",
+      };
+      this.dom.mapEditorHelpText.textContent = help[this.state.mapEditorTool] || help.select;
+      this.syncEditorFields();
+    }
+
     syncModeButtons() {
       const armed = this.targetSelectionActive();
       this.state.navigateMode = armed;
@@ -3700,11 +4297,903 @@
       this.dom.queueGoalButton.textContent = queueArmed ? `Queue LM: ${this.pendingTargetRobotName}` : "Queue Goal";
       this.dom.obstacleModeButton.classList.toggle("active", this.state.obstacleMode);
       this.dom.obstacleAreaModeButton.classList.toggle("active", this.state.obstacleAreaMode);
+      this.syncMapEditorUi();
+    }
+
+    handleEditorPointerDown(event) {
+      if (!this.state.mapEditorActive || event.button !== 0) {
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      const handle = this.bezierHandleFromEvent(event);
+      if (handle) {
+        this.editorBezierDrag = {
+          edgeKey: handle.edgeKey,
+          pointIndex: handle.pointIndex,
+          pointerId: event.pointerId,
+          dragged: false,
+        };
+        this.dom.mapSvg.setPointerCapture(event.pointerId);
+        return;
+      }
+      const lmName = this.lmNameFromEvent(event);
+      const edgeKey = this.edgeKeyFromEvent(event);
+
+      if (this.state.mapEditorTool === "edge") {
+        const world = this.geometry.eventToWorld(event, this.dom.viewport);
+        const startName = lmName || this.nearestLmNameFromEvent(event, 0.28);
+        if (!startName) {
+          this.startEditorPanDrag(event, world);
+          return;
+        }
+        this.handleLandmarkInspect(startName);
+        this.editorEdgeDrag = {
+          currentLm: startName,
+          lastCreated: "",
+          pointerId: event.pointerId,
+        };
+        this.dom.mapSvg.setPointerCapture(event.pointerId);
+        this.drawEditorPreview(startName, this.geometry.eventToWorld(event, this.dom.viewport));
+        return;
+      }
+
+      if (lmName) {
+        this.handleLandmarkInspect(lmName);
+        if (this.state.mapEditorTool === "select" || this.state.mapEditorTool === "lm") {
+          this.editorLmDrag = {
+            name: lmName,
+            pointerId: event.pointerId,
+            dragged: false,
+          };
+          this.dom.mapSvg.setPointerCapture(event.pointerId);
+        }
+        return;
+      }
+      if (edgeKey) {
+        const edge = this.edgeFromKey(edgeKey);
+        if (edge) {
+          this.handleGraphEdgeClick(edge, this.graphModel.getEdge(edge.to, edge.from));
+        }
+        return;
+      }
+      if (this.state.mapEditorTool === "lm") {
+        const world = this.geometry.eventToWorld(event, this.dom.viewport);
+        if (world) {
+          this.startEditorPanDrag(event, world);
+        }
+        return;
+      }
+      this.startEditorPanDrag(event, this.geometry.eventToWorld(event, this.dom.viewport));
+      return;
+    }
+
+    handleEditorPointerMove(event) {
+      if (!this.state.mapEditorActive) {
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      if (this.editorPanDrag) {
+        this.moveEditorCamera(event);
+        return;
+      }
+      const world = this.geometry.eventToWorld(event, this.dom.viewport);
+      if (!world) {
+        return;
+      }
+
+      if (this.editorBezierDrag) {
+        this.moveBezierControlPoint(world);
+        return;
+      }
+
+      if (this.editorLmDrag) {
+        this.moveEditorLandmark(world);
+        return;
+      }
+
+      if (!this.editorEdgeDrag) {
+        return;
+      }
+
+      const nearest = this.graphModel.nearestLandmark(world, this.geometry);
+      if (
+        nearest.landmark &&
+        nearest.distance <= 0.28 &&
+        nearest.landmark.name !== this.editorEdgeDrag.currentLm &&
+        nearest.landmark.name !== this.editorEdgeDrag.lastCreated
+      ) {
+        const previous = this.editorEdgeDrag.currentLm;
+        this.addEditorEdge(previous, nearest.landmark.name);
+        this.editorEdgeDrag.lastCreated = previous;
+        this.editorEdgeDrag.currentLm = nearest.landmark.name;
+        const edge = this.graphModel.getEdge(previous, nearest.landmark.name);
+        if (edge) {
+          this.handleGraphEdgeClick(edge, null);
+        }
+      }
+      const snapName = nearest.landmark && nearest.distance <= 0.28 ? nearest.landmark.name : "";
+      this.drawEditorPreview(this.editorEdgeDrag.currentLm, world, snapName);
+    }
+
+    handleEditorPointerUp(event) {
+      if (!this.state.mapEditorActive || (!this.editorEdgeDrag && !this.editorLmDrag && !this.editorBezierDrag && !this.editorPanDrag)) {
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      if (this.dom.mapSvg.hasPointerCapture(event.pointerId)) {
+        this.dom.mapSvg.releasePointerCapture(event.pointerId);
+      }
+      if (this.editorPanDrag) {
+        const drag = this.editorPanDrag;
+        this.editorPanDrag = null;
+        this.editorGuidePoint = null;
+        if (!drag.dragged) {
+          if (drag.tool === "lm" && drag.world) {
+            this.addEditorLandmark(drag.world);
+          } else {
+            this.clearMapSelection();
+          }
+        } else {
+          this.renderEditorOverlay();
+        }
+        return;
+      }
+      if (this.editorLmDrag) {
+        const drag = this.editorLmDrag;
+        this.editorLmDrag = null;
+        this.editorGuidePoint = null;
+        if (drag.dragged) {
+          this.afterMapEdited(`Moved ${drag.name}.`);
+          this.renderLandmarkInspector();
+        } else {
+          this.renderEditorOverlay();
+        }
+        return;
+      }
+      if (this.editorBezierDrag) {
+        const drag = this.editorBezierDrag;
+        this.editorBezierDrag = null;
+        this.editorGuidePoint = null;
+        if (drag.dragged) {
+          const edge = this.edgeFromKey(drag.edgeKey);
+          this.afterMapEdited(edge ? `Updated curve ${edge.from} -> ${edge.to}.` : "Updated curve.");
+          this.renderEdgeInspector();
+        } else {
+          this.renderEditorOverlay();
+        }
+        return;
+      }
+      this.editorEdgeDrag = null;
+      this.editorGuidePoint = null;
+      this.clearEditorPreview();
+    }
+
+    handleMapContextMenu(event) {
+      if (!this.state.mapEditorActive) {
+        return;
+      }
+      event.preventDefault();
+      const lmName = this.lmNameFromEvent(event) || this.nearestLmNameFromEvent(event, 0.25);
+      if (lmName) {
+        this.handleLandmarkInspect(lmName);
+        if (window.confirm(`Delete ${lmName}?`)) {
+          this.deleteSelectedLandmark();
+        }
+        return;
+      }
+      const edge = this.edgeFromKey(this.edgeKeyFromEvent(event));
+      if (edge) {
+        this.handleGraphEdgeClick(edge, this.graphModel.getEdge(edge.to, edge.from));
+        if (window.confirm(`Delete edge ${edge.from} -> ${edge.to}?`)) {
+          this.deleteSelectedEdge();
+        }
+      }
+    }
+
+    lmNameFromEvent(event) {
+      const target = event.target && event.target.closest ? event.target.closest("[data-lm]") : null;
+      return target ? String(target.dataset.lm || "") : "";
+    }
+
+    edgeKeyFromEvent(event) {
+      const target = event.target && event.target.closest ? event.target.closest("[data-edge]") : null;
+      return target ? String(target.dataset.edge || "") : "";
+    }
+
+    edgeFromKey(key) {
+      const parts = String(key || "").split("|");
+      return parts.length === 2 ? this.graphModel.getEdge(parts[0], parts[1]) : null;
+    }
+
+    bezierHandleFromEvent(event) {
+      const target = event.target && event.target.closest ? event.target.closest("[data-bezier-handle]") : null;
+      if (target) {
+        return {
+          edgeKey: String(target.dataset.edge || ""),
+          pointIndex: Number(target.dataset.bezierHandle),
+        };
+      }
+      const edge = this.selectedEdgeKey ? this.edgeFromKey(this.selectedEdgeKey) : null;
+      if (!edge || edge.geometry !== "bezier" || !Array.isArray(edge.control_points) || edge.control_points.length !== 4) {
+        return null;
+      }
+      const world = this.geometry.eventToWorld(event, this.dom.viewport);
+      if (!world) {
+        return null;
+      }
+      let best = null;
+      let bestDistance = Number.POSITIVE_INFINITY;
+      for (const index of [1, 2]) {
+        const distance = this.geometry.distance(world, edge.control_points[index]);
+        if (distance < bestDistance) {
+          best = index;
+          bestDistance = distance;
+        }
+      }
+      return bestDistance <= 0.22 ? { edgeKey: this.selectedEdgeKey, pointIndex: best } : null;
+    }
+
+    nearestLmNameFromEvent(event, maxDistance) {
+      const world = this.geometry.eventToWorld(event, this.dom.viewport);
+      if (!world) {
+        return "";
+      }
+      const nearest = this.graphModel.nearestLandmark(world, this.geometry);
+      return nearest.landmark && nearest.distance <= maxDistance ? nearest.landmark.name : "";
+    }
+
+    addEditorLandmark(point) {
+      const snapped = this.snapEditorPoint(point);
+      const name = this.nextLmName();
+      this.graphModel.addLandmark({
+        name,
+        x: snapped.x,
+        y: snapped.y,
+        ignoreDir: null,
+        properties: { spin: false },
+      });
+      this.selectedEdge = null;
+      this.selectedEdgeKey = "";
+      this.selectedLandmarkName = name;
+      this.selectedLandmark = this.graphModel.nodeByName.get(name);
+      this.afterMapEdited(`Added ${name}.`);
+      this.renderLandmarkInspector();
+    }
+
+    nextLmName() {
+      let maxId = 0;
+      for (const lm of this.graphModel.landmarks) {
+        const match = /^LM(\d+)$/i.exec(lm.name);
+        if (match) {
+          maxId = Math.max(maxId, Number(match[1]));
+        }
+      }
+      let candidate = `LM${maxId + 1}`;
+      while (this.graphModel.nodeByName.has(candidate)) {
+        maxId += 1;
+        candidate = `LM${maxId + 1}`;
+      }
+      return candidate;
+    }
+
+    snapEditorPoint(point, excludeName = "") {
+      const snapDistance = 0.08;
+      let x = Number(point.x || 0);
+      let y = Number(point.y || 0);
+      for (const lm of this.graphModel.landmarks) {
+        if (lm.name === excludeName) {
+          continue;
+        }
+        if (Math.abs(lm.x - x) <= snapDistance) {
+          x = lm.x;
+        }
+        if (Math.abs(lm.y - y) <= snapDistance) {
+          y = lm.y;
+        }
+      }
+      return {
+        x: Number(x.toFixed(3)),
+        y: Number(y.toFixed(3)),
+      };
+    }
+
+    snapBezierHandlePoint(point, edge, pointIndex) {
+      const snapDistance = 0.08;
+      let x = Number(point.x || 0);
+      let y = Number(point.y || 0);
+      const references = [];
+      if (edge && Array.isArray(edge.control_points)) {
+        for (const index of [0, 1, 2, 3]) {
+          if (index !== pointIndex && edge.control_points[index]) {
+            references.push(edge.control_points[index]);
+          }
+        }
+      }
+      for (const lm of this.graphModel.landmarks) {
+        references.push(lm);
+      }
+      for (const ref of references) {
+        if (Math.abs(Number(ref.x || 0) - x) <= snapDistance) {
+          x = Number(ref.x || 0);
+        }
+        if (Math.abs(Number(ref.y || 0) - y) <= snapDistance) {
+          y = Number(ref.y || 0);
+        }
+      }
+      return {
+        x: Number(x.toFixed(3)),
+        y: Number(y.toFixed(3)),
+      };
+    }
+
+    startEditorPanDrag(event, world) {
+      this.editorPanDrag = {
+        tool: this.state.mapEditorTool,
+        world,
+        pointerId: event.pointerId,
+        startX: event.clientX,
+        startY: event.clientY,
+        lastX: event.clientX,
+        lastY: event.clientY,
+        dragged: false,
+      };
+      this.dom.mapSvg.setPointerCapture(event.pointerId);
+    }
+
+    moveEditorCamera(event) {
+      if (!this.editorPanDrag) {
+        return;
+      }
+      const total = Math.hypot(event.clientX - this.editorPanDrag.startX, event.clientY - this.editorPanDrag.startY);
+      if (total < 4 && !this.editorPanDrag.dragged) {
+        return;
+      }
+      const dx = event.clientX - this.editorPanDrag.lastX;
+      const dy = event.clientY - this.editorPanDrag.lastY;
+      this.editorPanDrag.lastX = event.clientX;
+      this.editorPanDrag.lastY = event.clientY;
+      this.editorPanDrag.dragged = true;
+      this.viewport.panBy(dx, dy);
+    }
+
+    moveEditorLandmark(world) {
+      if (!this.editorLmDrag) {
+        return;
+      }
+      const lm = this.graphModel.nodeByName.get(this.editorLmDrag.name);
+      if (!lm) {
+        return;
+      }
+      const snapped = this.snapEditorPoint(world, lm.name);
+      const ok = this.graphModel.updateLandmark(
+        lm.name,
+        {
+          name: lm.name,
+          x: snapped.x,
+          y: snapped.y,
+          ignoreDir: lm.ignoreDir ?? null,
+          properties: { ...(lm.properties || {}) },
+        },
+        { deferRoutes: true }
+      );
+      if (!ok) {
+        return;
+      }
+      this.editorLmDrag.dragged = true;
+      this.editorGuidePoint = snapped;
+      this.selectedLandmarkName = lm.name;
+      this.selectedLandmark = this.graphModel.nodeByName.get(lm.name);
+      this.afterMapEdited(`Moving ${lm.name}.`, { deferRoutes: true, transient: true });
+    }
+
+    moveBezierControlPoint(world) {
+      if (!this.editorBezierDrag) {
+        return;
+      }
+      const edge = this.edgeFromKey(this.editorBezierDrag.edgeKey);
+      const pointIndex = this.editorBezierDrag.pointIndex;
+      if (!edge || edge.geometry !== "bezier" || !Array.isArray(edge.control_points) || ![1, 2].includes(pointIndex)) {
+        return;
+      }
+      edge.control_points[pointIndex] = this.snapBezierHandlePoint(world, edge, pointIndex);
+      this.editorBezierDrag.dragged = true;
+      this.editorGuidePoint = edge.control_points[pointIndex];
+      this.selectedEdge = edge;
+      this.afterMapEdited(`Editing curve ${edge.from} -> ${edge.to}.`, { deferRoutes: true, transient: true });
+    }
+
+    addEditorEdge(fromName, toName) {
+      if (!fromName || !toName || fromName === toName) {
+        return;
+      }
+      if (this.graphModel.getEdge(fromName, toName)) {
+        this.setStatus(`Edge already exists: ${fromName} -> ${toName}.`);
+        return;
+      }
+      const edge = this.graphModel.makeLineEdge(fromName, toName);
+      if (this.graphModel.addEdge(edge)) {
+        this.afterMapEdited(`Added edge ${fromName} -> ${toName}.`);
+      }
+    }
+
+    drawEditorPreview(fromName, world, snapName = "") {
+      this.editorPreview = { fromName, world, snapName };
+      const endLm = snapName ? this.graphModel.nodeByName.get(snapName) : null;
+      this.editorGuidePoint = endLm || world;
+      this.renderEditorOverlay();
+    }
+
+    renderEditorOverlay() {
+      this.dom.editorLayer.innerHTML = "";
+      if (!this.state.mapEditorActive) {
+        return;
+      }
+      this.drawEditorGuide();
+      if (this.editorPreview) {
+        this.drawEditorPreviewLine(this.editorPreview.fromName, this.editorPreview.world, this.editorPreview.snapName);
+      }
+      this.drawBezierEditorHandles();
+    }
+
+    drawEditorGuide() {
+      if (!this.editorGuidePoint) {
+        return;
+      }
+      const pos = this.geometry.worldToPixel(this.editorGuidePoint);
+      const width = demoData.map.viewWidth;
+      const height = demoData.map.viewHeight;
+      this.dom.editorLayer.appendChild(this.renderer.createSvgElement("line", {
+        class: "editor-guide-line",
+        x1: 0,
+        y1: pos.y,
+        x2: width,
+        y2: pos.y,
+      }));
+      this.dom.editorLayer.appendChild(this.renderer.createSvgElement("line", {
+        class: "editor-guide-line",
+        x1: pos.x,
+        y1: 0,
+        x2: pos.x,
+        y2: height,
+      }));
+      const label = this.renderer.createSvgElement("text", {
+        class: "editor-guide-label",
+        x: pos.x + 8,
+        y: pos.y - 8,
+      });
+      label.textContent = `x ${Number(this.editorGuidePoint.x || 0).toFixed(3)}, y ${Number(this.editorGuidePoint.y || 0).toFixed(3)}`;
+      this.dom.editorLayer.appendChild(label);
+    }
+
+    drawEditorPreviewLine(fromName, world, snapName = "") {
+      const start = this.graphModel.nodeByName.get(fromName);
+      if (!start || !world) {
+        return;
+      }
+      const startPx = this.geometry.worldToPixel(start);
+      const endLm = snapName ? this.graphModel.nodeByName.get(snapName) : null;
+      const endPx = this.geometry.worldToPixel(endLm || world);
+      this.dom.editorLayer.appendChild(this.renderer.createSvgElement("line", {
+        class: "editor-preview",
+        x1: startPx.x,
+        y1: startPx.y,
+        x2: endPx.x,
+        y2: endPx.y,
+      }));
+      if (endLm) {
+        this.dom.editorLayer.appendChild(this.renderer.createSvgElement("circle", {
+          class: "editor-snap-ring",
+          cx: endPx.x,
+          cy: endPx.y,
+          r: 12,
+        }));
+      }
+    }
+
+    clearEditorPreview() {
+      this.editorPreview = null;
+      this.renderEditorOverlay();
+    }
+
+    drawBezierEditorHandles() {
+      const edge = this.selectedEdgeKey ? this.edgeFromKey(this.selectedEdgeKey) : null;
+      if (!edge || edge.geometry !== "bezier" || !Array.isArray(edge.control_points) || edge.control_points.length !== 4) {
+        return;
+      }
+      const cp = edge.control_points.map((point) => this.geometry.worldToPixel(point));
+      const edgeKey = `${edge.from}|${edge.to}`;
+      for (const [startIndex, handleIndex] of [[0, 1], [3, 2]]) {
+        this.dom.editorLayer.appendChild(this.renderer.createSvgElement("line", {
+          class: "bezier-handle-line",
+          x1: cp[startIndex].x,
+          y1: cp[startIndex].y,
+          x2: cp[handleIndex].x,
+          y2: cp[handleIndex].y,
+        }));
+      }
+      for (const index of [1, 2]) {
+        this.dom.editorLayer.appendChild(this.renderer.createSvgElement("circle", {
+          class: "bezier-handle-point",
+          "data-edge": edgeKey,
+          "data-bezier-handle": index,
+          cx: cp[index].x,
+          cy: cp[index].y,
+          r: 5,
+        }));
+      }
+    }
+
+    syncEditorFields() {
+      if (!this.dom.editorLmNameInput) {
+        return;
+      }
+      this.editorFieldSyncing = true;
+      const lm = this.selectedLandmarkName ? this.graphModel.nodeByName.get(this.selectedLandmarkName) : null;
+      const edge = this.selectedEdgeKey ? this.edgeFromKey(this.selectedEdgeKey) : null;
+      if (lm) {
+        this.dom.editorLmNameInput.value = lm.name;
+        this.dom.editorLmXInput.value = Number(lm.x || 0).toFixed(3);
+        this.dom.editorLmYInput.value = Number(lm.y || 0).toFixed(3);
+        this.dom.editorLmSpinInput.checked = Boolean((lm.properties || {}).spin);
+        this.dom.editorLmIgnoreDirInput.value = lm.ignoreDir ?? "";
+      }
+      for (const input of [
+        this.dom.editorLmNameInput,
+        this.dom.editorLmXInput,
+        this.dom.editorLmYInput,
+        this.dom.editorLmSpinInput,
+        this.dom.editorLmIgnoreDirInput,
+        this.dom.deleteLmButton,
+      ]) {
+        input.disabled = !lm;
+      }
+      if (edge) {
+        const reverse = this.graphModel.getEdge(edge.to, edge.from);
+        const properties = edge.properties || {};
+        this.dom.editorEdgeFromInput.value = edge.from;
+        this.dom.editorEdgeToInput.value = edge.to;
+        this.dom.editorEdgeTrafficSelect.value = reverse ? "bidirectional" : "one_way";
+        this.dom.editorEdgeMotionSelect.value = String(Number(properties.direction ?? 2));
+        this.dom.editorEdgeKindSelect.value = edge.geometry === "bezier" ? "curve" : "line";
+        this.dom.editorEdgeMoveStyleInput.value = String(properties.movestyle ?? 0);
+        this.dom.editorEdgeLengthInput.value = `${Number(edge.length || 0).toFixed(3)} m`;
+      }
+      for (const input of [
+        this.dom.editorEdgeFromInput,
+        this.dom.editorEdgeToInput,
+        this.dom.editorEdgeTrafficSelect,
+        this.dom.editorEdgeMotionSelect,
+        this.dom.editorEdgeKindSelect,
+        this.dom.editorEdgeMoveStyleInput,
+        this.dom.editorEdgeLengthInput,
+        this.dom.reverseEdgeButton,
+        this.dom.deleteEdgeButton,
+      ]) {
+        input.disabled = !edge;
+      }
+      this.editorFieldSyncing = false;
+    }
+
+    updateSelectedLandmarkFromFields() {
+      if (this.editorFieldSyncing || !this.selectedLandmarkName) {
+        return;
+      }
+      const oldName = this.selectedLandmarkName;
+      const name = this.dom.editorLmNameInput.value.trim();
+      const x = Number(this.dom.editorLmXInput.value);
+      const y = Number(this.dom.editorLmYInput.value);
+      if (!name || !Number.isFinite(x) || !Number.isFinite(y)) {
+        this.setStatus("LM edit ignored: invalid name or coordinates.");
+        return;
+      }
+      const snapped = this.snapEditorPoint({ x, y }, oldName);
+      const ok = this.graphModel.updateLandmark(oldName, {
+        name,
+        x: snapped.x,
+        y: snapped.y,
+        ignoreDir: this.dom.editorLmIgnoreDirInput.value.trim() || null,
+        properties: { spin: this.dom.editorLmSpinInput.checked },
+      });
+      if (!ok) {
+        this.setStatus("LM edit rejected: name already exists.");
+        this.syncEditorFields();
+        return;
+      }
+      this.selectedLandmarkName = name;
+      this.selectedLandmark = this.graphModel.nodeByName.get(name);
+      this.afterMapEdited(`Updated ${name}.`);
+      this.renderLandmarkInspector();
+    }
+
+    updateSelectedEdgeFromFields() {
+      if (this.editorFieldSyncing || !this.selectedEdgeKey) {
+        return;
+      }
+      const edge = this.edgeFromKey(this.selectedEdgeKey);
+      if (!edge) {
+        return;
+      }
+      const direction = Number(this.dom.editorEdgeMotionSelect.value);
+      const movestyle = Number(this.dom.editorEdgeMoveStyleInput.value || 0);
+      const kind = this.dom.editorEdgeKindSelect.value;
+      const patch = {
+        properties: {
+          ...(edge.properties || {}),
+          direction: Number.isFinite(direction) ? direction : 2,
+          movestyle: Number.isFinite(movestyle) ? movestyle : 0,
+        },
+      };
+      if (kind === "curve" && edge.geometry !== "bezier") {
+        patch.geometry = "bezier";
+        patch.kind = "curve";
+        patch.type = "DegenerateBezier";
+        patch.control_points = this.defaultBezierForEdge(edge);
+      } else if (kind === "line") {
+        patch.geometry = "";
+        patch.kind = "line";
+        patch.type = "FeatureLine";
+        patch.control_points = null;
+      }
+      this.graphModel.updateEdge(edge.from, edge.to, patch);
+      const updated = this.graphModel.getEdge(edge.from, edge.to);
+      this.graphModel.setEdgeBidirectional(updated, this.dom.editorEdgeTrafficSelect.value === "bidirectional");
+      this.selectedEdge = this.graphModel.getEdge(edge.from, edge.to);
+      this.selectedEdgeKey = this.selectedEdge ? `${this.selectedEdge.from}|${this.selectedEdge.to}` : "";
+      this.afterMapEdited(`Updated edge ${edge.from} -> ${edge.to}.`);
+      this.renderEdgeInspector();
+    }
+
+    defaultBezierForEdge(edge) {
+      const start = this.graphModel.nodeByName.get(edge.from);
+      const goal = this.graphModel.nodeByName.get(edge.to);
+      if (!start || !goal) {
+        return [];
+      }
+      return [
+        { x: start.x, y: start.y },
+        { x: start.x + ((goal.x - start.x) / 3), y: start.y + ((goal.y - start.y) / 3) },
+        { x: start.x + (((goal.x - start.x) * 2) / 3), y: start.y + (((goal.y - start.y) * 2) / 3) },
+        { x: goal.x, y: goal.y },
+      ];
+    }
+
+    deleteSelectedLandmark() {
+      if (!this.selectedLandmarkName) {
+        return;
+      }
+      const name = this.selectedLandmarkName;
+      this.graphModel.removeLandmark(name);
+      this.selectedLandmarkName = "";
+      this.selectedLandmark = null;
+      this.selectedEdge = null;
+      this.selectedEdgeKey = "";
+      this.afterMapEdited(`Deleted ${name}.`);
+      this.renderMapInspectorEmpty();
+    }
+
+    deleteSelectedEdge() {
+      const edge = this.selectedEdgeKey ? this.edgeFromKey(this.selectedEdgeKey) : null;
+      if (!edge) {
+        return;
+      }
+      const label = `${edge.from} -> ${edge.to}`;
+      this.graphModel.removeEdge(edge.from, edge.to);
+      this.selectedEdge = null;
+      this.selectedEdgeKey = "";
+      this.afterMapEdited(`Deleted edge ${label}.`);
+      this.renderMapInspectorEmpty();
+    }
+
+    addReverseForSelectedEdge() {
+      const edge = this.selectedEdgeKey ? this.edgeFromKey(this.selectedEdgeKey) : null;
+      if (!edge) {
+        return;
+      }
+      this.graphModel.setEdgeBidirectional(edge, true);
+      this.afterMapEdited(`Reverse edge ready for ${edge.from} -> ${edge.to}.`);
+      this.renderEdgeInspector();
+    }
+
+    afterMapEdited(message, options = {}) {
+      this.graphModel.recomputeEdgeLengths();
+      this.graphModel.reindex();
+      if (!options.deferRoutes) {
+        this.graphModel.rebuildRouteCatalog();
+      }
+      this.data.lms = this.graphModel.landmarks;
+      this.data.edges = this.graphModel.edges;
+      this.data.routes = this.graphModel.routes;
+      this.mapEditorDirty = options.markDirty === false ? this.mapEditorDirty : true;
+      if (options.markDirty !== false) {
+        this.mapEditorSavedCopy = false;
+      }
+      if (!this.state.mapEditorActive) {
+        this.populateFleetSpawnSelect();
+      }
+      this.renderer.drawGraph(this.selectedEdgeKey);
+      this.renderLandmarks();
+      if (!this.state.mapEditorActive) {
+        this.renderFleetRobots();
+      }
+      this.syncEditorFields();
+      this.renderEditorOverlay();
+      if (!this.state.mapEditorActive) {
+        this.scheduleWorldSync(0);
+      }
+      this.syncMapEditorUi();
+      if (!options.transient) {
+        this.setStatus(message);
+      }
+    }
+
+    async openLoadMapDialog() {
+      try {
+        const response = await fetch("/api/maps/list", { cache: "no-store" });
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+        const result = await response.json();
+        const maps = result.maps || [];
+        this.dom.mapLoadSelect.innerHTML = "";
+        for (const item of maps) {
+          const option = document.createElement("option");
+          option.value = item.folder || `${item.name}.smap`;
+          option.textContent = item.active ? `${item.name} (active)` : item.name;
+          option.selected = Boolean(item.active);
+          this.dom.mapLoadSelect.appendChild(option);
+        }
+        if (!maps.length) {
+          const option = document.createElement("option");
+          option.value = "";
+          option.textContent = "No maps found";
+          this.dom.mapLoadSelect.appendChild(option);
+        }
+        this.dom.mapLoadOverlay.hidden = false;
+        this.setStatus("Select a map from map_data/maps_out.");
+      } catch (error) {
+        this.setStatus(`Load map list failed: ${error.message || error}`);
+        this.logFleet(`map list failed: ${error.message || error}`, "error");
+      }
+    }
+
+    closeLoadMapDialog() {
+      this.dom.mapLoadOverlay.hidden = true;
+    }
+
+    async loadSelectedMap() {
+      const folder = this.dom.mapLoadSelect.value;
+      if (!folder) {
+        this.setStatus("No map selected.");
+        return;
+      }
+      const confirmed = window.confirm(`Load ${folder} and restart the operator view on this map?`);
+      if (!confirmed) {
+        return;
+      }
+      try {
+        const response = await fetch("/api/maps/load", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ folder }),
+        });
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+        const result = await response.json();
+        this.setActiveMapName(result.mapName, result.mapDir);
+        this.setStatus(`Loaded map ${result.mapName}. Reloading operator view...`);
+        this.reloadOperatorView(result.mapName);
+      } catch (error) {
+        this.setStatus(`Load map failed: ${error.message || error}`);
+        this.logFleet(`load map failed: ${error.message || error}`, "error");
+      }
+    }
+
+    pullMapFromRobot() {
+      if (this.mapEditorDirty) {
+        const discard = window.confirm("Pull current robot/server map and discard local editor changes?");
+        if (!discard) {
+          return;
+        }
+      }
+      this.reloadOperatorView(demoData.mapName);
+    }
+
+    async pushMapToRobot() {
+      try {
+        const response = await fetch("/api/maps/push", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({}),
+        });
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+        const result = await response.json();
+        const activeName = result.mapName || demoData.mapName;
+        this.setActiveMapName(activeName, result.mapDir);
+        this.setStatus(`Map ${activeName} pushed to the simulated robot/server.`);
+        this.logFleet(`push map requested: ${activeName}`);
+      } catch (error) {
+        this.setStatus(`Push map status failed: ${error.message || error}`);
+        this.logFleet(`push map status failed: ${error.message || error}`, "error");
+      }
+    }
+
+    async saveMap(saveAs, options = {}) {
+      const outputName = saveAs ? this.dom.saveMapAsInput.value.trim() : "";
+      if (saveAs && !outputName) {
+        this.setStatus("Save As needs a folder name.");
+        return false;
+      }
+      if (options.confirm !== false) {
+        const confirmed = window.confirm(saveAs ? `Save map as ${outputName}.smap?` : "Save current map and overwrite YAML?");
+        if (!confirmed) {
+          return false;
+        }
+      }
+      const payload = {
+        mapName: saveAs ? outputName.replace(/\.smap$/i, "") : demoData.mapName,
+        outputName,
+        lms: this.graphModel.landmarks.map((lm) => ({
+          name: lm.name,
+          x: Number(lm.x),
+          y: Number(lm.y),
+          ignoreDir: lm.ignoreDir ?? null,
+          properties: { ...(lm.properties || {}) },
+        })),
+        edges: this.graphModel.edges.map((edge) => ({
+          from: edge.from,
+          to: edge.to,
+          length: Number(edge.length || 0),
+          kind: edge.kind || "line",
+          type: edge.type || "FeatureLine",
+          properties: { ...(edge.properties || {}) },
+          geometry: edge.geometry,
+          control_points: Array.isArray(edge.control_points) ? edge.control_points.map((point) => ({ ...point })) : undefined,
+          motionDirectionCode: edge.motionDirectionCode,
+        })),
+      };
+      try {
+        const response = await fetch("/api/map/save", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+        const result = await response.json();
+        this.setActiveMapName(result.mapName, result.mapDir);
+        if (result.routes) {
+          this.graphModel.routes = result.routes;
+          this.data.routes = result.routes;
+        }
+        this.mapEditorDirty = false;
+        this.mapEditorSavedCopy = false;
+        this.mapEditorSnapshot = this.graphModel.cloneState();
+        this.syncMapEditorUi();
+        this.setStatus(saveAs ? `Saved and activated map: ${result.mapName}. Reloading...` : `Map ${result.mapName} saved and active. Reloading...`);
+        this.logFleet(saveAs ? `map saved and activated: ${result.mapName}` : `map saved: ${result.mapName}`);
+        this.reloadOperatorView(result.mapName);
+        return true;
+      } catch (error) {
+        this.setStatus(`Map save failed: ${error.message || error}`);
+        this.logFleet(`map save failed: ${error.message || error}`, "error");
+        return false;
+      }
     }
 
     handleLandmarkClick(lmName) {
       if (this.suppressNextNavigateClick) {
         this.suppressNextNavigateClick = false;
+        return;
+      }
+      if (this.state.mapEditorActive) {
+        this.handleLandmarkInspect(lmName);
         return;
       }
       if (this.state.obstacleMode || this.state.obstacleAreaMode) {
@@ -4371,6 +5860,7 @@
         this.state.navigateMode,
         this.selectedLandmarkName
       );
+      this.renderEditorOverlay();
     }
 
     updateTelemetry() {

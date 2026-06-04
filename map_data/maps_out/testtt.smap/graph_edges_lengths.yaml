@@ -1293,7 +1293,7 @@
     movestyle: 0
 - from: LM327
   to: LM328
-  length: 1.331
+  length: 0.663465
   kind: line
   type: FeatureLine
   properties:
@@ -1301,7 +1301,7 @@
     movestyle: 0
 - from: LM328
   to: LM329
-  length: 1.506176
+  length: 1.14
   kind: line
   type: FeatureLine
   properties:

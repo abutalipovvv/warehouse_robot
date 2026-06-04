@@ -1,4 +1,4 @@
-mapName: testtt
+mapName: test
 primitives:
 - kind: line
   line_type: FeatureLine
@@ -2807,73 +2807,45 @@ primitives:
     direction: 2
     movestyle: 0
   length_m: 1.586
-- kind: line
-  line_type: FeatureLine
-  start:
-    x: -5.129
-    y: 4.653
-  end:
-    x: -4.462
-    y: 4.742
-  start_name: LM324
-  end_name: LM325
+- kind: curve
+  curve_type: DegenerateBezier
+  curve:
+    start:
+      x: -3.582
+      y: 4.553
+    end:
+      x: -2.431
+      y: 4.553
+    control1:
+      x: -3.264
+      y: 4.833
+    control2:
+      x: -2.801
+      y: 4.839
+    start_name: LM324
+    end_name: LM325
   properties:
     direction: 2
     movestyle: 0
-  length_m: 0.672912
-- kind: line
-  line_type: FeatureLine
-  start:
-    x: -4.462
-    y: 4.742
-  end:
-    x: -3.663
-    y: 4.653
-  start_name: LM325
-  end_name: LM326
+  length_m: 1.251766
+- kind: curve
+  curve_type: DegenerateBezier
+  curve:
+    start:
+      x: -2.431
+      y: 4.553
+    end:
+      x: -0.843
+      y: 4.553
+    control1:
+      x: -1.947
+      y: 4.244
+    control2:
+      x: -1.431
+      y: 4.263
+    start_name: LM325
+    end_name: LM326
   properties:
     direction: 2
     movestyle: 0
-  length_m: 0.803942
-- kind: line
-  line_type: FeatureLine
-  start:
-    x: -3.663
-    y: 4.653
-  end:
-    x: -2.431
-    y: 4.448
-  start_name: LM326
-  end_name: LM327
-  properties:
-    direction: 2
-    movestyle: 0
-  length_m: 1.248939
-- kind: line
-  line_type: FeatureLine
-  start:
-    x: -2.431
-    y: 4.448
-  end:
-    x: -1.1
-    y: 4.448
-  start_name: LM327
-  end_name: LM328
-  properties:
-    direction: 2
-    movestyle: 0
-  length_m: 1.331
-- kind: line
-  line_type: FeatureLine
-  start:
-    x: -1.1
-    y: 4.448
-  end:
-    x: 0.274
-    y: 5.065
-  start_name: LM328
-  end_name: LM329
-  properties:
-    direction: 2
-    movestyle: 0
-  length_m: 1.506176
+  length_m: 1.669252

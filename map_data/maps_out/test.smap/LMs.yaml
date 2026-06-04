@@ -1,4 +1,4 @@
-mapName: testtt
+mapName: test
 LMs:
 - name: LM101
   x: -2.024
@@ -468,30 +468,6 @@ LMs:
   ignoreDir: true
   properties:
     spin: false
-- name: LM324
-  x: -5.129
-  y: 4.653
-  ignoreDir: null
-  properties:
-    spin: false
-- name: LM325
-  x: -4.462
-  y: 4.742
-  ignoreDir: null
-  properties:
-    spin: false
-- name: LM326
-  x: -3.663
-  y: 4.653
-  ignoreDir: null
-  properties:
-    spin: false
-- name: LM327
-  x: -2.431
-  y: 4.448
-  ignoreDir: null
-  properties:
-    spin: false
 - name: LM51
   x: -4.191
   y: -0.174
@@ -672,15 +648,21 @@ LMs:
   ignoreDir: null
   properties:
     spin: false
-- name: LM328
-  x: -1.1
-  y: 4.448
+- name: LM324
+  x: -3.582
+  y: 4.553
   ignoreDir: null
   properties:
     spin: false
-- name: LM329
-  x: 0.274
-  y: 5.065
+- name: LM325
+  x: -2.431
+  y: 4.553
+  ignoreDir: null
+  properties:
+    spin: false
+- name: LM326
+  x: -0.843
+  y: 4.553
   ignoreDir: null
   properties:
     spin: false

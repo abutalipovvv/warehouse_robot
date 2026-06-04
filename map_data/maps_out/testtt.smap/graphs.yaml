@@ -2855,25 +2855,25 @@ primitives:
     x: -2.431
     y: 4.448
   end:
-    x: -1.1
-    y: 4.448
+    x: -1.8
+    y: 4.653
   start_name: LM327
   end_name: LM328
   properties:
     direction: 2
     movestyle: 0
-  length_m: 1.331
+  length_m: 0.663465
 - kind: line
   line_type: FeatureLine
   start:
-    x: -1.1
-    y: 4.448
+    x: -1.8
+    y: 4.653
   end:
-    x: 0.274
-    y: 5.065
+    x: -0.66
+    y: 4.653
   start_name: LM328
   end_name: LM329
   properties:
     direction: 2
     movestyle: 0
-  length_m: 1.506176
+  length_m: 1.14

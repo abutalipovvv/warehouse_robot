@@ -1,4 +1,5 @@
 from .map_loader import WarehouseMapLoader
+from .map_writer import save_editable_map
 from .models import (
     EdgeGeometry,
     GraphEdge,
@@ -24,5 +25,6 @@ __all__ = [
     "WarehouseMapLoader",
     "load_route_params",
     "save_route_params",
+    "save_editable_map",
     "WorldPoint",
 ]

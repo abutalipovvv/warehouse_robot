@@ -34,7 +34,8 @@ body {
 }
 
 button,
-input {
+input,
+select {
   font: inherit;
 }
 
@@ -96,7 +97,8 @@ button.danger:hover {
   border-color: rgba(201, 42, 42, 0.42);
 }
 
-input {
+input,
+select {
   width: 100%;
   height: 36px;
   border-radius: 8px;
@@ -234,6 +236,62 @@ h1 {
   height: 32px;
 }
 
+.map-editor-toolbar {
+  position: absolute;
+  top: 58px;
+  left: 12px;
+  z-index: 2;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  padding: 6px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.94);
+  border: 1px solid rgba(216, 222, 230, 0.9);
+  backdrop-filter: blur(8px);
+}
+
+.map-editor-toolbar[hidden] {
+  display: none;
+}
+
+.map-editor-toolbar button {
+  height: 32px;
+}
+
+.tab-button[data-tab="map"] {
+  display: none;
+}
+
+.map-editor-mode .tab-button {
+  display: none;
+}
+
+.map-editor-mode .tab-button[data-tab="map"] {
+  display: block;
+}
+
+.map-editor-mode .tab-strip {
+  grid-template-columns: 1fr;
+}
+
+.map-editor-mode .command-bar button:not(#mapEditorButton) {
+  display: none;
+}
+
+.map-editor-mode #routeLayer,
+.map-editor-mode #lookaheadLayer,
+.map-editor-mode #obstacleLayer,
+.map-editor-mode #robotLayer,
+.map-editor-mode .manual-pad {
+  display: none;
+}
+
+.map-editor-mode .edge-inspector-block {
+  display: block;
+}
+
 #mapSvg {
   display: block;
   width: 100%;
@@ -246,6 +304,7 @@ h1 {
 #routeLayer,
 #lookaheadLayer,
 #obstacleLayer,
+#editorLayer,
 #robotLayer {
   pointer-events: none;
 }
@@ -267,6 +326,59 @@ h1 {
   pointer-events: stroke;
 }
 
+.editor-preview {
+  fill: none;
+  stroke: var(--goal);
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  stroke-dasharray: 7 6;
+  opacity: 0.86;
+}
+
+.editor-snap-ring {
+  fill: none;
+  stroke: var(--goal);
+  stroke-width: 2;
+  opacity: 0.9;
+}
+
+.editor-guide-line {
+  fill: none;
+  stroke: rgba(21, 27, 35, 0.46);
+  stroke-width: 1.1;
+  stroke-dasharray: 5 6;
+  pointer-events: none;
+}
+
+.editor-guide-label {
+  fill: #151b23;
+  stroke: rgba(255, 255, 255, 0.9);
+  stroke-width: 3;
+  paint-order: stroke;
+  font-size: 11px;
+  font-weight: 650;
+  pointer-events: none;
+}
+
+.bezier-handle-line {
+  fill: none;
+  stroke: rgba(217, 85, 33, 0.68);
+  stroke-width: 1.25;
+  stroke-dasharray: 5 4;
+}
+
+.bezier-handle-point {
+  fill: #ffffff;
+  stroke: var(--goal);
+  stroke-width: 1.8;
+  cursor: grab;
+  pointer-events: all;
+}
+
+.bezier-handle-point:active {
+  cursor: grabbing;
+}
+
 .side-panel {
   min-height: 0;
   display: grid;
@@ -276,7 +388,7 @@ h1 {
 
 .tab-strip {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 6px;
   padding: 6px;
   border-radius: 8px;
@@ -366,6 +478,56 @@ label {
 .field-list {
   display: grid;
   gap: 10px;
+}
+
+.param-list.compact {
+  grid-template-columns: 1fr 1fr;
+}
+
+.param-list.compact label:first-child,
+.param-list.compact label:last-child {
+  grid-column: 1 / -1;
+}
+
+.checkbox-row {
+  min-height: 36px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  color: var(--ink);
+  font-weight: 650;
+}
+
+.checkbox-row input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+}
+
+.editor-mode-grid,
+.editor-actions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(92px, 1fr));
+  gap: 8px;
+}
+
+.editor-actions {
+  margin-top: 10px;
+  grid-template-columns: 1fr 1fr;
+}
+
+.editor-help {
+  margin-top: 9px;
+  min-height: 32px;
+  border-radius: 8px;
+  border: 1px solid #edf0f4;
+  background: var(--surface-soft);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.35;
+  padding: 8px;
 }
 
 .edge-inspector-block {
@@ -673,6 +835,19 @@ label {
   border: 1px solid var(--line);
   box-shadow: var(--shadow);
   padding: 16px;
+}
+
+.map-load-dialog {
+  display: grid;
+  gap: 12px;
+}
+
+.map-load-dialog label {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 650;
 }
 
 .confirm-title {

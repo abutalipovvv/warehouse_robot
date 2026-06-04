@@ -8,7 +8,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 import webbrowser
 
-from route_core import DEFAULT_PARAMS_PATH, load_route_params, save_route_params
+from route_core import DEFAULT_PARAMS_PATH, LmRoutePlanner, load_route_params, save_editable_map, save_route_params
 from route_core import WarehouseMapLoader
 
 from .application import RouteDemoApplication, RouteDemoOptions
@@ -19,7 +19,17 @@ DEFAULT_WEB_MAP_DIR = Path(__file__).resolve().parents[1] / "map_data" / "maps_o
 
 class WarehouseWebRequestHandler(SimpleHTTPRequestHandler):
     params_path: Path = DEFAULT_PARAMS_PATH
+    map_dir: Path = DEFAULT_WEB_MAP_DIR
+    maps_root: Path = DEFAULT_WEB_MAP_DIR.parent
+    output_dir: Path | None = None
     fleet_manager: FleetManager | None = None
+
+    def end_headers(self) -> None:
+        path = urlparse(self.path).path
+        if path in {"/", "/index.html", "/demo-data.js", "/app.js", "/styles.css"}:
+            self.send_header("Cache-Control", "no-store, no-cache, must-revalidate")
+            self.send_header("Pragma", "no-cache")
+        super().end_headers()
 
     def do_GET(self) -> None:
         path = urlparse(self.path).path
@@ -28,6 +38,9 @@ class WarehouseWebRequestHandler(SimpleHTTPRequestHandler):
             return
         if path == "/api/fleet/state":
             self._handle_fleet_state()
+            return
+        if path == "/api/maps/list":
+            self._handle_list_maps()
             return
         super().do_GET()
 
@@ -63,6 +76,15 @@ class WarehouseWebRequestHandler(SimpleHTTPRequestHandler):
         if path == "/api/fleet/robots/reset":
             self._handle_reset_robot()
             return
+        if path == "/api/map/save":
+            self._handle_save_map()
+            return
+        if path == "/api/maps/load":
+            self._handle_load_map()
+            return
+        if path == "/api/maps/push":
+            self._handle_push_map()
+            return
 
         self.send_error(404, "Not found")
 
@@ -77,6 +99,137 @@ class WarehouseWebRequestHandler(SimpleHTTPRequestHandler):
 
         saved_path = save_route_params(payload, self.params_path)
         self._send_json({"ok": True, "path": str(saved_path)})
+
+    def _handle_save_map(self) -> None:
+        payload = self._read_json_payload()
+        if payload is None:
+            return
+
+        if not isinstance(payload, dict):
+            self.send_error(400, "Expected object")
+            return
+
+        try:
+            output_name = str(payload.get("outputName") or "").strip()
+            loaded_map = save_editable_map(
+                self.map_dir,
+                payload,
+                output_name=output_name,
+                overwrite_output=bool(payload.get("overwriteOutput", False)),
+            )
+            self._regenerate_output_for_map(loaded_map.map_dir)
+            self._set_active_map(loaded_map)
+            planner = LmRoutePlanner(loaded_map.landmarks, loaded_map.edges, params=load_route_params(self.params_path, create=True))
+            self._send_json(
+                {
+                    "ok": True,
+                    "mapDir": str(loaded_map.map_dir),
+                    "mapName": loaded_map.map_dir.stem.replace(".smap", ""),
+                    "active": True,
+                    "routes": planner.build_route_catalog(),
+                    "savedAs": bool(output_name),
+                }
+            )
+        except ValueError as exc:
+            self.send_error(400, str(exc))
+        except Exception as exc:
+            self.send_error(500, str(exc))
+
+    def _handle_list_maps(self) -> None:
+        maps = []
+        for item in sorted(self.maps_root.glob("*.smap")):
+            if not item.is_dir():
+                continue
+            if not (item / "LMs.yaml").exists():
+                continue
+            maps.append(
+                {
+                    "name": item.stem,
+                    "folder": item.name,
+                    "active": item.resolve() == self.map_dir.resolve(),
+                }
+            )
+        self._send_json(
+            {
+                "ok": True,
+                "active": self.map_dir.stem,
+                "maps": maps,
+            }
+        )
+
+    def _handle_load_map(self) -> None:
+        payload = self._read_json_payload()
+        if payload is None:
+            return
+        if not isinstance(payload, dict):
+            self.send_error(400, "Expected object")
+            return
+
+        map_name = str(payload.get("mapName") or payload.get("folder") or "").strip()
+        if not map_name:
+            self.send_error(400, "mapName is required")
+            return
+
+        try:
+            loaded_map = self._activate_map_by_name(map_name)
+            self._send_json(
+                {
+                    "ok": True,
+                    "mapName": loaded_map.map_dir.stem.replace(".smap", ""),
+                    "mapDir": str(loaded_map.map_dir),
+                }
+            )
+        except ValueError as exc:
+            self.send_error(400, str(exc))
+        except Exception as exc:
+            self.send_error(500, str(exc))
+
+    def _handle_push_map(self) -> None:
+        self._send_json(
+            {
+                "ok": True,
+                "mapName": self.map_dir.stem.replace(".smap", ""),
+                "mapDir": str(self.map_dir),
+                "simulated": True,
+            }
+        )
+
+    def _activate_map_by_name(self, map_name: str):
+        safe_name = Path(map_name).name
+        if not safe_name.endswith(".smap"):
+            safe_name = f"{safe_name}.smap"
+        target = (self.maps_root / safe_name).resolve()
+        if self.maps_root.resolve() not in target.parents:
+            raise ValueError("map must stay inside maps_out")
+        if not target.is_dir():
+            raise ValueError(f"map not found: {safe_name}")
+        if self.output_dir is None:
+            raise ValueError("web output directory is not ready")
+
+        self._regenerate_output_for_map(target)
+        loaded_map = WarehouseMapLoader(target).load()
+        self._set_active_map(loaded_map)
+        return loaded_map
+
+    def _regenerate_output_for_map(self, map_dir: Path) -> None:
+        RouteDemoApplication().run(
+            RouteDemoOptions(
+                map_dir=map_dir,
+                output=self.output_dir,
+                params=self.params_path,
+            )
+        )
+
+    def _set_active_map(self, loaded_map) -> None:
+        handler_type = type(self)
+        handler_type.map_dir = loaded_map.map_dir
+        handler_type.fleet_manager = FleetManager(
+            loaded_map.landmarks,
+            loaded_map.edges,
+            params=load_route_params(self.params_path, create=True),
+            map_dir=loaded_map.map_dir,
+            map_metadata=loaded_map.map_metadata,
+        )
 
     def _handle_fleet_plan(self) -> None:
         if self.fleet_manager is None:
@@ -227,6 +380,9 @@ def main() -> None:
 
     handler = partial(WarehouseWebRequestHandler, directory=str(output_dir))
     WarehouseWebRequestHandler.params_path = args.params.resolve()
+    WarehouseWebRequestHandler.map_dir = map_dir.resolve()
+    WarehouseWebRequestHandler.maps_root = map_dir.resolve().parent
+    WarehouseWebRequestHandler.output_dir = output_dir
     loaded_map = WarehouseMapLoader(map_dir).load()
     WarehouseWebRequestHandler.fleet_manager = FleetManager(
         loaded_map.landmarks,

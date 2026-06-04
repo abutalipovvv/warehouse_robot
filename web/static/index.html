@@ -18,6 +18,10 @@
       </div>
 
       <div class="command-bar">
+        <button id="mapEditorButton" type="button">Map Editor</button>
+        <button id="operatorLoadMapButton" type="button">Load Map</button>
+        <button id="operatorPullMapButton" type="button">Pull Map</button>
+        <button id="operatorPushMapButton" type="button">Push Map</button>
         <button id="navigateButton" class="primary" type="button">Navigate To LM</button>
         <button id="cancelOrderButton" type="button">Cancel Order</button>
         <button id="obstacleModeButton" type="button">Obstacle</button>
@@ -37,6 +41,13 @@
           <button id="rotateRightButton" type="button">Rotate +</button>
           <button id="resetViewButton" type="button">Reset View</button>
         </div>
+        <div id="mapEditorToolbar" class="map-editor-toolbar" hidden>
+          <button class="active" type="button" data-map-editor-tool="select">Select</button>
+          <button type="button" data-map-editor-tool="lm">LM</button>
+          <button type="button" data-map-editor-tool="edge">Edge</button>
+          <button id="saveMapQuickButton" class="primary" type="button">Save</button>
+          <button id="exitMapEditorButton" type="button">Exit Editor</button>
+        </div>
         <svg id="mapSvg">
           <g id="viewport">
             <image id="mapImage" preserveAspectRatio="none"></image>
@@ -45,6 +56,7 @@
             <g id="lookaheadLayer"></g>
             <g id="obstacleLayer"></g>
             <g id="pointLayer"></g>
+            <g id="editorLayer"></g>
             <g id="robotLayer"></g>
           </g>
         </svg>
@@ -60,6 +72,7 @@
         <nav class="tab-strip" aria-label="Simulator settings">
           <button class="tab-button active" type="button" data-tab="fleet">Fleet</button>
           <button class="tab-button" type="button" data-tab="mission">Mission</button>
+          <button class="tab-button" type="button" data-tab="map">Map Editor</button>
           <button class="tab-button" type="button" data-tab="robot">Robot Model</button>
           <button class="tab-button" type="button" data-tab="params">Params</button>
         </nav>
@@ -227,6 +240,109 @@
           </section>
         </section>
 
+        <section id="tabMap" class="tab-page">
+          <section class="panel-block">
+            <div class="block-title">Editor Tools</div>
+            <div class="editor-mode-grid">
+              <button class="active" type="button" data-map-editor-tool="select">Select</button>
+              <button type="button" data-map-editor-tool="lm">LM</button>
+              <button type="button" data-map-editor-tool="edge">Edge</button>
+            </div>
+            <div class="editor-help" id="mapEditorHelpText">Select, inspect, and edit map objects.</div>
+          </section>
+
+          <section class="panel-block">
+            <div class="block-title">LM</div>
+            <div class="param-list compact">
+              <label>
+                Name
+                <input id="editorLmNameInput" type="text" />
+              </label>
+              <label>
+                X
+                <input id="editorLmXInput" type="number" step="0.001" />
+              </label>
+              <label>
+                Y
+                <input id="editorLmYInput" type="number" step="0.001" />
+              </label>
+              <label class="checkbox-row">
+                <input id="editorLmSpinInput" type="checkbox" />
+                Spin
+              </label>
+              <label>
+                ignoreDir
+                <input id="editorLmIgnoreDirInput" type="text" />
+              </label>
+            </div>
+            <div class="editor-actions">
+              <button id="deleteLmButton" class="danger" type="button">Delete LM</button>
+            </div>
+          </section>
+
+          <section class="panel-block">
+            <div class="block-title">Edge</div>
+            <div class="param-list compact">
+              <label>
+                From
+                <input id="editorEdgeFromInput" type="text" readonly />
+              </label>
+              <label>
+                To
+                <input id="editorEdgeToInput" type="text" readonly />
+              </label>
+              <label>
+                Traffic
+                <select id="editorEdgeTrafficSelect">
+                  <option value="one_way">One-way</option>
+                  <option value="bidirectional">Bidirectional</option>
+                </select>
+              </label>
+              <label>
+                Motion
+                <select id="editorEdgeMotionSelect">
+                  <option value="2">Not specified</option>
+                  <option value="0">Forward</option>
+                  <option value="1">Backward</option>
+                </select>
+              </label>
+              <label>
+                Kind
+                <select id="editorEdgeKindSelect">
+                  <option value="line">Line</option>
+                  <option value="curve">Bezier curve</option>
+                </select>
+              </label>
+              <label>
+                Move style
+                <input id="editorEdgeMoveStyleInput" type="number" step="1" />
+              </label>
+              <label>
+                Length
+                <input id="editorEdgeLengthInput" type="text" readonly />
+              </label>
+            </div>
+            <div class="editor-actions">
+              <button id="reverseEdgeButton" type="button">Add Reverse</button>
+              <button id="deleteEdgeButton" class="danger" type="button">Delete Edge</button>
+            </div>
+          </section>
+
+          <section class="panel-block">
+            <div class="block-title">Save</div>
+            <div class="param-list compact">
+              <label>
+                Save as folder
+                <input id="saveMapAsInput" type="text" placeholder="new_map_name" />
+              </label>
+            </div>
+            <div class="editor-actions">
+              <button id="saveMapButton" class="primary" type="button">Save</button>
+              <button id="saveMapAsButton" type="button">Save As</button>
+            </div>
+          </section>
+        </section>
+
         <section id="tabRobot" class="tab-page">
           <section class="panel-block">
             <div class="block-title">Footprint / TF</div>
@@ -349,6 +465,20 @@
         </section>
       </aside>
     </main>
+  </div>
+
+  <div id="mapLoadOverlay" class="confirm-overlay" hidden>
+    <div class="confirm-dialog map-load-dialog" role="dialog" aria-modal="true" aria-labelledby="mapLoadTitle">
+      <div id="mapLoadTitle" class="confirm-title">Load map</div>
+      <label>
+        Map from map_data/maps_out
+        <select id="mapLoadSelect"></select>
+      </label>
+      <div class="confirm-actions">
+        <button id="mapLoadCancelButton" type="button">Cancel</button>
+        <button id="mapLoadConfirmButton" class="primary" type="button">Load</button>
+      </div>
+    </div>
   </div>
 
   <div id="saveConfirmOverlay" class="confirm-overlay" hidden>
