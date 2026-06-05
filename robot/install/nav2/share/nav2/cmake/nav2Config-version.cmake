@@ -1,1 +1,0 @@
-/home/kaisar/warehouse_robot/robot/build/nav2/ament_cmake_core/nav2Config-version.cmake

@@ -1,7 +1,0 @@
-Metadata-Version: 2.1
-Name: robot-planner
-Version: 0.0.0
-Summary: Route planner and execution logic for the warehouse robot.
-Maintainer: ros
-Maintainer-email: kaisar.abutalipovv@gmail.com
-License: TODO: License declaration

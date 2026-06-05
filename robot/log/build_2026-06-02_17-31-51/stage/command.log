@@ -1,4 +1,0 @@
-Invoking command in '/home/kaisar/warehouse_robot/robot/build/stage': DEBUGINFOD_URLS=https://debuginfod.ubuntu.com /usr/bin/cmake --build /home/kaisar/warehouse_robot/robot/build/stage -- -j12 -l12
-Invoked command in '/home/kaisar/warehouse_robot/robot/build/stage' returned '0': DEBUGINFOD_URLS=https://debuginfod.ubuntu.com /usr/bin/cmake --build /home/kaisar/warehouse_robot/robot/build/stage -- -j12 -l12
-Invoking command in '/home/kaisar/warehouse_robot/robot/build/stage': DEBUGINFOD_URLS=https://debuginfod.ubuntu.com /usr/bin/cmake --install /home/kaisar/warehouse_robot/robot/build/stage
-Invoked command in '/home/kaisar/warehouse_robot/robot/build/stage' returned '0': DEBUGINFOD_URLS=https://debuginfod.ubuntu.com /usr/bin/cmake --install /home/kaisar/warehouse_robot/robot/build/stage

@@ -8,10 +8,9 @@ import subprocess
 import sys
 import webbrowser
 
-from route_core import Landmark, LmRoutePlanner, WarehouseMapLoader, load_route_params
-
 from .models import DemoPayload
 from .web_builder import RouteDemoSiteBuilder
+from ..route_core import Landmark, LmRoutePlanner, WarehouseMapLoader, load_route_params
 
 
 @dataclass(frozen=True)

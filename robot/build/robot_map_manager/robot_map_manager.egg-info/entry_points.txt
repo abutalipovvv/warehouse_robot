@@ -1,2 +1,0 @@
-[console_scripts]
-map_manager_node = robot_map_manager.node:main

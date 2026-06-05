@@ -7,7 +7,13 @@ from time import time
 from typing import Any
 
 from fleet_manager.mapf import FleetMapfPlanner
-from route_core import GraphEdge, Landmark, MapMetadata, PlannedRoute, WarehouseMapLoader
+from fleet_manager.web_fleet_manager_simulator.route_core import (
+    GraphEdge,
+    Landmark,
+    MapMetadata,
+    PlannedRoute,
+    WarehouseMapLoader,
+)
 
 
 @dataclass

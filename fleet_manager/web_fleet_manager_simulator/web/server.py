@@ -8,10 +8,15 @@ from pathlib import Path
 from urllib.parse import urlparse
 import webbrowser
 
-from route_core import DEFAULT_PARAMS_PATH, LmRoutePlanner, load_route_params, save_editable_map, save_route_params
-from route_core import WarehouseMapLoader
-
 from .application import RouteDemoApplication, RouteDemoOptions
+from ..route_core import (
+    DEFAULT_PARAMS_PATH,
+    LmRoutePlanner,
+    WarehouseMapLoader,
+    load_route_params,
+    save_editable_map,
+    save_route_params,
+)
 from fleet_manager import FleetManager
 
 FLEET_ROOT = Path(__file__).resolve().parents[2]

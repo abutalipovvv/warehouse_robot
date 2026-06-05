@@ -1504,8 +1504,8 @@ primitives:
       x: -4.903
       y: 5.309
     end:
-      x: -2.42
-      y: 5.31
+      x: -3.14
+      y: 5.311
     control1:
       x: -4.075
       y: 5.309
@@ -1518,7 +1518,7 @@ primitives:
     direction: 1
     movestyle: 0
     obsExpansion: 0
-  length_m: 2.483
+  length_m: 1.763002
 - kind: curve
   curve_type: DegenerateBezier
   curve:
@@ -1935,8 +1935,8 @@ primitives:
   curve_type: DegenerateBezier
   curve:
     start:
-      x: -2.42
-      y: 5.31
+      x: -3.14
+      y: 5.311
     end:
       x: -1.98
       y: 5.311
@@ -1951,7 +1951,7 @@ primitives:
   properties:
     direction: 1
     obsExpansion: 0
-  length_m: 0.440001
+  length_m: 1.16
 - kind: curve
   curve_type: DegenerateBezier
   curve:

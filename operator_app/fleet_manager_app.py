@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 from typing import Any
 
@@ -12,13 +11,8 @@ SIMULATOR_MAPS_OUT_ROOT = SIMULATOR_MAP_DATA_ROOT / "maps_out"
 DEFAULT_FLEET_MAP_DIR = SIMULATOR_MAPS_OUT_ROOT / "22.05.26_smap.smap"
 FLEET_MANAGER_ID = "__fleet_manager__"
 
-if str(PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(PROJECT_ROOT))
-if str(SIMULATOR_ROOT) not in sys.path:
-    sys.path.insert(0, str(SIMULATOR_ROOT))
-
 from fleet_manager import FleetManager
-from route_core import (
+from fleet_manager.web_fleet_manager_simulator.route_core import (
     WarehouseMapLoader,
     build_editable_map_bundle_payload,
     build_editable_map_payload,

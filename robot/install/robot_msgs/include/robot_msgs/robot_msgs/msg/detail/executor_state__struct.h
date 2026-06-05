@@ -1,1 +1,0 @@
-/home/kaisar/warehouse_robot/robot/build/robot_msgs/rosidl_generator_c/robot_msgs/msg/detail/executor_state__struct.h

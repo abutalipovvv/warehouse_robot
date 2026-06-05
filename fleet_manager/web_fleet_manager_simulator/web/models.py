@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Sequence
 
-from route_core.models import GraphEdge, Landmark, MapMetadata
+from ..route_core.models import GraphEdge, Landmark, MapMetadata
 
 
 @dataclass(frozen=True)

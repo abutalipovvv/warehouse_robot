@@ -1,1 +1,0 @@
-/home/kaisar/warehouse_robot/robot/build/robot_launch/ament_cmake_core/robot_launchConfig-version.cmake

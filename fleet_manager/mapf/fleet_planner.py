@@ -3,7 +3,7 @@ from __future__ import annotations
 import math
 from typing import Any
 
-from route_core import GraphEdge, Landmark, LmRoutePlanner, PlannedRoute
+from fleet_manager.web_fleet_manager_simulator.route_core import GraphEdge, Landmark, LmRoutePlanner, PlannedRoute
 
 from .lm_cbs import LmCBSPlanner, LmRobotRequest
 

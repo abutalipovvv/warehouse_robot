@@ -4,19 +4,11 @@ import json
 import os
 import re
 import shutil
-import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-SIMULATOR_ROOT = PROJECT_ROOT / "fleet_manager" / "web_fleet_manager_simulator"
-if SIMULATOR_ROOT.exists():
-    simulator_root_str = str(SIMULATOR_ROOT)
-    if simulator_root_str not in sys.path:
-        sys.path.insert(0, simulator_root_str)
-
-from route_core import (
+from fleet_manager.web_fleet_manager_simulator.route_core import (
     build_editable_map_payload,
     list_editable_maps,
     restore_editable_map_bundle,
