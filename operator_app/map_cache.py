@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from fleet_manager.web_fleet_manager_simulator.route_core import (
+from fleet_manager.route_core import (
     build_editable_map_payload,
     list_editable_maps,
     restore_editable_map_bundle,

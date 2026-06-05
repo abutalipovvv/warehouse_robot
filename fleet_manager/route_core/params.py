@@ -7,7 +7,7 @@ from typing import Any
 import yaml
 
 
-DEFAULT_PARAMS_PATH = Path(__file__).resolve().parents[2] / "params.yaml"
+DEFAULT_PARAMS_PATH = Path(__file__).resolve().parents[1] / "params.yaml"
 
 DEFAULT_ROUTE_PARAMS: dict[str, Any] = {
     "robot_model": {

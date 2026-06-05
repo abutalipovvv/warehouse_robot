@@ -5,14 +5,13 @@ from typing import Any
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 FLEET_ROOT = PROJECT_ROOT / "fleet_manager"
-SIMULATOR_ROOT = FLEET_ROOT / "web_fleet_manager_simulator"
-SIMULATOR_MAP_DATA_ROOT = SIMULATOR_ROOT / "map_data"
-SIMULATOR_MAPS_OUT_ROOT = SIMULATOR_MAP_DATA_ROOT / "maps_out"
-DEFAULT_FLEET_MAP_DIR = SIMULATOR_MAPS_OUT_ROOT / "22.05.26_smap.smap"
+FLEET_MAP_DATA_ROOT = FLEET_ROOT / "map_data"
+FLEET_MAPS_OUT_ROOT = FLEET_MAP_DATA_ROOT / "maps_out"
+DEFAULT_FLEET_MAP_DIR = FLEET_MAPS_OUT_ROOT / "22.05.26_smap.smap"
 FLEET_MANAGER_ID = "__fleet_manager__"
 
 from fleet_manager import FleetManager
-from fleet_manager.web_fleet_manager_simulator.route_core import (
+from fleet_manager.route_core import (
     WarehouseMapLoader,
     build_editable_map_bundle_payload,
     build_editable_map_payload,
@@ -212,7 +211,7 @@ class OperatorFleetManager:
     def resolve_map_dir(self, map_dir: Path) -> Path:
         candidate = Path(map_dir).expanduser()
         safe_name = Path(candidate).name
-        maps_root = SIMULATOR_MAPS_OUT_ROOT.resolve()
+        maps_root = FLEET_MAPS_OUT_ROOT.resolve()
         if candidate.is_absolute():
             resolved = candidate.resolve()
             if resolved.exists() and (resolved == maps_root or maps_root in resolved.parents):
@@ -220,13 +219,13 @@ class OperatorFleetManager:
             candidate = Path(safe_name)
 
         candidates = [
-            SIMULATOR_MAPS_OUT_ROOT / candidate,
-            SIMULATOR_MAP_DATA_ROOT / candidate,
-            SIMULATOR_ROOT / candidate,
-            SIMULATOR_MAPS_OUT_ROOT / safe_name,
+            FLEET_MAPS_OUT_ROOT / candidate,
+            FLEET_MAP_DATA_ROOT / candidate,
+            FLEET_ROOT / candidate,
+            FLEET_MAPS_OUT_ROOT / safe_name,
         ]
         if not safe_name.endswith(".smap"):
-            candidates.append(SIMULATOR_MAPS_OUT_ROOT / f"{safe_name}.smap")
+            candidates.append(FLEET_MAPS_OUT_ROOT / f"{safe_name}.smap")
         for item in candidates:
             resolved = item.resolve()
             if resolved.exists() and (resolved == maps_root or maps_root in resolved.parents):

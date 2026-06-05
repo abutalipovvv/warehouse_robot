@@ -9,7 +9,7 @@ Main runtime split:
 - `robot/ws/src/robot_map_manager` - robot map state/load ROS 2 services.
 - `robot/ws/src/robot_http_api` - robot-side HTTP API that bridges operator requests to ROS 2.
 - `operator_app` - desktop/web operator application. Connects to a robot by IP, pulls/pushes maps, sends teleop and route commands.
-- `fleet_manager` - old fleet simulator and reference implementation.
+- `fleet_manager` - fleet logic and shared map data.
 
 ## Build Robot Packages
 
@@ -76,7 +76,3 @@ source /opt/ros/jazzy/setup.bash
 source robot/install/local_setup.bash
 python3 serve_robot.py --map-dir maps_out/22.05.26_smap.smap
 ```
-
-## Legacy Fleet Simulator
-
-The old fleet simulator code is still under `fleet_manager/web_fleet_manager_simulator`. Keep it as a reference/regression tool while `operator_app` is still being completed.
