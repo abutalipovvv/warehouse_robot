@@ -230,13 +230,13 @@ class RobotMapEditorApp {
       this.closeWindow();
       return;
     }
-    const shouldSave = window.confirm("Save changes to the current map and push them to the robot before closing?");
+    const shouldSave = window.confirm("Save changes to the current local map draft before closing?");
     if (!shouldSave) {
       this.closeWindow();
       return;
     }
     try {
-      await this.saveAndPushCurrentMapThenClose();
+      await this.saveCurrentMapThenClose();
     } catch (error) {
       this.handleError(error);
     }
@@ -268,6 +268,7 @@ class RobotMapEditorApp {
       this.selectedLocalMapName = this.currentLocalMapName;
       this.loadEditableMap(mapPayload);
       this.dirty = false;
+      this.markPendingPush();
     }
     await this.refreshLocalMaps({ silent: true });
     this.setStatus(`Saved local draft ${safeName}.`);
@@ -275,7 +276,7 @@ class RobotMapEditorApp {
     this.render();
   }
 
-  async saveAndPushCurrentMapThenClose() {
+  async saveCurrentMapThenClose() {
     if (!this.currentMap) {
       throw new Error("No map draft is loaded.");
     }
@@ -284,10 +285,8 @@ class RobotMapEditorApp {
       throw new Error("Current local draft name is empty.");
     }
     await this.saveLocalDraftAs(localName, { activate: true });
-    await this.postJson(`/api/robots/${encodeURIComponent(this.robotId)}/maps/push-sync`, {});
-    this.clearPendingPush();
-    this.setStatus(`Saved local draft and pushed ${localName} to robot.`);
-    this.log("info", `Pushed ${localName} to robot.`);
+    this.setStatus(`Saved local draft ${localName}. Push Map is available in Control.`);
+    this.log("info", `Saved local draft ${localName}; push not sent.`);
     this.closeWindow();
   }
 

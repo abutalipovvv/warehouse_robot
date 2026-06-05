@@ -1241,6 +1241,98 @@ dialog::backdrop {
   gap: 1rem;
 }
 
+.dialog-copy {
+  margin: 0.9rem 0 0;
+  color: var(--text);
+  line-height: 1.45;
+}
+
+.map-sync-choice-note {
+  margin-top: 0.9rem;
+  padding: 0.85rem 0.95rem;
+  border-radius: 16px;
+  color: var(--muted);
+  background: var(--panel-soft);
+  border: 1px solid var(--border);
+  line-height: 1.45;
+}
+
+.map-sync-choice-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.7rem;
+  margin-top: 1rem;
+}
+
+.map-sync-choice-grid button {
+  min-height: 5rem;
+  display: grid;
+  align-content: center;
+  gap: 0.25rem;
+  text-align: left;
+}
+
+.map-sync-choice-grid button strong {
+  font-size: 1rem;
+}
+
+.map-sync-choice-grid button span {
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.25;
+}
+
+.map-sync-choice-grid button.primary span {
+  color: rgba(255, 255, 255, 0.78);
+}
+
+.map-transfer-percent {
+  color: var(--accent);
+  font-size: 1.8rem;
+  line-height: 1;
+}
+
+.map-transfer-track {
+  height: 14px;
+  overflow: hidden;
+  margin-top: 1.2rem;
+  border-radius: 999px;
+  background: #e7eef9;
+  border: 1px solid var(--border);
+}
+
+.map-transfer-bar {
+  width: 0%;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #1f6feb, #4db7ff);
+  transition: width 180ms ease;
+}
+
+.map-transfer-status {
+  margin-top: 0.85rem;
+  color: var(--muted);
+  min-height: 1.4rem;
+}
+
+.map-transfer-dialog .dialog-actions {
+  margin-top: 1rem;
+}
+
+.map-transfer-dialog.busy #mapTransferCloseButton {
+  visibility: hidden;
+}
+
+.map-transfer-dialog.error .map-transfer-bar {
+  background: linear-gradient(90deg, #d95521, #ff9a6d);
+}
+
+@media (max-width: 640px) {
+  .map-sync-choice-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 .ghost-button {
   width: 2.4rem;
   height: 2.4rem;

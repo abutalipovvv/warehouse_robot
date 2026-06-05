@@ -439,9 +439,33 @@ class OperatorApp {
     this.fleetParamsLoaded = false;
     this.fleetNameEdited = false;
     this.fleetTickPending = false;
+    this.fleetStatusSocket = null;
+    this.fleetStatusStreamShouldRun = false;
+    this.fleetStatusReconnectTimer = null;
+    this.fleetStatusReconnectMs = 500;
+    this.fleetStatusStreamAttemptedAt = 0;
+    this.fleetStatusStreamFallback = false;
+    this.fleetHttpFallbackLastAt = 0;
+    this.fleetStreamIntervalMs = 180;
+    this.robotStatusSocket = null;
+    this.robotStatusStreamShouldRun = false;
+    this.robotStatusReconnectTimer = null;
+    this.robotStatusReconnectMs = 500;
+    this.robotStatusStreamAttemptedAt = 0;
+    this.robotStatusStreamFallback = false;
+    this.robotStreamIntervalMs = 180;
+    this.robotStatusRobotId = "";
+    this.fleetStatusReceivedAt = 0;
+    this.fleetStatusObjectRef = null;
+    this.fleetAnimationFrame = null;
+    this.fleetAnimationLastAt = 0;
+    this.fleetRouteRenderLastAt = 0;
     this.fleetManualRobotName = "";
     this.fleetManualLastAt = 0;
     this.fleetManualLookahead = null;
+    this.fleetManualAnimation = null;
+    this.mapSyncDecisionResolve = null;
+    this.mapTransferCloseTimer = null;
     this.fleetActiveTab = window.localStorage.getItem("operator:fleetActiveTab") || "fleet";
     this.fleetMapEditorActive = false;
     this.fleetMapTool = "select";
@@ -576,15 +600,29 @@ class OperatorApp {
     this.closeLoadMapDialogButton = document.getElementById("closeLoadMapDialogButton");
     this.cancelLoadMapButton = document.getElementById("cancelLoadMapButton");
     this.confirmLoadMapButton = document.getElementById("confirmLoadMapButton");
+    this.mapSyncDecisionDialog = document.getElementById("mapSyncDecisionDialog");
+    this.mapSyncDecisionTitle = document.getElementById("mapSyncDecisionTitle");
+    this.mapSyncDecisionText = document.getElementById("mapSyncDecisionText");
+    this.mapSyncDecisionDetail = document.getElementById("mapSyncDecisionDetail");
+    this.mapSyncPullButton = document.getElementById("mapSyncPullButton");
+    this.mapSyncCancelButton = document.getElementById("mapSyncCancelButton");
+    this.mapSyncPushButton = document.getElementById("mapSyncPushButton");
+    this.mapTransferDialog = document.getElementById("mapTransferDialog");
+    this.mapTransferTitle = document.getElementById("mapTransferTitle");
+    this.mapTransferPercent = document.getElementById("mapTransferPercent");
+    this.mapTransferBar = document.getElementById("mapTransferBar");
+    this.mapTransferStatus = document.getElementById("mapTransferStatus");
+    this.mapTransferCloseButton = document.getElementById("mapTransferCloseButton");
   }
 
   async init() {
     this.bindEvents();
     this.initFleetModelEditor();
     await this.refreshRobots();
+    this.syncFleetStatusStream();
     window.setInterval(() => {
-      this.refreshRobots({ quiet: true }).catch(() => {});
-    }, 5000);
+      this.refreshRobots({ quiet: true, lightweight: true }).catch(() => {});
+    }, 12000);
     window.setInterval(() => {
       this.fetchSelectedRobotStatus(true).catch(() => {});
     }, 800);
@@ -640,6 +678,14 @@ class OperatorApp {
     this.closeLoadMapDialogButton.addEventListener("click", () => this.loadMapDialog.close());
     this.cancelLoadMapButton.addEventListener("click", () => this.loadMapDialog.close());
     this.confirmLoadMapButton.addEventListener("click", () => this.confirmLoadMap());
+    this.mapSyncPushButton.addEventListener("click", () => this.resolveMapSyncDecision("push"));
+    this.mapSyncPullButton.addEventListener("click", () => this.resolveMapSyncDecision("pull"));
+    this.mapSyncCancelButton.addEventListener("click", () => this.resolveMapSyncDecision("cancel"));
+    this.mapSyncDecisionDialog.addEventListener("cancel", (event) => {
+      event.preventDefault();
+      this.resolveMapSyncDecision("cancel");
+    });
+    this.mapTransferCloseButton.addEventListener("click", () => this.mapTransferDialog.close());
 
     this.operatorZoomInButton.addEventListener("click", () => this.zoomMap(1.16));
     this.operatorZoomOutButton.addEventListener("click", () => this.zoomMap(0.86));
@@ -798,9 +844,438 @@ class OperatorApp {
     return `/robots/${encodeURIComponent(robot.id)}${path}`;
   }
 
+  syncFleetStatusStream() {
+    if (this.isFleetManager()) {
+      this.closeRobotStatusStream();
+      this.openFleetStatusStream();
+      return;
+    }
+    this.closeFleetStatusStream();
+    this.stopFleetAnimationLoop();
+    if (this.selectedRobot()) {
+      this.openRobotStatusStream();
+    } else {
+      this.closeRobotStatusStream();
+    }
+  }
+
+  fleetStatusStreamOpen() {
+    return typeof WebSocket !== "undefined"
+      && this.fleetStatusSocket
+      && this.fleetStatusSocket.readyState === WebSocket.OPEN;
+  }
+
+  fleetStatusStreamConnecting() {
+    return typeof WebSocket !== "undefined"
+      && this.fleetStatusSocket
+      && this.fleetStatusSocket.readyState === WebSocket.CONNECTING;
+  }
+
+  fleetStatusStreamConnectingFresh() {
+    return this.fleetStatusStreamConnecting()
+      && performance.now() - this.fleetStatusStreamAttemptedAt < 1200;
+  }
+
+  openFleetStatusStream() {
+    this.fleetStatusStreamShouldRun = true;
+    if (typeof WebSocket === "undefined") {
+      this.fleetStatusStreamFallback = true;
+      return;
+    }
+    if (this.fleetStatusStreamOpen() || this.fleetStatusStreamConnecting()) {
+      return;
+    }
+    if (this.fleetStatusReconnectTimer) {
+      window.clearTimeout(this.fleetStatusReconnectTimer);
+      this.fleetStatusReconnectTimer = null;
+    }
+
+    const scheme = window.location.protocol === "https:" ? "wss" : "ws";
+    const socket = new WebSocket(`${scheme}://${window.location.host}/ws/fleet-manager?intervalMs=${this.fleetStreamIntervalMs}`);
+    this.fleetStatusSocket = socket;
+    this.fleetStatusStreamAttemptedAt = performance.now();
+
+    socket.addEventListener("open", () => {
+      if (this.fleetStatusSocket !== socket) {
+        return;
+      }
+      this.fleetStatusStreamFallback = false;
+      this.fleetStatusReconnectMs = 500;
+    });
+    socket.addEventListener("message", (event) => {
+      if (this.fleetStatusSocket !== socket) {
+        return;
+      }
+      this.handleFleetStatusStreamMessage(event);
+    });
+    socket.addEventListener("error", () => {
+      if (this.fleetStatusSocket === socket) {
+        this.fleetStatusStreamFallback = true;
+      }
+    });
+    socket.addEventListener("close", () => {
+      if (this.fleetStatusSocket !== socket) {
+        return;
+      }
+      this.fleetStatusSocket = null;
+      this.fleetStatusStreamFallback = true;
+      this.scheduleFleetStatusReconnect();
+    });
+  }
+
+  closeFleetStatusStream() {
+    this.fleetStatusStreamShouldRun = false;
+    if (this.fleetStatusReconnectTimer) {
+      window.clearTimeout(this.fleetStatusReconnectTimer);
+      this.fleetStatusReconnectTimer = null;
+    }
+    if (!this.fleetStatusSocket) {
+      this.fleetStatusStreamAttemptedAt = 0;
+      return;
+    }
+    const socket = this.fleetStatusSocket;
+    this.fleetStatusSocket = null;
+    this.fleetStatusStreamAttemptedAt = 0;
+    try {
+      socket.close(1000, "operator target changed");
+    } catch (_) {
+      // Some browsers throw if the socket is already closing.
+    }
+  }
+
+  scheduleFleetStatusReconnect() {
+    if (!this.fleetStatusStreamShouldRun || !this.isFleetManager() || this.fleetStatusReconnectTimer) {
+      return;
+    }
+    const delay = this.fleetStatusReconnectMs;
+    this.fleetStatusReconnectMs = Math.min(5000, Math.round(this.fleetStatusReconnectMs * 1.6));
+    this.fleetStatusReconnectTimer = window.setTimeout(() => {
+      this.fleetStatusReconnectTimer = null;
+      if (this.fleetStatusStreamShouldRun && this.isFleetManager()) {
+        this.openFleetStatusStream();
+      }
+    }, delay);
+  }
+
+  robotStatusStreamOpen() {
+    return typeof WebSocket !== "undefined"
+      && this.robotStatusSocket
+      && this.robotStatusSocket.readyState === WebSocket.OPEN;
+  }
+
+  robotStatusStreamConnecting() {
+    return typeof WebSocket !== "undefined"
+      && this.robotStatusSocket
+      && this.robotStatusSocket.readyState === WebSocket.CONNECTING;
+  }
+
+  robotStatusStreamConnectingFresh() {
+    return this.robotStatusStreamConnecting()
+      && performance.now() - this.robotStatusStreamAttemptedAt < 1200;
+  }
+
+  openRobotStatusStream() {
+    const robot = this.selectedRobot();
+    if (!robot || this.isFleetManager(robot)) {
+      this.closeRobotStatusStream();
+      return;
+    }
+    this.robotStatusStreamShouldRun = true;
+    if (typeof WebSocket === "undefined") {
+      this.robotStatusStreamFallback = true;
+      return;
+    }
+    if (this.robotStatusRobotId && this.robotStatusRobotId !== robot.id) {
+      this.closeRobotStatusStream();
+      this.robotStatusStreamShouldRun = true;
+    }
+    if (this.robotStatusStreamOpen() || this.robotStatusStreamConnecting()) {
+      return;
+    }
+    if (this.robotStatusReconnectTimer) {
+      window.clearTimeout(this.robotStatusReconnectTimer);
+      this.robotStatusReconnectTimer = null;
+    }
+
+    const url = this.robotStatusWsUrl(robot);
+    if (!url) {
+      this.robotStatusStreamFallback = true;
+      return;
+    }
+    const socket = new WebSocket(url);
+    this.robotStatusSocket = socket;
+    this.robotStatusRobotId = robot.id;
+    this.robotStatusStreamAttemptedAt = performance.now();
+
+    socket.addEventListener("open", () => {
+      if (this.robotStatusSocket !== socket) {
+        return;
+      }
+      this.robotStatusStreamFallback = false;
+      this.robotStatusReconnectMs = 500;
+    });
+    socket.addEventListener("message", (event) => {
+      if (this.robotStatusSocket !== socket) {
+        return;
+      }
+      this.handleRobotStatusStreamMessage(event);
+    });
+    socket.addEventListener("error", () => {
+      if (this.robotStatusSocket === socket) {
+        this.robotStatusStreamFallback = true;
+      }
+    });
+    socket.addEventListener("close", () => {
+      if (this.robotStatusSocket !== socket) {
+        return;
+      }
+      this.robotStatusSocket = null;
+      this.robotStatusStreamFallback = true;
+      this.scheduleRobotStatusReconnect();
+    });
+  }
+
+  robotStatusWsUrl(robot) {
+    const baseUrl = String(robot?.baseUrl || "").trim();
+    if (!baseUrl) {
+      return "";
+    }
+    try {
+      const url = new URL(baseUrl);
+      url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+      url.pathname = "/ws/robot/status";
+      url.search = `?intervalMs=${this.robotStreamIntervalMs}`;
+      url.hash = "";
+      return url.toString();
+    } catch (_) {
+      return "";
+    }
+  }
+
+  closeRobotStatusStream() {
+    this.robotStatusStreamShouldRun = false;
+    if (this.robotStatusReconnectTimer) {
+      window.clearTimeout(this.robotStatusReconnectTimer);
+      this.robotStatusReconnectTimer = null;
+    }
+    if (!this.robotStatusSocket) {
+      this.robotStatusRobotId = "";
+      this.robotStatusStreamAttemptedAt = 0;
+      return;
+    }
+    const socket = this.robotStatusSocket;
+    this.robotStatusSocket = null;
+    this.robotStatusRobotId = "";
+    this.robotStatusStreamAttemptedAt = 0;
+    try {
+      socket.close(1000, "operator target changed");
+    } catch (_) {
+      // Some browsers throw if the socket is already closing.
+    }
+  }
+
+  scheduleRobotStatusReconnect() {
+    if (!this.robotStatusStreamShouldRun || this.isFleetManager() || this.robotStatusReconnectTimer) {
+      return;
+    }
+    const delay = this.robotStatusReconnectMs;
+    this.robotStatusReconnectMs = Math.min(5000, Math.round(this.robotStatusReconnectMs * 1.6));
+    this.robotStatusReconnectTimer = window.setTimeout(() => {
+      this.robotStatusReconnectTimer = null;
+      if (this.robotStatusStreamShouldRun && !this.isFleetManager()) {
+        this.openRobotStatusStream();
+      }
+    }, delay);
+  }
+
+  handleRobotStatusStreamMessage(event) {
+    if (this.isFleetManager()) {
+      return;
+    }
+    let payload = null;
+    try {
+      payload = JSON.parse(event.data);
+    } catch (_) {
+      return;
+    }
+    if (!payload || payload.ok === false) {
+      const message = payload && payload.error ? payload.error : "unknown websocket error";
+      this.robotMessageText.textContent = `Robot stream error: ${message}`;
+      return;
+    }
+    const state = payload.state && typeof payload.state === "object" ? payload.state : payload;
+    if (!state || state.ok === false) {
+      return;
+    }
+    this.currentStatus = state;
+    if (state.route) {
+      this.currentRoute = state.route;
+    }
+    this.renderRobotRuntimeTick();
+  }
+
+  handleFleetStatusStreamMessage(event) {
+    if (!this.isFleetManager()) {
+      return;
+    }
+    let payload = null;
+    try {
+      payload = JSON.parse(event.data);
+    } catch (_) {
+      return;
+    }
+    if (!payload || payload.ok === false) {
+      const message = payload && payload.error ? payload.error : "unknown websocket error";
+      this.robotMessageText.textContent = `Fleet stream error: ${message}`;
+      return;
+    }
+
+    const state = payload.state && typeof payload.state === "object" ? payload.state : payload;
+    if (!state || state.ok === false) {
+      return;
+    }
+    this.fleetStatusReceivedAt = performance.now();
+    if (payload.type === "state") {
+      this.currentStatus = state;
+      this.renderSelectedRobot();
+      this.ensureFleetAnimationLoop();
+      return;
+    }
+    this.currentStatus = this.mergeFleetTickState(state);
+    this.renderFleetRuntimeTick();
+  }
+
+  ensureFleetAnimationLoop() {
+    if (typeof window.requestAnimationFrame !== "function" || this.fleetAnimationFrame) {
+      return;
+    }
+    const animate = (now) => {
+      this.fleetAnimationFrame = null;
+      if (!this.isFleetManager()) {
+        return;
+      }
+      const shouldContinue = this.fleetNeedsAnimation();
+      if (now - this.fleetAnimationLastAt >= 33) {
+        this.fleetAnimationLastAt = now;
+        this.drawFleetAnimationFrame(now);
+      }
+      if (!shouldContinue) {
+        return;
+      }
+      this.fleetAnimationFrame = window.requestAnimationFrame(animate);
+    };
+    this.fleetAnimationFrame = window.requestAnimationFrame(animate);
+  }
+
+  stopFleetAnimationLoop() {
+    if (!this.fleetAnimationFrame || typeof window.cancelAnimationFrame !== "function") {
+      this.fleetAnimationFrame = null;
+      return;
+    }
+    window.cancelAnimationFrame(this.fleetAnimationFrame);
+    this.fleetAnimationFrame = null;
+  }
+
+  drawFleetAnimationFrame(now = performance.now()) {
+    if (!this.isFleetManager() || !this.activeOperatorMapPayload()) {
+      return;
+    }
+    this.drawRobot();
+    if (now - this.fleetRouteRenderLastAt >= 180) {
+      this.fleetRouteRenderLastAt = now;
+      this.drawRoute();
+      this.drawLookahead();
+      this.syncMapControls();
+    }
+  }
+
+  fleetNeedsAnimation() {
+    if (!this.isFleetManager()) {
+      return false;
+    }
+    if (this.manualKeys.size && this.fleetManualAnimation) {
+      return true;
+    }
+    const robots = Array.isArray(this.currentStatus?.robots) ? this.currentStatus.robots : [];
+    return robots.some((robot) => ["MOVING", "MANUAL"].includes(String(robot.status || "")));
+  }
+
+  fleetRenderRobots() {
+    const robots = Array.isArray(this.currentStatus?.robots) ? this.currentStatus.robots : [];
+    if (!this.isFleetManager()) {
+      return robots;
+    }
+    if (this.currentStatus && this.currentStatus !== this.fleetStatusObjectRef) {
+      this.fleetStatusObjectRef = this.currentStatus;
+      if (!this.fleetStatusReceivedAt || performance.now() - this.fleetStatusReceivedAt > this.fleetStreamIntervalMs * 2) {
+        this.fleetStatusReceivedAt = performance.now();
+      }
+    }
+    return robots.map((robot) => this.fleetRenderRobot(robot));
+  }
+
+  fleetRenderRobot(robot) {
+    const routeClock = this.animatedFleetRouteClock(robot);
+    const pose = this.animatedFleetRobotPose(robot, routeClock);
+    return {
+      ...robot,
+      routeClock,
+      pose: pose || robot.pose || null,
+    };
+  }
+
+  animatedFleetRouteClock(robot) {
+    const baseClock = Math.max(0, Number(robot?.routeClock || 0));
+    const trajectory = Array.isArray(robot?.trajectory) ? robot.trajectory : [];
+    if (String(robot?.status || "") !== "MOVING" || trajectory.length < 2 || !this.fleetStatusReceivedAt) {
+      return baseClock;
+    }
+    const last = trajectory[trajectory.length - 1];
+    const finalTime = Math.max(0, Number(last.t ?? trajectory.length - 1));
+    const elapsed = Math.max(0, (performance.now() - this.fleetStatusReceivedAt) / 1000);
+    const maxPrediction = Math.max(0.12, (this.fleetStreamIntervalMs / 1000) * 1.8);
+    return Math.min(finalTime, baseClock + Math.min(elapsed, maxPrediction));
+  }
+
+  animatedFleetRobotPose(robot, routeClock) {
+    const trajectory = Array.isArray(robot?.trajectory) ? robot.trajectory : [];
+    if (String(robot?.status || "") === "MOVING" && trajectory.length >= 2) {
+      return this.interpolateTrajectory(trajectory, routeClock);
+    }
+    const manualPose = this.animatedFleetManualPose(robot);
+    if (manualPose) {
+      return manualPose;
+    }
+    return robot?.pose || null;
+  }
+
+  animatedFleetManualPose(robot) {
+    const animation = this.fleetManualAnimation;
+    if (!animation || !robot || robot.name !== animation.robotName) {
+      return null;
+    }
+    if (String(robot.status || "") !== "MANUAL" && !this.manualKeys.size) {
+      return null;
+    }
+    const elapsed = Math.min(0.28, Math.max(0, (performance.now() - animation.startedAt) / 1000));
+    return this.integratePose(animation.pose, animation.linear, animation.angular, elapsed);
+  }
+
+  setFleetManualAnimation(robotName, pose, twist) {
+    this.fleetManualAnimation = {
+      robotName,
+      pose: { ...pose },
+      linear: Number(twist.linear || 0),
+      angular: Number(twist.angular || 0),
+      startedAt: performance.now(),
+    };
+    this.ensureFleetAnimationLoop();
+  }
+
   async refreshRobots(options = {}) {
-    const result = await this.getJson("/api/robots");
-    this.robots = Array.isArray(result.robots) ? result.robots : [];
+    const result = await this.getJson(options.quiet ? "/api/robots?probe=0" : "/api/robots");
+    const nextRobots = Array.isArray(result.robots) ? result.robots : [];
+    this.robots = options.quiet ? this.mergeQuietRobotPayloads(nextRobots) : nextRobots;
     if (this.selectedRobotId && !this.selectedRobot()) {
       this.selectedRobotId = "";
       window.localStorage.removeItem("operator:selectedRobotId");
@@ -809,6 +1284,11 @@ class OperatorApp {
       this.selectedRobotId = this.robots[0].id;
       window.localStorage.setItem("operator:selectedRobotId", this.selectedRobotId);
     }
+    this.syncFleetStatusStream();
+    if (options.lightweight) {
+      this.renderRobotList();
+      return;
+    }
     await this.refreshRobotMapState({ quiet: true });
     await this.fetchSelectedRobotStatus(true);
     this.render();
@@ -816,6 +1296,33 @@ class OperatorApp {
     if (!options.quiet) {
       this.showProbeResult("neutral", "Robot list refreshed.");
     }
+  }
+
+  mergeQuietRobotPayloads(nextRobots) {
+    const previousById = new Map(this.robots.map((robot) => [robot.id, robot]));
+    return nextRobots.map((robot) => {
+      const previous = previousById.get(robot.id);
+      if (!previous) {
+        return robot;
+      }
+      if (this.isFleetManager(robot) && robot.runtimeFresh === false) {
+        return {
+          ...previous,
+          ...robot,
+          status: previous.status,
+        };
+      }
+      if (robot.probed !== false || this.isFleetManager(robot)) {
+        return robot;
+      }
+      return {
+        ...previous,
+        ...robot,
+        online: previous.online,
+        status: previous.status,
+        error: previous.error,
+      };
+    });
   }
 
   async refreshRobotMapState(options = {}) {
@@ -830,10 +1337,6 @@ class OperatorApp {
       try {
         const robotActive = await this.getJson("/api/fleet-manager/maps/active");
         let localActive = await this.getJson("/api/fleet-manager/maps/local/active");
-        if (!localActive.map) {
-          await this.postJson("/api/fleet-manager/maps/pull-sync", {});
-          localActive = await this.getJson("/api/fleet-manager/maps/local/active");
-        }
         const nextSignature = String(localActive.signature || "").trim();
         if (nextSignature && nextSignature !== this.operatorMapSignature) {
           this.resetMapView(true);
@@ -918,10 +1421,22 @@ class OperatorApp {
     try {
       if (this.isFleetManager(robot)) {
         await this.ensureFleetParamsLoaded();
+        this.syncFleetStatusStream();
+        if (silent && (this.fleetStatusStreamOpen() || this.fleetStatusStreamConnectingFresh())) {
+          return;
+        }
+      } else {
+        this.syncFleetStatusStream();
+        if (silent && (this.robotStatusStreamOpen() || this.robotStatusStreamConnectingFresh())) {
+          return;
+        }
       }
       const result = this.isFleetManager(robot)
         ? await this.getJson("/api/fleet-manager/state")
         : await this.getJson(this.robotApiPath("/api/robot/status"));
+      if (this.isFleetManager(robot)) {
+        this.fleetStatusReceivedAt = performance.now();
+      }
       this.currentStatus = result;
       if (result && result.route) {
         this.currentRoute = result.route;
@@ -948,11 +1463,24 @@ class OperatorApp {
 
   async tickFleetIfSelected() {
     if (!this.selectedRobot() || !this.isFleetManager() || this.fleetTickPending || this.manualKeys.size) {
+      if (!this.isFleetManager()) {
+        this.closeFleetStatusStream();
+      }
       return;
     }
+    this.syncFleetStatusStream();
+    if (this.fleetStatusStreamOpen() || this.fleetStatusStreamConnectingFresh()) {
+      return;
+    }
+    const now = performance.now();
+    if (now - this.fleetHttpFallbackLastAt < 250) {
+      return;
+    }
+    this.fleetHttpFallbackLastAt = now;
     this.fleetTickPending = true;
     try {
       const result = await this.postJson("/api/fleet-manager/tick", {});
+      this.fleetStatusReceivedAt = performance.now();
       this.currentStatus = this.mergeFleetTickState(result);
       this.renderFleetRuntimeTick();
     } finally {
@@ -965,15 +1493,20 @@ class OperatorApp {
     const previousRobots = new Map((Array.isArray(previous.robots) ? previous.robots : []).map((robot) => [robot.name, robot]));
     const nextRobots = (Array.isArray(tickState.robots) ? tickState.robots : []).map((robot) => {
       const prior = previousRobots.get(robot.name) || {};
+      const incomingTrajectory = Array.isArray(robot.trajectory) ? robot.trajectory : [];
+      const incomingPlanNodes = Array.isArray(robot.planNodes) ? robot.planNodes : [];
+      const status = String(robot.status || prior.status || "");
+      const hasTarget = Boolean(robot.targetLm || prior.targetLm || robot.targetName || prior.targetName);
+      const canReuseRoute = hasTarget && ["MOVING", "WAITING", "BLOCKED", "PLANNING"].includes(status);
       return {
         ...prior,
         ...robot,
-        trajectory: Array.isArray(robot.trajectory) && robot.trajectory.length
-          ? robot.trajectory
-          : (Array.isArray(prior.trajectory) ? prior.trajectory : []),
-        planNodes: Array.isArray(robot.planNodes) && robot.planNodes.length
-          ? robot.planNodes
-          : (Array.isArray(prior.planNodes) ? prior.planNodes : []),
+        trajectory: incomingTrajectory.length
+          ? incomingTrajectory
+          : (canReuseRoute && Array.isArray(prior.trajectory) ? prior.trajectory : []),
+        planNodes: incomingPlanNodes.length
+          ? incomingPlanNodes
+          : (canReuseRoute && Array.isArray(prior.planNodes) ? prior.planNodes : []),
       };
     });
     return {
@@ -1016,6 +1549,7 @@ class OperatorApp {
         window.localStorage.setItem("operator:selectedRobotId", robot.id);
         this.currentStatus = null;
         this.currentRoute = null;
+        this.syncFleetStatusStream();
         this.closeSidebar();
         await this.refreshRobotMapState({ quiet: true });
         await this.fetchSelectedRobotStatus(true);
@@ -1140,7 +1674,7 @@ class OperatorApp {
     this.robotStateText.textContent = state;
     this.nearestLmText.textContent = robot.nearestLm || "-";
     this.inspectorRobotText.textContent = robot.robotId || selected?.name || selected?.id || "-";
-    this.connectionText.textContent = connected ? "online" : "offline";
+    this.connectionText.textContent = this.robotStatusStreamOpen() ? "robot websocket" : (connected ? "online" : "offline");
     this.localizationText.textContent = robot.localizationOk
       ? `ok (${Number(robot.localizationAgeSec || 0).toFixed(2)} s)`
       : "waiting";
@@ -1163,9 +1697,48 @@ class OperatorApp {
     this.renderOperatorMap();
   }
 
+  renderRobotRuntimeTick() {
+    if (this.isFleetManager()) {
+      return;
+    }
+    const selected = this.selectedRobot();
+    const status = this.currentStatus || {};
+    const robot = status.robot || {};
+    const route = status.route || this.currentRoute || null;
+    const pose = robot.pose || null;
+    const connected = Boolean(robot.connected);
+    const state = String(robot.state || (selected && selected.online ? "ONLINE" : "OFFLINE") || "-");
+
+    this.robotStateText.textContent = state;
+    this.nearestLmText.textContent = robot.nearestLm || "-";
+    this.inspectorRobotText.textContent = robot.robotId || selected?.name || selected?.id || "-";
+    this.connectionText.textContent = this.robotStatusStreamOpen() ? "robot websocket" : (connected ? "online" : "offline");
+    this.localizationText.textContent = robot.localizationOk
+      ? `ok (${Number(robot.localizationAgeSec || 0).toFixed(2)} s)`
+      : "waiting";
+    this.targetLmText.textContent = robot.targetLm || "-";
+    this.currentEdgeText.textContent = robot.currentEdgeId || "-";
+    this.routeProgressText.textContent = `${Math.round(Number(robot.routeProgress || 0) * 100)}%`;
+    this.poseText.textContent = pose
+      ? `x: ${Number(pose.x).toFixed(3)}, y: ${Number(pose.y).toFixed(3)}, yaw: ${Number(pose.yaw).toFixed(3)}`
+      : "x: -, y: -, yaw: -";
+    this.velocityText.textContent = robot.velocity
+      ? `v: ${Number(robot.velocity.linear || 0).toFixed(3)}, w: ${Number(robot.velocity.angular || 0).toFixed(3)}`
+      : "v: -, w: -";
+    this.robotMessageText.textContent = robot.message || (this.operatorMapPayload ? "Robot status ready." : "Pull the active robot map to display Map & Control.");
+    this.routeNodesText.textContent = route && Array.isArray(route.nodes) && route.nodes.length
+      ? route.nodes.join(" -> ")
+      : "No route planned.";
+    this.syncModeButtons();
+    this.syncManualButtons();
+    this.drawRoute();
+    this.drawRobot();
+    this.syncMapControls();
+  }
+
   renderFleetConsole() {
     const status = this.currentStatus || {};
-    const robots = Array.isArray(status.robots) ? status.robots : [];
+    const robots = this.fleetRenderRobots();
     const selectedFleetRobot = this.selectedFleetRobot(robots);
     const mode = String(status.mode || "simulation");
 
@@ -1173,7 +1746,7 @@ class OperatorApp {
     this.robotStateText.textContent = mode.toUpperCase();
     this.nearestLmText.textContent = `${robots.length} robots`;
     this.inspectorRobotText.textContent = "Fleet Manager";
-    this.connectionText.textContent = "local";
+    this.connectionText.textContent = this.fleetStatusStreamOpen() ? "local websocket" : "local http";
     this.localizationText.textContent = mode;
     this.targetLmText.textContent = selectedFleetRobot ? (selectedFleetRobot.targetLm || "-") : "-";
     this.currentEdgeText.textContent = selectedFleetRobot ? (selectedFleetRobot.currentLm || "-") : "-";
@@ -1198,6 +1771,7 @@ class OperatorApp {
     this.syncModeButtons();
     this.syncManualButtons();
     this.renderOperatorMap();
+    this.ensureFleetAnimationLoop();
   }
 
   renderFleetRuntimeTick() {
@@ -1206,12 +1780,13 @@ class OperatorApp {
       return;
     }
     const status = this.currentStatus || {};
-    const robots = Array.isArray(status.robots) ? status.robots : [];
+    const robots = this.fleetRenderRobots();
     const selectedFleetRobot = this.selectedFleetRobot(robots);
     const mode = String(status.mode || "simulation");
 
     this.robotStateText.textContent = mode.toUpperCase();
     this.nearestLmText.textContent = `${robots.length} robots`;
+    this.connectionText.textContent = this.fleetStatusStreamOpen() ? "local websocket" : "local http";
     this.targetLmText.textContent = selectedFleetRobot ? (selectedFleetRobot.targetLm || "-") : "-";
     this.currentEdgeText.textContent = selectedFleetRobot ? (selectedFleetRobot.currentLm || "-") : "-";
     this.routeProgressText.textContent = selectedFleetRobot ? String(selectedFleetRobot.status || "-") : "-";
@@ -1227,10 +1802,7 @@ class OperatorApp {
     this.renderFleetPlanDebug();
     this.syncModeButtons();
     this.syncManualButtons();
-    this.drawRoute();
-    this.drawLookahead();
-    this.drawRobot();
-    this.syncMapControls();
+    this.ensureFleetAnimationLoop();
   }
 
   selectedFleetRobot(robots = null) {
@@ -1604,7 +2176,7 @@ class OperatorApp {
   drawRoute() {
     this.operatorRouteLayer.innerHTML = "";
     if (this.isFleetManager()) {
-      const robots = Array.isArray(this.currentStatus?.robots) ? this.currentStatus.robots : [];
+      const robots = this.fleetRenderRobots();
       for (const robot of robots) {
         if (!Array.isArray(robot.trajectory) || robot.trajectory.length < 2) {
           continue;
@@ -1819,7 +2391,7 @@ class OperatorApp {
   drawRobot() {
     this.operatorRobotLayer.innerHTML = "";
     if (this.isFleetManager()) {
-      const robots = Array.isArray(this.currentStatus?.robots) ? this.currentStatus.robots : [];
+      const robots = this.fleetRenderRobots();
       let focused = false;
       for (const robot of robots) {
         const pose = robot && robot.pose ? robot.pose : null;
@@ -2704,6 +3276,11 @@ class OperatorApp {
       this.fleetMapDirty = false;
       this.robotMessageText.textContent = `Local fleet map saved: ${this.robotMapState.operatorActiveMapName || mapName}. Push Map will apply it.`;
       this.renderSelectedRobot();
+      if (!options.skipPrompt) {
+        await this.offerMapSyncDecisionAfterLocalSave({
+          message: "Local Fleet Manager map was saved and differs from the active map.",
+        });
+      }
     } catch (error) {
       this.robotMessageText.textContent = `Save local fleet map failed: ${error.message || error}`;
     }
@@ -3247,7 +3824,7 @@ class OperatorApp {
       this.fleetManualLastAt = performance.now();
       this.currentStatus = await this.getJson("/api/fleet-manager/state");
     }
-    const pose = robot.pose || this.poseForLm(robot.currentLm);
+    const pose = this.animatedFleetManualPose(robot) || robot.pose || this.poseForLm(robot.currentLm);
     if (!pose) {
       this.robotMessageText.textContent = `${robot.name}: no pose for manual control.`;
       return;
@@ -3263,41 +3840,33 @@ class OperatorApp {
       twist.params.predictionTime,
       twist.params.predictionStep
     );
-    const check = await this.postJson("/api/fleet-manager/check", {
+    const nextPose = this.integratePose(pose, twist.linear, twist.angular, dt);
+    const currentLm = this.currentLmForPose(nextPose, 0.25);
+    const result = await this.postJson("/api/fleet-manager/manual-step", {
       name: robot.name,
       poses: prediction,
+      blockedPose: pose,
+      nextPose,
+      blockedCurrentLm: this.currentLmForPose(pose, 0.25),
+      currentLm,
     });
     this.fleetManualLookahead = {
       poses: prediction,
-      blocked: Boolean(check.blocked),
-      reason: check.reason || "",
+      blocked: Boolean(result.blocked),
+      reason: result.reason || "",
     };
-    if (check.blocked) {
-      await this.postJson("/api/fleet-manager/robots/update", {
-        name: robot.name,
-        status: "MANUAL_BLOCKED",
-        targetLm: "",
-        pose,
-        currentLm: this.currentLmForPose(pose, 0.25),
-      });
-      this.currentStatus = await this.getJson("/api/fleet-manager/state");
-      this.robotMessageText.textContent = `${robot.name} manual blocked: ${check.reason || "collision"}.`;
-      this.renderSelectedRobot();
+    this.currentStatus = result.state || await this.getJson("/api/fleet-manager/state");
+    this.fleetStatusReceivedAt = performance.now();
+    this.fleetStatusObjectRef = this.currentStatus;
+    if (result.blocked) {
+      this.fleetManualAnimation = null;
+      this.robotMessageText.textContent = `${robot.name} manual blocked: ${result.reason || "collision"}.`;
+      this.renderFleetRuntimeTick();
       return;
     }
-
-    const nextPose = this.integratePose(pose, twist.linear, twist.angular, dt);
-    const currentLm = this.currentLmForPose(nextPose, 0.25);
-    const result = await this.postJson("/api/fleet-manager/robots/update", {
-      name: robot.name,
-      status: "MANUAL",
-      targetLm: "",
-      currentLm,
-      pose: nextPose,
-    });
-    this.currentStatus = result.state || await this.getJson("/api/fleet-manager/state");
+    this.setFleetManualAnimation(robot.name, pose, twist);
     this.robotMessageText.textContent = `${robot.name} manual control active.`;
-    this.renderSelectedRobot();
+    this.renderFleetRuntimeTick();
   }
 
   async releaseFleetManualControl() {
@@ -3324,6 +3893,7 @@ class OperatorApp {
     this.fleetManualRobotName = "";
     this.fleetManualLastAt = 0;
     this.fleetManualLookahead = null;
+    this.fleetManualAnimation = null;
     this.renderSelectedRobot();
   }
 
@@ -3440,9 +4010,7 @@ class OperatorApp {
       window.localStorage.setItem("operator:selectedRobotId", this.selectedRobotId);
       this.closeSidebar();
       await this.refreshRobots({ quiet: true });
-      if (result.pulled && result.pulled.local && result.pulled.local.mapName) {
-        this.showProbeResult("success", `Robot saved and active map ${result.pulled.local.mapName} pulled into operator cache.`);
-      }
+      this.showProbeResult("success", "Robot saved. Use Pull Map when you want to copy its active map into the operator cache.");
     } catch (error) {
       this.showProbeResult("error", error.message || String(error));
     }
@@ -3482,39 +4050,181 @@ class OperatorApp {
     window.location.assign(url);
   }
 
-  async handlePullMap() {
+  async offerMapSyncDecisionAfterLocalSave(context = {}) {
+    await this.refreshRobotMapState({ quiet: true });
+    this.renderSelectedRobot();
+    if (!this.robotMapState.hasLocalChanges) {
+      return "none";
+    }
+    const decision = await this.promptMapSyncDecision(context);
+    if (decision === "push") {
+      await this.handlePushMap({ skipConfirm: true });
+    } else if (decision === "pull") {
+      await this.handlePullMap({ skipConfirm: true });
+    } else {
+      this.robotMessageText.textContent = "Local map saved. Push Map is available when you are ready.";
+    }
+    return decision;
+  }
+
+  promptMapSyncDecision(context = {}) {
+    if (!this.mapSyncDecisionDialog || typeof this.mapSyncDecisionDialog.showModal !== "function") {
+      const shouldPush = window.confirm("Local map differs from the robot map. Push local changes now?");
+      return Promise.resolve(shouldPush ? "push" : "cancel");
+    }
+    const robot = this.selectedRobot();
+    const target = this.isFleetManager(robot) ? "Fleet Manager" : "robot";
+    const localName = this.robotMapState.operatorActiveMapName || "-";
+    const remoteName = this.robotMapState.robotActiveMapName || this.robotMapState.sourceRobotMapName || "-";
+    this.mapSyncDecisionTitle.textContent = "Inconsistent Map Data";
+    this.mapSyncDecisionText.textContent = context.message || `Operator local map differs from the active ${target} map.`;
+    this.mapSyncDecisionDetail.textContent = `Local: ${localName}. ${target}: ${remoteName}. Choose Push to overwrite the ${target} map, Pull to replace the local draft, or Cancel to keep driving with the current ${target} map.`;
+    return new Promise((resolve) => {
+      this.mapSyncDecisionResolve = resolve;
+      this.mapSyncDecisionDialog.showModal();
+    });
+  }
+
+  resolveMapSyncDecision(decision) {
+    if (!this.mapSyncDecisionResolve) {
+      return;
+    }
+    const resolve = this.mapSyncDecisionResolve;
+    this.mapSyncDecisionResolve = null;
+    if (this.mapSyncDecisionDialog.open) {
+      this.mapSyncDecisionDialog.close();
+    }
+    resolve(decision);
+  }
+
+  async runMapTransfer(kind, callback) {
+    const title = kind === "push" ? "Push Map" : "Pull Map";
+    this.openMapTransfer(title);
+    try {
+      await this.setMapTransferProgress(5, "Preparing map transfer...", 100);
+      const result = await callback((percent, status, delayMs = 0) => this.setMapTransferProgress(percent, status, delayMs));
+      await this.setMapTransferProgress(100, `${title} completed.`, 450);
+      this.finishMapTransfer(false);
+      return result;
+    } catch (error) {
+      await this.setMapTransferProgress(100, error.message || String(error), 0);
+      this.finishMapTransfer(true);
+      throw error;
+    }
+  }
+
+  openMapTransfer(title) {
+    if (this.mapTransferCloseTimer) {
+      window.clearTimeout(this.mapTransferCloseTimer);
+      this.mapTransferCloseTimer = null;
+    }
+    this.mapTransferTitle.textContent = title;
+    this.mapTransferDialog.querySelector(".dialog-card").classList.add("busy");
+    this.mapTransferDialog.querySelector(".dialog-card").classList.remove("error");
+    this.mapTransferCloseButton.disabled = true;
+    this.setMapTransferProgress(0, "Preparing...", 0);
+    if (!this.mapTransferDialog.open && typeof this.mapTransferDialog.showModal === "function") {
+      this.mapTransferDialog.showModal();
+    }
+  }
+
+  async setMapTransferProgress(percent, status, delayMs = 0) {
+    const value = Math.max(0, Math.min(100, Math.round(Number(percent || 0))));
+    this.mapTransferPercent.textContent = `${value}%`;
+    this.mapTransferBar.style.width = `${value}%`;
+    this.mapTransferStatus.textContent = status;
+    if (delayMs > 0) {
+      await new Promise((resolve) => window.setTimeout(resolve, delayMs));
+    }
+  }
+
+  finishMapTransfer(error) {
+    const card = this.mapTransferDialog.querySelector(".dialog-card");
+    card.classList.remove("busy");
+    card.classList.toggle("error", Boolean(error));
+    this.mapTransferCloseButton.disabled = false;
+    if (!error) {
+      this.mapTransferCloseTimer = window.setTimeout(() => {
+        if (this.mapTransferDialog.open) {
+          this.mapTransferDialog.close();
+        }
+      }, 700);
+    }
+  }
+
+  async handlePullMap(options = {}) {
     const robot = this.selectedRobot();
     if (!robot) {
       return;
     }
+    const target = this.isFleetManager(robot) ? "Fleet Manager" : "robot";
+    if (!options.skipConfirm) {
+      const confirmed = window.confirm(`Pull active ${target} map into the operator cache? Local draft changes may be replaced.`);
+      if (!confirmed) {
+        return;
+      }
+    }
     try {
-      const result = this.isFleetManager(robot)
-        ? await this.postJson("/api/fleet-manager/maps/pull-sync", {})
-        : await this.postJson(`/api/robots/${encodeURIComponent(robot.id)}/maps/pull-sync`, {});
-      await this.refreshRobotMapState({ quiet: true });
-      await this.fetchSelectedRobotStatus(true);
+      const result = await this.runMapTransfer("pull", async (progress) => {
+        await progress(18, `Requesting active map from ${target}...`, 120);
+        const payload = this.isFleetManager(robot)
+          ? await this.postJson("/api/fleet-manager/maps/pull-sync", {})
+          : await this.postJson(`/api/robots/${encodeURIComponent(robot.id)}/maps/pull-sync`, {});
+        await progress(72, "Saving local operator copy...", 120);
+        await this.refreshRobotMapState({ quiet: true });
+        await progress(90, "Refreshing map view...", 80);
+        await this.fetchSelectedRobotStatus(true);
+        return payload;
+      });
+      this.clearSelectedPendingPush();
       this.renderSelectedRobot();
-      window.alert(result.message || "Pull map completed.");
+      this.robotMessageText.textContent = result.message || "Pull map completed.";
     } catch (error) {
       window.alert(error.message || String(error));
     }
   }
 
-  async handlePushMap() {
+  async handlePushMap(options = {}) {
     const robot = this.selectedRobot();
     if (!robot) {
       return;
     }
+    const target = this.isFleetManager(robot) ? "Fleet Manager" : "robot";
+    if (!options.skipConfirm) {
+      const confirmed = window.confirm(`Push local operator map to ${target}? This overwrites the active map used by ${target}.`);
+      if (!confirmed) {
+        return;
+      }
+    }
     try {
-      const result = this.isFleetManager(robot)
-        ? await this.postJson("/api/fleet-manager/maps/push-sync", {})
-        : await this.postJson(`/api/robots/${encodeURIComponent(robot.id)}/maps/push-sync`, {});
-      await this.refreshRobotMapState({ quiet: true });
-      await this.refreshRobots({ quiet: true });
-      await this.fetchSelectedRobotStatus(true);
-      window.alert(result.message || "Push map completed.");
+      const result = await this.runMapTransfer("push", async (progress) => {
+        await progress(16, "Preparing local map package...", 120);
+        const payload = this.isFleetManager(robot)
+          ? await this.postJson("/api/fleet-manager/maps/push-sync", {})
+          : await this.postJson(`/api/robots/${encodeURIComponent(robot.id)}/maps/push-sync`, {});
+        await progress(74, `Writing map to ${target}...`, 120);
+        await this.refreshRobotMapState({ quiet: true });
+        await progress(90, "Refreshing operator state...", 80);
+        await this.refreshRobots({ quiet: true, lightweight: true });
+        await this.fetchSelectedRobotStatus(true);
+        return payload;
+      });
+      this.clearSelectedPendingPush();
+      this.renderSelectedRobot();
+      this.robotMessageText.textContent = result.message || "Push map completed.";
     } catch (error) {
       window.alert(error.message || String(error));
+    }
+  }
+
+  clearSelectedPendingPush() {
+    const robot = this.selectedRobot();
+    if (!robot) {
+      return;
+    }
+    const pendingRobotId = window.sessionStorage.getItem("operator:pendingPushRobotId") || "";
+    if (pendingRobotId === robot.id) {
+      window.sessionStorage.removeItem("operator:pendingPushRobotId");
     }
   }
 
@@ -3528,11 +4238,16 @@ class OperatorApp {
     if (!this.robotMapState.hasLocalChanges) {
       return;
     }
-    const shouldPush = window.confirm("Local map differs from the robot map. Push local changes to the robot now?");
-    if (!shouldPush) {
-      return;
+    const decision = await this.promptMapSyncDecision({
+      message: "Local map draft was saved and differs from the robot map.",
+    });
+    if (decision === "push") {
+      await this.handlePushMap({ skipConfirm: true });
+    } else if (decision === "pull") {
+      await this.handlePullMap({ skipConfirm: true });
+    } else {
+      this.robotMessageText.textContent = "Map push skipped. Use Push Map when you are ready.";
     }
-    await this.handlePushMap();
   }
 
   async handleLoadMap() {
@@ -3584,10 +4299,8 @@ class OperatorApp {
       let result = null;
       if (this.isFleetManager(robot)) {
         result = await this.postJson("/api/fleet-manager/maps/load", { mapName });
-        await this.postJson("/api/fleet-manager/maps/pull-sync", {});
       } else {
         result = await this.postJson(`/api/robots/${encodeURIComponent(robot.id)}/maps/load`, { mapName });
-        await this.postJson(`/api/robots/${encodeURIComponent(robot.id)}/maps/pull-sync`, {});
       }
       this.loadMapDialog.close();
       await this.refreshRobotMapState({ quiet: true });

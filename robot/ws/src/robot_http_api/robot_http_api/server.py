@@ -1,7 +1,12 @@
 from __future__ import annotations
 
 import argparse
+import base64
+import hashlib
 import json
+import select
+import struct
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -56,6 +61,10 @@ from robot_planner.route_core import (
 
 DEFAULT_ROBOT_MAP_DIR = MAPS_ROOT / "22.05.26_smap.smap"
 DEFAULT_PARAMS_PATH = _params_path(PROJECT_ROOT)
+WEBSOCKET_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
+DEFAULT_STATUS_WS_INTERVAL_MS = 160
+MIN_STATUS_WS_INTERVAL_MS = 50
+MAX_STATUS_WS_INTERVAL_MS = 1000
 
 
 class RobotHttpApiBridge:
@@ -88,6 +97,14 @@ class RobotHttpApiBridge:
             "robot": self.ros_client.latest_status_payload(),
             "route": self.ros_client.active_route_payload(),
             "events": self.ros_client.events_payload(),
+        }
+
+    def status_stream_payload(self) -> dict[str, Any]:
+        return {
+            "ok": True,
+            "type": "status",
+            "state": self.status_payload(),
+            "sentAt": time.time(),
         }
 
     def plan_route_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
@@ -219,12 +236,16 @@ class RobotHttpApiBridge:
 
 
 class RobotApiRequestHandler(BaseHTTPRequestHandler):
+    protocol_version = "HTTP/1.1"
     bridge: RobotHttpApiBridge | None = None
 
     def do_GET(self) -> None:
         try:
             parsed = urlparse(self.path)
             path = parsed.path
+            if path == "/ws/robot/status":
+                self._handle_status_ws(parsed)
+                return
             if path == "/":
                 self._send_json(self._root_payload())
                 return
@@ -259,6 +280,124 @@ class RobotApiRequestHandler(BaseHTTPRequestHandler):
             self._send_error_json(400, str(exc))
         except Exception as exc:  # pragma: no cover - defensive server path
             self._send_error_json(500, str(exc))
+
+    def _handle_status_ws(self, parsed) -> None:
+        if not self._is_websocket_upgrade():
+            self._send_error_json(400, "expected websocket upgrade")
+            return
+        key = self.headers.get("Sec-WebSocket-Key", "").strip()
+        if not key:
+            self._send_error_json(400, "missing Sec-WebSocket-Key")
+            return
+
+        accept = base64.b64encode(
+            hashlib.sha1(f"{key}{WEBSOCKET_GUID}".encode("ascii")).digest()
+        ).decode("ascii")
+        self.send_response(101, "Switching Protocols")
+        self.send_header("Upgrade", "websocket")
+        self.send_header("Connection", "Upgrade")
+        self.send_header("Sec-WebSocket-Accept", accept)
+        self.end_headers()
+        self.close_connection = True
+
+        bridge = self._require_bridge()
+        interval_sec = self._status_ws_interval_sec(parsed)
+        try:
+            self._send_ws_json(bridge.status_stream_payload())
+            while True:
+                if self._ws_client_closed():
+                    return
+                time.sleep(interval_sec)
+                if self._ws_client_closed():
+                    return
+                self._send_ws_json(bridge.status_stream_payload())
+        except (BrokenPipeError, ConnectionError, ConnectionResetError, OSError):
+            return
+        except Exception as exc:  # pragma: no cover - defensive websocket path
+            try:
+                self._send_ws_json({"ok": False, "type": "error", "error": str(exc)})
+            except (BrokenPipeError, ConnectionError, ConnectionResetError, OSError):
+                return
+
+    def _is_websocket_upgrade(self) -> bool:
+        upgrade = self.headers.get("Upgrade", "").strip().lower()
+        connection = self.headers.get("Connection", "").strip().lower()
+        return upgrade == "websocket" and "upgrade" in connection
+
+    def _status_ws_interval_sec(self, parsed) -> float:
+        raw_interval = parse_qs(parsed.query).get("intervalMs", [str(DEFAULT_STATUS_WS_INTERVAL_MS)])[0]
+        try:
+            interval_ms = int(raw_interval)
+        except (TypeError, ValueError):
+            interval_ms = DEFAULT_STATUS_WS_INTERVAL_MS
+        interval_ms = max(MIN_STATUS_WS_INTERVAL_MS, min(MAX_STATUS_WS_INTERVAL_MS, interval_ms))
+        return interval_ms / 1000.0
+
+    def _send_ws_json(self, payload: object) -> None:
+        encoded = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        self.connection.sendall(self._ws_frame(encoded, opcode=0x1))
+
+    @staticmethod
+    def _ws_frame(payload: bytes, opcode: int) -> bytes:
+        length = len(payload)
+        first_byte = 0x80 | opcode
+        if length < 126:
+            return bytes([first_byte, length]) + payload
+        if length <= 0xFFFF:
+            return bytes([first_byte, 126]) + struct.pack("!H", length) + payload
+        return bytes([first_byte, 127]) + struct.pack("!Q", length) + payload
+
+    def _ws_client_closed(self) -> bool:
+        readable, _, _ = select.select([self.connection], [], [], 0)
+        if not readable:
+            return False
+        previous_timeout = self.connection.gettimeout()
+        self.connection.settimeout(0.05)
+        try:
+            header = self._recv_exact(2)
+            if not header:
+                return True
+            opcode = header[0] & 0x0F
+            masked = bool(header[1] & 0x80)
+            length = header[1] & 0x7F
+            if length == 126:
+                extended = self._recv_exact(2)
+                if not extended:
+                    return True
+                length = struct.unpack("!H", extended)[0]
+            elif length == 127:
+                extended = self._recv_exact(8)
+                if not extended:
+                    return True
+                length = struct.unpack("!Q", extended)[0]
+            mask = self._recv_exact(4) if masked else b""
+            payload = self._recv_exact(length) if length else b""
+            if length and not payload:
+                return True
+            if masked and mask:
+                payload = bytes(byte ^ mask[index % 4] for index, byte in enumerate(payload))
+            if opcode == 0x8:
+                return True
+            if opcode == 0x9:
+                self.connection.sendall(self._ws_frame(payload, opcode=0xA))
+            return False
+        except TimeoutError:
+            return False
+        except (ConnectionError, ConnectionResetError, OSError):
+            return True
+        finally:
+            self.connection.settimeout(previous_timeout)
+
+    def _recv_exact(self, size: int) -> bytes:
+        chunks = []
+        remaining = size
+        while remaining > 0:
+            chunk = self.connection.recv(remaining)
+            if not chunk:
+                return b""
+            chunks.append(chunk)
+            remaining -= len(chunk)
+        return b"".join(chunks)
 
     def do_POST(self) -> None:
         try:
@@ -340,6 +479,7 @@ class RobotApiRequestHandler(BaseHTTPRequestHandler):
             "identity": identity,
             "endpoints": [
                 "/health",
+                "/ws/robot/status",
                 "/api/robot/identity",
                 "/api/robot/status",
                 "/api/robot/route/plan",
@@ -452,6 +592,7 @@ def serve_http_server(
 ) -> None:
     RobotApiRequestHandler.bridge = bridge
     server = ThreadingHTTPServer((host, port), RobotApiRequestHandler)
+    server.daemon_threads = True
     url = f"http://{host}:{port}/"
     browser_url = f"http://127.0.0.1:{port}/" if host in {"0.0.0.0", "::"} else url
     print(f"Serving single robot API: {url}")

@@ -356,6 +356,56 @@
     </form>
   </dialog>
 
+  <dialog id="mapSyncDecisionDialog">
+    <form method="dialog" class="dialog-card map-sync-dialog">
+      <div class="dialog-head">
+        <div>
+          <div class="eyebrow">Map Data</div>
+          <h2 id="mapSyncDecisionTitle">Inconsistent Map Data</h2>
+        </div>
+      </div>
+      <p id="mapSyncDecisionText" class="dialog-copy">
+        Operator local map differs from the active robot map.
+      </p>
+      <div id="mapSyncDecisionDetail" class="map-sync-choice-note">
+        Choose Push to overwrite the robot map, Pull to replace the local draft, or Cancel to keep driving with the current robot map.
+      </div>
+      <div class="map-sync-choice-grid">
+        <button id="mapSyncPullButton" type="button">
+          <strong>Pull</strong>
+          <span>Use robot map locally</span>
+        </button>
+        <button id="mapSyncCancelButton" type="button">
+          <strong>Cancel</strong>
+          <span>Do nothing now</span>
+        </button>
+        <button id="mapSyncPushButton" class="primary" type="button">
+          <strong>Push</strong>
+          <span>Apply local map</span>
+        </button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="mapTransferDialog">
+    <form method="dialog" class="dialog-card map-transfer-dialog">
+      <div class="dialog-head">
+        <div>
+          <div class="eyebrow">Map Transfer</div>
+          <h2 id="mapTransferTitle">Push Map</h2>
+        </div>
+        <strong id="mapTransferPercent" class="map-transfer-percent">0%</strong>
+      </div>
+      <div class="map-transfer-track" aria-hidden="true">
+        <div id="mapTransferBar" class="map-transfer-bar"></div>
+      </div>
+      <div id="mapTransferStatus" class="map-transfer-status">Preparing...</div>
+      <div class="dialog-actions">
+        <button id="mapTransferCloseButton" type="button">Close</button>
+      </div>
+    </form>
+  </dialog>
+
   <script src="app.js"></script>
 </body>
 </html>

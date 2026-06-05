@@ -30,9 +30,11 @@ class OperatorFleetManager:
         self.maps_root = self.map_dir.parent
         self._load_context(self.map_dir)
 
-    def sidebar_payload(self) -> dict[str, Any]:
-        state = self.state_payload(include_trajectories=False)
-        robots = state.get("robots", [])
+    def sidebar_payload(self, include_runtime: bool = True) -> dict[str, Any]:
+        robots = []
+        if include_runtime:
+            state = self.state_payload(include_trajectories=False)
+            robots = state.get("robots", [])
         return {
             "id": FLEET_MANAGER_ID,
             "name": "Fleet Manager",
@@ -50,6 +52,7 @@ class OperatorFleetManager:
                 "state": self.mode.upper(),
                 "robots": len(robots) if isinstance(robots, list) else 0,
             },
+            "runtimeFresh": include_runtime,
             "error": "",
         }
 
@@ -192,6 +195,37 @@ class OperatorFleetManager:
 
     def check_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
         return self.manager.check_path(payload)
+
+    def manual_step_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
+        name = str(payload.get("name") or "").strip()
+        if not name:
+            raise ValueError("robot name is required")
+        poses = payload.get("poses", [])
+        check = self.manager.check_path({"name": name, "poses": poses})
+        update_payload = {
+            "name": name,
+            "status": "MANUAL_BLOCKED" if check.get("blocked") else "MANUAL",
+            "targetLm": "",
+            "currentLm": str(
+                payload.get("blockedCurrentLm" if check.get("blocked") else "currentLm")
+                or payload.get("currentLm")
+                or ""
+            ),
+        }
+        pose_key = "blockedPose" if check.get("blocked") else "nextPose"
+        pose = payload.get(pose_key)
+        if isinstance(pose, dict):
+            update_payload["pose"] = pose
+        result = self.manager.update_robot(update_payload)
+        return {
+            "ok": True,
+            "blocked": bool(check.get("blocked")),
+            "reason": str(check.get("reason") or ""),
+            "index": check.get("index"),
+            "pose": check.get("pose"),
+            "robot": result.get("robot"),
+            "state": result.get("state"),
+        }
 
     def add_robot_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
         return self.manager.add_robot(payload)

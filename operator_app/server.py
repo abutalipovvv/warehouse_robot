@@ -1,12 +1,17 @@
 from __future__ import annotations
 
 import argparse
+import base64
+import hashlib
 import json
+import select
+import struct
+import time
 from datetime import datetime, timezone
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from threading import Lock
+from threading import Lock, RLock
 from typing import Any
 from urllib.parse import parse_qs, unquote, urlparse
 import webbrowser
@@ -19,6 +24,10 @@ from .robot_client import RobotClient, RobotProbeError
 
 DEFAULT_STATIC_DIR = Path(__file__).resolve().parent / "static"
 DEFAULT_FLEET_PARAMS_PATH = Path(__file__).resolve().parents[1] / "fleet_manager" / "params.yaml"
+WEBSOCKET_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
+DEFAULT_FLEET_WS_INTERVAL_MS = 180
+MIN_FLEET_WS_INTERVAL_MS = 50
+MAX_FLEET_WS_INTERVAL_MS = 1000
 
 
 def utc_now() -> str:
@@ -34,12 +43,23 @@ class OperatorAppState:
         self.fleet_params_path = Path(fleet_params_path).expanduser().resolve()
         self.fleet_manager = OperatorFleetManager(fleet_map_dir, self.fleet_params_path)
         self._lock = Lock()
+        self._fleet_lock = RLock()
 
-    def list_robots_payload(self) -> dict[str, Any]:
+    def list_robots_payload(self, probe_robots: bool = True) -> dict[str, Any]:
         with self._lock:
             robots = self.registry.load()
-        items = [self.fleet_manager.sidebar_payload()]
-        items.extend(self._robot_payload(robot) for robot in robots)
+        if probe_robots:
+            with self._fleet_lock:
+                fleet_payload = self.fleet_manager.sidebar_payload()
+        elif self._fleet_lock.acquire(blocking=False):
+            try:
+                fleet_payload = self.fleet_manager.sidebar_payload()
+            finally:
+                self._fleet_lock.release()
+        else:
+            fleet_payload = self.fleet_manager.sidebar_payload(include_runtime=False)
+        items = [fleet_payload]
+        items.extend(self._robot_payload(robot, allow_probe=probe_robots) for robot in robots)
         return {"ok": True, "robots": items}
 
     def probe_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
@@ -65,18 +85,9 @@ class OperatorAppState:
         )
         with self._lock:
             self.registry.upsert(robot)
-        pulled = None
-        try:
-            active = self.robot_maps_active_payload(robot.id)
-            active_name = str(active.get("mapName") or "").strip()
-            if active_name:
-                pulled = self.pull_robot_map_payload(robot.id, {"mapName": active_name})
-        except Exception:
-            pulled = None
         return {
             "ok": True,
             "robot": self._robot_payload(robot, probe=probe),
-            "pulled": pulled,
         }
 
     def delete_robot_payload(self, robot_id: str) -> dict[str, Any]:
@@ -96,8 +107,14 @@ class OperatorAppState:
                 return robot
         raise ValueError(f"unknown robot: {robot_id}")
 
-    def _robot_payload(self, robot: KnownRobot, probe: dict[str, Any] | None = None) -> dict[str, Any]:
-        if probe is None:
+    def _robot_payload(
+        self,
+        robot: KnownRobot,
+        probe: dict[str, Any] | None = None,
+        *,
+        allow_probe: bool = True,
+    ) -> dict[str, Any]:
+        if probe is None and allow_probe:
             try:
                 probe = self._probe_robot(robot.host, robot.port)
             except RobotProbeError as exc:
@@ -118,6 +135,16 @@ class OperatorAppState:
                     "identity": robot.last_identity or None,
                     "status": None,
                 }
+        if probe is None:
+            probe = {
+                "ok": False,
+                "baseUrl": robot.base_url,
+                "online": False,
+                "identity": robot.last_identity or None,
+                "status": None,
+                "error": "",
+                "probed": False,
+            }
         payload = robot.to_dict()
         payload.update(
             {
@@ -126,6 +153,7 @@ class OperatorAppState:
                 "identity": probe.get("identity") or robot.last_identity or None,
                 "status": probe.get("status") if isinstance(probe.get("status"), dict) else None,
                 "error": str(probe.get("error") or "").strip(),
+                "probed": bool(probe.get("probed", True)),
             }
         )
         return payload
@@ -178,78 +206,104 @@ class OperatorAppState:
         return {"ok": True, "robotId": robot_id, "saved": result}
 
     def fleet_params_payload(self) -> dict[str, Any]:
-        return self.fleet_manager.params_payload()
+        with self._fleet_lock:
+            return self.fleet_manager.params_payload()
 
     def save_fleet_params_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
-        return self.fleet_manager.save_params_payload(payload)
+        with self._fleet_lock:
+            return self.fleet_manager.save_params_payload(payload)
 
     def fleet_manager_get_payload(self, action: str, arg: str = "") -> dict[str, Any]:
-        if action == "identity":
-            return self.fleet_manager.sidebar_payload()
-        if action == "status":
-            return self.fleet_manager.state_payload()
-        if action == "state":
-            return self.fleet_manager.state_payload()
-        if action == "mode":
-            return self.fleet_manager.mode_payload()
-        if action == "map":
-            return self.fleet_manager.map_payload()
-        if action == "maps_list":
-            return self.fleet_manager.maps_list_payload()
-        if action == "maps_active":
-            return self.fleet_manager.maps_active_payload()
-        if action == "maps_pull":
-            return self.fleet_pull_map_payload({"mapName": arg})
-        if action == "maps_local_list":
-            return self.fleet_local_maps_payload()
-        if action == "maps_local_active":
-            return self.fleet_local_active_map_payload()
-        if action == "maps_local_get":
-            return self.fleet_local_map_payload(arg)
-        if action == "params":
-            return self.fleet_manager.params_payload()
-        raise ValueError(f"unknown fleet manager action: {action}")
+        with self._fleet_lock:
+            if action == "identity":
+                return self.fleet_manager.sidebar_payload()
+            if action == "status":
+                return self.fleet_manager.state_payload()
+            if action == "state":
+                return self.fleet_manager.state_payload()
+            if action == "mode":
+                return self.fleet_manager.mode_payload()
+            if action == "map":
+                return self.fleet_manager.map_payload()
+            if action == "maps_list":
+                return self.fleet_manager.maps_list_payload()
+            if action == "maps_active":
+                return self.fleet_manager.maps_active_payload()
+            if action == "maps_pull":
+                return self.fleet_pull_map_payload({"mapName": arg})
+            if action == "maps_local_list":
+                return self.fleet_local_maps_payload()
+            if action == "maps_local_active":
+                return self.fleet_local_active_map_payload()
+            if action == "maps_local_get":
+                return self.fleet_local_map_payload(arg)
+            if action == "params":
+                return self.fleet_manager.params_payload()
+            raise ValueError(f"unknown fleet manager action: {action}")
 
     def fleet_manager_post_payload(self, action: str, payload: dict[str, Any]) -> dict[str, Any]:
-        if action == "mode":
-            return self.fleet_manager.set_mode_payload(payload)
-        if action == "params":
-            return self.fleet_manager.save_params_payload(payload)
-        if action == "plan":
-            return self.fleet_manager.plan_payload(payload)
-        if action == "tick":
-            return self.fleet_manager.tick_payload(payload)
-        if action == "world":
-            return self.fleet_manager.world_payload(payload)
-        if action == "check":
-            return self.fleet_manager.check_payload(payload)
-        if action == "maps_load":
-            return self.fleet_manager.load_map_payload(payload)
-        if action == "maps_save":
-            return self.fleet_manager.save_map_payload(payload)
-        if action == "maps_local_save":
-            return self.fleet_save_local_map_payload(payload)
-        if action == "maps_local_activate":
-            return self.fleet_activate_local_map_payload(payload)
-        if action == "maps_pull":
-            return self.fleet_pull_map_payload(payload)
-        if action == "maps_pull_sync":
-            return self.fleet_pull_sync_payload()
-        if action == "maps_push":
-            return self.fleet_push_map_payload(payload)
-        if action == "maps_push_sync":
-            return self.fleet_push_sync_payload()
-        if action == "robots_add":
-            return self.fleet_manager.add_robot_payload(payload)
-        if action == "robots_remove":
-            return self.fleet_manager.remove_robot_payload(payload)
-        if action == "robots_update":
-            return self.fleet_manager.update_robot_payload(payload)
-        if action == "robots_stop":
-            return self.fleet_manager.stop_robot_payload(payload)
-        if action == "robots_reset":
-            return self.fleet_manager.reset_robot_payload(payload)
-        raise ValueError(f"unknown fleet manager action: {action}")
+        with self._fleet_lock:
+            if action == "mode":
+                return self.fleet_manager.set_mode_payload(payload)
+            if action == "params":
+                return self.fleet_manager.save_params_payload(payload)
+            if action == "plan":
+                return self.fleet_manager.plan_payload(payload)
+            if action == "tick":
+                return self.fleet_manager.tick_payload(payload)
+            if action == "world":
+                return self.fleet_manager.world_payload(payload)
+            if action == "check":
+                return self.fleet_manager.check_payload(payload)
+            if action == "manual_step":
+                return self.fleet_manager.manual_step_payload(payload)
+            if action == "maps_load":
+                return self.fleet_manager.load_map_payload(payload)
+            if action == "maps_save":
+                return self.fleet_manager.save_map_payload(payload)
+            if action == "maps_local_save":
+                return self.fleet_save_local_map_payload(payload)
+            if action == "maps_local_activate":
+                return self.fleet_activate_local_map_payload(payload)
+            if action == "maps_pull":
+                return self.fleet_pull_map_payload(payload)
+            if action == "maps_pull_sync":
+                return self.fleet_pull_sync_payload()
+            if action == "maps_push":
+                return self.fleet_push_map_payload(payload)
+            if action == "maps_push_sync":
+                return self.fleet_push_sync_payload()
+            if action == "robots_add":
+                return self.fleet_manager.add_robot_payload(payload)
+            if action == "robots_remove":
+                return self.fleet_manager.remove_robot_payload(payload)
+            if action == "robots_update":
+                return self.fleet_manager.update_robot_payload(payload)
+            if action == "robots_stop":
+                return self.fleet_manager.stop_robot_payload(payload)
+            if action == "robots_reset":
+                return self.fleet_manager.reset_robot_payload(payload)
+            raise ValueError(f"unknown fleet manager action: {action}")
+
+    def fleet_manager_stream_payload(self, initial: bool = False) -> dict[str, Any] | None:
+        if initial:
+            self._fleet_lock.acquire()
+        elif not self._fleet_lock.acquire(blocking=False):
+            return None
+        try:
+            state = (
+                self.fleet_manager.state_payload(include_trajectories=True)
+                if initial
+                else self.fleet_manager.tick_payload({})
+            )
+            return {
+                "ok": True,
+                "type": "state" if initial else "tick",
+                "state": state,
+                "sentAt": utc_now(),
+            }
+        finally:
+            self._fleet_lock.release()
 
     def fleet_local_maps_payload(self) -> dict[str, Any]:
         return {
@@ -712,17 +766,21 @@ class OperatorAppState:
 
 
 class OperatorRequestHandler(SimpleHTTPRequestHandler):
+    protocol_version = "HTTP/1.1"
     app_state: OperatorAppState | None = None
 
     def do_GET(self) -> None:
         try:
             parsed = urlparse(self.path)
             path = parsed.path
+            if path == "/ws/fleet-manager":
+                self._handle_fleet_manager_ws(parsed)
+                return
             if path == "/health":
                 self._send_json({"ok": True})
                 return
             if path == "/api/robots":
-                self._send_json(self._require_state().list_robots_payload())
+                self._send_json(self._require_state().list_robots_payload(probe_robots=self._should_probe_robots(parsed)))
                 return
             if path == "/api/fleet/params":
                 self._send_json(self._require_state().fleet_params_payload())
@@ -750,6 +808,132 @@ class OperatorRequestHandler(SimpleHTTPRequestHandler):
             return
         except Exception as exc:  # pragma: no cover - defensive server path
             self._send_error_json(500, str(exc))
+
+    def _should_probe_robots(self, parsed) -> bool:
+        raw = str(parse_qs(parsed.query).get("probe", ["1"])[0] or "1").strip().lower()
+        return raw not in {"0", "false", "no", "off"}
+
+    def _handle_fleet_manager_ws(self, parsed) -> None:
+        if not self._is_websocket_upgrade():
+            self._send_error_json(400, "expected websocket upgrade")
+            return
+        key = self.headers.get("Sec-WebSocket-Key", "").strip()
+        if not key:
+            self._send_error_json(400, "missing Sec-WebSocket-Key")
+            return
+
+        accept = base64.b64encode(
+            hashlib.sha1(f"{key}{WEBSOCKET_GUID}".encode("ascii")).digest()
+        ).decode("ascii")
+        self.send_response(101, "Switching Protocols")
+        self.send_header("Upgrade", "websocket")
+        self.send_header("Connection", "Upgrade")
+        self.send_header("Sec-WebSocket-Accept", accept)
+        self.end_headers()
+        self.close_connection = True
+
+        state = self._require_state()
+        interval_sec = self._fleet_ws_interval_sec(parsed)
+        try:
+            initial_payload = state.fleet_manager_stream_payload(initial=True)
+            if initial_payload is not None:
+                self._send_ws_json(initial_payload)
+            while True:
+                if self._ws_client_closed():
+                    return
+                time.sleep(interval_sec)
+                if self._ws_client_closed():
+                    return
+                payload = state.fleet_manager_stream_payload(initial=False)
+                if payload is not None:
+                    self._send_ws_json(payload)
+        except (BrokenPipeError, ConnectionError, OSError):
+            return
+        except Exception as exc:  # pragma: no cover - defensive websocket path
+            try:
+                self._send_ws_json({"ok": False, "type": "error", "error": str(exc)})
+            except (BrokenPipeError, ConnectionError, OSError):
+                return
+
+    def _is_websocket_upgrade(self) -> bool:
+        upgrade = self.headers.get("Upgrade", "").strip().lower()
+        connection = self.headers.get("Connection", "").strip().lower()
+        return upgrade == "websocket" and "upgrade" in connection
+
+    def _fleet_ws_interval_sec(self, parsed) -> float:
+        raw_interval = parse_qs(parsed.query).get("intervalMs", [str(DEFAULT_FLEET_WS_INTERVAL_MS)])[0]
+        try:
+            interval_ms = int(raw_interval)
+        except (TypeError, ValueError):
+            interval_ms = DEFAULT_FLEET_WS_INTERVAL_MS
+        interval_ms = max(MIN_FLEET_WS_INTERVAL_MS, min(MAX_FLEET_WS_INTERVAL_MS, interval_ms))
+        return interval_ms / 1000.0
+
+    def _send_ws_json(self, payload: object) -> None:
+        encoded = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        self.connection.sendall(self._ws_frame(encoded, opcode=0x1))
+
+    @staticmethod
+    def _ws_frame(payload: bytes, opcode: int) -> bytes:
+        length = len(payload)
+        first_byte = 0x80 | opcode
+        if length < 126:
+            return bytes([first_byte, length]) + payload
+        if length <= 0xFFFF:
+            return bytes([first_byte, 126]) + struct.pack("!H", length) + payload
+        return bytes([first_byte, 127]) + struct.pack("!Q", length) + payload
+
+    def _ws_client_closed(self) -> bool:
+        readable, _, _ = select.select([self.connection], [], [], 0)
+        if not readable:
+            return False
+        previous_timeout = self.connection.gettimeout()
+        self.connection.settimeout(0.05)
+        try:
+            header = self._recv_exact(2)
+            if not header:
+                return True
+            opcode = header[0] & 0x0F
+            masked = bool(header[1] & 0x80)
+            length = header[1] & 0x7F
+            if length == 126:
+                extended = self._recv_exact(2)
+                if not extended:
+                    return True
+                length = struct.unpack("!H", extended)[0]
+            elif length == 127:
+                extended = self._recv_exact(8)
+                if not extended:
+                    return True
+                length = struct.unpack("!Q", extended)[0]
+            mask = self._recv_exact(4) if masked else b""
+            payload = self._recv_exact(length) if length else b""
+            if length and not payload:
+                return True
+            if masked and mask:
+                payload = bytes(byte ^ mask[index % 4] for index, byte in enumerate(payload))
+            if opcode == 0x8:
+                return True
+            if opcode == 0x9:
+                self.connection.sendall(self._ws_frame(payload, opcode=0xA))
+            return False
+        except TimeoutError:
+            return False
+        except (ConnectionError, OSError):
+            return True
+        finally:
+            self.connection.settimeout(previous_timeout)
+
+    def _recv_exact(self, size: int) -> bytes:
+        chunks = []
+        remaining = size
+        while remaining > 0:
+            chunk = self.connection.recv(remaining)
+            if not chunk:
+                return b""
+            chunks.append(chunk)
+            remaining -= len(chunk)
+        return b"".join(chunks)
 
     def do_POST(self) -> None:
         try:
@@ -831,6 +1015,8 @@ class OperatorRequestHandler(SimpleHTTPRequestHandler):
             return "world", ""
         if parts == ["check"]:
             return "check", ""
+        if parts == ["manual-step"]:
+            return "manual_step", ""
         if parts == ["maps", "list"]:
             return "maps_list", ""
         if parts == ["maps", "active"]:
@@ -1156,6 +1342,7 @@ def main() -> None:
     OperatorRequestHandler.app_state = state
     handler = partial(OperatorRequestHandler, directory=str(DEFAULT_STATIC_DIR.resolve()))
     server = ThreadingHTTPServer((args.host, args.port), handler)
+    server.daemon_threads = True
     url = browser_url(args.host, args.port)
     print(f"Serving operator app: {url}")
     print(f"Registry path: {args.registry.expanduser()}")
