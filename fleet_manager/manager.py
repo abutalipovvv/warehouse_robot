@@ -16,6 +16,12 @@ from fleet_manager.route_core import (
 )
 
 
+TERMINAL_ORDER_STATUSES = {"COMPLETED", "FAILED", "CANCELED"}
+ORDER_SEQUENCE_KEYS = ("targets", "targetLms", "goals", "orders", "queue", "blocks")
+ORDER_ID_KEYS = ("id", "orderId", "taskId")
+ORDER_TARGET_KEYS = ("targetLm", "goalLm", "location", "target", "LM")
+
+
 @dataclass
 class FleetRobot:
     name: str
@@ -34,6 +40,7 @@ class FleetRobot:
     blocked_since: float | None = None
     last_replan_at: float | None = None
     trajectory_dirty: bool = False
+    active_order_id: str = ""
 
     def to_dict(self, include_trajectory: bool = True) -> dict[str, Any]:
         return {
@@ -51,7 +58,70 @@ class FleetRobot:
             "routeNote": self.route_note,
             "blockedSince": self.blocked_since,
             "lastReplanAt": self.last_replan_at,
+            "activeOrderId": self.active_order_id,
         }
+
+
+@dataclass
+class FleetOrder:
+    order_id: str
+    target_lm: str
+    vehicle: str = ""
+    priority: int = 0
+    status: str = "QUEUED"
+    created_at: float = field(default_factory=time)
+    updated_at: float = field(default_factory=time)
+    assigned_robot: str = ""
+    start_lm: str = ""
+    route_nodes: list[str] = field(default_factory=list)
+    error: str = ""
+    external_id: str = ""
+    targets: list[str] = field(default_factory=list)
+    step_index: int = 0
+
+    def to_dict(self) -> dict[str, Any]:
+        targets = self.targets or ([self.target_lm] if self.target_lm else [])
+        current_step = max(0, min(self.step_index, max(0, len(targets) - 1)))
+        current_target = targets[current_step] if targets else self.target_lm
+        return {
+            "id": self.order_id,
+            "orderId": self.order_id,
+            "externalId": self.external_id,
+            "vehicle": self.vehicle,
+            "targetLm": current_target,
+            "targets": targets,
+            "currentStep": current_step,
+            "totalSteps": len(targets),
+            "steps": self._steps_payload(targets, current_step),
+            "priority": self.priority,
+            "status": self.status,
+            "createdAt": self.created_at,
+            "updatedAt": self.updated_at,
+            "assignedRobot": self.assigned_robot,
+            "startLm": self.start_lm,
+            "routeNodes": self.route_nodes,
+            "error": self.error,
+        }
+
+    def _steps_payload(self, targets: list[str], current_step: int) -> list[dict[str, Any]]:
+        steps = []
+        for index, target_lm in enumerate(targets):
+            if self.status == "CANCELED" and index >= current_step:
+                status = "CANCELED"
+            elif self.status == "FAILED" and index >= current_step:
+                status = "FAILED"
+            elif self.status == "COMPLETED" or index < current_step:
+                status = "COMPLETED"
+            elif index == current_step:
+                status = self.status
+            else:
+                status = "QUEUED"
+            steps.append({
+                "index": index,
+                "targetLm": target_lm,
+                "status": status,
+            })
+        return steps
 
 
 @dataclass
@@ -84,6 +154,7 @@ class WebFleetManager:
         self.params = params or {}
         self.planner = FleetMapfPlanner(landmarks, edges, params=params)
         self.robots: dict[str, FleetRobot] = {}
+        self.orders: dict[str, FleetOrder] = {}
         self.events: list[FleetEvent] = []
         self.obstacles: list[dict[str, float]] = []
         self.obstacle_areas: list[dict[str, float]] = []
@@ -104,6 +175,7 @@ class WebFleetManager:
             "events": [event.to_dict() for event in self.events[-80:]],
             "obstacles": self.obstacles,
             "obstacleAreas": self.obstacle_areas,
+            "orders": self._orders_list(),
         }
 
     def tick(self, payload: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -111,16 +183,23 @@ class WebFleetManager:
         state = {
             "ok": True,
             "robots": [
-                robot.to_dict(include_trajectory=False)
+                robot.to_dict(include_trajectory=self._should_stream_trajectory(robot))
                 for robot in self.robots.values()
             ],
             "events": [event.to_dict() for event in self.events[-80:]],
             "obstacles": self.obstacles,
             "obstacleAreas": self.obstacle_areas,
+            "orders": self._orders_list(),
         }
         for robot in self.robots.values():
             robot.trajectory_dirty = False
         return state
+
+    def _should_stream_trajectory(self, robot: FleetRobot) -> bool:
+        return bool(
+            robot.trajectory
+            and robot.status in {"MOVING", "WAITING", "BLOCKED", "PLANNING"}
+        )
 
     def update_world(self, payload: dict[str, Any]) -> dict[str, Any]:
         obstacles = payload.get("obstacles", [])
@@ -183,7 +262,7 @@ class WebFleetManager:
                 if other.name == name or other.pose is None:
                     continue
                 other_pose = self._predicted_robot_pose(other, offset) or other.pose
-                if other_pose is not None and self.collision.footprints_overlap(pose, other_pose):
+                if other_pose is not None and self.collision.robot_footprints_conflict(pose, other_pose):
                     return {
                         "ok": True,
                         "blocked": True,
@@ -192,6 +271,130 @@ class WebFleetManager:
                         "pose": pose,
                     }
         return {"ok": True, "blocked": False, "reason": ""}
+
+    def orders_payload(self) -> dict[str, Any]:
+        self._advance_runtime()
+        return {
+            "ok": True,
+            "orders": self._orders_list(),
+            "state": self.state(),
+        }
+
+    def set_order(self, payload: dict[str, Any]) -> dict[str, Any]:
+        orders = self._build_orders(payload)
+        if not orders:
+            raise ValueError("no orders to queue")
+        incoming_ids = set()
+        for order in orders:
+            if order.order_id in incoming_ids:
+                raise ValueError(f"duplicate order id in payload: {order.order_id}")
+            incoming_ids.add(order.order_id)
+            existing = self.orders.get(order.order_id)
+            if existing is not None and existing.status not in TERMINAL_ORDER_STATUSES:
+                raise ValueError(f"active order already exists: {order.order_id}")
+
+        for order in orders:
+            self.orders[order.order_id] = order
+            self._event(
+                "info",
+                f"order queued: {order.order_id} {order.vehicle or 'auto'}->{order.target_lm}",
+            )
+        self._dispatch_orders()
+        if len(orders[0].targets or []) > 1:
+            first = orders[0]
+            self._event(
+                "info",
+                f"order sequence queued: {len(first.targets)} LM step(s) for {first.vehicle or 'auto'}",
+            )
+        return {
+            "ok": True,
+            "order": orders[0].to_dict(),
+            "queuedOrders": [order.to_dict() for order in orders],
+            "orders": self._orders_list(),
+            "state": self.state(),
+        }
+
+    def dispatch_orders(self, payload: dict[str, Any] | None = None) -> dict[str, Any]:
+        dispatched = self._dispatch_orders(force=True)
+        return {
+            "ok": True,
+            "dispatched": dispatched,
+            "orders": self._orders_list(),
+            "state": self.state(),
+        }
+
+    def cancel_order(self, payload: dict[str, Any]) -> dict[str, Any]:
+        order_id = str(payload.get("id") or payload.get("orderId") or "").strip()
+        if not order_id:
+            raise ValueError("order id is required")
+        order = self.orders.get(order_id)
+        if order is None:
+            raise ValueError(f"unknown order: {order_id}")
+        self._cancel_order(order, "canceled by operator")
+        return {
+            "ok": True,
+            "order": order.to_dict(),
+            "orders": self._orders_list(),
+            "state": self.state(),
+        }
+
+    def pause_order(self, payload: dict[str, Any]) -> dict[str, Any]:
+        order_id = str(payload.get("id") or payload.get("orderId") or "").strip()
+        if not order_id:
+            raise ValueError("order id is required")
+        order = self.orders.get(order_id)
+        if order is None:
+            raise ValueError(f"unknown order: {order_id}")
+        if order.status in TERMINAL_ORDER_STATUSES:
+            raise ValueError(f"cannot pause terminal order: {order_id}")
+        self._pause_order(order, "paused by operator")
+        return {
+            "ok": True,
+            "order": order.to_dict(),
+            "orders": self._orders_list(),
+            "state": self.state(),
+        }
+
+    def resume_order(self, payload: dict[str, Any]) -> dict[str, Any]:
+        order_id = str(payload.get("id") or payload.get("orderId") or "").strip()
+        if not order_id:
+            raise ValueError("order id is required")
+        order = self.orders.get(order_id)
+        if order is None:
+            raise ValueError(f"unknown order: {order_id}")
+        if order.status in TERMINAL_ORDER_STATUSES:
+            raise ValueError(f"cannot resume terminal order: {order_id}")
+        order.status = "QUEUED"
+        order.error = ""
+        order.updated_at = time()
+        self._event("info", f"order resumed: {order.order_id}")
+        dispatched = self._dispatch_orders(force=True)
+        return {
+            "ok": True,
+            "dispatched": dispatched,
+            "order": order.to_dict(),
+            "orders": self._orders_list(),
+            "state": self.state(),
+        }
+
+    def clear_orders(self, payload: dict[str, Any] | None = None) -> dict[str, Any]:
+        payload = payload or {}
+        include_active = bool(payload.get("includeActive", False))
+        canceled = 0
+        for order in list(self.orders.values()):
+            if order.status in TERMINAL_ORDER_STATUSES:
+                continue
+            if include_active or order.status == "QUEUED":
+                self._cancel_order(order, "cleared by operator")
+                canceled += 1
+        if canceled:
+            self._event("warn", f"orders cleared: {canceled}")
+        return {
+            "ok": True,
+            "canceled": canceled,
+            "orders": self._orders_list(),
+            "state": self.state(),
+        }
 
     def add_robot(self, payload: dict[str, Any]) -> dict[str, Any]:
         name = str(payload.get("name", "")).strip()
@@ -213,6 +416,7 @@ class WebFleetManager:
             self.robots[name] = robot
             self._event("info", f"robot added: {name}@{current_lm}")
         else:
+            self._cancel_active_order_for_robot(robot, "robot respawned")
             robot.current_lm = current_lm
             robot.pose = self._pose_at_landmark(current_lm)
             robot.target_lm = ""
@@ -233,6 +437,8 @@ class WebFleetManager:
             raise ValueError("robot name is required")
         removed = self.robots.pop(name, None)
         if removed is not None:
+            self._cancel_active_order_for_robot(removed, "robot removed")
+            self._cancel_orders_for_robot(name, "robot removed")
             self._event("warn", f"robot removed: {name}")
         return {"ok": True, "removed": removed is not None, "state": self.state()}
 
@@ -243,10 +449,12 @@ class WebFleetManager:
             if robot is None:
                 raise ValueError(f"unknown robot: {name}")
             self._stop_robot(robot)
+            self._cancel_orders_for_robot(name, "robot stopped")
             self._event("warn", f"robot stopped: {name}")
         else:
             for robot in self.robots.values():
                 self._stop_robot(robot)
+            self._cancel_all_orders("fleet stopped")
             self._event("warn", "fleet stopped")
         return {"ok": True, "state": self.state()}
 
@@ -257,6 +465,7 @@ class WebFleetManager:
             robot = self.robots.get(robot_name)
             if robot is None:
                 continue
+            self._cancel_active_order_for_robot(robot, "robot reset")
             spawn_lm = str(payload.get("spawnLm") or robot.current_lm or "").strip()
             if spawn_lm in self.landmarks:
                 robot.current_lm = spawn_lm
@@ -309,6 +518,7 @@ class WebFleetManager:
                 "yaw": float(pose.get("yaw", 0.0) or 0.0),
             }
         if robot.status in {"IDLE", "ARRIVED", "BLOCKED", "STOPPED", "MANUAL", "MANUAL_BLOCKED"} and not robot.target_lm:
+            self._cancel_active_order_for_robot(robot, f"robot status {robot.status.lower()}")
             robot.trajectory = []
             robot.plan_nodes = []
             robot.route_started_at = None
@@ -417,8 +627,382 @@ class WebFleetManager:
         self.events.append(FleetEvent(stamp=time(), level=level, message=message))
         self.events = self.events[-200:]
 
-    def _stop_robot(self, robot: FleetRobot) -> None:
-        robot.status = "IDLE"
+    def _orders_list(self) -> list[dict[str, Any]]:
+        status_rank = {
+            "EXECUTING": 0,
+            "WAITING_TRAFFIC": 1,
+            "WAITING_OBSTACLE": 1,
+            "PLANNING": 2,
+            "PAUSED": 2,
+            "ASSIGNED": 2,
+            "QUEUED": 3,
+            "COMPLETED": 4,
+            "FAILED": 5,
+            "CANCELED": 6,
+        }
+        ordered = sorted(
+            self.orders.values(),
+            key=lambda item: (
+                status_rank.get(item.status, 9),
+                -int(item.priority or 0),
+                item.created_at,
+            ),
+        )
+        return [order.to_dict() for order in ordered[:120]]
+
+    def _build_orders(self, payload: dict[str, Any]) -> list[FleetOrder]:
+        return [self._build_order(payload)]
+
+    def _build_order(self, payload: dict[str, Any]) -> FleetOrder:
+        order_id = str(
+            payload.get("id")
+            or payload.get("orderId")
+            or payload.get("taskId")
+            or payload.get("externalId")
+            or ""
+        ).strip()
+        if not order_id:
+            order_id = f"order-{int(time() * 1000)}"
+
+        targets = self._target_lms_from_payload(payload)
+        if not targets:
+            raise ValueError("targetLm/goalLm/location is required")
+        for target_lm in targets:
+            if target_lm not in self.landmarks:
+                raise ValueError(f"unknown target LM: {target_lm}")
+
+        vehicle = str(
+            payload.get("vehicle")
+            or payload.get("robot")
+            or payload.get("robotName")
+            or payload.get("name")
+            or ""
+        ).strip()
+        if vehicle and vehicle not in self.robots:
+            raise ValueError(f"unknown robot: {vehicle}")
+
+        try:
+            priority = int(payload.get("priority", 0) or 0)
+        except (TypeError, ValueError):
+            priority = 0
+        external_id = str(payload.get("externalId") or payload.get("taskId") or "").strip()
+        return FleetOrder(
+            order_id=order_id,
+            target_lm=targets[0],
+            vehicle=vehicle,
+            priority=priority,
+            external_id=external_id,
+            targets=targets,
+        )
+
+    def _target_lms_from_payload(self, payload: dict[str, Any]) -> list[str]:
+        targets: list[str] = []
+        for key in ORDER_SEQUENCE_KEYS:
+            raw_sequence = payload.get(key)
+            if not isinstance(raw_sequence, list):
+                continue
+            for item in raw_sequence:
+                target_lm = self._target_lm_from_payload_item(item)
+                if target_lm:
+                    targets.append(target_lm)
+            if targets:
+                return targets
+
+        target_lm = self._target_lm_from_payload_item(payload)
+        return [target_lm] if target_lm else []
+
+    def _target_lm_from_payload_item(self, item: Any) -> str:
+        if isinstance(item, dict):
+            for key in ORDER_TARGET_KEYS:
+                target_lm = str(item.get(key) or "").strip()
+                if target_lm:
+                    return target_lm
+            return ""
+        return str(item or "").strip()
+
+    def _dispatch_orders(self, force: bool = False) -> int:
+        dispatched = 0
+        queued_orders = [
+            order for order in self.orders.values()
+            if order.status == "QUEUED"
+        ]
+        queued_orders.sort(key=lambda item: (-int(item.priority or 0), item.created_at))
+        for order in queued_orders:
+            if self._dispatch_order(order, force=force):
+                dispatched += 1
+        return dispatched
+
+    def _dispatch_order(self, order: FleetOrder, force: bool = False) -> bool:
+        order.target_lm = self._active_order_target(order)
+        candidates = self._candidate_robots_for_order(order)
+        if not candidates:
+            self._set_order_error(order, "no available robot")
+            return False
+
+        failed_reason = ""
+        for robot in candidates:
+            start_lm = self._nearest_lm_for_robot(robot)
+            if not start_lm or start_lm not in self.landmarks:
+                failed_reason = "cannot find nearest LM"
+                continue
+            if start_lm == order.target_lm and not robot.trajectory:
+                robot.current_lm = order.target_lm
+                robot.target_lm = ""
+                robot.status = "ARRIVED"
+                robot.active_order_id = ""
+                robot.last_reason = "order already at target"
+                robot.updated_at = time()
+                if self._advance_or_complete_order(order, robot, time()):
+                    self._event("info", f"order completed: {order.order_id} {robot.name}@{order.target_lm}")
+                    return True
+                return self._dispatch_order(order, force=force)
+
+            request: dict[str, Any] = {
+                "name": robot.name,
+                "startLm": start_lm,
+                "goalLm": order.target_lm,
+            }
+            if robot.pose is not None:
+                request["startPose"] = dict(robot.pose)
+
+            self._set_order_status(order, "PLANNING", robot=robot, start_lm=start_lm)
+            result = self._plan_valid_requests([request], {"robots": [request]})
+            if result.get("ok") and result.get("plans"):
+                now = time()
+                order.route_nodes = [
+                    str(item)
+                    for plan in result.get("plans", [])
+                    if isinstance(plan, dict)
+                    for item in plan.get("nodes", [])
+                ]
+                self._apply_planner_result(result, now, order_id=order.order_id)
+                self._set_order_status(order, "EXECUTING", robot=robot, start_lm=start_lm)
+                self._event(
+                    "info",
+                    f"order dispatched: {order.order_id} {robot.name} {start_lm}->{order.target_lm}",
+                )
+                return True
+            failed_reason = str(result.get("debug", {}).get("reason") or "planner rejected")
+            if order.vehicle:
+                self._set_order_status(order, "QUEUED", robot=robot, start_lm=start_lm)
+            else:
+                order.status = "QUEUED"
+                order.start_lm = start_lm
+                order.updated_at = time()
+
+        self._set_order_error(order, failed_reason or "dispatch pending")
+        return False
+
+    def _candidate_robots_for_order(self, order: FleetOrder) -> list[FleetRobot]:
+        if order.vehicle:
+            robot = self.robots.get(order.vehicle)
+            if robot is None:
+                return []
+            return [robot] if self._robot_can_accept_order(robot, explicit=True) else []
+
+        candidates = [
+            robot for robot in self.robots.values()
+            if self._robot_can_accept_order(robot, explicit=False)
+        ]
+        candidates.sort(
+            key=lambda robot: (
+                self._lm_distance(self._nearest_lm_for_robot(robot), order.target_lm),
+                robot.name,
+            )
+        )
+        return candidates
+
+    def _robot_can_accept_order(self, robot: FleetRobot, explicit: bool = False) -> bool:
+        if robot.active_order_id:
+            return False
+        if robot.target_lm or robot.trajectory:
+            return False
+        if robot.status == "STOPPED" and not explicit:
+            return False
+        if robot.status in {"MOVING", "WAITING", "PLANNING", "BLOCKED"}:
+            return False
+        return True
+
+    def _lm_distance(self, start_lm: str, goal_lm: str) -> float:
+        start = self.landmarks.get(start_lm)
+        goal = self.landmarks.get(goal_lm)
+        if start is None or goal is None:
+            return float("inf")
+        return math.hypot(goal.x - start.x, goal.y - start.y)
+
+    def _set_order_status(
+        self,
+        order: FleetOrder,
+        status: str,
+        robot: FleetRobot | None = None,
+        start_lm: str = "",
+        error: str = "",
+    ) -> None:
+        order.status = status
+        order.updated_at = time()
+        order.error = error
+        if robot is not None:
+            order.assigned_robot = robot.name
+            if not order.vehicle and status not in {"PLANNING", "QUEUED"}:
+                order.vehicle = robot.name
+        if start_lm:
+            order.start_lm = start_lm
+
+    def _set_order_error(self, order: FleetOrder, error: str) -> None:
+        if order.error != error:
+            self._event("warn", f"order pending: {order.order_id} {error}")
+        order.status = "QUEUED"
+        order.error = error
+        if not order.vehicle:
+            order.assigned_robot = ""
+        order.updated_at = time()
+
+    def _cancel_order(self, order: FleetOrder, reason: str) -> None:
+        for robot in self.robots.values():
+            if robot.active_order_id == order.order_id:
+                self._stop_robot(robot, cancel_active_order=False)
+        self._set_order_status(order, "CANCELED", error=reason)
+        self._event("warn", f"order canceled: {order.order_id}")
+
+    def _pause_order(self, order: FleetOrder, reason: str) -> None:
+        paused_robot: FleetRobot | None = None
+        for robot in self.robots.values():
+            if robot.active_order_id == order.order_id:
+                paused_robot = robot
+                break
+        if paused_robot is None and order.assigned_robot:
+            paused_robot = self.robots.get(order.assigned_robot)
+        if paused_robot is None and order.vehicle:
+            paused_robot = self.robots.get(order.vehicle)
+
+        if paused_robot is not None:
+            nearest_lm = self._nearest_lm_for_robot(paused_robot)
+            if nearest_lm in self.landmarks:
+                paused_robot.current_lm = nearest_lm
+            paused_robot.target_lm = ""
+            paused_robot.status = "PAUSED"
+            paused_robot.trajectory = []
+            paused_robot.plan_nodes = []
+            paused_robot.trajectory_dirty = True
+            paused_robot.route_started_at = None
+            paused_robot.route_clock = 0.0
+            paused_robot.last_tick_at = None
+            paused_robot.blocked_since = None
+            paused_robot.last_replan_at = None
+            paused_robot.last_reason = reason
+            paused_robot.route_note = ""
+            paused_robot.active_order_id = ""
+            paused_robot.updated_at = time()
+            order.assigned_robot = paused_robot.name
+            if not order.vehicle:
+                order.vehicle = paused_robot.name
+            order.start_lm = paused_robot.current_lm
+
+        order.status = "PAUSED"
+        order.error = reason
+        order.updated_at = time()
+        self._event("warn", f"order paused: {order.order_id}")
+
+    def _cancel_active_order_for_robot(self, robot: FleetRobot, reason: str) -> None:
+        if not robot.active_order_id:
+            return
+        order = self.orders.get(robot.active_order_id)
+        if order is not None and order.status not in TERMINAL_ORDER_STATUSES:
+            self._set_order_status(order, "CANCELED", error=reason)
+            self._event("warn", f"order canceled: {order.order_id} {reason}")
+        robot.active_order_id = ""
+
+    def _cancel_orders_for_robot(self, robot_name: str, reason: str) -> None:
+        for order in self.orders.values():
+            if order.status in TERMINAL_ORDER_STATUSES:
+                continue
+            if order.vehicle == robot_name or order.assigned_robot == robot_name:
+                self._set_order_status(order, "CANCELED", error=reason)
+                self._event("warn", f"order canceled: {order.order_id} {reason}")
+
+    def _cancel_all_orders(self, reason: str) -> None:
+        for order in self.orders.values():
+            if order.status in TERMINAL_ORDER_STATUSES:
+                continue
+            self._set_order_status(order, "CANCELED", error=reason)
+            self._event("warn", f"order canceled: {order.order_id} {reason}")
+
+    def _active_order_target(self, order: FleetOrder) -> str:
+        targets = order.targets or ([order.target_lm] if order.target_lm else [])
+        if not targets:
+            return order.target_lm
+        order.step_index = max(0, min(order.step_index, len(targets) - 1))
+        order.target_lm = targets[order.step_index]
+        return order.target_lm
+
+    def _advance_or_complete_order(self, order: FleetOrder, robot: FleetRobot, now: float) -> bool:
+        targets = order.targets or ([order.target_lm] if order.target_lm else [])
+        if order.step_index + 1 >= len(targets):
+            order.status = "COMPLETED"
+            order.error = ""
+            order.updated_at = now
+            order.assigned_robot = robot.name
+            order.route_nodes = list(robot.plan_nodes)
+            robot.active_order_id = ""
+            return True
+
+        previous_target = targets[order.step_index]
+        order.step_index += 1
+        order.target_lm = targets[order.step_index]
+        order.status = "QUEUED"
+        order.error = ""
+        order.updated_at = now
+        order.assigned_robot = robot.name
+        order.start_lm = robot.current_lm
+        order.route_nodes = []
+        robot.active_order_id = ""
+        self._event(
+            "info",
+            f"order step completed: {order.order_id} {robot.name}@{previous_target}; next {order.target_lm}",
+        )
+        return False
+
+    def _complete_active_order(self, robot: FleetRobot, now: float) -> None:
+        if not robot.active_order_id:
+            return
+        order = self.orders.get(robot.active_order_id)
+        if order is None:
+            robot.active_order_id = ""
+            return
+        order.route_nodes = list(robot.plan_nodes)
+        self._advance_or_complete_order(order, robot, now)
+
+    def _update_active_order_from_robot(self, robot: FleetRobot) -> None:
+        if not robot.active_order_id:
+            return
+        order = self.orders.get(robot.active_order_id)
+        if order is None or order.status in TERMINAL_ORDER_STATUSES:
+            return
+        if robot.status == "WAITING":
+            if self._is_robot_conflict(robot.last_reason):
+                status = "WAITING_TRAFFIC"
+            else:
+                status = "WAITING_OBSTACLE"
+        elif robot.status == "MOVING":
+            status = "EXECUTING"
+        elif robot.status == "BLOCKED":
+            status = "PAUSED"
+        elif robot.status == "PLANNING":
+            status = "PLANNING"
+        else:
+            status = order.status
+        order.status = status
+        order.error = "" if status == "EXECUTING" else robot.last_reason
+        order.updated_at = time()
+        order.route_nodes = list(robot.plan_nodes)
+
+    def _stop_robot(self, robot: FleetRobot, cancel_active_order: bool = True) -> None:
+        if cancel_active_order and robot.active_order_id:
+            order = self.orders.get(robot.active_order_id)
+            if order is not None and order.status not in TERMINAL_ORDER_STATUSES:
+                self._set_order_status(order, "CANCELED", error="robot stopped")
+                self._event("warn", f"order canceled: {order.order_id} robot stopped")
+        robot.status = "STOPPED"
         robot.target_lm = ""
         robot.trajectory = []
         robot.plan_nodes = []
@@ -430,6 +1014,7 @@ class WebFleetManager:
         robot.last_replan_at = None
         robot.last_reason = "stopped"
         robot.route_note = ""
+        robot.active_order_id = ""
         robot.updated_at = time()
 
     def _block_order(self, name: str, start_lm: str, goal_lm: str, reason: str) -> None:
@@ -540,7 +1125,12 @@ class WebFleetManager:
             result = self._apply_continuous_reservation_waits(result)
         return result
 
-    def _apply_planner_result(self, result: dict[str, Any], now: float | None = None) -> None:
+    def _apply_planner_result(
+        self,
+        result: dict[str, Any],
+        now: float | None = None,
+        order_id: str | None = None,
+    ) -> None:
         now = now or time()
         for plan in result.get("plans", []):
             if not isinstance(plan, dict):
@@ -569,6 +1159,8 @@ class WebFleetManager:
             robot.last_reason = robot.route_note if trajectory else "empty trajectory"
             robot.blocked_since = None
             robot.last_replan_at = now
+            if order_id is not None:
+                robot.active_order_id = order_id
             robot.updated_at = now
 
     def _plan_note(self, result: dict[str, Any]) -> str:
@@ -801,7 +1393,7 @@ class WebFleetManager:
                     waiting_pose = self._pose_at_trajectory(waiting_trajectory, t)
                     if waiting_pose is None:
                         continue
-                    if self.collision.footprints_overlap(priority_pose, waiting_pose):
+                    if self.collision.robot_footprints_conflict(priority_pose, waiting_pose):
                         priority_edge = self._edge_id_at_trajectory(priority_trajectory, t) or "unknown"
                         waiting_edge = self._edge_id_at_trajectory(waiting_trajectory, t) or "unknown"
                         if waiting_edge.startswith("WAIT@") and not priority_edge.startswith("WAIT@"):
@@ -872,7 +1464,7 @@ class WebFleetManager:
         wait = 0.0
         while wait <= max_wait + 0.000001:
             priority_pose = self._pose_at_trajectory(priority_trajectory, conflict_time + wait)
-            if priority_pose is None or not self.collision.footprints_overlap(conflict_pose, priority_pose):
+            if priority_pose is None or not self.collision.robot_footprints_conflict(conflict_pose, priority_pose):
                 return max(safety, wait + safety)
             wait += step
         return max_wait + safety
@@ -901,7 +1493,7 @@ class WebFleetManager:
                 other_pose = self._predicted_robot_pose(other, t)
                 if other_pose is None:
                     continue
-                if self.collision.footprints_overlap(pose, other_pose):
+                if self.collision.robot_footprints_conflict(pose, other_pose):
                     edge = self._edge_id_at_trajectory(trajectory, t)
                     return {
                         "time": t,
@@ -928,7 +1520,7 @@ class WebFleetManager:
         wait = 0.0
         while wait <= max_wait + 0.000001:
             other_pose = self._predicted_robot_pose(other, conflict_time + wait)
-            if other_pose is None or not self.collision.footprints_overlap(conflict_pose, other_pose):
+            if other_pose is None or not self.collision.robot_footprints_conflict(conflict_pose, other_pose):
                 return max(safety, wait + safety)
             wait += step
         return max_wait + safety
@@ -1377,14 +1969,17 @@ class WebFleetManager:
         for robot in self.robots.values():
             if robot.status in {"BLOCKED", "PLANNING"} and robot.target_lm:
                 self._maybe_replan_robot(robot, now, "no active trajectory")
+                self._update_active_order_from_robot(robot)
                 robot.last_tick_at = now
                 continue
             if robot.status not in {"MOVING", "WAITING"}:
+                self._update_active_order_from_robot(robot)
                 robot.last_tick_at = now
                 continue
             if not robot.trajectory:
                 if robot.target_lm:
                     self._maybe_replan_robot(robot, now, "empty trajectory")
+                    self._update_active_order_from_robot(robot)
                 continue
             final_time = float(robot.trajectory[-1].get("t", 0.0) or 0.0)
             last_tick_at = robot.last_tick_at or now
@@ -1402,11 +1997,13 @@ class WebFleetManager:
                 robot.updated_at = now
                 if not self._is_robot_conflict(blocked_reason):
                     self._maybe_replan_robot(robot, now, blocked_reason)
+                self._update_active_order_from_robot(robot)
                 continue
             if robot.status != "MOVING":
                 self._event("info", f"{robot.name} moving")
             robot.status = "MOVING"
             robot.last_reason = "moving"
+            self._update_active_order_from_robot(robot)
             robot.blocked_since = None
             robot.route_clock = proposed_clock
             pose = self._pose_at_trajectory(robot.trajectory, robot.route_clock)
@@ -1414,6 +2011,7 @@ class WebFleetManager:
                 robot.pose = pose
             if final_time > 0.0 and robot.route_clock >= final_time:
                 robot.current_lm = robot.target_lm or robot.current_lm
+                self._complete_active_order(robot, now)
                 robot.target_lm = ""
                 robot.status = "ARRIVED"
                 robot.trajectory = []
@@ -1427,6 +2025,7 @@ class WebFleetManager:
                 robot.route_note = ""
                 robot.updated_at = now
                 self._event("info", f"{robot.name} arrived at {robot.current_lm}")
+        self._dispatch_orders()
 
     def _maybe_replan_robot(self, robot: FleetRobot, now: float, reason: str) -> bool:
         if not robot.target_lm:
@@ -1523,7 +2122,7 @@ class WebFleetManager:
                 other_pose = self._predicted_robot_pose(other, offset)
                 if other_pose is None:
                     continue
-                if self.collision.footprints_overlap(pose, other_pose):
+                if self.collision.robot_footprints_conflict(pose, other_pose):
                     reason = self._robot_conflict_reason(robot, other, pose, other_pose)
                     if reason:
                         return reason
@@ -1545,14 +2144,16 @@ class WebFleetManager:
         candidate_pose: dict[str, float],
         other_pose: dict[str, float],
     ) -> str:
-        if other.pose is not None and self.collision.footprints_overlap(candidate_pose, other.pose):
+        if other.pose is not None and self.collision.robot_footprints_conflict(candidate_pose, other.pose):
             if (
                 robot.pose is not None
-                and self.collision.footprints_overlap(robot.pose, other.pose)
+                and self.collision.robot_footprints_conflict(robot.pose, other.pose)
                 and self._candidate_moves_away(robot.pose, candidate_pose, other.pose)
             ):
                 return ""
-            return f"occupied by {other.name}"
+            if self.collision.footprints_overlap(candidate_pose, other.pose):
+                return f"occupied by {other.name}"
+            return f"keep clearance from {other.name}"
 
         if self._candidate_moves_away(robot.pose, candidate_pose, other_pose):
             return ""
@@ -1591,7 +2192,12 @@ class WebFleetManager:
         return robot.name > other.name
 
     def _is_robot_conflict(self, reason: str) -> bool:
-        return str(reason).startswith("yield to ") or str(reason).startswith("occupied by ")
+        value = str(reason)
+        return (
+            value.startswith("yield to ")
+            or value.startswith("occupied by ")
+            or value.startswith("keep clearance from ")
+        )
 
     def _pose_at_landmark(self, lm_name: str) -> dict[str, float] | None:
         landmark = self.landmarks.get(lm_name)
@@ -1731,6 +2337,13 @@ class FleetCollisionChecker:
             self.footprint_corners(first_pose),
             self.footprint_corners(second_pose),
             self.collision_margin(),
+        )
+
+    def robot_footprints_conflict(self, first_pose: dict[str, float], second_pose: dict[str, float]) -> bool:
+        return self.polygons_overlap(
+            self.footprint_corners(first_pose),
+            self.footprint_corners(second_pose),
+            self.robot_collision_margin(),
         )
 
     def pose_sample_points(self, pose: dict[str, float]) -> list[dict[str, float]]:
@@ -1902,6 +2515,14 @@ class FleetCollisionChecker:
     def collision_margin(self) -> float:
         navigation = self._dict_param("navigation")
         return max(0.0, float(navigation.get("collision_margin", 0.04) or 0.04))
+
+    def robot_collision_margin(self) -> float:
+        fleet = self._dict_param("fleet")
+        try:
+            clearance = float(fleet.get("robot_clearance_m", 0.35) or 0.35)
+        except (TypeError, ValueError):
+            clearance = 0.35
+        return self.collision_margin() + max(0.0, clearance)
 
     def _dict_param(self, key: str) -> dict[str, Any]:
         value = self.params.get(key, {})

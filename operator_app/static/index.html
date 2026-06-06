@@ -138,10 +138,16 @@
                     <div class="block-title">Queue</div>
                     <div class="fleet-action-row">
                       <button id="fleetQueueGoalButton" type="button">Queue Goal</button>
-                      <button id="fleetStartQueueButton" class="primary" type="button">Start Queue</button>
+                      <button id="fleetStartQueueButton" class="primary" type="button">Dispatch</button>
                       <button id="fleetClearQueueButton" type="button">Clear</button>
                     </div>
-                    <div id="fleetQueueList" class="fleet-queue-list">No queued goals.</div>
+                    <div id="fleetQueueList" class="fleet-queue-list">No orders yet.</div>
+                    <div id="fleetOrderDetails" class="fleet-order-details">Select an order to inspect.</div>
+                    <div class="fleet-order-actions">
+                      <button id="fleetPauseOrderButton" type="button">Pause</button>
+                      <button id="fleetResumeOrderButton" class="primary" type="button">Resume</button>
+                      <button id="fleetCancelOrderButton" type="button">Cancel</button>
+                    </div>
                     <div id="fleetPlanDebug" class="fleet-plan-debug">Planner idle.</div>
                   </div>
                   <div class="fleet-params-block">
@@ -150,6 +156,10 @@
                       <label>
                         Route speed
                         <input id="fleetRouteSpeedInput" type="number" value="0.40" min="0.02" max="2.00" step="0.01" />
+                      </label>
+                      <label>
+                        Robot clearance
+                        <input id="fleetRobotClearanceInput" type="number" value="0.35" min="0.00" max="1.50" step="0.01" />
                       </label>
                       <label>
                         Manual linear

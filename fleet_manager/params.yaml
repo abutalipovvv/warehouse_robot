@@ -63,6 +63,7 @@ fleet:
   reservation_time_step_sec: 1
   reservation_horizon_sec: 8
   reservation_safety_time_sec: 0.35
+  robot_clearance_m: 0.35
   continuous_collision_step_sec: 0.1
   wait_time_sec: 1
   wait_cost: 6

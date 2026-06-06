@@ -433,8 +433,9 @@ class OperatorApp {
     this.navigateMode = false;
     this.pendingFleetAction = "";
     this.pendingFleetRobotName = "";
-    this.fleetQueue = this.loadFleetQueue();
-    this.fleetQueueSequence = this.fleetQueue.reduce((max, item) => Math.max(max, Number(item.seq || 0)), 0);
+    this.fleetQueue = [];
+    this.fleetQueueSequence = 0;
+    this.selectedFleetOrderId = "";
     this.fleetParams = null;
     this.fleetParamsLoaded = false;
     this.fleetNameEdited = false;
@@ -523,8 +524,13 @@ class OperatorApp {
     this.fleetStartQueueButton = document.getElementById("fleetStartQueueButton");
     this.fleetClearQueueButton = document.getElementById("fleetClearQueueButton");
     this.fleetQueueList = document.getElementById("fleetQueueList");
+    this.fleetOrderDetails = document.getElementById("fleetOrderDetails");
+    this.fleetPauseOrderButton = document.getElementById("fleetPauseOrderButton");
+    this.fleetResumeOrderButton = document.getElementById("fleetResumeOrderButton");
+    this.fleetCancelOrderButton = document.getElementById("fleetCancelOrderButton");
     this.fleetPlanDebug = document.getElementById("fleetPlanDebug");
     this.fleetRouteSpeedInput = document.getElementById("fleetRouteSpeedInput");
+    this.fleetRobotClearanceInput = document.getElementById("fleetRobotClearanceInput");
     this.fleetManualLinearInput = document.getElementById("fleetManualLinearInput");
     this.fleetManualAngularInput = document.getElementById("fleetManualAngularInput");
     this.fleetManualLookaheadInput = document.getElementById("fleetManualLookaheadInput");
@@ -656,6 +662,9 @@ class OperatorApp {
     this.fleetQueueGoalButton.addEventListener("click", () => this.toggleFleetQueueMode());
     this.fleetStartQueueButton.addEventListener("click", () => this.startQueuedFleetPlan());
     this.fleetClearQueueButton.addEventListener("click", () => this.clearFleetQueue());
+    this.fleetPauseOrderButton.addEventListener("click", () => this.pauseSelectedFleetOrder());
+    this.fleetResumeOrderButton.addEventListener("click", () => this.resumeSelectedFleetOrder());
+    this.fleetCancelOrderButton.addEventListener("click", () => this.cancelSelectedFleetOrder());
     this.fleetSaveParamsButton.addEventListener("click", () => this.saveFleetParams());
     this.fleetModelSaveButton.addEventListener("click", () => this.saveFleetParams());
     this.fleetTabButtons.forEach((button) => {
@@ -800,29 +809,6 @@ class OperatorApp {
       sourceRobotMapName: "",
       hasLocalChanges: false,
     };
-  }
-
-  loadFleetQueue() {
-    try {
-      const stored = window.localStorage.getItem("operator:fleetQueue");
-      const parsed = stored ? JSON.parse(stored) : [];
-      if (Array.isArray(parsed)) {
-        return parsed
-          .filter((item) => item && item.robotName && item.goalLm)
-          .map((item, index) => ({
-            robotName: String(item.robotName),
-            goalLm: String(item.goalLm),
-            seq: Number(item.seq || index + 1),
-          }));
-      }
-    } catch (_) {
-      window.localStorage.removeItem("operator:fleetQueue");
-    }
-    return [];
-  }
-
-  saveFleetQueue() {
-    window.localStorage.setItem("operator:fleetQueue", JSON.stringify(this.fleetQueue));
   }
 
   selectedRobot() {
@@ -1799,7 +1785,11 @@ class OperatorApp {
     this.routeNodesText.textContent = selectedFleetRobot && Array.isArray(selectedFleetRobot.planNodes) && selectedFleetRobot.planNodes.length
       ? selectedFleetRobot.planNodes.join(" -> ")
       : "No active fleet route.";
+    this.renderFleetRobotList(robots);
+    this.renderFleetQueue();
     this.renderFleetPlanDebug();
+    this.drawRoute();
+    this.drawLookahead();
     this.syncModeButtons();
     this.syncManualButtons();
     this.ensureFleetAnimationLoop();
@@ -1947,8 +1937,71 @@ class OperatorApp {
   }
 
   queuedGoalFor(robotName) {
-    const item = this.fleetQueue.find((entry) => entry.robotName === robotName);
-    return item ? item.goalLm : "";
+    const draftGoals = this.fleetDraftGoalsFor(robotName);
+    if (draftGoals.length) {
+      return `${draftGoals.length} draft`;
+    }
+    const item = this.fleetOrders().find((entry) => {
+      const status = String(entry.status || "").toUpperCase();
+      if (this.isOrderTerminal(status)) {
+        return false;
+      }
+      return entry.vehicle === robotName || entry.assignedRobot === robotName;
+    });
+    if (!item) {
+      return "";
+    }
+    const totalSteps = Number(item.totalSteps || (Array.isArray(item.targets) ? item.targets.length : 1) || 1);
+    const currentStep = Math.min(totalSteps, Number(item.currentStep || 0) + 1);
+    return `${currentStep}/${totalSteps} ${item.targetLm || "-"} ${String(item.status || "").toLowerCase()}`;
+  }
+
+  fleetDraftGoalsFor(robotName) {
+    return this.fleetQueue
+      .filter((entry) => entry.robotName === robotName)
+      .sort((a, b) => Number(a.seq || 0) - Number(b.seq || 0));
+  }
+
+  fleetDraftGroups() {
+    const groups = new Map();
+    for (const item of this.fleetQueue.slice().sort((a, b) => Number(a.seq || 0) - Number(b.seq || 0))) {
+      if (!groups.has(item.robotName)) {
+        groups.set(item.robotName, []);
+      }
+      groups.get(item.robotName).push(item);
+    }
+    return Array.from(groups.entries()).map(([robotName, goals]) => ({ robotName, goals }));
+  }
+
+  fleetOrders() {
+    return Array.isArray(this.currentStatus?.orders) ? this.currentStatus.orders : [];
+  }
+
+  isOrderTerminal(status) {
+    return ["COMPLETED", "FAILED", "CANCELED"].includes(String(status || "").toUpperCase());
+  }
+
+  selectedFleetOrder() {
+    const orders = this.fleetOrders();
+    if (!orders.length) {
+      this.selectedFleetOrderId = "";
+      return null;
+    }
+    const selected = orders.find((order) => (order.id || order.orderId) === this.selectedFleetOrderId);
+    if (selected) {
+      return selected;
+    }
+    const active = orders.find((order) => !this.isOrderTerminal(order.status));
+    const fallback = active || orders[0];
+    this.selectedFleetOrderId = fallback.id || fallback.orderId || "";
+    return fallback;
+  }
+
+  orderTargetsLabel(order) {
+    const targets = Array.isArray(order?.targets) && order.targets.length
+      ? order.targets
+      : [order?.targetLm || "-"];
+    return targets.join(" -> ");
   }
 
   renderFleetQueue() {
@@ -1956,27 +2009,130 @@ class OperatorApp {
       return;
     }
     this.fleetQueueList.innerHTML = "";
-    if (!this.fleetQueue.length) {
-      this.fleetQueueList.textContent = "No queued goals.";
+    const draftGroups = this.fleetDraftGroups();
+    const orders = this.fleetOrders();
+    if (orders.length) {
+      this.selectedFleetOrder();
+    }
+    if (!draftGroups.length && !orders.length) {
+      this.fleetQueueList.textContent = "No orders yet.";
+      this.renderFleetOrderDetails();
       return;
     }
-    for (const item of this.fleetQueue.slice().sort((a, b) => Number(a.seq || 0) - Number(b.seq || 0))) {
+    for (const group of draftGroups) {
       const row = document.createElement("div");
-      row.className = "fleet-queue-item";
+      row.className = "fleet-queue-item draft";
       const text = document.createElement("span");
-      text.textContent = `${item.robotName} -> ${item.goalLm}`;
+      const targets = group.goals.map((item) => item.targetLm || item.goalLm || "-");
+      text.textContent = `${group.robotName} -> ${targets.join(" -> ")} | DRAFT`;
       const remove = document.createElement("button");
       remove.type = "button";
       remove.textContent = "x";
-      remove.title = "Remove queued goal";
+      remove.title = "Remove draft queue";
       remove.addEventListener("click", () => {
-        this.fleetQueue = this.fleetQueue.filter((entry) => entry.robotName !== item.robotName);
-        this.saveFleetQueue();
+        this.fleetQueue = this.fleetQueue.filter((entry) => entry.robotName !== group.robotName);
         this.renderSelectedRobot();
       });
       row.append(text, remove);
       this.fleetQueueList.append(row);
     }
+    for (const item of orders.slice(0, 80)) {
+      const status = String(item.status || "QUEUED").toUpperCase();
+      const orderId = item.id || item.orderId || "-";
+      const row = document.createElement("div");
+      row.className = [
+        "fleet-queue-item",
+        status.toLowerCase(),
+        orderId === this.selectedFleetOrderId ? "selected" : "",
+      ].filter(Boolean).join(" ");
+      row.setAttribute("role", "button");
+      row.tabIndex = 0;
+      const selectOrder = () => {
+        this.selectedFleetOrderId = orderId;
+        this.renderFleetQueue();
+      };
+      row.addEventListener("pointerdown", (event) => {
+        if (event.button !== 0) {
+          return;
+        }
+        event.preventDefault();
+        selectOrder();
+      });
+      row.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          selectOrder();
+        }
+      });
+      const text = document.createElement("span");
+      const robotName = item.assignedRobot || item.vehicle || "auto";
+      const totalSteps = Number(item.totalSteps || (Array.isArray(item.targets) ? item.targets.length : 1) || 1);
+      const currentStep = Math.min(totalSteps, Number(item.currentStep || 0) + 1);
+      const stepText = totalSteps > 1 ? ` ${currentStep}/${totalSteps}` : "";
+      text.textContent = `${robotName} -> ${this.orderTargetsLabel(item)} | ${status}${stepText} | ${orderId}`;
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.textContent = this.isOrderTerminal(status) ? "." : "x";
+      remove.disabled = this.isOrderTerminal(status);
+      remove.title = this.isOrderTerminal(status) ? "Order finished" : "Cancel order";
+      remove.addEventListener("pointerdown", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+      });
+      remove.addEventListener("click", (event) => {
+        event.stopPropagation();
+        this.cancelFleetOrder(orderId);
+      });
+      row.append(text, remove);
+      this.fleetQueueList.append(row);
+    }
+    this.renderFleetOrderDetails();
+  }
+
+  renderFleetOrderDetails() {
+    if (!this.fleetOrderDetails) {
+      return;
+    }
+    const order = this.selectedFleetOrder();
+    if (!order) {
+      this.fleetOrderDetails.textContent = "Select an order to inspect.";
+      this.syncFleetOrderActionButtons(null);
+      return;
+    }
+    const status = String(order.status || "QUEUED").toUpperCase();
+    const totalSteps = Number(order.totalSteps || (Array.isArray(order.targets) ? order.targets.length : 1) || 1);
+    const currentStep = Math.min(totalSteps, Number(order.currentStep || 0) + 1);
+    const details = [
+      ["ID", order.id || order.orderId || "-"],
+      ["Robot", order.assignedRobot || order.vehicle || "auto"],
+      ["Status", status],
+      ["Step", `${currentStep}/${totalSteps}`],
+      ["Target", order.targetLm || "-"],
+      ["Targets", this.orderTargetsLabel(order)],
+      ["Route", Array.isArray(order.routeNodes) && order.routeNodes.length ? order.routeNodes.join(" -> ") : "-"],
+      ["Reason", order.error || "-"],
+    ];
+    this.fleetOrderDetails.innerHTML = "";
+    for (const [label, value] of details) {
+      const row = document.createElement("div");
+      row.className = "fleet-order-detail-row";
+      const name = document.createElement("span");
+      name.textContent = label;
+      const text = document.createElement("strong");
+      text.textContent = String(value);
+      row.append(name, text);
+      this.fleetOrderDetails.append(row);
+    }
+    this.syncFleetOrderActionButtons(order);
+  }
+
+  syncFleetOrderActionButtons(order) {
+    const status = String(order?.status || "").toUpperCase();
+    const hasOrder = Boolean(order);
+    const terminal = this.isOrderTerminal(status);
+    this.fleetPauseOrderButton.disabled = !hasOrder || terminal || status === "PAUSED";
+    this.fleetResumeOrderButton.disabled = !hasOrder || terminal || status !== "PAUSED";
+    this.fleetCancelOrderButton.disabled = !hasOrder || terminal;
   }
 
   renderFleetPlanDebug() {
@@ -2008,72 +2164,177 @@ class OperatorApp {
     return this.selectedFleetRobot(robots);
   }
 
-  queueFleetGoal(goalLm) {
+  async queueFleetGoal(goalLm) {
     const robot = this.targetFleetRobot();
     if (!robot) {
       this.robotMessageText.textContent = "Select a fleet robot first.";
       return;
     }
-    this.fleetQueue = this.fleetQueue.filter((item) => item.robotName !== robot.name);
     this.fleetQueue.push({
       robotName: robot.name,
-      goalLm,
+      targetLm: goalLm,
       seq: ++this.fleetQueueSequence,
     });
-    this.saveFleetQueue();
-    this.navigateMode = false;
-    this.pendingFleetAction = "";
-    this.pendingFleetRobotName = "";
-    this.robotMessageText.textContent = `Queued ${robot.name} -> ${goalLm}.`;
+    this.navigateMode = true;
+    this.pendingFleetAction = "queue";
+    this.pendingFleetRobotName = robot.name;
     this.renderSelectedRobot();
+    this.syncModeButtons();
+    this.drawLandmarks();
+    const count = this.fleetDraftGoalsFor(robot.name).length;
+    this.robotMessageText.textContent = `Draft queue ${robot.name}: ${count} LM goal(s). Press Dispatch to send.`;
   }
 
-  clearFleetQueue() {
-    const hadQueue = this.fleetQueue.length > 0;
-    this.fleetQueue = [];
-    this.saveFleetQueue();
+  async clearFleetQueue() {
     if (this.pendingFleetAction === "queue") {
       this.navigateMode = false;
       this.pendingFleetAction = "";
       this.pendingFleetRobotName = "";
     }
-    this.robotMessageText.textContent = hadQueue ? "Fleet queue cleared." : "Fleet queue is empty.";
-    this.renderSelectedRobot();
+    const draftCount = this.fleetQueue.length;
+    this.fleetQueue = [];
+    try {
+      const result = await this.postJson("/api/fleet-manager/orders/clear", { includeActive: false });
+      this.currentStatus = result.state || await this.getJson("/api/fleet-manager/state");
+      const canceled = Number(result.canceled || 0);
+      this.robotMessageText.textContent = (draftCount || canceled)
+        ? `Queue cleared: draft=${draftCount}, backend=${canceled}.`
+        : "Queue is empty.";
+      this.renderSelectedRobot();
+    } catch (error) {
+      this.robotMessageText.textContent = `Clear queue failed: ${error.message || error}`;
+    }
   }
 
   async startQueuedFleetPlan() {
-    const robots = Array.isArray(this.currentStatus?.robots) ? this.currentStatus.robots : [];
-    const robotByName = new Map(robots.map((robot) => [robot.name, robot]));
-    const requests = this.fleetQueue
-      .slice()
-      .sort((a, b) => Number(a.seq || 0) - Number(b.seq || 0))
-      .map((item) => {
-        const robot = robotByName.get(item.robotName);
-        if (!robot) {
-          return null;
-        }
-        return this.fleetPlanRequest(robot, item.goalLm);
-      })
-      .filter(Boolean);
-    if (!requests.length) {
-      this.robotMessageText.textContent = "Fleet queue is empty.";
+    await this.releaseFleetManualControl();
+    if (this.fleetQueue.length) {
+      await this.dispatchDraftFleetQueue();
       return;
     }
-    await this.releaseFleetManualControl();
     try {
-      const result = await this.postJson("/api/fleet-manager/plan", {
-        speed: this.fleetRouteSpeed(),
-        robots: requests,
-      });
+      const result = await this.postJson("/api/fleet-manager/orders/dispatch", {});
       this.currentStatus = result.state || await this.getJson("/api/fleet-manager/state");
-      const planned = new Set((result.plans || []).map((plan) => plan.robot));
-      this.fleetQueue = this.fleetQueue.filter((item) => !planned.has(item.robotName));
-      this.saveFleetQueue();
-      this.robotMessageText.textContent = `Fleet queue dispatched: ${planned.size} order(s).`;
+      const dispatched = Number(result.dispatched || 0);
+      this.robotMessageText.textContent = dispatched ? `Orders dispatched: ${dispatched}.` : "No dispatchable orders right now.";
       this.renderSelectedRobot();
     } catch (error) {
-      this.robotMessageText.textContent = `Fleet queue failed: ${error.message || error}`;
+      this.robotMessageText.textContent = `Dispatch failed: ${error.message || error}`;
     }
+  }
+
+  async dispatchDraftFleetQueue() {
+    const groups = new Map();
+    for (const item of this.fleetQueue.slice().sort((a, b) => Number(a.seq || 0) - Number(b.seq || 0))) {
+      if (!groups.has(item.robotName)) {
+        groups.set(item.robotName, []);
+      }
+      groups.get(item.robotName).push(item.targetLm || item.goalLm);
+    }
+    let sent = 0;
+    let lastState = null;
+    const sentRobots = new Set();
+    try {
+      for (const [robotName, targets] of groups.entries()) {
+        if (!targets.length) {
+          continue;
+        }
+        const result = await this.postJson("/api/fleet-manager/setOrder", {
+          id: this.nextFleetOrderId(robotName),
+          vehicle: robotName,
+          priority: 10,
+          targets,
+          speed: this.fleetRouteSpeed(),
+        });
+        sent += targets.length;
+        sentRobots.add(robotName);
+        lastState = result.state || lastState;
+      }
+      this.fleetQueue = [];
+      this.navigateMode = false;
+      this.pendingFleetAction = "";
+      this.pendingFleetRobotName = "";
+      this.currentStatus = lastState || await this.getJson("/api/fleet-manager/state");
+      this.robotMessageText.textContent = `Dispatched draft queue: ${sent} LM goal(s).`;
+      this.renderSelectedRobot();
+    } catch (error) {
+      if (sentRobots.size) {
+        this.fleetQueue = this.fleetQueue.filter((entry) => !sentRobots.has(entry.robotName));
+      }
+      if (lastState) {
+        this.currentStatus = lastState;
+      }
+      this.robotMessageText.textContent = `Dispatch failed: ${error.message || error}`;
+      this.renderSelectedRobot();
+    }
+  }
+
+  async cancelFleetOrder(orderId) {
+    if (!orderId || orderId === "-") {
+      return;
+    }
+    try {
+      const result = await this.postJson("/api/fleet-manager/orders/cancel", { id: orderId });
+      this.currentStatus = result.state || await this.getJson("/api/fleet-manager/state");
+      this.robotMessageText.textContent = `Order canceled: ${orderId}.`;
+      this.renderSelectedRobot();
+    } catch (error) {
+      this.robotMessageText.textContent = `Cancel order failed: ${error.message || error}`;
+    }
+  }
+
+  selectedFleetOrderIdOrMessage() {
+    const order = this.selectedFleetOrder();
+    const orderId = order?.id || order?.orderId || "";
+    if (!orderId) {
+      this.robotMessageText.textContent = "Select an order first.";
+      return "";
+    }
+    return orderId;
+  }
+
+  async pauseSelectedFleetOrder() {
+    const orderId = this.selectedFleetOrderIdOrMessage();
+    if (!orderId) {
+      return;
+    }
+    try {
+      const result = await this.postJson("/api/fleet-manager/orders/pause", { id: orderId });
+      this.currentStatus = result.state || await this.getJson("/api/fleet-manager/state");
+      this.robotMessageText.textContent = `Order paused: ${orderId}.`;
+      this.renderSelectedRobot();
+    } catch (error) {
+      this.robotMessageText.textContent = `Pause order failed: ${error.message || error}`;
+    }
+  }
+
+  async resumeSelectedFleetOrder() {
+    const orderId = this.selectedFleetOrderIdOrMessage();
+    if (!orderId) {
+      return;
+    }
+    try {
+      const result = await this.postJson("/api/fleet-manager/orders/resume", { id: orderId });
+      this.currentStatus = result.state || await this.getJson("/api/fleet-manager/state");
+      this.robotMessageText.textContent = `Order resumed: ${orderId}.`;
+      this.renderSelectedRobot();
+    } catch (error) {
+      this.robotMessageText.textContent = `Resume order failed: ${error.message || error}`;
+    }
+  }
+
+  async cancelSelectedFleetOrder() {
+    const orderId = this.selectedFleetOrderIdOrMessage();
+    if (!orderId) {
+      return;
+    }
+    await this.cancelFleetOrder(orderId);
+  }
+
+  nextFleetOrderId(robotName) {
+    const safeRobot = String(robotName || "robot").replace(/[^a-z0-9_-]+/gi, "-").replace(/^-+|-+$/g, "") || "robot";
+    this.fleetQueueSequence += 1;
+    return `${safeRobot}-${Date.now()}-${this.fleetQueueSequence}`;
   }
 
   renderEvents(events) {
@@ -3288,7 +3549,7 @@ class OperatorApp {
 
   async handleLandmarkTarget(lmName) {
     if (this.isFleetManager() && this.pendingFleetAction === "queue") {
-      this.queueFleetGoal(lmName);
+      await this.queueFleetGoal(lmName);
       return;
     }
     await this.startNavigation(lmName);
@@ -3418,9 +3679,10 @@ class OperatorApp {
     }
     this.syncModeButtons();
     this.drawLandmarks();
+    const draftCount = this.fleetQueue.length;
     this.robotMessageText.textContent = this.navigateMode
       ? `Queue armed for ${this.pendingFleetRobotName}: select an LM on the map.`
-      : "Queue canceled.";
+      : (draftCount ? `Queue selection finished. Draft LM goals: ${draftCount}. Press Dispatch.` : "Queue canceled.");
   }
 
   syncModeButtons() {
@@ -3488,17 +3750,20 @@ class OperatorApp {
     this.syncModeButtons();
     await this.releaseFleetManualControl();
     try {
-      const result = await this.postJson("/api/fleet-manager/plan", {
+      const result = await this.postJson("/api/fleet-manager/setOrder", {
+        id: this.nextFleetOrderId(robot.name),
+        vehicle: robot.name,
+        targetLm: goalLm,
+        priority: 10,
         speed: this.fleetRouteSpeed(),
-        robots: [this.fleetPlanRequest(robot, goalLm)],
       });
       this.currentStatus = result.state || await this.getJson("/api/fleet-manager/state");
       this.selectedFleetRobotName = robot.name;
       window.localStorage.setItem("operator:selectedFleetRobotName", this.selectedFleetRobotName);
-      this.robotMessageText.textContent = `${robot.name} planned to ${goalLm}.`;
+      this.robotMessageText.textContent = `Order sent: ${robot.name} -> ${goalLm}.`;
       this.renderSelectedRobot();
     } catch (error) {
-      this.robotMessageText.textContent = `Fleet navigate failed: ${error.message || error}`;
+      this.robotMessageText.textContent = `Order failed: ${error.message || error}`;
     }
   }
 
@@ -3559,8 +3824,12 @@ class OperatorApp {
   applyFleetParams(params) {
     const navigation = params.navigation || {};
     const manual = params.manual || {};
+    const fleet = params.fleet || {};
     if (this.fleetRouteSpeedInput && navigation.route_speed !== undefined) {
       this.fleetRouteSpeedInput.value = String(navigation.route_speed);
+    }
+    if (this.fleetRobotClearanceInput && fleet.robot_clearance_m !== undefined) {
+      this.fleetRobotClearanceInput.value = String(fleet.robot_clearance_m);
     }
     if (this.fleetManualLinearInput && manual.linear_speed !== undefined) {
       this.fleetManualLinearInput.value = String(manual.linear_speed);
@@ -3587,6 +3856,10 @@ class OperatorApp {
     params.navigation = {
       ...(params.navigation || {}),
       route_speed: this.fleetRouteSpeed(),
+    };
+    params.fleet = {
+      ...(params.fleet || {}),
+      robot_clearance_m: Math.max(0.0, Number(this.fleetRobotClearanceInput?.value || 0.35) || 0.35),
     };
     const manual = this.fleetManualParams();
     params.manual = {
@@ -3661,8 +3934,6 @@ class OperatorApp {
       const result = await this.postJson("/api/fleet-manager/robots/remove", { name: robot.name });
       this.selectedFleetRobotName = "";
       window.localStorage.removeItem("operator:selectedFleetRobotName");
-      this.fleetQueue = this.fleetQueue.filter((item) => item.robotName !== robot.name);
-      this.saveFleetQueue();
       this.currentStatus = result.state || await this.getJson("/api/fleet-manager/state");
       this.fleetNameEdited = false;
       await this.refreshRobots({ quiet: true });

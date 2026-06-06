@@ -183,6 +183,55 @@ class OperatorFleetManager:
         result["mode"] = self.mode
         return result
 
+    def orders_payload(self) -> dict[str, Any]:
+        result = self.manager.orders_payload()
+        result["mode"] = self.mode
+        result["mapName"] = self.map_dir.stem.replace(".smap", "")
+        result["managerId"] = FLEET_MANAGER_ID
+        return result
+
+    def set_order_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
+        result = self.manager.set_order(payload)
+        result["mode"] = self.mode
+        result["mapName"] = self.map_dir.stem.replace(".smap", "")
+        result["managerId"] = FLEET_MANAGER_ID
+        return result
+
+    def dispatch_orders_payload(self, payload: dict[str, Any] | None = None) -> dict[str, Any]:
+        result = self.manager.dispatch_orders(payload or {})
+        result["mode"] = self.mode
+        result["mapName"] = self.map_dir.stem.replace(".smap", "")
+        result["managerId"] = FLEET_MANAGER_ID
+        return result
+
+    def cancel_order_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
+        result = self.manager.cancel_order(payload)
+        result["mode"] = self.mode
+        result["mapName"] = self.map_dir.stem.replace(".smap", "")
+        result["managerId"] = FLEET_MANAGER_ID
+        return result
+
+    def pause_order_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
+        result = self.manager.pause_order(payload)
+        result["mode"] = self.mode
+        result["mapName"] = self.map_dir.stem.replace(".smap", "")
+        result["managerId"] = FLEET_MANAGER_ID
+        return result
+
+    def resume_order_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
+        result = self.manager.resume_order(payload)
+        result["mode"] = self.mode
+        result["mapName"] = self.map_dir.stem.replace(".smap", "")
+        result["managerId"] = FLEET_MANAGER_ID
+        return result
+
+    def clear_orders_payload(self, payload: dict[str, Any] | None = None) -> dict[str, Any]:
+        result = self.manager.clear_orders(payload or {})
+        result["mode"] = self.mode
+        result["mapName"] = self.map_dir.stem.replace(".smap", "")
+        result["managerId"] = FLEET_MANAGER_ID
+        return result
+
     def tick_payload(self, payload: dict[str, Any] | None = None) -> dict[str, Any]:
         state = self.manager.tick(payload or {})
         state["mode"] = self.mode

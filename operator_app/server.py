@@ -239,6 +239,8 @@ class OperatorAppState:
                 return self.fleet_local_map_payload(arg)
             if action == "params":
                 return self.fleet_manager.params_payload()
+            if action == "orders":
+                return self.fleet_manager.orders_payload()
             raise ValueError(f"unknown fleet manager action: {action}")
 
     def fleet_manager_post_payload(self, action: str, payload: dict[str, Any]) -> dict[str, Any]:
@@ -249,6 +251,18 @@ class OperatorAppState:
                 return self.fleet_manager.save_params_payload(payload)
             if action == "plan":
                 return self.fleet_manager.plan_payload(payload)
+            if action == "set_order":
+                return self.fleet_manager.set_order_payload(payload)
+            if action == "orders_dispatch":
+                return self.fleet_manager.dispatch_orders_payload(payload)
+            if action == "orders_cancel":
+                return self.fleet_manager.cancel_order_payload(payload)
+            if action == "orders_pause":
+                return self.fleet_manager.pause_order_payload(payload)
+            if action == "orders_resume":
+                return self.fleet_manager.resume_order_payload(payload)
+            if action == "orders_clear":
+                return self.fleet_manager.clear_orders_payload(payload)
             if action == "tick":
                 return self.fleet_manager.tick_payload(payload)
             if action == "world":
@@ -785,6 +799,9 @@ class OperatorRequestHandler(SimpleHTTPRequestHandler):
             if path == "/api/fleet/params":
                 self._send_json(self._require_state().fleet_params_payload())
                 return
+            if path == "/api/fleet/orders" or path == "/orders":
+                self._handle_fleet_manager_get("orders", "")
+                return
             fleet_target = self._parse_fleet_manager_api(parsed)
             if fleet_target is not None:
                 action, arg = fleet_target
@@ -948,6 +965,24 @@ class OperatorRequestHandler(SimpleHTTPRequestHandler):
             if path == "/api/fleet/params":
                 self._handle_json(self._require_state().save_fleet_params_payload)
                 return
+            if path == "/setOrder" or path == "/api/fleet/setOrder":
+                self._handle_fleet_manager_post("set_order")
+                return
+            if path == "/api/fleet/orders/dispatch":
+                self._handle_fleet_manager_post("orders_dispatch")
+                return
+            if path == "/api/fleet/orders/clear":
+                self._handle_fleet_manager_post("orders_clear")
+                return
+            if path == "/api/fleet/orders/cancel":
+                self._handle_fleet_manager_post("orders_cancel")
+                return
+            if path == "/api/fleet/orders/pause":
+                self._handle_fleet_manager_post("orders_pause")
+                return
+            if path == "/api/fleet/orders/resume":
+                self._handle_fleet_manager_post("orders_resume")
+                return
             fleet_target = self._parse_fleet_manager_api(parsed)
             if fleet_target is not None:
                 action, arg = fleet_target
@@ -1007,6 +1042,20 @@ class OperatorRequestHandler(SimpleHTTPRequestHandler):
             return "map", ""
         if parts == ["params"]:
             return "params", ""
+        if parts == ["orders"]:
+            return "orders", ""
+        if parts == ["setOrder"] or parts == ["orders", "set"]:
+            return "set_order", ""
+        if parts == ["orders", "dispatch"]:
+            return "orders_dispatch", ""
+        if parts == ["orders", "cancel"]:
+            return "orders_cancel", ""
+        if parts == ["orders", "pause"]:
+            return "orders_pause", ""
+        if parts == ["orders", "resume"]:
+            return "orders_resume", ""
+        if parts == ["orders", "clear"]:
+            return "orders_clear", ""
         if parts == ["plan"]:
             return "plan", ""
         if parts == ["tick"]:
