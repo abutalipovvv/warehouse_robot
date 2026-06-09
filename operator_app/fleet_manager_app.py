@@ -69,6 +69,7 @@ class OperatorFleetManager:
         if mode not in {"simulation", "robots"}:
             raise ValueError("mode must be simulation or robots")
         self.mode = mode
+        self._sync_manager_mode()
         return self.mode_payload()
 
     def params_payload(self) -> dict[str, Any]:
@@ -170,6 +171,7 @@ class OperatorFleetManager:
         }
 
     def state_payload(self, include_trajectories: bool = True) -> dict[str, Any]:
+        self._sync_manager_mode()
         state = self.manager.state(include_trajectories=include_trajectories)
         state["mode"] = self.mode
         state["mapName"] = self.map_dir.stem.replace(".smap", "")
@@ -177,6 +179,7 @@ class OperatorFleetManager:
         return state
 
     def plan_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
+        self._sync_manager_mode()
         result = self.manager.plan(payload)
         if isinstance(result.get("fleetState"), dict):
             result["state"] = result["fleetState"]
@@ -184,6 +187,7 @@ class OperatorFleetManager:
         return result
 
     def orders_payload(self) -> dict[str, Any]:
+        self._sync_manager_mode()
         result = self.manager.orders_payload()
         result["mode"] = self.mode
         result["mapName"] = self.map_dir.stem.replace(".smap", "")
@@ -191,6 +195,7 @@ class OperatorFleetManager:
         return result
 
     def set_order_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
+        self._sync_manager_mode()
         result = self.manager.set_order(payload)
         result["mode"] = self.mode
         result["mapName"] = self.map_dir.stem.replace(".smap", "")
@@ -198,6 +203,7 @@ class OperatorFleetManager:
         return result
 
     def dispatch_orders_payload(self, payload: dict[str, Any] | None = None) -> dict[str, Any]:
+        self._sync_manager_mode()
         result = self.manager.dispatch_orders(payload or {})
         result["mode"] = self.mode
         result["mapName"] = self.map_dir.stem.replace(".smap", "")
@@ -205,6 +211,7 @@ class OperatorFleetManager:
         return result
 
     def cancel_order_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
+        self._sync_manager_mode()
         result = self.manager.cancel_order(payload)
         result["mode"] = self.mode
         result["mapName"] = self.map_dir.stem.replace(".smap", "")
@@ -212,6 +219,7 @@ class OperatorFleetManager:
         return result
 
     def pause_order_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
+        self._sync_manager_mode()
         result = self.manager.pause_order(payload)
         result["mode"] = self.mode
         result["mapName"] = self.map_dir.stem.replace(".smap", "")
@@ -219,6 +227,7 @@ class OperatorFleetManager:
         return result
 
     def resume_order_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
+        self._sync_manager_mode()
         result = self.manager.resume_order(payload)
         result["mode"] = self.mode
         result["mapName"] = self.map_dir.stem.replace(".smap", "")
@@ -226,6 +235,7 @@ class OperatorFleetManager:
         return result
 
     def clear_orders_payload(self, payload: dict[str, Any] | None = None) -> dict[str, Any]:
+        self._sync_manager_mode()
         result = self.manager.clear_orders(payload or {})
         result["mode"] = self.mode
         result["mapName"] = self.map_dir.stem.replace(".smap", "")
@@ -233,6 +243,7 @@ class OperatorFleetManager:
         return result
 
     def tick_payload(self, payload: dict[str, Any] | None = None) -> dict[str, Any]:
+        self._sync_manager_mode()
         state = self.manager.tick(payload or {})
         state["mode"] = self.mode
         state["mapName"] = self.map_dir.stem.replace(".smap", "")
@@ -240,12 +251,15 @@ class OperatorFleetManager:
         return state
 
     def world_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
+        self._sync_manager_mode()
         return self.manager.update_world(payload)
 
     def check_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
+        self._sync_manager_mode()
         return self.manager.check_path(payload)
 
     def manual_step_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
+        self._sync_manager_mode()
         name = str(payload.get("name") or "").strip()
         if not name:
             raise ValueError("robot name is required")
@@ -277,18 +291,23 @@ class OperatorFleetManager:
         }
 
     def add_robot_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
+        self._sync_manager_mode()
         return self.manager.add_robot(payload)
 
     def remove_robot_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
+        self._sync_manager_mode()
         return self.manager.remove_robot(payload)
 
     def update_robot_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
+        self._sync_manager_mode()
         return self.manager.update_robot(payload)
 
     def stop_robot_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
+        self._sync_manager_mode()
         return self.manager.stop_robot(payload)
 
     def reset_robot_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
+        self._sync_manager_mode()
         return self.manager.reset_robot(payload)
 
     def resolve_map_dir(self, map_dir: Path) -> Path:
@@ -341,3 +360,14 @@ class OperatorFleetManager:
             map_dir=loaded_map.map_dir,
             map_metadata=loaded_map.map_metadata,
         )
+        self._sync_manager_mode()
+
+    def _sync_manager_mode(self) -> None:
+        if not hasattr(self, "manager"):
+            return
+        self.manager.set_active_robot_modes(self._active_robot_modes())
+
+    def _active_robot_modes(self) -> set[str]:
+        if self.mode == "robots":
+            return {"remote"}
+        return {"simulated"}

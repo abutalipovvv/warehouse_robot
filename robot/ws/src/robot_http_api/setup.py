@@ -23,6 +23,7 @@ setup(
     entry_points={
         "console_scripts": [
             "robot_http_api=robot_http_api.main:main",
+            "robot_http_api_stub=robot_http_api.stub_server:main",
         ],
     },
 )

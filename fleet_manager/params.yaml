@@ -68,6 +68,8 @@ fleet:
   wait_time_sec: 1
   wait_cost: 6
   replan_interval_sec: 1
+  remote_poll_interval_sec: 0.25
+  remote_timeout_sec: 0.8
   cbs_low_level_max_time: 160
   cbs_max_high_level_nodes: 2000
   cbs_max_planning_time_sec: 5

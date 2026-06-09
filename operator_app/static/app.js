@@ -518,6 +518,8 @@ class OperatorApp {
     this.fleetModeSelect = document.getElementById("fleetModeSelect");
     this.fleetRobotNameInput = document.getElementById("fleetRobotNameInput");
     this.fleetSpawnLmSelect = document.getElementById("fleetSpawnLmSelect");
+    this.fleetRobotApiLabel = document.getElementById("fleetRobotApiLabel");
+    this.fleetRobotApiInput = document.getElementById("fleetRobotApiInput");
     this.fleetAddRobotButton = document.getElementById("fleetAddRobotButton");
     this.fleetRobotList = document.getElementById("fleetRobotList");
     this.fleetQueueGoalButton = document.getElementById("fleetQueueGoalButton");
@@ -654,7 +656,10 @@ class OperatorApp {
     this.controlPullMapButton.addEventListener("click", () => this.handlePullMap());
     this.controlPushMapButton.addEventListener("click", () => this.handlePushMap());
     this.controlLoadMapButton.addEventListener("click", () => this.handleLoadMap());
-    this.fleetModeSelect.addEventListener("change", () => this.handleFleetModeChange());
+    this.fleetModeSelect.addEventListener("change", () => {
+      this.syncFleetRemoteFields();
+      this.handleFleetModeChange();
+    });
     this.fleetRobotNameInput.addEventListener("input", () => {
       this.fleetNameEdited = true;
     });
@@ -1810,6 +1815,7 @@ class OperatorApp {
     const selectedFleetRobot = this.selectedFleetRobot(robots);
 
     this.fillSelect(this.fleetSpawnLmSelect, lms.map((lm) => lm.name), previousSpawn || (lms[0]?.name || ""));
+    this.syncFleetRemoteFields();
     if (selectedFleetRobot) {
       this.selectedFleetRobotName = selectedFleetRobot.name;
       window.localStorage.setItem("operator:selectedFleetRobotName", this.selectedFleetRobotName);
@@ -1819,6 +1825,13 @@ class OperatorApp {
       this.fleetNameEdited = false;
     }
     this.renderFleetRobotList(robots);
+  }
+
+  syncFleetRemoteFields() {
+    const isRemoteMode = String(this.fleetModeSelect?.value || "simulation") === "robots";
+    if (this.fleetRobotApiLabel) {
+      this.fleetRobotApiLabel.classList.toggle("hidden", !isRemoteMode);
+    }
   }
 
   robotNameExists(name, robots = null) {
@@ -1905,7 +1918,8 @@ class OperatorApp {
       const title = document.createElement("strong");
       title.textContent = robot.name || "-";
       const subtitle = document.createElement("span");
-      subtitle.textContent = `${robot.currentLm || "-"} -> ${robot.targetLm || "-"}`;
+      const robotMode = String(robot.mode || robot.type || "simulated");
+      subtitle.textContent = `${robot.currentLm || "-"} -> ${robot.targetLm || "-"}${robotMode !== "simulated" ? ` | ${robotMode}` : ""}`;
       if (this.queuedGoalFor(robot.name)) {
         subtitle.textContent = `${subtitle.textContent} | queued ${this.queuedGoalFor(robot.name)}`;
       }
@@ -3756,6 +3770,7 @@ class OperatorApp {
         targetLm: goalLm,
         priority: 10,
         speed: this.fleetRouteSpeed(),
+        replaceActive: true,
       });
       this.currentStatus = result.state || await this.getJson("/api/fleet-manager/state");
       this.selectedFleetRobotName = robot.name;
@@ -3886,13 +3901,24 @@ class OperatorApp {
 
   async handleFleetModeChange() {
     try {
+      const nextMode = this.fleetModeSelect.value;
+      this.selectedFleetRobotName = "";
+      this.pendingFleetAction = "";
+      this.pendingFleetRobotName = "";
+      this.fleetQueue = [];
+      this.fleetManualRobotName = "";
+      this.fleetManualAnimation = null;
+      window.localStorage.removeItem("operator:selectedFleetRobotName");
       const result = await this.postJson("/api/fleet-manager/mode", { mode: this.fleetModeSelect.value });
       this.currentStatus = {
         ...(this.currentStatus || {}),
-        mode: result.mode || this.fleetModeSelect.value,
+        mode: result.mode || nextMode,
+        robots: [],
+        orders: [],
       };
       await this.refreshRobots({ quiet: true });
       await this.fetchSelectedRobotStatus(true);
+      this.renderSelectedRobot();
     } catch (error) {
       window.alert(error.message || String(error));
     }
@@ -3901,12 +3927,21 @@ class OperatorApp {
   async handleFleetAddRobot() {
     const name = String(this.fleetRobotNameInput.value || "").trim();
     const spawnLm = String(this.fleetSpawnLmSelect.value || "").trim();
+    const mode = String(this.fleetModeSelect?.value || "simulation");
+    const baseUrl = String(this.fleetRobotApiInput?.value || "").trim();
     if (!name || !spawnLm) {
       window.alert("Robot name and Spawn LM are required.");
       return;
     }
+    if (mode === "robots" && !baseUrl) {
+      window.alert("Robot API URL is required in Robots mode.");
+      return;
+    }
     try {
-      const result = await this.postJson("/api/fleet-manager/robots", { name, spawnLm });
+      const payload = mode === "robots"
+        ? { name, spawnLm, mode: "remote", baseUrl }
+        : { name, spawnLm, mode: "simulated" };
+      const result = await this.postJson("/api/fleet-manager/robots", payload);
       this.selectedFleetRobotName = name;
       window.localStorage.setItem("operator:selectedFleetRobotName", name);
       this.currentStatus = result.state || await this.getJson("/api/fleet-manager/state");
