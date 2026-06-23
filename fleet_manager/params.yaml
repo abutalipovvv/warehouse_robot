@@ -1,13 +1,40 @@
 robot_model:
+  source: nav2
+  radius: 0.22
+  footprint_segments: 16
   footprint:
-  - x: 0.35
-    y: 0.275
-  - x: 0.35
-    y: -0.275
-  - x: -0.35
-    y: -0.275
-  - x: -0.35
-    y: 0.275
+  - x: 0.22
+    y: 0.0
+  - x: 0.203253
+    y: 0.08419
+  - x: 0.155563
+    y: 0.155563
+  - x: 0.08419
+    y: 0.203253
+  - x: 0.0
+    y: 0.22
+  - x: -0.08419
+    y: 0.203253
+  - x: -0.155563
+    y: 0.155563
+  - x: -0.203253
+    y: 0.08419
+  - x: -0.22
+    y: 0.0
+  - x: -0.203253
+    y: -0.08419
+  - x: -0.155563
+    y: -0.155563
+  - x: -0.08419
+    y: -0.203253
+  - x: 0.0
+    y: -0.22
+  - x: 0.08419
+    y: -0.203253
+  - x: 0.155563
+    y: -0.155563
+  - x: 0.203253
+    y: -0.08419
   frames:
     lidar:
       x: 0.28
@@ -68,6 +95,7 @@ fleet:
   wait_time_sec: 1
   wait_cost: 6
   replan_interval_sec: 1
+  remote_route_chunk_lms: 5
   remote_poll_interval_sec: 0.25
   remote_timeout_sec: 0.8
   cbs_low_level_max_time: 160

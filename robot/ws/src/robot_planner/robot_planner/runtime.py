@@ -69,6 +69,15 @@ class PlannedRobotRoute:
     nodes: list[str]
     trajectory: list[RoutePoint]
     length: float
+    protocol: str = "trajectory"
+    order_id: str = ""
+    revision: int = 0
+    final_goal_lm: str = ""
+    full_nodes: list[str] = field(default_factory=list)
+    chunk_index: int = 0
+    chunk_offset: int = 0
+    chunk_is_final: bool = True
+    replace_mode: str = "immediate"
     current_index: int = 0
     created_at: float = field(default_factory=time)
 
@@ -79,6 +88,22 @@ class PlannedRobotRoute:
             "goalLm": self.goal_lm,
             "nodes": list(self.nodes),
             "length": self.length,
+            "protocol": self.protocol,
+            "orderId": self.order_id,
+            "revision": self.revision,
+            "finalGoalLm": self.final_goal_lm or self.goal_lm,
+            "fullNodes": list(self.full_nodes or self.nodes),
+            "replaceMode": self.replace_mode,
+            "chunk": {
+                "index": self.chunk_index,
+                "offset": self.chunk_offset,
+                "startLm": self.start_lm,
+                "goalLm": self.goal_lm,
+                "finalGoalLm": self.final_goal_lm or self.goal_lm,
+                "nodes": list(self.nodes),
+                "fullNodes": list(self.full_nodes or self.nodes),
+                "isFinal": self.chunk_is_final,
+            },
             "trajectory": [point.to_dict() for point in self.trajectory],
             "currentIndex": self.current_index,
         }
@@ -91,14 +116,33 @@ class PlannedRobotRoute:
         nodes: list[str],
         trajectory: list[RoutePoint],
         length: float,
+        route_id: str = "",
+        protocol: str = "trajectory",
+        order_id: str = "",
+        revision: int = 0,
+        final_goal_lm: str = "",
+        full_nodes: list[str] | None = None,
+        chunk_index: int = 0,
+        chunk_offset: int = 0,
+        chunk_is_final: bool = True,
+        replace_mode: str = "immediate",
     ) -> "PlannedRobotRoute":
         return cls(
-            route_id=f"route-{uuid.uuid4().hex[:12]}",
+            route_id=route_id or f"route-{uuid.uuid4().hex[:12]}",
             start_lm=start_lm,
             goal_lm=goal_lm,
             nodes=list(nodes),
             trajectory=list(trajectory),
             length=float(length),
+            protocol=protocol,
+            order_id=order_id,
+            revision=int(revision or 0),
+            final_goal_lm=final_goal_lm or goal_lm,
+            full_nodes=list(full_nodes or nodes),
+            chunk_index=int(chunk_index or 0),
+            chunk_offset=int(chunk_offset or 0),
+            chunk_is_final=bool(chunk_is_final),
+            replace_mode=replace_mode,
         )
 
     @classmethod
@@ -109,19 +153,56 @@ class PlannedRobotRoute:
         trajectory_payload = payload.get("trajectory", [])
         if not isinstance(trajectory_payload, list):
             trajectory_payload = []
+        nodes_payload = payload.get("nodes", [])
+        if not isinstance(nodes_payload, list):
+            nodes_payload = []
+        chunk = payload.get("chunk")
+        if not isinstance(chunk, dict):
+            chunk = {}
+        full_nodes_payload = payload.get("fullNodes") or payload.get("full_nodes") or chunk.get("fullNodes")
+        if not isinstance(full_nodes_payload, list):
+            full_nodes_payload = []
         return cls(
             route_id=route_id,
             start_lm=str(payload.get("startLm") or payload.get("start_lm") or ""),
             goal_lm=str(payload.get("goalLm") or payload.get("goal_lm") or ""),
-            nodes=[str(item) for item in payload.get("nodes", []) if str(item)],
+            nodes=[str(item) for item in nodes_payload if str(item)],
             trajectory=[
                 RoutePoint.from_dict(item)
                 for item in trajectory_payload
                 if isinstance(item, dict)
             ],
             length=float(payload.get("length", 0.0) or 0.0),
+            protocol=str(payload.get("protocol") or payload.get("routeProtocol") or "trajectory"),
+            order_id=str(payload.get("orderId") or payload.get("order_id") or ""),
+            revision=int(payload.get("revision", 0) or 0),
+            final_goal_lm=str(
+                payload.get("finalGoalLm")
+                or payload.get("final_goal_lm")
+                or chunk.get("finalGoalLm")
+                or payload.get("goalLm")
+                or payload.get("goal_lm")
+                or ""
+            ),
+            full_nodes=[str(item) for item in full_nodes_payload if str(item)],
+            chunk_index=int(chunk.get("index", 0) or 0),
+            chunk_offset=int(chunk.get("offset", 0) or 0),
+            chunk_is_final=bool(chunk.get("isFinal", True)),
+            replace_mode=str(payload.get("replaceMode") or payload.get("replace_mode") or "immediate"),
             current_index=int(payload.get("currentIndex", 0) or 0),
         )
+
+
+def route_update_is_stale(current: PlannedRobotRoute | None, incoming: PlannedRobotRoute) -> bool:
+    if current is None:
+        return False
+    same_route = bool(current.route_id and incoming.route_id and current.route_id == incoming.route_id)
+    same_order = bool(current.order_id and incoming.order_id and current.order_id == incoming.order_id)
+    if not same_route and not same_order:
+        return False
+    if current.revision <= 0 or incoming.revision <= 0:
+        return False
+    return incoming.revision <= current.revision
 
 
 @dataclass
@@ -222,6 +303,15 @@ class RobotRuntime:
                 nodes=list(self._active_route.nodes),
                 trajectory=list(self._active_route.trajectory),
                 length=self._active_route.length,
+                protocol=self._active_route.protocol,
+                order_id=self._active_route.order_id,
+                revision=self._active_route.revision,
+                final_goal_lm=self._active_route.final_goal_lm,
+                full_nodes=list(self._active_route.full_nodes),
+                chunk_index=self._active_route.chunk_index,
+                chunk_offset=self._active_route.chunk_offset,
+                chunk_is_final=self._active_route.chunk_is_final,
+                replace_mode=self._active_route.replace_mode,
                 current_index=self._active_route.current_index,
                 created_at=self._active_route.created_at,
             )

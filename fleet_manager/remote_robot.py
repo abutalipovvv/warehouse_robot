@@ -41,6 +41,20 @@ class RemoteRobotAdapter:
     def cancel_route(self, base_url: str) -> dict[str, Any]:
         return self.post_json(base_url, "/api/robot/route/cancel", {})
 
+    def teleop(self, base_url: str, *, linear: float, angular: float, timeout_ms: int = 350) -> dict[str, Any]:
+        return self.post_json(
+            base_url,
+            "/api/robot/teleop",
+            {
+                "linear": float(linear),
+                "angular": float(angular),
+                "timeoutMs": max(80, int(timeout_ms)),
+            },
+        )
+
+    def teleop_stop(self, base_url: str) -> dict[str, Any]:
+        return self.post_json(base_url, "/api/robot/teleop/stop", {})
+
     def stop(self, base_url: str) -> dict[str, Any]:
         return self.post_json(base_url, "/api/robot/stop", {})
 

@@ -48,6 +48,10 @@ class FleetRobot:
     remote_online: bool = True
     remote_error: str = ""
     remote_last_poll_at: float | None = None
+    route_revision: int = 0
+    route_chunk_index: int = 0
+    route_chunk_goal_lm: str = ""
+    route_final_lm: str = ""
 
     def to_dict(self, include_trajectory: bool = True) -> dict[str, Any]:
         return {
@@ -73,6 +77,10 @@ class FleetRobot:
             "online": self.remote_online,
             "remoteError": self.remote_error,
             "remoteLastPollAt": self.remote_last_poll_at,
+            "routeRevision": self.route_revision,
+            "routeChunkIndex": self.route_chunk_index,
+            "routeChunkGoalLm": self.route_chunk_goal_lm,
+            "routeFinalLm": self.route_final_lm,
         }
 
     def is_remote(self) -> bool:
@@ -182,6 +190,7 @@ class WebFleetManager:
             map_metadata=map_metadata,
         )
         self.remote_adapter = RemoteRobotAdapter(timeout=self._remote_timeout())
+        self._route_revision_seq = int(time() * 1000)
 
     def set_active_robot_modes(self, modes: set[str] | list[str] | tuple[str, ...] | None) -> None:
         if modes is None:
@@ -521,6 +530,10 @@ class WebFleetManager:
             robot.trajectory_dirty = True
             robot.blocked_since = None
             robot.last_replan_at = None
+            robot.route_revision = 0
+            robot.route_chunk_index = 0
+            robot.route_chunk_goal_lm = ""
+            robot.route_final_lm = ""
             robot.updated_at = time()
             if remote_status is not None:
                 self._apply_remote_status(robot, remote_status, time())
@@ -554,6 +567,90 @@ class WebFleetManager:
             self._event("warn", "fleet stopped")
         return {"ok": True, "state": self.state()}
 
+    def teleop_robot(self, payload: dict[str, Any]) -> dict[str, Any]:
+        name = str(payload.get("name", "")).strip()
+        if not name:
+            raise ValueError("robot name is required")
+        robot = self.robots.get(name)
+        if robot is None:
+            raise ValueError(f"unknown robot: {name}")
+        if not robot.is_remote() or not robot.base_url:
+            raise ValueError(f"{name} is not a remote robot")
+
+        linear = float(payload.get("linear", 0.0) or 0.0)
+        angular = float(payload.get("angular", 0.0) or 0.0)
+        timeout_ms = max(80, int(payload.get("timeoutMs", 350) or 350))
+        if robot.active_order_id:
+            self._cancel_active_order_for_robot(robot, "manual control takeover")
+        try:
+            response = self.remote_adapter.teleop(
+                robot.base_url,
+                linear=linear,
+                angular=angular,
+                timeout_ms=timeout_ms,
+            )
+            robot.remote_online = True
+            robot.remote_error = ""
+            status = response.get("status")
+            if isinstance(status, dict):
+                self._apply_remote_status(robot, status, time())
+        except RemoteRobotError as exc:
+            robot.remote_online = False
+            robot.remote_error = str(exc)
+            robot.status = "OFFLINE"
+            robot.last_reason = f"remote teleop failed: {exc}"
+            robot.updated_at = time()
+            raise ValueError(robot.last_reason) from exc
+
+        robot.status = "MANUAL"
+        robot.target_lm = ""
+        robot.trajectory = []
+        robot.plan_nodes = []
+        robot.route_started_at = None
+        robot.route_clock = 0.0
+        robot.trajectory_dirty = True
+        robot.last_reason = "manual control active"
+        self._clear_remote_route_metadata(robot)
+        robot.updated_at = time()
+        return {"ok": True, "robot": robot.to_dict(), "state": self.state()}
+
+    def teleop_stop_robot(self, payload: dict[str, Any]) -> dict[str, Any]:
+        name = str(payload.get("name", "")).strip()
+        if not name:
+            raise ValueError("robot name is required")
+        robot = self.robots.get(name)
+        if robot is None:
+            raise ValueError(f"unknown robot: {name}")
+        if not robot.is_remote() or not robot.base_url:
+            raise ValueError(f"{name} is not a remote robot")
+        try:
+            response = self.remote_adapter.teleop_stop(robot.base_url)
+            robot.remote_online = True
+            robot.remote_error = ""
+            status = response.get("status")
+            if isinstance(status, dict):
+                self._apply_remote_status(robot, status, time())
+        except RemoteRobotError as exc:
+            robot.remote_online = False
+            robot.remote_error = str(exc)
+            robot.status = "OFFLINE"
+            robot.last_reason = f"remote teleop stop failed: {exc}"
+            robot.updated_at = time()
+            raise ValueError(robot.last_reason) from exc
+
+        if robot.status == "MANUAL":
+            robot.status = "IDLE"
+            robot.last_reason = "manual control released"
+        robot.target_lm = ""
+        robot.trajectory = []
+        robot.plan_nodes = []
+        robot.route_started_at = None
+        robot.route_clock = 0.0
+        robot.trajectory_dirty = True
+        self._clear_remote_route_metadata(robot)
+        robot.updated_at = time()
+        return {"ok": True, "robot": robot.to_dict(), "state": self.state()}
+
     def reset_robot(self, payload: dict[str, Any]) -> dict[str, Any]:
         name = str(payload.get("name", "")).strip()
         target_names = [name] if name else [robot.name for robot in self._runtime_robots()]
@@ -578,6 +675,7 @@ class WebFleetManager:
             robot.last_replan_at = None
             robot.last_reason = "reset"
             robot.route_note = ""
+            self._clear_remote_route_metadata(robot)
             robot.updated_at = time()
             self._event("warn", f"robot reset: {robot.name}@{robot.current_lm}")
         return {"ok": True, "state": self.state()}
@@ -627,6 +725,7 @@ class WebFleetManager:
             robot.route_clock = 0.0
             robot.last_tick_at = None
             robot.trajectory_dirty = True
+            self._clear_remote_route_metadata(robot)
         robot.updated_at = time()
         return {"ok": True, "robot": robot.to_dict(), "state": self.state()}
 
@@ -872,12 +971,13 @@ class WebFleetManager:
             if result.get("ok") and result.get("plans"):
                 now = time()
                 plan = self._plan_for_robot(result, robot.name)
+                remote_route: dict[str, Any] | None = None
                 if robot.is_remote():
                     if plan is None:
                         failed_reason = "planner did not return robot plan"
                         continue
                     try:
-                        self._execute_remote_plan(robot, order, plan, result)
+                        remote_route = self._execute_remote_plan(robot, order, plan, result)
                     except RemoteRobotError as exc:
                         failed_reason = f"remote execute failed: {exc}"
                         robot.remote_error = str(exc)
@@ -893,6 +993,8 @@ class WebFleetManager:
                     for item in plan.get("nodes", [])
                 ]
                 self._apply_planner_result(result, now, order_id=order.order_id)
+                if remote_route is not None:
+                    self._apply_remote_route_metadata(robot, remote_route, now)
                 self._set_order_status(order, "EXECUTING", robot=robot, start_lm=start_lm)
                 self._event(
                     "info",
@@ -1021,6 +1123,7 @@ class WebFleetManager:
             paused_robot.last_reason = reason
             paused_robot.route_note = ""
             paused_robot.active_order_id = ""
+            self._clear_remote_route_metadata(paused_robot)
             paused_robot.updated_at = time()
             order.assigned_robot = paused_robot.name
             if not order.vehicle:
@@ -1078,6 +1181,7 @@ class WebFleetManager:
         robot.last_reason = reason
         robot.route_note = ""
         robot.active_order_id = ""
+        self._clear_remote_route_metadata(robot)
         robot.updated_at = time()
 
     def _cancel_all_orders(self, reason: str) -> None:
@@ -1178,6 +1282,7 @@ class WebFleetManager:
         robot.last_reason = "stopped"
         robot.route_note = ""
         robot.active_order_id = ""
+        self._clear_remote_route_metadata(robot)
         robot.updated_at = time()
 
     def _block_order(self, name: str, start_lm: str, goal_lm: str, reason: str) -> None:
@@ -1230,6 +1335,12 @@ class WebFleetManager:
             return max(0.2, float(fleet.get("remote_timeout_sec", 0.8) or 0.8))
         except (TypeError, ValueError):
             return 0.8
+
+    def _clear_remote_route_metadata(self, robot: FleetRobot) -> None:
+        robot.route_revision = 0
+        robot.route_chunk_index = 0
+        robot.route_chunk_goal_lm = ""
+        robot.route_final_lm = ""
 
     def _remote_poll_interval(self) -> float:
         fleet = self.params.get("fleet", {})
@@ -1344,14 +1455,48 @@ class WebFleetManager:
             robot.last_reason = "arrived"
             if completed:
                 robot.status = "ARRIVED"
+                self._clear_remote_route_metadata(robot)
                 self._event("info", f"order completed: {order.order_id} {robot.name}@{target_lm}")
             else:
                 robot.status = "IDLE"
+            robot.updated_at = now
+        elif (
+            robot.status in {"ARRIVED", "IDLE"}
+            and target_lm
+            and robot.route_chunk_goal_lm
+            and robot.current_lm == robot.route_chunk_goal_lm
+            and robot.current_lm != target_lm
+        ):
+            order.start_lm = robot.current_lm
+            order.status = "QUEUED"
+            order.error = ""
+            order.updated_at = now
+            robot.target_lm = ""
+            robot.trajectory = []
+            robot.plan_nodes = []
+            robot.trajectory_dirty = True
+            robot.route_clock = 0.0
+            robot.route_started_at = None
+            robot.blocked_since = None
+            robot.last_reason = f"chunk arrived at {robot.current_lm}; planning next chunk"
+            self._event(
+                "info",
+                f"route chunk completed: {order.order_id} {robot.name}@{robot.current_lm}; next {target_lm}",
+            )
+            robot.active_order_id = ""
+            if not self._dispatch_order(order, force=True):
+                robot.active_order_id = order.order_id
+                order.status = "QUEUED"
             robot.updated_at = now
         elif robot.status in {"ERROR", "BLOCKED", "OFFLINE"}:
             order.status = "PAUSED" if robot.status != "OFFLINE" else "QUEUED"
             order.error = robot.last_reason or robot.remote_error or robot.status.lower()
             order.updated_at = now
+        elif robot.status in {"MOVING", "WAITING"} and robot.trajectory:
+            blocked_reason = self._blocked_ahead(robot, robot.route_clock)
+            if blocked_reason and self._should_replan_for_blocked_reason(blocked_reason):
+                self._maybe_replan_remote_robot_order(robot, order, now, blocked_reason)
+            self._update_active_order_from_robot(robot)
         else:
             self._update_active_order_from_robot(robot)
         robot.last_tick_at = now
@@ -1368,13 +1513,14 @@ class WebFleetManager:
         order: FleetOrder,
         plan: dict[str, Any],
         result: dict[str, Any],
-    ) -> None:
-        route = self._remote_route_payload(order, plan)
+    ) -> dict[str, Any]:
+        route = self._remote_route_payload(robot, order, plan)
         payload = {
             "route": route,
             "order": order.to_dict(),
             "fleet": {
                 "manager": "fleet_manager",
+                "routeProtocol": "lm_route",
                 "planNote": self._plan_note(result),
                 "debug": result.get("debug", {}),
             },
@@ -1385,23 +1531,119 @@ class WebFleetManager:
         status = response.get("status")
         if isinstance(status, dict):
             self._apply_remote_status(robot, status, time())
+        return route
 
-    def _remote_route_payload(self, order: FleetOrder, plan: dict[str, Any]) -> dict[str, Any]:
-        trajectory = [
-            dict(item)
-            for item in plan.get("trajectory", [])
-            if isinstance(item, dict)
-        ]
-        nodes = [str(item) for item in plan.get("nodes", []) if str(item)]
+    def _remote_route_payload(
+        self,
+        robot: FleetRobot,
+        order: FleetOrder,
+        plan: dict[str, Any],
+    ) -> dict[str, Any]:
+        full_nodes = [str(item) for item in plan.get("nodes", []) if str(item)]
+        start_lm = str(plan.get("startLm") or order.start_lm or (full_nodes[0] if full_nodes else ""))
+        final_goal_lm = str(plan.get("goalLm") or order.target_lm or (full_nodes[-1] if full_nodes else ""))
+        if not full_nodes and start_lm and final_goal_lm:
+            full_nodes = [start_lm, final_goal_lm] if start_lm != final_goal_lm else [start_lm]
+        chunk_nodes = self._remote_route_chunk_nodes(full_nodes)
+        chunk_start_lm = chunk_nodes[0] if chunk_nodes else start_lm
+        chunk_goal_lm = chunk_nodes[-1] if chunk_nodes else final_goal_lm
+        chunk_length = self._lm_path_length(chunk_nodes)
+        full_length = float(plan.get("length", 0.0) or 0.0)
+        revision = self._next_route_revision()
+        chunk_index = self._next_remote_chunk_index(robot, order, chunk_start_lm)
+        is_final = bool(chunk_nodes and full_nodes and chunk_nodes[-1] == full_nodes[-1])
         return {
             "routeId": f"{order.order_id}:{order.step_index}",
+            "protocol": "lm_route",
+            "protocolVersion": 1,
+            "revision": revision,
             "orderId": order.order_id,
-            "startLm": str(plan.get("startLm") or order.start_lm or ""),
-            "goalLm": str(plan.get("goalLm") or order.target_lm or ""),
-            "nodes": nodes,
-            "length": float(plan.get("length", 0.0) or 0.0),
-            "trajectory": trajectory,
+            "startLm": chunk_start_lm,
+            "goalLm": chunk_goal_lm,
+            "finalGoalLm": final_goal_lm,
+            "nodes": chunk_nodes,
+            "fullNodes": full_nodes,
+            "length": chunk_length if chunk_length > 0.0 else full_length,
+            "fullLength": full_length,
+            "replaceMode": "immediate",
+            "chunk": {
+                "index": chunk_index,
+                "stepIndex": order.step_index,
+                "offset": 0,
+                "startLm": chunk_start_lm,
+                "goalLm": chunk_goal_lm,
+                "finalGoalLm": final_goal_lm,
+                "nodes": chunk_nodes,
+                "fullNodes": full_nodes,
+                "isFinal": is_final,
+            },
         }
+
+    def _remote_route_chunk_nodes(self, nodes: list[str]) -> list[str]:
+        if len(nodes) <= 2:
+            return list(nodes)
+        limit = self._remote_route_chunk_lms()
+        if limit <= 0 or limit >= len(nodes):
+            return list(nodes)
+        return list(nodes[:max(2, limit)])
+
+    def _remote_route_chunk_lms(self) -> int:
+        fleet = self.params.get("fleet", {})
+        if not isinstance(fleet, dict):
+            return 5
+        try:
+            return max(0, int(fleet.get("remote_route_chunk_lms", 5) or 0))
+        except (TypeError, ValueError):
+            return 5
+
+    def _next_route_revision(self) -> int:
+        now_ms = int(time() * 1000)
+        self._route_revision_seq = max(self._route_revision_seq + 1, now_ms)
+        return self._route_revision_seq
+
+    def _next_remote_chunk_index(self, robot: FleetRobot, order: FleetOrder, chunk_start_lm: str) -> int:
+        if robot.route_final_lm == order.target_lm:
+            if robot.route_chunk_goal_lm and robot.current_lm == robot.route_chunk_goal_lm:
+                return max(0, robot.route_chunk_index + 1)
+            if robot.active_order_id != order.order_id:
+                return 0
+            if chunk_start_lm == robot.current_lm:
+                return max(0, robot.route_chunk_index)
+        return 0
+
+    def _apply_remote_route_metadata(self, robot: FleetRobot, route: dict[str, Any], now: float) -> None:
+        chunk = route.get("chunk")
+        if not isinstance(chunk, dict):
+            chunk = {}
+        robot.route_revision = int(route.get("revision", 0) or 0)
+        robot.route_chunk_index = int(chunk.get("index", 0) or 0)
+        robot.route_chunk_goal_lm = str(chunk.get("goalLm") or route.get("goalLm") or "").strip()
+        robot.route_final_lm = str(
+            chunk.get("finalGoalLm")
+            or route.get("finalGoalLm")
+            or route.get("goalLm")
+            or ""
+        ).strip()
+        if robot.route_chunk_goal_lm:
+            robot.target_lm = robot.route_chunk_goal_lm
+        robot.updated_at = now
+
+    def _lm_path_length(self, nodes: list[str]) -> float:
+        if len(nodes) < 2:
+            return 0.0
+        length = 0.0
+        edge_lengths = {
+            (edge.from_name, edge.to_name): float(edge.length)
+            for edge in self.edges
+        }
+        for start_lm, goal_lm in zip(nodes, nodes[1:]):
+            if start_lm == goal_lm:
+                continue
+            edge_length = edge_lengths.get((start_lm, goal_lm))
+            if edge_length is None:
+                return 0.0
+            length += edge_length
+        return length
 
     def _cancel_remote_route(self, robot: FleetRobot, reason: str) -> None:
         if not robot.is_remote() or not robot.base_url:
@@ -1580,9 +1822,13 @@ class WebFleetManager:
                 str(item) for item in plan.get("nodes", [])
             ]
             robot.route_started_at = now
-            robot.route_clock = 0.0
+            if robot.is_remote() and robot.pose:
+                robot.route_clock = self._nearest_trajectory_clock(trajectory, robot.pose)
+            else:
+                robot.route_clock = 0.0
             robot.last_tick_at = now
-            robot.pose = self._pose_at_trajectory(robot.trajectory, 0.0) or robot.pose
+            if not robot.is_remote():
+                robot.pose = self._pose_at_trajectory(robot.trajectory, 0.0) or robot.pose
             robot.route_note = self._plan_note(result)
             robot.last_reason = robot.route_note if trajectory else "empty trajectory"
             robot.blocked_since = None
@@ -2553,6 +2799,74 @@ class WebFleetManager:
         self._event("warn", f"{robot.name} replan pending: {robot.last_reason}")
         return False
 
+    def _maybe_replan_remote_robot_order(
+        self,
+        robot: FleetRobot,
+        order: FleetOrder,
+        now: float,
+        reason: str,
+    ) -> bool:
+        if not robot.is_remote() or not robot.base_url:
+            return False
+        target_lm = self._active_order_target(order)
+        if not target_lm:
+            return False
+        interval = self._replan_interval()
+        if robot.last_replan_at is not None and now - robot.last_replan_at < interval:
+            return False
+
+        start_lm = self._nearest_lm_for_robot(robot)
+        if not start_lm or start_lm not in self.landmarks:
+            robot.status = "BLOCKED"
+            robot.last_reason = "cannot find nearest LM for remote replan"
+            robot.updated_at = now
+            return False
+
+        robot.last_replan_at = now
+        request = {
+            "name": robot.name,
+            "startLm": start_lm,
+            "goalLm": target_lm,
+            "startPose": dict(robot.pose) if robot.pose else self._pose_at_landmark(start_lm),
+        }
+        result = self._plan_valid_requests([request], {"robots": [request]})
+        if not result.get("ok") or not result.get("plans"):
+            robot.status = "WAITING" if robot.trajectory else "BLOCKED"
+            debug = result.get("debug", {})
+            if isinstance(debug, dict):
+                robot.last_reason = str(debug.get("reason") or reason)
+            else:
+                robot.last_reason = reason
+            robot.updated_at = now
+            self._event("warn", f"{robot.name} remote replan pending: {robot.last_reason}")
+            return False
+
+        plan = self._plan_for_robot(result, robot.name)
+        if plan is None:
+            robot.status = "WAITING"
+            robot.last_reason = "remote replan did not return robot plan"
+            robot.updated_at = now
+            return False
+
+        try:
+            remote_route = self._execute_remote_plan(robot, order, plan, result)
+        except RemoteRobotError as exc:
+            robot.remote_error = str(exc)
+            robot.remote_online = False
+            robot.status = "OFFLINE"
+            robot.last_reason = f"remote replan execute failed: {exc}"
+            robot.updated_at = now
+            return False
+
+        order.route_nodes = [str(item) for item in plan.get("nodes", []) if str(item)]
+        self._apply_planner_result(result, now, order_id=order.order_id)
+        self._apply_remote_route_metadata(robot, remote_route, now)
+        self._set_order_status(order, "EXECUTING", robot=robot, start_lm=start_lm)
+        robot.route_note = f"REPLAN: {self._plan_note(result)}"
+        robot.last_reason = robot.route_note
+        self._event("info", f"{robot.name} remote route revision {robot.route_revision}: {reason}")
+        return True
+
     def _no_reverse_edges(self, robot: FleetRobot, start_lm: str) -> set[tuple[str, str]]:
         if not robot.plan_nodes or start_lm not in robot.plan_nodes:
             return set()
@@ -3065,10 +3379,22 @@ class FleetCollisionChecker:
         raw_footprint = robot_model.get("footprint")
         if not isinstance(raw_footprint, list) or len(raw_footprint) < 3:
             raw_footprint = [
-                {"x": 0.35, "y": 0.275},
-                {"x": 0.35, "y": -0.275},
-                {"x": -0.35, "y": -0.275},
-                {"x": -0.35, "y": 0.275},
+                {"x": 0.220000, "y": 0.000000},
+                {"x": 0.203253, "y": 0.084190},
+                {"x": 0.155563, "y": 0.155563},
+                {"x": 0.084190, "y": 0.203253},
+                {"x": 0.000000, "y": 0.220000},
+                {"x": -0.084190, "y": 0.203253},
+                {"x": -0.155563, "y": 0.155563},
+                {"x": -0.203253, "y": 0.084190},
+                {"x": -0.220000, "y": 0.000000},
+                {"x": -0.203253, "y": -0.084190},
+                {"x": -0.155563, "y": -0.155563},
+                {"x": -0.084190, "y": -0.203253},
+                {"x": 0.000000, "y": -0.220000},
+                {"x": 0.084190, "y": -0.203253},
+                {"x": 0.155563, "y": -0.155563},
+                {"x": 0.203253, "y": -0.084190},
             ]
         return [
             {

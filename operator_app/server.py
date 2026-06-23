@@ -271,6 +271,8 @@ class OperatorAppState:
                 return self.fleet_manager.check_payload(payload)
             if action == "manual_step":
                 return self.fleet_manager.manual_step_payload(payload)
+            if action == "manual_stop":
+                return self.fleet_manager.manual_stop_payload(payload)
             if action == "maps_load":
                 return self.fleet_manager.load_map_payload(payload)
             if action == "maps_save":
@@ -1066,6 +1068,8 @@ class OperatorRequestHandler(SimpleHTTPRequestHandler):
             return "check", ""
         if parts == ["manual-step"]:
             return "manual_step", ""
+        if parts == ["manual-stop"]:
+            return "manual_stop", ""
         if parts == ["maps", "list"]:
             return "maps_list", ""
         if parts == ["maps", "active"]:

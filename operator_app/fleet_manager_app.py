@@ -173,86 +173,52 @@ class OperatorFleetManager:
     def state_payload(self, include_trajectories: bool = True) -> dict[str, Any]:
         self._sync_manager_mode()
         state = self.manager.state(include_trajectories=include_trajectories)
-        state["mode"] = self.mode
-        state["mapName"] = self.map_dir.stem.replace(".smap", "")
-        state["managerId"] = FLEET_MANAGER_ID
-        return state
+        return self._state_with_context(state)
 
     def plan_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
         self._sync_manager_mode()
         result = self.manager.plan(payload)
         if isinstance(result.get("fleetState"), dict):
             result["state"] = result["fleetState"]
-        result["mode"] = self.mode
-        return result
+        return self._result_with_context(result)
 
     def orders_payload(self) -> dict[str, Any]:
         self._sync_manager_mode()
         result = self.manager.orders_payload()
-        result["mode"] = self.mode
-        result["mapName"] = self.map_dir.stem.replace(".smap", "")
-        result["managerId"] = FLEET_MANAGER_ID
-        return result
+        return self._result_with_context(result)
 
     def set_order_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
         self._sync_manager_mode()
-        result = self.manager.set_order(payload)
-        result["mode"] = self.mode
-        result["mapName"] = self.map_dir.stem.replace(".smap", "")
-        result["managerId"] = FLEET_MANAGER_ID
-        return result
+        return self._result_with_context(self.manager.set_order(payload))
 
     def dispatch_orders_payload(self, payload: dict[str, Any] | None = None) -> dict[str, Any]:
         self._sync_manager_mode()
-        result = self.manager.dispatch_orders(payload or {})
-        result["mode"] = self.mode
-        result["mapName"] = self.map_dir.stem.replace(".smap", "")
-        result["managerId"] = FLEET_MANAGER_ID
-        return result
+        return self._result_with_context(self.manager.dispatch_orders(payload or {}))
 
     def cancel_order_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
         self._sync_manager_mode()
-        result = self.manager.cancel_order(payload)
-        result["mode"] = self.mode
-        result["mapName"] = self.map_dir.stem.replace(".smap", "")
-        result["managerId"] = FLEET_MANAGER_ID
-        return result
+        return self._result_with_context(self.manager.cancel_order(payload))
 
     def pause_order_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
         self._sync_manager_mode()
-        result = self.manager.pause_order(payload)
-        result["mode"] = self.mode
-        result["mapName"] = self.map_dir.stem.replace(".smap", "")
-        result["managerId"] = FLEET_MANAGER_ID
-        return result
+        return self._result_with_context(self.manager.pause_order(payload))
 
     def resume_order_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
         self._sync_manager_mode()
-        result = self.manager.resume_order(payload)
-        result["mode"] = self.mode
-        result["mapName"] = self.map_dir.stem.replace(".smap", "")
-        result["managerId"] = FLEET_MANAGER_ID
-        return result
+        return self._result_with_context(self.manager.resume_order(payload))
 
     def clear_orders_payload(self, payload: dict[str, Any] | None = None) -> dict[str, Any]:
         self._sync_manager_mode()
-        result = self.manager.clear_orders(payload or {})
-        result["mode"] = self.mode
-        result["mapName"] = self.map_dir.stem.replace(".smap", "")
-        result["managerId"] = FLEET_MANAGER_ID
-        return result
+        return self._result_with_context(self.manager.clear_orders(payload or {}))
 
     def tick_payload(self, payload: dict[str, Any] | None = None) -> dict[str, Any]:
         self._sync_manager_mode()
         state = self.manager.tick(payload or {})
-        state["mode"] = self.mode
-        state["mapName"] = self.map_dir.stem.replace(".smap", "")
-        state["managerId"] = FLEET_MANAGER_ID
-        return state
+        return self._state_with_context(state)
 
     def world_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
         self._sync_manager_mode()
-        return self.manager.update_world(payload)
+        return self._result_with_context(self.manager.update_world(payload))
 
     def check_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
         self._sync_manager_mode()
@@ -263,6 +229,22 @@ class OperatorFleetManager:
         name = str(payload.get("name") or "").strip()
         if not name:
             raise ValueError("robot name is required")
+        if self.mode == "robots":
+            result = self.manager.teleop_robot(
+                {
+                    "name": name,
+                    "linear": float(payload.get("linear", 0.0) or 0.0),
+                    "angular": float(payload.get("angular", 0.0) or 0.0),
+                    "timeoutMs": int(payload.get("timeoutMs", 350) or 350),
+                }
+            )
+            return {
+                "ok": True,
+                "blocked": False,
+                "reason": "",
+                "robot": result.get("robot"),
+                "state": self._state_with_context(result.get("state")),
+            }
         poses = payload.get("poses", [])
         check = self.manager.check_path({"name": name, "poses": poses})
         update_payload = {
@@ -287,28 +269,57 @@ class OperatorFleetManager:
             "index": check.get("index"),
             "pose": check.get("pose"),
             "robot": result.get("robot"),
-            "state": result.get("state"),
+            "state": self._state_with_context(result.get("state")),
+        }
+
+    def manual_stop_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
+        self._sync_manager_mode()
+        name = str(payload.get("name") or "").strip()
+        if not name:
+            raise ValueError("robot name is required")
+        if self.mode == "robots":
+            result = self.manager.teleop_stop_robot({"name": name})
+            return {
+                "ok": True,
+                "robot": result.get("robot"),
+                "state": self._state_with_context(result.get("state")),
+            }
+
+        update_payload = {
+            "name": name,
+            "status": "IDLE",
+            "targetLm": "",
+            "currentLm": str(payload.get("currentLm") or ""),
+        }
+        pose = payload.get("pose")
+        if isinstance(pose, dict):
+            update_payload["pose"] = pose
+        result = self.manager.update_robot(update_payload)
+        return {
+            "ok": True,
+            "robot": result.get("robot"),
+            "state": self._state_with_context(result.get("state")),
         }
 
     def add_robot_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
         self._sync_manager_mode()
-        return self.manager.add_robot(payload)
+        return self._result_with_context(self.manager.add_robot(payload))
 
     def remove_robot_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
         self._sync_manager_mode()
-        return self.manager.remove_robot(payload)
+        return self._result_with_context(self.manager.remove_robot(payload))
 
     def update_robot_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
         self._sync_manager_mode()
-        return self.manager.update_robot(payload)
+        return self._result_with_context(self.manager.update_robot(payload))
 
     def stop_robot_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
         self._sync_manager_mode()
-        return self.manager.stop_robot(payload)
+        return self._result_with_context(self.manager.stop_robot(payload))
 
     def reset_robot_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
         self._sync_manager_mode()
-        return self.manager.reset_robot(payload)
+        return self._result_with_context(self.manager.reset_robot(payload))
 
     def resolve_map_dir(self, map_dir: Path) -> Path:
         candidate = Path(map_dir).expanduser()
@@ -371,3 +382,20 @@ class OperatorFleetManager:
         if self.mode == "robots":
             return {"remote"}
         return {"simulated"}
+
+    def _state_with_context(self, state: Any) -> dict[str, Any]:
+        if not isinstance(state, dict):
+            state = self.manager.state()
+        state["mode"] = self.mode
+        state["mapName"] = self.map_dir.stem.replace(".smap", "")
+        state["managerId"] = FLEET_MANAGER_ID
+        return state
+
+    def _result_with_context(self, result: dict[str, Any]) -> dict[str, Any]:
+        state = result.get("state")
+        if isinstance(state, dict):
+            result["state"] = self._state_with_context(state)
+        result["mode"] = self.mode
+        result["mapName"] = self.map_dir.stem.replace(".smap", "")
+        result["managerId"] = FLEET_MANAGER_ID
+        return result

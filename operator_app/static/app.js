@@ -20,10 +20,22 @@ class FleetRobotModelEditor {
   defaultModel() {
     return {
       footprint: [
-        { x: 0.35, y: 0.275 },
-        { x: 0.35, y: -0.275 },
-        { x: -0.35, y: -0.275 },
-        { x: -0.35, y: 0.275 },
+        { x: 0.220000, y: 0.000000 },
+        { x: 0.203253, y: 0.084190 },
+        { x: 0.155563, y: 0.155563 },
+        { x: 0.084190, y: 0.203253 },
+        { x: 0.000000, y: 0.220000 },
+        { x: -0.084190, y: 0.203253 },
+        { x: -0.155563, y: 0.155563 },
+        { x: -0.203253, y: 0.084190 },
+        { x: -0.220000, y: 0.000000 },
+        { x: -0.203253, y: -0.084190 },
+        { x: -0.155563, y: -0.155563 },
+        { x: -0.084190, y: -0.203253 },
+        { x: 0.000000, y: -0.220000 },
+        { x: 0.084190, y: -0.203253 },
+        { x: 0.155563, y: -0.155563 },
+        { x: 0.203253, y: -0.084190 },
       ],
       frames: {
         lidar: { x: 0.28, y: 0, label: "LiDAR", color: "#1f6feb" },
@@ -824,6 +836,23 @@ class OperatorApp {
     return Boolean(robot && (robot.id === this.fleetManagerId || robot.type === "fleet_manager"));
   }
 
+  fleetRuntimeMode(status = this.currentStatus) {
+    return String(status?.mode || this.fleetModeSelect?.value || "simulation");
+  }
+
+  isFleetRobotsMode() {
+    return this.isFleetManager() && this.fleetRuntimeMode() === "robots";
+  }
+
+  isFleetRemoteRobot(robot) {
+    const mode = String(robot?.mode || robot?.type || "").toLowerCase();
+    return ["remote", "remote_ros", "ros", "robot", "real"].includes(mode);
+  }
+
+  shouldAnimateFleetRobot(robot) {
+    return this.fleetRuntimeMode() !== "robots" && !this.isFleetRemoteRobot(robot);
+  }
+
   robotApiPath(path) {
     const robot = this.selectedRobot();
     if (!robot) {
@@ -1184,11 +1213,14 @@ class OperatorApp {
     if (!this.isFleetManager()) {
       return false;
     }
+    if (this.fleetRuntimeMode() === "robots") {
+      return false;
+    }
     if (this.manualKeys.size && this.fleetManualAnimation) {
       return true;
     }
     const robots = Array.isArray(this.currentStatus?.robots) ? this.currentStatus.robots : [];
-    return robots.some((robot) => ["MOVING", "MANUAL"].includes(String(robot.status || "")));
+    return robots.some((robot) => this.shouldAnimateFleetRobot(robot) && ["MOVING", "MANUAL"].includes(String(robot.status || "")));
   }
 
   fleetRenderRobots() {
@@ -1206,8 +1238,11 @@ class OperatorApp {
   }
 
   fleetRenderRobot(robot) {
-    const routeClock = this.animatedFleetRouteClock(robot);
-    const pose = this.animatedFleetRobotPose(robot, routeClock);
+    const animate = this.shouldAnimateFleetRobot(robot);
+    const routeClock = animate
+      ? this.animatedFleetRouteClock(robot)
+      : Math.max(0, Number(robot?.routeClock || 0));
+    const pose = animate ? this.animatedFleetRobotPose(robot, routeClock) : (robot?.pose || null);
     return {
       ...robot,
       routeClock,
@@ -1731,7 +1766,7 @@ class OperatorApp {
     const status = this.currentStatus || {};
     const robots = this.fleetRenderRobots();
     const selectedFleetRobot = this.selectedFleetRobot(robots);
-    const mode = String(status.mode || "simulation");
+    const mode = this.fleetRuntimeMode(status);
 
     this.fleetModeSelect.value = mode;
     this.robotStateText.textContent = mode.toUpperCase();
@@ -1750,7 +1785,7 @@ class OperatorApp {
       : `mode: ${mode}`;
     this.robotMessageText.textContent = robots.length
       ? `Fleet Manager is supervising ${robots.length} robot(s).`
-      : "Add a simulation robot from a spawn LM.";
+      : (mode === "robots" ? "Add a robot API from a spawn LM." : "Add a simulation robot from a spawn LM.");
     this.routeNodesText.textContent = selectedFleetRobot && Array.isArray(selectedFleetRobot.planNodes) && selectedFleetRobot.planNodes.length
       ? selectedFleetRobot.planNodes.join(" -> ")
       : "No active fleet route.";
@@ -1773,7 +1808,7 @@ class OperatorApp {
     const status = this.currentStatus || {};
     const robots = this.fleetRenderRobots();
     const selectedFleetRobot = this.selectedFleetRobot(robots);
-    const mode = String(status.mode || "simulation");
+    const mode = this.fleetRuntimeMode(status);
 
     this.robotStateText.textContent = mode.toUpperCase();
     this.nearestLmText.textContent = `${robots.length} robots`;
@@ -2758,10 +2793,22 @@ class OperatorApp {
     const footprint = Array.isArray(model.footprint) && model.footprint.length >= 3
       ? model.footprint
       : [
-        { x: 0.35, y: 0.275 },
-        { x: 0.35, y: -0.275 },
-        { x: -0.35, y: -0.275 },
-        { x: -0.35, y: 0.275 },
+        { x: 0.220000, y: 0.000000 },
+        { x: 0.203253, y: 0.084190 },
+        { x: 0.155563, y: 0.155563 },
+        { x: 0.084190, y: 0.203253 },
+        { x: 0.000000, y: 0.220000 },
+        { x: -0.084190, y: 0.203253 },
+        { x: -0.155563, y: 0.155563 },
+        { x: -0.203253, y: 0.084190 },
+        { x: -0.220000, y: 0.000000 },
+        { x: -0.203253, y: -0.084190 },
+        { x: -0.155563, y: -0.155563 },
+        { x: -0.084190, y: -0.203253 },
+        { x: 0.000000, y: -0.220000 },
+        { x: 0.084190, y: -0.203253 },
+        { x: 0.155563, y: -0.155563 },
+        { x: 0.203253, y: -0.084190 },
       ];
     const yaw = Number(pose.yaw || 0);
     const cos = Math.cos(yaw);
@@ -3866,7 +3913,10 @@ class OperatorApp {
   collectFleetParams() {
     const params = JSON.parse(JSON.stringify(this.fleetParams || {}));
     if (this.fleetModelEditor) {
-      params.robot_model = this.fleetModelEditor.getModel();
+      params.robot_model = {
+        ...(params.robot_model || {}),
+        ...this.fleetModelEditor.getModel(),
+      };
     }
     params.navigation = {
       ...(params.navigation || {}),
@@ -4124,6 +4174,10 @@ class OperatorApp {
       this.robotMessageText.textContent = "Select a fleet robot for manual control.";
       return;
     }
+    if (this.isFleetRobotsMode()) {
+      await this.sendFleetRemoteTeleop(robot, twist);
+      return;
+    }
     if (this.fleetManualRobotName !== robot.name) {
       await this.postJson("/api/fleet-manager/robots/stop", { name: robot.name });
       this.fleetManualRobotName = robot.name;
@@ -4175,6 +4229,30 @@ class OperatorApp {
     this.renderFleetRuntimeTick();
   }
 
+  async sendFleetRemoteTeleop(robot, twist) {
+    if (!robot.baseUrl) {
+      this.robotMessageText.textContent = `${robot.name}: Robot API URL is missing.`;
+      return;
+    }
+    if (this.fleetManualRobotName !== robot.name) {
+      this.fleetManualRobotName = robot.name;
+      this.fleetManualLastAt = performance.now();
+      this.fleetManualLookahead = null;
+      this.fleetManualAnimation = null;
+    }
+    const result = await this.postJson("/api/fleet-manager/manual-step", {
+      name: robot.name,
+      linear: twist.linear,
+      angular: twist.angular,
+      timeoutMs: 350,
+    });
+    this.currentStatus = result.state || await this.getJson("/api/fleet-manager/state");
+    this.fleetStatusReceivedAt = performance.now();
+    this.fleetStatusObjectRef = this.currentStatus;
+    this.robotMessageText.textContent = `${robot.name} remote manual control active.`;
+    this.renderFleetRuntimeTick();
+  }
+
   async releaseFleetManualControl() {
     if (!this.fleetManualRobotName) {
       this.fleetManualLookahead = null;
@@ -4183,6 +4261,18 @@ class OperatorApp {
     }
     const robot = this.selectedFleetRobot();
     if (robot && robot.name === this.fleetManualRobotName) {
+      if (this.isFleetRobotsMode()) {
+        const result = await this.postJson("/api/fleet-manager/manual-stop", { name: robot.name });
+        this.currentStatus = result.state || await this.getJson("/api/fleet-manager/state");
+        this.fleetStatusReceivedAt = performance.now();
+        this.fleetStatusObjectRef = this.currentStatus;
+        this.fleetManualRobotName = "";
+        this.fleetManualLastAt = 0;
+        this.fleetManualLookahead = null;
+        this.fleetManualAnimation = null;
+        this.renderSelectedRobot();
+        return;
+      }
       const pose = robot.pose || null;
       const payload = {
         name: robot.name,

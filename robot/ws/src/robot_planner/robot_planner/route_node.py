@@ -13,7 +13,7 @@ from robot_msgs.srv import CancelRoute, ExecuteRoute, LoadRobotMap, PlanRoute
 
 from .executor import RouteExecutor
 from .route_planner import RobotTrajectoryPlanner
-from .runtime import PlannedRobotRoute, Pose2D, RobotRuntime
+from .runtime import PlannedRobotRoute, Pose2D, RobotRuntime, route_update_is_stale
 
 
 class RobotRouteNode(Node):
@@ -111,11 +111,27 @@ class RobotRouteNode(Node):
             payload = json.loads(str(request.route_json or ""))
             if not isinstance(payload, dict):
                 raise ValueError("route_json must contain an object")
-            route = PlannedRobotRoute.from_dict(payload)
+            route = self._route_from_execute_payload(payload)
             if not route.goal_lm:
                 raise ValueError("route.goalLm is required")
+            active_route = self.runtime.active_route()
+            if route_update_is_stale(active_route, route):
+                raise ValueError(
+                    f"stale route revision: {route.route_id} rev {route.revision} "
+                    f"<= active rev {active_route.revision if active_route else 0}"
+                )
+            replacing = active_route is not None and (
+                active_route.route_id != route.route_id
+                or active_route.revision != route.revision
+            )
+            if replacing and route.replace_mode == "immediate":
+                self._publish_cmd_vel(0.0, 0.0)
             self.runtime.set_route(route)
-            self.runtime.add_event("info", f"executing route {route.route_id} -> {route.goal_lm}")
+            verb = "replacing" if replacing else "executing"
+            self.runtime.add_event(
+                "info",
+                f"{verb} route {route.route_id} rev {route.revision} -> {route.goal_lm}",
+            )
             response.ok = True
             response.error = ""
             self._publish_executor_state()
@@ -123,6 +139,27 @@ class RobotRouteNode(Node):
             response.ok = False
             response.error = str(exc)
         return response
+
+    def _route_from_execute_payload(self, payload: dict[str, object]) -> PlannedRobotRoute:
+        if self._is_lm_route_payload(payload):
+            pose_payload = self._latest_status.get("pose")
+            if not isinstance(pose_payload, dict):
+                raise ValueError("robot pose is not available yet")
+            pose = Pose2D(
+                x=float(pose_payload.get("x", 0.0) or 0.0),
+                y=float(pose_payload.get("y", 0.0) or 0.0),
+                yaw=float(pose_payload.get("yaw", 0.0) or 0.0),
+            )
+            return self.route_planner.plan_from_lm_route(pose, payload)
+        return PlannedRobotRoute.from_dict(payload)
+
+    def _is_lm_route_payload(self, payload: dict[str, object]) -> bool:
+        protocol = str(payload.get("protocol") or payload.get("routeProtocol") or "").strip().lower()
+        if protocol in {"lm_route", "lm-route", "lmroute"}:
+            return True
+        trajectory = payload.get("trajectory")
+        nodes = payload.get("nodes") or payload.get("routeNodes") or payload.get("route_nodes")
+        return not isinstance(trajectory, list) and isinstance(nodes, list)
 
     def _handle_cancel_route(self, request, response):
         try:

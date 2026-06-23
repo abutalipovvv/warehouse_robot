@@ -16,6 +16,7 @@ from robot_planner import (
     Pose2D,
     RobotTrajectoryPlanner,
     load_route_params,
+    route_update_is_stale,
     save_route_params,
 )
 
@@ -203,11 +204,37 @@ class RobotRosClient:
         self._active_route = route
 
     def execute_route_payload(self, route_payload: dict[str, Any]) -> dict[str, Any]:
-        route = PlannedRobotRoute.from_dict(route_payload)
+        route = self._route_from_execute_payload(route_payload)
         if not route.goal_lm:
             raise ValueError("route.goalLm is required")
+        self._reject_stale_route_update(route)
         self.execute_route(route)
         return route.to_dict()
+
+    def _reject_stale_route_update(self, route: PlannedRobotRoute) -> None:
+        status = self.latest_status_payload()
+        active = self._active_route if status.get("routeId") else None
+        if route_update_is_stale(active, route):
+            raise ValueError(
+                f"stale route revision: {route.route_id} rev {route.revision} "
+                f"<= active rev {active.revision if active else 0}"
+            )
+
+    def _route_from_execute_payload(self, route_payload: dict[str, Any]) -> PlannedRobotRoute:
+        if self._is_lm_route_payload(route_payload):
+            pose = self.latest_pose()
+            if pose is None:
+                raise ValueError("robot pose is not available yet")
+            return self.route_planner.plan_from_lm_route(pose, route_payload)
+        return PlannedRobotRoute.from_dict(route_payload)
+
+    def _is_lm_route_payload(self, route_payload: dict[str, Any]) -> bool:
+        protocol = str(route_payload.get("protocol") or route_payload.get("routeProtocol") or "").strip().lower()
+        if protocol in {"lm_route", "lm-route", "lmroute"}:
+            return True
+        trajectory = route_payload.get("trajectory")
+        nodes = route_payload.get("nodes") or route_payload.get("routeNodes") or route_payload.get("route_nodes")
+        return not isinstance(trajectory, list) and isinstance(nodes, list)
 
     def load_map(self, map_name: str) -> dict[str, Any]:
         request = LoadRobotMap.Request()
