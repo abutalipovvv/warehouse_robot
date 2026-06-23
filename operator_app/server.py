@@ -28,6 +28,7 @@ WEBSOCKET_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 DEFAULT_FLEET_WS_INTERVAL_MS = 180
 MIN_FLEET_WS_INTERVAL_MS = 50
 MAX_FLEET_WS_INTERVAL_MS = 1000
+APP_ROUTES = {"/", "/home", "/params", "/robot_model", "/map_editor"}
 
 
 def utc_now() -> str:
@@ -74,10 +75,9 @@ class OperatorAppState:
         probe = self._probe_robot(host, port)
         identity = probe.get("identity", {})
         robot_id = str(identity.get("robotId") or f"{host}:{port}").strip()
-        name = str(payload.get("name") or "").strip() or robot_id
         robot = KnownRobot(
             id=f"{robot_id}@{host}:{port}",
-            name=name,
+            name=robot_id,
             host=host,
             port=port,
             last_seen=utc_now(),
@@ -822,6 +822,8 @@ class OperatorRequestHandler(SimpleHTTPRequestHandler):
             if proxy_target is not None:
                 self._proxy_robot_request("GET", *proxy_target)
                 return
+            if path in APP_ROUTES:
+                self.path = "/index.html"
             super().do_GET()
         except BrokenPipeError:
             return

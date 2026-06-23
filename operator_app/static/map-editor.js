@@ -31,6 +31,12 @@ class RobotMapEditorApp {
     this.localMapsList = document.getElementById("localMapsList");
     this.editorLog = document.getElementById("editorLog");
 
+    this.editorHomeButton = document.getElementById("editorHomeButton");
+    this.editorParamsButton = document.getElementById("editorParamsButton");
+    this.editorMapEditorButton = document.getElementById("editorMapEditorButton");
+    this.editorRobotModelButton = document.getElementById("editorRobotModelButton");
+    this.editorRobotsButton = document.getElementById("editorRobotsButton");
+    this.editorAddRobotButton = document.getElementById("editorAddRobotButton");
     this.refreshMapsButton = document.getElementById("refreshMapsButton");
     this.saveLocalButton = document.getElementById("saveLocalButton");
     this.saveAsButton = document.getElementById("saveAsButton");
@@ -77,6 +83,12 @@ class RobotMapEditorApp {
   }
 
   bindEvents() {
+    this.editorHomeButton.addEventListener("click", () => this.goOperatorPage("/home"));
+    this.editorParamsButton.addEventListener("click", () => this.goOperatorPage("/params"));
+    this.editorMapEditorButton.addEventListener("click", () => this.refreshAll());
+    this.editorRobotModelButton.addEventListener("click", () => this.goOperatorPage("/robot_model"));
+    this.editorRobotsButton.addEventListener("click", () => this.goOperatorPage("/home", { openRobots: true }));
+    this.editorAddRobotButton.addEventListener("click", () => this.goOperatorPage("/home", { openAddRobot: true }));
     this.refreshMapsButton.addEventListener("click", () => this.refreshAll());
     this.saveLocalButton.addEventListener("click", () => this.saveLocalDraft());
     this.saveAsButton.addEventListener("click", () => this.handleSaveAsAndClose());
@@ -109,6 +121,22 @@ class RobotMapEditorApp {
       event.preventDefault();
       event.returnValue = "";
     });
+  }
+
+  goOperatorPage(path, options = {}) {
+    if (this.dirty && !window.confirm("Leave map editor with unsaved changes?")) {
+      return;
+    }
+    if (this.robotId) {
+      window.localStorage.setItem("operator:selectedRobotId", this.robotId);
+    }
+    if (options.openRobots) {
+      window.sessionStorage.setItem("operator:openSidebar", "1");
+    }
+    if (options.openAddRobot) {
+      window.sessionStorage.setItem("operator:openAddRobot", "1");
+    }
+    window.location.assign(path);
   }
 
   async refreshAll(options = {}) {

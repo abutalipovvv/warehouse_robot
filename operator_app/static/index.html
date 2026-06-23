@@ -17,6 +17,10 @@
         </div>
       </div>
       <div class="toolbar">
+        <button id="homeButton" type="button">Home</button>
+        <button id="paramsNavButton" type="button">Params</button>
+        <button id="mapEditorNavButton" type="button">Map Editor</button>
+        <button id="robotModelNavButton" type="button">Robot Model</button>
         <button id="openSidebarButton" type="button">Robots</button>
         <button id="refreshButton" type="button">Refresh</button>
         <button id="addRobotButton" class="primary" type="button">Add Robot +</button>
@@ -69,49 +73,16 @@
                 <button id="cancelRouteButton" type="button">Cancel Route</button>
                 <button id="stopRobotButton" class="danger" type="button">Stop</button>
                 <button id="refreshRobotStatusButton" type="button">Refresh Status</button>
-                <button id="editMapButton" type="button">Edit Map</button>
                 <button id="controlPullMapButton" type="button">Pull Map</button>
                 <button id="controlPushMapButton" type="button">Push Map</button>
                 <button id="controlLoadMapButton" type="button">Load Map</button>
               </div>
             </div>
             <div id="mapSyncStatus" class="probe-result neutral">Map sync state is not available yet.</div>
-            <div class="operator-console">
-              <section class="operator-map-panel">
-                <div class="map-toolbar">
-                  <button id="operatorZoomInButton" type="button">Zoom +</button>
-                  <button id="operatorZoomOutButton" type="button">Zoom -</button>
-                  <button id="operatorResetViewButton" type="button">Reset View</button>
-                  <button id="operatorFollowRobotButton" type="button">Follow Robot</button>
-                </div>
-                <svg id="operatorMapSvg" aria-label="Selected robot map">
-                  <g id="operatorViewport">
-                    <image id="operatorMapImage" preserveAspectRatio="none"></image>
-                    <g id="operatorGraphLayer"></g>
-                    <g id="operatorRouteLayer"></g>
-                    <g id="operatorLookaheadLayer"></g>
-                    <g id="operatorLandmarkLayer"></g>
-                    <g id="operatorEditorLayer"></g>
-                    <g id="operatorRobotLayer"></g>
-                  </g>
-                </svg>
-                <div id="manualPad" class="manual-pad" aria-label="Manual robot control">
-                  <button type="button" class="manual-key up" data-manual-key="w" title="W / forward">&#8593;</button>
-                  <button type="button" class="manual-key left" data-manual-key="a" title="A / left">&#8592;</button>
-                  <button type="button" class="manual-key down" data-manual-key="s" title="S / backward">&#8595;</button>
-                  <button type="button" class="manual-key right" data-manual-key="d" title="D / right">&#8594;</button>
-                </div>
-              </section>
-
-              <aside class="operator-inspector">
-                <section id="fleetControlPanel" class="panel-block fleet-control-panel hidden">
-                  <div class="block-title">Fleet</div>
-                  <nav class="fleet-tab-strip" aria-label="Fleet manager tools">
-                    <button class="active" type="button" data-fleet-tab="fleet">Fleet</button>
-                    <button type="button" data-fleet-tab="model">Robot Model</button>
-                    <button type="button" data-fleet-tab="map">Map Editor</button>
-                  </nav>
-                  <div id="fleetTabFleet" class="fleet-tab-page active">
+            <div id="operatorConsole" class="operator-console">
+              <section id="fleetControlPanel" class="panel-block fleet-control-panel hidden">
+                <div class="block-title">Fleet Workspace</div>
+                <div id="fleetTabFleet" class="fleet-tab-page active">
                   <div class="fleet-control-row">
                     <label>
                       Mode
@@ -120,17 +91,17 @@
                         <option value="robots">Robots</option>
                       </select>
                     </label>
-                    <label>
+                    <label id="fleetRobotNameLabel">
                       Robot Name
                       <input id="fleetRobotNameInput" type="text" value="robot1" />
                     </label>
-                    <label>
-                      Spawn LM
+                    <label id="fleetSpawnLmLabel">
+                      <span id="fleetSpawnLmLabelText">Start LM</span>
                       <select id="fleetSpawnLmSelect"></select>
                     </label>
                     <label id="fleetRobotApiLabel" class="fleet-remote-field hidden">
-                      Robot API URL
-                      <input id="fleetRobotApiInput" type="text" placeholder="http://192.168.0.10:8790" />
+                      Robot IP
+                      <input id="fleetRobotApiInput" type="text" placeholder="192.168.0.10" />
                     </label>
                     <button id="fleetAddRobotButton" class="primary" type="button">+</button>
                   </div>
@@ -154,6 +125,8 @@
                     </div>
                     <div id="fleetPlanDebug" class="fleet-plan-debug">Planner idle.</div>
                   </div>
+                </div>
+                <div id="fleetTabParams" class="fleet-tab-page">
                   <div class="fleet-params-block">
                     <div class="block-title">Motion Params</div>
                     <div class="fleet-param-grid">
@@ -184,76 +157,122 @@
                     </div>
                     <button id="fleetSaveParamsButton" type="button">Save Params</button>
                   </div>
-                  </div>
-                  <div id="fleetTabModel" class="fleet-tab-page">
-                    <div class="fleet-model-toolbar">
-                      <button id="fleetModelZoomInButton" type="button">Zoom +</button>
-                      <button id="fleetModelZoomOutButton" type="button">Zoom -</button>
-                      <button id="fleetModelResetViewButton" type="button">Reset View</button>
-                      <button id="fleetModelResetButton" type="button">Reset Model</button>
-                    </div>
-                    <svg id="fleetRobotModelSvg" class="fleet-model-svg" viewBox="0 0 520 460" aria-label="Fleet robot model editor"></svg>
-                    <div class="block-title">Footprint Vertices</div>
-                    <div id="fleetFootprintFields" class="field-list"></div>
-                    <div class="block-title">TF Points</div>
-                    <div id="fleetTfFields" class="field-list"></div>
-                    <button id="fleetModelSaveButton" class="primary" type="button">Save Params</button>
-                  </div>
-                  <div id="fleetTabMap" class="fleet-tab-page">
-                    <div class="fleet-model-toolbar">
-                      <button class="active" type="button" data-fleet-map-tool="select">Select</button>
-                      <button type="button" data-fleet-map-tool="lm">LM</button>
-                      <button type="button" data-fleet-map-tool="edge">Edge</button>
-                    </div>
-                    <div id="fleetMapEditorHelp" class="fleet-plan-debug">Select, inspect, and edit LM/edges.</div>
-                    <div class="fleet-map-editor-grid">
-                      <label>
-                        LM name
-                        <input id="fleetEditorLmNameInput" type="text" />
-                      </label>
-                      <label>
-                        X
-                        <input id="fleetEditorLmXInput" type="number" step="0.001" />
-                      </label>
-                      <label>
-                        Y
-                        <input id="fleetEditorLmYInput" type="number" step="0.001" />
-                      </label>
-                      <button id="fleetEditorApplyLmButton" type="button">Apply LM</button>
-                    </div>
-                    <div class="fleet-map-editor-grid">
-                      <label>
-                        From
-                        <input id="fleetEditorEdgeFromInput" type="text" readonly />
-                      </label>
-                      <label>
-                        To
-                        <input id="fleetEditorEdgeToInput" type="text" readonly />
-                      </label>
-                      <label>
-                        Traffic
-                        <select id="fleetEditorEdgeTrafficSelect">
-                          <option value="one_way">One way</option>
-                          <option value="bidirectional">Bidirectional</option>
-                        </select>
-                      </label>
-                      <label>
-                        Motion
-                        <select id="fleetEditorEdgeMotionSelect">
-                          <option value="0">Forward</option>
-                          <option value="1">Backward</option>
-                          <option value="2">Not specified</option>
-                        </select>
-                      </label>
-                      <button id="fleetEditorApplyEdgeButton" type="button">Apply Edge</button>
-                    </div>
+                  <div class="fleet-params-block full-params-block">
+                    <div class="block-title">Full Params JSON</div>
+                    <textarea id="fleetParamsJsonInput" class="params-json-input" spellcheck="false"></textarea>
                     <div class="fleet-action-row">
-                      <button id="fleetMapSaveButton" class="primary" type="button">Save</button>
-                      <button id="fleetMapSaveAsButton" type="button">Save As</button>
-                      <button id="fleetMapReloadButton" type="button">Reload</button>
+                      <button id="fleetReloadParamsButton" type="button">Reload</button>
+                      <button id="fleetFormatParamsButton" type="button">Format</button>
+                      <button id="fleetSaveJsonParamsButton" class="primary" type="button">Save JSON</button>
                     </div>
                   </div>
-                </section>
+                </div>
+                <div id="fleetTabMap" class="fleet-tab-page">
+                  <div class="fleet-model-toolbar">
+                    <button class="active" type="button" data-fleet-map-tool="select">Select</button>
+                    <button type="button" data-fleet-map-tool="lm">LM</button>
+                    <button type="button" data-fleet-map-tool="edge">Edge</button>
+                  </div>
+                  <div id="fleetMapEditorHelp" class="fleet-plan-debug">Select, inspect, and edit LM/edges.</div>
+                  <div class="fleet-map-editor-grid">
+                    <label>
+                      LM name
+                      <input id="fleetEditorLmNameInput" type="text" />
+                    </label>
+                    <label>
+                      X
+                      <input id="fleetEditorLmXInput" type="number" step="0.001" />
+                    </label>
+                    <label>
+                      Y
+                      <input id="fleetEditorLmYInput" type="number" step="0.001" />
+                    </label>
+                    <button id="fleetEditorApplyLmButton" type="button">Apply LM</button>
+                  </div>
+                  <div class="fleet-map-editor-grid">
+                    <label>
+                      From
+                      <input id="fleetEditorEdgeFromInput" type="text" readonly />
+                    </label>
+                    <label>
+                      To
+                      <input id="fleetEditorEdgeToInput" type="text" readonly />
+                    </label>
+                    <label>
+                      Traffic
+                      <select id="fleetEditorEdgeTrafficSelect">
+                        <option value="one_way">One way</option>
+                        <option value="bidirectional">Bidirectional</option>
+                      </select>
+                    </label>
+                    <label>
+                      Motion
+                      <select id="fleetEditorEdgeMotionSelect">
+                        <option value="0">Forward</option>
+                        <option value="1">Backward</option>
+                        <option value="2">Not specified</option>
+                      </select>
+                    </label>
+                    <button id="fleetEditorApplyEdgeButton" type="button">Apply Edge</button>
+                  </div>
+                  <div class="fleet-action-row">
+                    <button id="fleetMapSaveButton" class="primary" type="button">Save</button>
+                    <button id="fleetMapSaveAsButton" type="button">Save As</button>
+                    <button id="fleetMapReloadButton" type="button">Reload</button>
+                  </div>
+                </div>
+              </section>
+              <section id="robotParamsPanel" class="panel-block robot-params-panel hidden">
+                <div class="block-title">Robot Params</div>
+                <textarea id="robotParamsJsonInput" class="params-json-input" spellcheck="false"></textarea>
+                <div class="fleet-action-row">
+                  <button id="robotReloadParamsButton" type="button">Reload</button>
+                  <button id="robotFormatParamsButton" type="button">Format</button>
+                  <button id="robotSaveParamsButton" class="primary" type="button">Save Robot Params</button>
+                </div>
+              </section>
+              <section id="robotModelPanel" class="panel-block robot-model-panel hidden">
+                <div class="block-title robot-model-title">Robot Model</div>
+                <div class="fleet-model-toolbar robot-model-toolbar">
+                  <button id="fleetModelZoomInButton" type="button">Zoom +</button>
+                  <button id="fleetModelZoomOutButton" type="button">Zoom -</button>
+                  <button id="fleetModelResetViewButton" type="button">Reset View</button>
+                  <button id="fleetModelResetButton" type="button">Reset Model</button>
+                </div>
+                <svg id="fleetRobotModelSvg" class="fleet-model-svg" viewBox="0 0 520 460" aria-label="Robot model editor"></svg>
+                <div class="block-title robot-model-footprint-title">Footprint Vertices</div>
+                <div id="fleetFootprintFields" class="field-list robot-model-footprint-fields"></div>
+                <div class="block-title robot-model-tf-title">TF Points</div>
+                <div id="fleetTfFields" class="field-list robot-model-tf-fields"></div>
+                <button id="fleetModelSaveButton" class="primary robot-model-save-button" type="button">Save Robot Model</button>
+              </section>
+              <section class="operator-map-panel">
+                <div class="map-toolbar">
+                  <button id="operatorZoomInButton" type="button">Zoom +</button>
+                  <button id="operatorZoomOutButton" type="button">Zoom -</button>
+                  <button id="operatorResetViewButton" type="button">Reset View</button>
+                  <button id="operatorFollowRobotButton" type="button">Follow Robot</button>
+                </div>
+                <svg id="operatorMapSvg" aria-label="Selected robot map">
+                  <g id="operatorViewport">
+                    <image id="operatorMapImage" preserveAspectRatio="none"></image>
+                    <g id="operatorGraphLayer"></g>
+                    <g id="operatorRouteLayer"></g>
+                    <g id="operatorLookaheadLayer"></g>
+                    <g id="operatorLandmarkLayer"></g>
+                    <g id="operatorEditorLayer"></g>
+                    <g id="operatorRobotLayer"></g>
+                  </g>
+                </svg>
+                <div id="manualPad" class="manual-pad" aria-label="Manual robot control">
+                  <button type="button" class="manual-key up" data-manual-key="w" title="W / forward">&#8593;</button>
+                  <button type="button" class="manual-key left" data-manual-key="a" title="A / left">&#8592;</button>
+                  <button type="button" class="manual-key down" data-manual-key="s" title="S / backward">&#8595;</button>
+                  <button type="button" class="manual-key right" data-manual-key="d" title="D / right">&#8594;</button>
+                </div>
+              </section>
+
+              <aside class="operator-inspector">
                 <section class="panel-block">
                   <div class="block-title">Robot Inspector</div>
                   <div id="robotMessageText" class="robot-message">Waiting for selected robot.</div>
@@ -263,8 +282,20 @@
                       <strong id="inspectorRobotText">-</strong>
                     </div>
                     <div>
+                      <span>Mode</span>
+                      <strong id="inspectorModeText">-</strong>
+                    </div>
+                    <div>
                       <span>Connection</span>
                       <strong id="connectionText">-</strong>
+                    </div>
+                    <div>
+                      <span>Map</span>
+                      <strong id="inspectorMapText">-</strong>
+                    </div>
+                    <div>
+                      <span>Current LM</span>
+                      <strong id="inspectorCurrentLmText">-</strong>
                     </div>
                     <div>
                       <span>Localization</span>
@@ -282,13 +313,29 @@
                       <span>Progress</span>
                       <strong id="routeProgressText">0%</strong>
                     </div>
+                    <div>
+                      <span>Battery</span>
+                      <strong id="inspectorBatteryText">-</strong>
+                    </div>
+                    <div class="optional-status">
+                      <span>Confidence</span>
+                      <strong id="inspectorConfidenceText">-</strong>
+                    </div>
                     <div class="wide">
                       <span>Pose</span>
                       <strong id="poseText">x: -, y: -, yaw: -</strong>
                     </div>
-                    <div class="wide">
+                    <div class="wide optional-status">
                       <span>Velocity</span>
                       <strong id="velocityText">v: -, w: -</strong>
+                    </div>
+                    <div class="wide optional-status">
+                      <span>API / Route</span>
+                      <strong id="inspectorApiText">-</strong>
+                    </div>
+                    <div class="wide">
+                      <span>Reason</span>
+                      <strong id="inspectorReasonText">-</strong>
                     </div>
                   </div>
                 </section>
@@ -297,12 +344,11 @@
                   <div class="block-title">Active Route</div>
                   <div id="routeNodesText" class="route-sequence">No route planned.</div>
                 </section>
-
-                <section class="panel-block fill-block">
-                  <div class="block-title">Events</div>
-                  <div id="robotEventsLog" class="event-log">No events yet.</div>
-                </section>
               </aside>
+              <section class="panel-block fill-block operator-events-panel">
+                <div class="block-title">Events</div>
+                <div id="robotEventsLog" class="event-log">No events yet.</div>
+              </section>
             </div>
           </div>
         </div>
@@ -320,24 +366,18 @@
         <button id="closeDialogButton" class="ghost-button" type="button" aria-label="Close">x</button>
       </div>
 
-      <label>
-        Display Name
-        <input id="robotNameInput" type="text" placeholder="Robot 1" />
-      </label>
+      <input id="robotNameInput" type="hidden" />
 
       <div class="field-row">
         <label>
           IP Address
           <input id="robotHostInput" type="text" placeholder="192.168.1.45" required />
         </label>
-        <label>
-          Port
-          <input id="robotPortInput" type="number" min="1" max="65535" value="8790" required />
-        </label>
+        <input id="robotPortInput" type="hidden" value="8790" />
       </div>
 
       <p class="field-hint">
-        Use `127.0.0.1` on the same PC or the robot LAN IP like `192.168.x.x`. `0.0.0.0` is only a server bind address.
+        The robot name is read from the robot identity. Port 8790 is used automatically. Use 127.0.0.1 on the same PC or the robot LAN IP like 192.168.x.x.
       </p>
 
       <div id="probeResult" class="probe-result neutral">Enter the robot IP and check the connection.</div>

@@ -5,6 +5,7 @@ import math
 from pathlib import Path
 from time import time
 from typing import Any
+from urllib.parse import urlparse, urlunparse
 
 from fleet_manager.mapf import FleetMapfPlanner
 from fleet_manager.remote_robot import RemoteRobotAdapter, RemoteRobotError, normalize_robot_base_url
@@ -21,6 +22,7 @@ TERMINAL_ORDER_STATUSES = {"COMPLETED", "FAILED", "CANCELED"}
 ORDER_SEQUENCE_KEYS = ("targets", "targetLms", "goals", "orders", "queue", "blocks")
 ORDER_ID_KEYS = ("id", "orderId", "taskId")
 ORDER_TARGET_KEYS = ("targetLm", "goalLm", "location", "target", "LM")
+DEFAULT_REMOTE_ROBOT_PORT = 8790
 
 
 @dataclass
@@ -47,6 +49,7 @@ class FleetRobot:
     remote_id: str = ""
     remote_online: bool = True
     remote_error: str = ""
+    remote_status: dict[str, Any] = field(default_factory=dict)
     remote_last_poll_at: float | None = None
     route_revision: int = 0
     route_chunk_index: int = 0
@@ -76,6 +79,7 @@ class FleetRobot:
             "remoteId": self.remote_id,
             "online": self.remote_online,
             "remoteError": self.remote_error,
+            "remoteStatus": self.remote_status,
             "remoteLastPollAt": self.remote_last_poll_at,
             "routeRevision": self.route_revision,
             "routeChunkIndex": self.route_chunk_index,
@@ -466,32 +470,42 @@ class WebFleetManager:
         }
 
     def add_robot(self, payload: dict[str, Any]) -> dict[str, Any]:
-        name = str(payload.get("name", "")).strip()
         mode = self._robot_mode_from_payload(payload)
+        name = str(payload.get("name", "")).strip() if mode == "simulated" else ""
         base_url = ""
         remote_status: dict[str, Any] | None = None
         remote_identity: dict[str, Any] | None = None
         if mode != "simulated":
-            base_url = normalize_robot_base_url(str(payload.get("baseUrl") or payload.get("url") or payload.get("host") or ""))
+            base_url = self._remote_base_url_from_payload(payload)
             if not base_url:
-                raise ValueError("baseUrl is required for remote robot")
+                raise ValueError("robot IP is required for remote robot")
             try:
                 remote_identity = self.remote_adapter.identity(base_url)
                 remote_status = self.remote_adapter.status(base_url)
             except RemoteRobotError as exc:
                 raise ValueError(f"remote robot is not reachable: {exc}") from exc
-        current_lm = str(payload.get("currentLm") or payload.get("spawnLm") or "").strip()
+        current_lm = "" if mode != "simulated" else str(payload.get("currentLm") or payload.get("spawnLm") or "").strip()
+        remote_pose: dict[str, float] | None = None
         if remote_status is not None:
             status_robot = self._remote_status_robot(remote_status)
             current_lm = current_lm or str(
                 status_robot.get("nearestLm")
                 or status_robot.get("currentLm")
                 or status_robot.get("currentLM")
+                or status_robot.get("currentStation")
+                or status_robot.get("current_station")
                 or ""
             ).strip()
+            remote_pose = self._remote_pose_from_status(status_robot)
+            if current_lm not in self.landmarks and remote_pose is not None:
+                current_lm = self._nearest_lm_for_pose(remote_pose)
+            if not name:
+                name = self._remote_robot_name(remote_identity, status_robot, base_url)
         if not name:
             raise ValueError("robot name is required")
         if not current_lm:
+            if mode != "simulated":
+                raise ValueError("remote robot has no current LM or localized pose yet; wait for robot status")
             raise ValueError("currentLm/spawnLm is required")
         if current_lm not in self.landmarks:
             raise ValueError(f"unknown LM: {current_lm}")
@@ -705,9 +719,7 @@ class WebFleetManager:
         if "mode" in payload or "type" in payload or "robotMode" in payload:
             robot.mode = self._robot_mode_from_payload(payload)
         if "baseUrl" in payload or "url" in payload or "host" in payload:
-            robot.base_url = normalize_robot_base_url(
-                str(payload.get("baseUrl") or payload.get("url") or payload.get("host") or "")
-            )
+            robot.base_url = self._remote_base_url_from_payload(payload)
         if "status" in payload and payload["status"]:
             robot.status = str(payload["status"])
         if "pose" in payload and isinstance(payload["pose"], dict):
@@ -1311,6 +1323,66 @@ class WebFleetManager:
             return "remote"
         return "simulated"
 
+    def _remote_base_url_from_payload(self, payload: dict[str, Any]) -> str:
+        value = str(
+            payload.get("baseUrl")
+            or payload.get("url")
+            or payload.get("host")
+            or payload.get("ip")
+            or payload.get("address")
+            or ""
+        ).strip()
+        if not value:
+            return ""
+        base_url = normalize_robot_base_url(value)
+        parsed = urlparse(base_url)
+        try:
+            port = parsed.port
+        except ValueError as exc:
+            raise ValueError("invalid robot API port") from exc
+        if port is not None:
+            return base_url
+        hostname = parsed.hostname
+        if not hostname:
+            return base_url
+        host = f"[{hostname}]" if ":" in hostname and not hostname.startswith("[") else hostname
+        auth = ""
+        if parsed.username:
+            auth = parsed.username
+            if parsed.password:
+                auth = f"{auth}:{parsed.password}"
+            auth = f"{auth}@"
+        netloc = f"{auth}{host}:{DEFAULT_REMOTE_ROBOT_PORT}"
+        return urlunparse(parsed._replace(netloc=netloc)).rstrip("/")
+
+    def _remote_robot_name(
+        self,
+        identity_payload: dict[str, Any] | None,
+        status_payload: dict[str, Any] | None,
+        base_url: str,
+    ) -> str:
+        candidates: list[Any] = []
+
+        def collect(payload: dict[str, Any] | None) -> None:
+            if not isinstance(payload, dict):
+                return
+            for key in ("robotId", "robot_id", "name", "id", "vehicleId", "vehicle_id", "uuid", "serial"):
+                candidates.append(payload.get(key))
+            for nested_key in ("identity", "robot", "basic_info", "basicInfo", "rbk_report", "rbkReport"):
+                nested = payload.get(nested_key)
+                if isinstance(nested, dict):
+                    for key in ("robotId", "robot_id", "name", "id", "vehicleId", "vehicle_id", "uuid", "serial"):
+                        candidates.append(nested.get(key))
+
+        collect(identity_payload)
+        collect(status_payload)
+        for value in candidates:
+            text = str(value or "").strip()
+            if text and text.lower() not in {"none", "null", "unknown", "-"}:
+                return text
+        parsed = urlparse(base_url)
+        return str(parsed.hostname or parsed.netloc or "").strip()
+
     def _remote_identity_id(self, identity_payload: dict[str, Any] | None) -> str:
         if not isinstance(identity_payload, dict):
             return ""
@@ -1326,6 +1398,38 @@ class WebFleetManager:
         if isinstance(robot_payload, dict):
             return robot_payload
         return payload if isinstance(payload, dict) else {}
+
+    def _remote_pose_from_status(self, status_payload: dict[str, Any]) -> dict[str, float] | None:
+        pose = status_payload.get("pose")
+        if isinstance(pose, dict):
+            try:
+                return {
+                    "x": float(pose.get("x", 0.0) or 0.0),
+                    "y": float(pose.get("y", 0.0) or 0.0),
+                    "yaw": float(pose.get("yaw", 0.0) or pose.get("angle", 0.0) or 0.0),
+                }
+            except (TypeError, ValueError):
+                return None
+        if "x" in status_payload and "y" in status_payload:
+            try:
+                return {
+                    "x": float(status_payload.get("x", 0.0) or 0.0),
+                    "y": float(status_payload.get("y", 0.0) or 0.0),
+                    "yaw": float(status_payload.get("yaw", status_payload.get("angle", 0.0)) or 0.0),
+                }
+            except (TypeError, ValueError):
+                return None
+        rbk_report = status_payload.get("rbk_report")
+        if isinstance(rbk_report, dict) and "x" in rbk_report and "y" in rbk_report:
+            try:
+                return {
+                    "x": float(rbk_report.get("x", 0.0) or 0.0),
+                    "y": float(rbk_report.get("y", 0.0) or 0.0),
+                    "yaw": float(rbk_report.get("angle", rbk_report.get("yaw", 0.0)) or 0.0),
+                }
+            except (TypeError, ValueError):
+                return None
+        return None
 
     def _remote_timeout(self) -> float:
         fleet = self.params.get("fleet", {})
@@ -1374,6 +1478,7 @@ class WebFleetManager:
 
     def _apply_remote_status(self, robot: FleetRobot, payload: dict[str, Any], now: float) -> None:
         status_payload = self._remote_status_robot(payload)
+        robot.remote_status = dict(status_payload)
         robot.remote_online = bool(status_payload.get("connected", True))
         robot.remote_error = ""
         robot.updated_at = now
@@ -1393,18 +1498,20 @@ class WebFleetManager:
             or status_payload.get("currentLM")
             or status_payload.get("nearestLm")
             or status_payload.get("nearest_lm")
+            or status_payload.get("currentStation")
+            or status_payload.get("current_station")
             or ""
         ).strip()
         if current_lm in self.landmarks:
             robot.current_lm = current_lm
 
-        pose = status_payload.get("pose")
-        if isinstance(pose, dict):
-            robot.pose = {
-                "x": float(pose.get("x", 0.0) or 0.0),
-                "y": float(pose.get("y", 0.0) or 0.0),
-                "yaw": float(pose.get("yaw", 0.0) or 0.0),
-            }
+        pose = self._remote_pose_from_status(status_payload)
+        if pose is not None:
+            robot.pose = pose
+            if current_lm not in self.landmarks:
+                nearest_lm = self._nearest_lm_for_pose(pose)
+                if nearest_lm:
+                    robot.current_lm = nearest_lm
         elif robot.current_lm in self.landmarks and robot.pose is None:
             robot.pose = self._pose_at_landmark(robot.current_lm)
 
