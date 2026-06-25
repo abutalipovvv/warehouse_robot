@@ -5,6 +5,7 @@ import base64
 import hashlib
 import json
 import select
+import shutil
 import struct
 import time
 from datetime import datetime, timezone
@@ -21,9 +22,12 @@ from .fleet_manager_app import DEFAULT_FLEET_MAP_DIR, FLEET_MANAGER_ID, Operator
 from .models import KnownRobot
 from .registry import RobotRegistry, default_registry_path
 from .robot_client import RobotClient, RobotProbeError
+from .ros_robot_bridge import RosRobotBridge
 
 DEFAULT_STATIC_DIR = Path(__file__).resolve().parent / "static"
 DEFAULT_FLEET_PARAMS_PATH = Path(__file__).resolve().parents[1] / "fleet_manager" / "params.yaml"
+LOCAL_ROS_ROBOT_ID = "ros2-local"
+LOCAL_ROS_ROBOT_NAME = "AIvison Robot"
 WEBSOCKET_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 DEFAULT_FLEET_WS_INTERVAL_MS = 180
 MIN_FLEET_WS_INTERVAL_MS = 50
@@ -43,8 +47,10 @@ class OperatorAppState:
         self.map_timeout = max(10.0, float(probe_timeout) * 10.0)
         self.fleet_params_path = Path(fleet_params_path).expanduser().resolve()
         self.fleet_manager = OperatorFleetManager(fleet_map_dir, self.fleet_params_path)
+        self.ros_robot = RosRobotBridge(robot_id=LOCAL_ROS_ROBOT_ID, robot_name=LOCAL_ROS_ROBOT_NAME)
         self._lock = Lock()
         self._fleet_lock = RLock()
+        self._ensure_ros_robot_map_cache()
 
     def list_robots_payload(self, probe_robots: bool = True) -> dict[str, Any]:
         with self._lock:
@@ -59,7 +65,7 @@ class OperatorAppState:
                 self._fleet_lock.release()
         else:
             fleet_payload = self.fleet_manager.sidebar_payload(include_runtime=False)
-        items = [fleet_payload]
+        items = [self.ros_robot.sidebar_payload(), fleet_payload]
         items.extend(self._robot_payload(robot, allow_probe=probe_robots) for robot in robots)
         return {"ok": True, "robots": items}
 
@@ -91,8 +97,8 @@ class OperatorAppState:
         }
 
     def delete_robot_payload(self, robot_id: str) -> dict[str, Any]:
-        if robot_id == FLEET_MANAGER_ID:
-            raise ValueError("fleet manager is a system entry and cannot be removed")
+        if robot_id in {FLEET_MANAGER_ID, LOCAL_ROS_ROBOT_ID}:
+            raise ValueError("system robot entries cannot be removed")
         with self._lock:
             deleted = self.registry.remove(robot_id)
         if not deleted:
@@ -100,6 +106,15 @@ class OperatorAppState:
         return {"ok": True, "deleted": robot_id}
 
     def get_robot(self, robot_id: str) -> KnownRobot:
+        if robot_id == LOCAL_ROS_ROBOT_ID:
+            return KnownRobot(
+                id=LOCAL_ROS_ROBOT_ID,
+                name=LOCAL_ROS_ROBOT_NAME,
+                host="DDS",
+                port=0,
+                last_seen=utc_now(),
+                last_identity=self.ros_robot.identity_payload(),
+            )
         with self._lock:
             robots = self.registry.load()
         for robot in robots:
@@ -175,23 +190,53 @@ class OperatorAppState:
         headers: dict[str, str] | None = None,
         body: bytes | None = None,
     ) -> tuple[int, dict[str, str], bytes]:
+        if robot_id == LOCAL_ROS_ROBOT_ID:
+            return self._proxy_ros_robot_request(method, path, body=body)
         robot = self.get_robot(robot_id)
         return self.client.request(robot.base_url, path, method=method, headers=headers, body=body)
 
     def robot_maps_list_payload(self, robot_id: str) -> dict[str, Any]:
+        if robot_id == LOCAL_ROS_ROBOT_ID:
+            return self.local_maps_payload(robot_id)
         robot = self.get_robot(robot_id)
         return self.client.request_json(robot.base_url, "/api/maps/list", timeout=self.map_timeout)
 
     def robot_maps_active_payload(self, robot_id: str) -> dict[str, Any]:
+        if robot_id == LOCAL_ROS_ROBOT_ID:
+            active_name = self.map_cache.active_map_name(robot_id)
+            active_payload = self.map_cache.load_active_map(robot_id)
+            signature = str(active_payload.get("signature") or "") if isinstance(active_payload, dict) else ""
+            map_dir = str(active_payload.get("mapDir") or "") if isinstance(active_payload, dict) else ""
+            return {
+                "ok": True,
+                "mapName": active_name,
+                "mapId": active_name,
+                "mapDir": map_dir,
+                "signature": signature,
+            }
         robot = self.get_robot(robot_id)
         return self.client.request_json(robot.base_url, "/api/maps/active", timeout=self.map_timeout)
 
     def robot_params_payload(self, robot_id: str) -> dict[str, Any]:
+        if robot_id == LOCAL_ROS_ROBOT_ID:
+            return {
+                "ok": True,
+                "robotId": robot_id,
+                "path": "ros2-topics",
+                "params": {
+                    "driver": "operator_app.ros_robot_bridge",
+                    "status_topic": self.ros_robot.status_topic,
+                    "cmd_vel_topic": self.ros_robot.cmd_vel_topic,
+                    "go_to_lm_topic": self.ros_robot.go_to_lm_topic,
+                },
+            }
         robot = self.get_robot(robot_id)
         params = self.client.request_json(robot.base_url, "/api/params", timeout=self.map_timeout)
         return {"ok": True, "robotId": robot_id, "path": "/api/params", "params": params}
 
     def save_robot_params_payload(self, robot_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        if robot_id == LOCAL_ROS_ROBOT_ID:
+            return {"ok": True, "robotId": robot_id, "saved": self.robot_params_payload(robot_id)}
         robot = self.get_robot(robot_id)
         params_payload = payload.get("params")
         if not isinstance(params_payload, dict):
@@ -649,6 +694,18 @@ class OperatorAppState:
         return {"ok": True, "pushed": result, "local": cached}
 
     def pull_sync_payload(self, robot_id: str) -> dict[str, Any]:
+        if robot_id == LOCAL_ROS_ROBOT_ID:
+            self._ensure_ros_robot_map_cache()
+            active_name = self.map_cache.active_map_name(robot_id)
+            local_active = self.map_cache.load_active_map(robot_id)
+            return {
+                "ok": True,
+                "changed": False,
+                "message": f"Using local ROS2 robot map {active_name or '-'}; no robot IP pull is needed.",
+                "robotActiveMapName": active_name,
+                "localActiveMapName": active_name,
+                "local": local_active,
+            }
         robot_active = self.robot_maps_active_payload(robot_id)
         robot_active_name = str(robot_active.get("mapName") or "").strip()
         local_active = self.map_cache.load_active_map(robot_id)
@@ -687,6 +744,17 @@ class OperatorAppState:
         }
 
     def load_robot_map_payload(self, robot_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        if robot_id == LOCAL_ROS_ROBOT_ID:
+            map_name = str(payload.get("mapName") or payload.get("folder") or "").strip()
+            if not map_name:
+                raise ValueError("mapName is required")
+            self.map_cache.set_active_map(robot_id, map_name)
+            return {
+                "ok": True,
+                "mapName": map_name,
+                "mapId": map_name,
+                "mapDir": str(self.map_cache.load_map(robot_id, map_name).get("mapDir") or ""),
+            }
         robot = self.get_robot(robot_id)
         map_name = str(payload.get("mapName") or payload.get("folder") or "").strip()
         if not map_name:
@@ -700,6 +768,15 @@ class OperatorAppState:
         )
 
     def push_sync_payload(self, robot_id: str) -> dict[str, Any]:
+        if robot_id == LOCAL_ROS_ROBOT_ID:
+            active_name = self.map_cache.active_map_name(robot_id)
+            return {
+                "ok": True,
+                "changed": False,
+                "message": "ROS2 local robot has no robot-side HTTP map push. Local map kept active.",
+                "robotActiveMapName": active_name,
+                "localActiveMapName": active_name,
+            }
         robot_active = self.robot_maps_active_payload(robot_id)
         robot_active_name = str(robot_active.get("mapName") or "").strip()
         local_active = self.map_cache.load_active_map(robot_id)
@@ -751,11 +828,78 @@ class OperatorAppState:
         }
 
     def _fetch_robot_map_payload(self, robot_id: str, map_name: str) -> dict[str, Any]:
+        if robot_id == LOCAL_ROS_ROBOT_ID:
+            active_name = map_name or self.map_cache.active_map_name(robot_id)
+            payload = self.map_cache.load_map(robot_id, active_name)
+            editable = payload.get("map")
+            if not isinstance(editable, dict):
+                raise ValueError("local ROS2 robot map is not available")
+            return editable
         robot = self.get_robot(robot_id)
         path = "/api/maps/pull"
         if map_name:
             path = f"{path}?name={map_name}"
         return self.client.request_json(robot.base_url, path, timeout=self.map_timeout)
+
+    def _proxy_ros_robot_request(self, method: str, path: str, *, body: bytes | None) -> tuple[int, dict[str, str], bytes]:
+        parsed = urlparse(path)
+        route = parsed.path.rstrip("/") or "/"
+        payload: dict[str, Any] = {}
+        if body:
+            try:
+                decoded = json.loads(body.decode("utf-8"))
+            except json.JSONDecodeError as exc:
+                raise ValueError("invalid JSON") from exc
+            if isinstance(decoded, dict):
+                payload = decoded
+        method = method.upper()
+        if method == "GET" and route == "/api/robot/identity":
+            return self._json_response_tuple(self.ros_robot.identity_payload())
+        if method == "GET" and route == "/api/robot/status":
+            return self._json_response_tuple(self.ros_robot.status_payload())
+        if method == "POST" and route == "/api/robot/teleop":
+            return self._json_response_tuple(
+                self.ros_robot.teleop(
+                    linear=float(payload.get("linear", 0.0) or 0.0),
+                    angular=float(payload.get("angular", 0.0) or 0.0),
+                    timeout_ms=int(payload.get("timeoutMs", 350) or 350),
+                )
+            )
+        if method == "POST" and route == "/api/robot/teleop/stop":
+            return self._json_response_tuple(self.ros_robot.teleop_stop())
+        if method == "POST" and route == "/api/robot/stop":
+            return self._json_response_tuple(self.ros_robot.stop())
+        if method == "POST" and route == "/api/robot/route/cancel":
+            return self._json_response_tuple(self.ros_robot.cancel_route())
+        if method == "POST" and route == "/api/robot/route/execute":
+            return self._json_response_tuple(self.ros_robot.execute_route(payload))
+        return self._json_response_tuple({"ok": False, "error": f"unsupported local ROS2 robot path: {method} {route}"}, status=404)
+
+    def _json_response_tuple(self, payload: dict[str, Any], *, status: int = 200) -> tuple[int, dict[str, str], bytes]:
+        encoded = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        return status, {"Content-Type": "application/json; charset=utf-8"}, encoded
+
+    def _ensure_ros_robot_map_cache(self) -> None:
+        if self.map_cache.active_map_name(LOCAL_ROS_ROBOT_ID):
+            return
+        target_dir = self.map_cache._robot_dir(LOCAL_ROS_ROBOT_ID)
+        source_candidates = [
+            self.map_cache.root / "robot1_127.0.0.1_8790",
+            self.map_cache.root / FLEET_MANAGER_ID,
+            self.map_cache.root / "fleet_manager",
+        ]
+        source_dir = next((candidate for candidate in source_candidates if candidate.is_dir()), None)
+        if source_dir is None:
+            return
+        target_dir.mkdir(parents=True, exist_ok=True)
+        for item in source_dir.iterdir():
+            destination = target_dir / item.name
+            if destination.exists():
+                continue
+            if item.is_dir():
+                shutil.copytree(item, destination)
+            else:
+                shutil.copy2(item, destination)
 
     @staticmethod
     def _require_host(payload: dict[str, Any]) -> str:
@@ -791,6 +935,9 @@ class OperatorRequestHandler(SimpleHTTPRequestHandler):
             path = parsed.path
             if path == "/ws/fleet-manager":
                 self._handle_fleet_manager_ws(parsed)
+                return
+            if path == "/ws/robot/status":
+                self._handle_robot_status_ws(parsed)
                 return
             if path == "/health":
                 self._send_json({"ok": True})
@@ -868,6 +1015,52 @@ class OperatorRequestHandler(SimpleHTTPRequestHandler):
                 payload = state.fleet_manager_stream_payload(initial=False)
                 if payload is not None:
                     self._send_ws_json(payload)
+        except (BrokenPipeError, ConnectionError, OSError):
+            return
+        except Exception as exc:  # pragma: no cover - defensive websocket path
+            try:
+                self._send_ws_json({"ok": False, "type": "error", "error": str(exc)})
+            except (BrokenPipeError, ConnectionError, OSError):
+                return
+
+    def _handle_robot_status_ws(self, parsed) -> None:
+        if not self._is_websocket_upgrade():
+            self._send_error_json(400, "expected websocket upgrade")
+            return
+        robot_id = str(parse_qs(parsed.query).get("robotId", [LOCAL_ROS_ROBOT_ID])[0] or "").strip()
+        if robot_id != LOCAL_ROS_ROBOT_ID:
+            self._send_error_json(404, f"local websocket is only available for {LOCAL_ROS_ROBOT_ID}")
+            return
+        key = self.headers.get("Sec-WebSocket-Key", "").strip()
+        if not key:
+            self._send_error_json(400, "missing Sec-WebSocket-Key")
+            return
+
+        accept = base64.b64encode(
+            hashlib.sha1(f"{key}{WEBSOCKET_GUID}".encode("ascii")).digest()
+        ).decode("ascii")
+        self.send_response(101, "Switching Protocols")
+        self.send_header("Upgrade", "websocket")
+        self.send_header("Connection", "Upgrade")
+        self.send_header("Sec-WebSocket-Accept", accept)
+        self.end_headers()
+        self.close_connection = True
+
+        state = self._require_state()
+        interval_sec = self._fleet_ws_interval_sec(parsed)
+        try:
+            while True:
+                if self._ws_client_closed():
+                    return
+                self._send_ws_json(
+                    {
+                        "ok": True,
+                        "type": "state",
+                        "state": state.ros_robot.status_payload(),
+                        "sentAt": utc_now(),
+                    }
+                )
+                time.sleep(interval_sec)
         except (BrokenPipeError, ConnectionError, OSError):
             return
         except Exception as exc:  # pragma: no cover - defensive websocket path
@@ -1152,7 +1345,7 @@ class OperatorRequestHandler(SimpleHTTPRequestHandler):
                 body=body,
             )
         except ValueError as exc:
-            self._send_error_json(404, str(exc))
+            self._send_error_json(400 if robot_id == LOCAL_ROS_ROBOT_ID else 404, str(exc))
             return
         except RobotProbeError as exc:
             self._send_error_json(502, str(exc))
@@ -1410,4 +1603,5 @@ def main() -> None:
     except KeyboardInterrupt:
         pass
     finally:
+        state.ros_robot.close()
         server.server_close()

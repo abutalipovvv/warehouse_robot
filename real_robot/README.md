@@ -48,3 +48,11 @@ You can also publish JSON to override `source_id`, `task_id`, or optional Roboki
 ros2 topic pub --once /go_to_lm std_msgs/msg/String \
   "{data: '{\"id\":\"LM105\",\"source_id\":\"SELF_POSITION\",\"max_speed\":0.4}'}"
 ```
+
+Pose navigation can use the same topic by sending Robokit `3051` with the built-in
+`syspy/goPath.py` script:
+
+```bash
+ros2 topic pub --once /go_to_lm std_msgs/msg/String \
+  "{data: '{\"id\":\"SELF_POSITION\",\"source_id\":\"SELF_POSITION\",\"operation\":\"Script\",\"script_name\":\"syspy/goPath.py\",\"script_args\":{\"x\":1.0,\"y\":2.0,\"theta\":0.0,\"coordinate\":\"world\"}}'}"
+```

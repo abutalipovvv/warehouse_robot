@@ -98,6 +98,8 @@ OPTIONAL_GOTO_FIELDS = {
     "reach_list",
     "reach_angle",
     "skill_name",
+    "script_name",
+    "script_args",
 }
 
 TASK_STATUS_NAMES = {

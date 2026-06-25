@@ -1095,6 +1095,11 @@ class OperatorApp {
     return Boolean(robot && (robot.id === this.fleetManagerId || robot.type === "fleet_manager"));
   }
 
+  isRos2Robot(robot = this.selectedRobot()) {
+    const type = String(robot?.type || robot?.mode || "").toLowerCase();
+    return Boolean(robot && (robot.id === "ros2-local" || type === "ros2"));
+  }
+
   fleetRuntimeMode(status = this.currentStatus) {
     return String(status?.mode || this.fleetModeSelect?.value || "simulation");
   }
@@ -1315,6 +1320,10 @@ class OperatorApp {
   }
 
   robotStatusWsUrl(robot) {
+    if (this.isRos2Robot(robot)) {
+      const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+      return `${protocol}//${window.location.host}/ws/robot/status?robotId=${encodeURIComponent(robot.id)}&intervalMs=${this.robotStreamIntervalMs}`;
+    }
     const baseUrl = String(robot?.baseUrl || "").trim();
     if (!baseUrl) {
       return "";
@@ -1836,6 +1845,7 @@ class OperatorApp {
 
     for (const robot of this.robots) {
       const isFleet = this.isFleetManager(robot);
+      const isRos2 = this.isRos2Robot(robot);
       const button = document.createElement("div");
       button.className = "robot-card";
       button.tabIndex = 0;
@@ -1880,16 +1890,19 @@ class OperatorApp {
       const identity = robot.identity || robot.lastIdentity || {};
       const status = robot.status || {};
       const chipClass = robot.online ? "robot-chip online" : "robot-chip offline";
-      const chipText = isFleet ? "system" : (robot.online ? "online" : "offline");
+      const chipText = (isFleet || isRos2) ? "system" : (robot.online ? "online" : "offline");
+      const connectionLabel = isFleet
+        ? "local fleet controller"
+        : (isRos2 ? "local ROS2 DDS" : `${this.escapeHtml(robot.host)}:${this.escapeHtml(String(robot.port))}`);
       button.innerHTML = `
         <div class="robot-card-header">
           <div>
             <strong>${this.escapeHtml(robot.name || identity.robotId || robot.id)}</strong>
-            <p>${isFleet ? "local fleet controller" : `${this.escapeHtml(robot.host)}:${this.escapeHtml(String(robot.port))}`}</p>
+            <p>${connectionLabel}</p>
           </div>
           <div class="robot-card-actions">
             <span class="${chipClass}">${chipText}</span>
-            ${isFleet ? "" : '<button class="robot-card-remove" type="button" aria-label="Remove robot">Delete</button>'}
+            ${(isFleet || isRos2 || robot.system) ? "" : '<button class="robot-card-remove" type="button" aria-label="Remove robot">Delete</button>'}
           </div>
         </div>
         <div class="robot-card-meta">
@@ -2024,11 +2037,36 @@ class OperatorApp {
   }
 
   formatBattery(payload) {
-    const value = this.nestedStatusValue(payload, ["batteryLevel", "battery_level", "battery", "power"]);
-    const charging = this.nestedStatusValue(payload, ["charging", "isCharging"]);
-    const metric = this.formatPercentMetric(value);
+    const rawBattery = this.nestedStatusValue(payload, ["batteryLevel", "battery_level", "battery", "power"]);
+    const battery = rawBattery && typeof rawBattery === "object" && !Array.isArray(rawBattery) ? rawBattery : {};
+    const value = Object.keys(battery).length
+      ? (battery.level ?? battery.percent ?? battery.percentage ?? battery.value)
+      : rawBattery;
+    const charging = Object.keys(battery).length
+      ? (battery.charging ?? battery.isCharging)
+      : this.nestedStatusValue(payload, ["charging", "isCharging"]);
     const chargingText = charging === undefined ? "" : (charging ? " charging" : " not charging");
-    return metric ? `${metric}${chargingText}` : (chargingText.trim() || "-");
+    const parts = [];
+    const metric = this.formatPercentMetric(value);
+    if (metric) {
+      parts.push(metric);
+    }
+    const voltage = Number(battery.voltage);
+    if (Number.isFinite(voltage) && voltage > 0) {
+      parts.push(`${voltage.toFixed(1)} V`);
+    }
+    const current = Number(battery.current);
+    if (Number.isFinite(current) && Math.abs(current) > 0.001) {
+      parts.push(`${current.toFixed(1)} A`);
+    }
+    const temperature = Number(battery.temperature ?? battery.temp);
+    if (Number.isFinite(temperature) && Math.abs(temperature) > 0.001) {
+      parts.push(`${temperature.toFixed(1)} C`);
+    }
+    if (chargingText) {
+      parts.push(chargingText.trim());
+    }
+    return parts.length ? parts.join(" | ") : "-";
   }
 
   formatConfidence(payload) {
@@ -2106,7 +2144,7 @@ class OperatorApp {
     this.controlPushMapButton.classList.toggle("hidden", false);
     this.cancelRouteButton.textContent = isFleet ? "Stop Active" : "Cancel Route";
     this.stopRobotButton.textContent = isFleet ? "Stop Fleet" : "Stop";
-    this.navigateRobotButton.textContent = this.navigateMode ? "Cancel Navigate" : "Navigate To LM";
+    this.navigateRobotButton.textContent = this.navigateMode ? "Cancel Navigate" : this.navigateButtonIdleText();
     if (isFleet) {
       this.setFleetTab(this.fleetActiveTab);
     } else {
@@ -2165,7 +2203,7 @@ class OperatorApp {
       confidence: this.formatConfidence(robot),
       pose: this.formatPose(pose),
       velocity: this.formatVelocity(robot.velocity),
-      api: selected?.baseUrl || "-",
+      api: this.isRos2Robot(selected) ? "local ROS2 DDS" : (selected?.baseUrl || "-"),
       reason: robot.message || "-",
     });
     this.robotMessageText.textContent = robot.message || (this.operatorMapPayload ? "Robot status ready." : "Pull the active robot map to display Map & Control.");
@@ -2206,7 +2244,7 @@ class OperatorApp {
       confidence: this.formatConfidence(robot),
       pose: this.formatPose(pose),
       velocity: this.formatVelocity(robot.velocity),
-      api: selected?.baseUrl || "-",
+      api: this.isRos2Robot(selected) ? "local ROS2 DDS" : (selected?.baseUrl || "-"),
       reason: robot.message || "-",
     });
     this.robotMessageText.textContent = robot.message || (this.operatorMapPayload ? "Robot status ready." : "Pull the active robot map to display Map & Control.");
@@ -3544,6 +3582,10 @@ class OperatorApp {
       x: (point.x - this.mapView.tx) / this.mapView.scale,
       y: (point.y - this.mapView.ty) / this.mapView.scale,
     });
+    if (this.isRos2Robot() && !this.isFleetManager()) {
+      this.startPoseNavigation(world);
+      return;
+    }
     const nearest = this.nearestLandmark(world);
     if (!nearest || nearest.distance > 1.2) {
       this.robotMessageText.textContent = "Navigate armed: click closer to a landmark.";
@@ -4236,7 +4278,7 @@ class OperatorApp {
 
   toggleNavigateMode() {
     if (!this.operatorMapPayload || !this.operatorMapPayload.map) {
-      this.robotMessageText.textContent = "Pull or load the robot map before Navigate To LM.";
+      this.robotMessageText.textContent = `Pull or load the robot map before ${this.navigateButtonIdleText()}.`;
       return;
     }
     if (this.isFleetManager()) {
@@ -4260,8 +4302,11 @@ class OperatorApp {
     this.syncModeButtons();
     this.drawLandmarks();
     const target = this.pendingFleetRobotName || "";
+    const targetHint = this.isRos2Robot() && !this.isFleetManager()
+      ? "click a map pose or select an LM."
+      : "select an LM on the map.";
     this.robotMessageText.textContent = this.navigateMode
-      ? (target ? `Navigate armed for ${target}: select an LM on the map.` : "Navigate armed: select an LM on the map.")
+      ? (target ? `Navigate armed for ${target}: ${targetHint}` : `Navigate armed: ${targetHint}`)
       : "Navigate canceled.";
   }
 
@@ -4299,11 +4344,12 @@ class OperatorApp {
     const isFleet = this.isFleetManager();
     const navigateArmed = this.navigateMode && (!isFleet || this.pendingFleetAction === "navigate");
     const queueArmed = this.navigateMode && isFleet && this.pendingFleetAction === "queue";
+    const idleText = this.navigateButtonIdleText();
     this.navigateRobotButton.classList.toggle("primary", !navigateArmed);
     this.navigateRobotButton.classList.toggle("danger", navigateArmed);
     this.navigateRobotButton.textContent = navigateArmed
       ? (this.pendingFleetRobotName ? `Select LM: ${this.pendingFleetRobotName}` : "Cancel Navigate")
-      : "Navigate To LM";
+      : idleText;
     if (this.fleetQueueGoalButton) {
       this.fleetQueueGoalButton.classList.toggle("primary", queueArmed);
       this.fleetQueueGoalButton.classList.toggle("danger", queueArmed);
@@ -4311,6 +4357,10 @@ class OperatorApp {
         ? `Queue LM: ${this.pendingFleetRobotName || "robot"}`
         : "Queue Goal";
     }
+  }
+
+  navigateButtonIdleText() {
+    return this.isRos2Robot() && !this.isFleetManager() ? "Navigate To Pose" : "Navigate To LM";
   }
 
   async startNavigation(goalLm) {
@@ -4342,6 +4392,32 @@ class OperatorApp {
         this.currentRoute = result.route;
       }
       this.robotMessageText.textContent = `Route execution started to ${goalLm}.`;
+      await this.fetchSelectedRobotStatus(true);
+    } catch (error) {
+      this.robotMessageText.textContent = `Navigate failed: ${error.message || error}`;
+    }
+  }
+
+  async startPoseNavigation(world) {
+    if (!this.selectedRobot() || this.isFleetManager()) {
+      return;
+    }
+    this.navigateMode = false;
+    this.syncModeButtons();
+    this.releaseManualControl();
+    const robot = this.currentStatus && this.currentStatus.robot ? this.currentStatus.robot : {};
+    const yaw = Number(robot.pose?.yaw || 0);
+    const goalPose = {
+      x: Number(world.x || 0),
+      y: Number(world.y || 0),
+      yaw: Number.isFinite(yaw) ? yaw : 0,
+    };
+    try {
+      const result = await this.postJson(this.robotApiPath("/api/robot/route/execute"), { goalPose });
+      if (result && result.route) {
+        this.currentRoute = result.route;
+      }
+      this.robotMessageText.textContent = `Pose navigation started to x ${goalPose.x.toFixed(3)}, y ${goalPose.y.toFixed(3)}.`;
       await this.fetchSelectedRobotStatus(true);
     } catch (error) {
       this.robotMessageText.textContent = `Navigate failed: ${error.message || error}`;
