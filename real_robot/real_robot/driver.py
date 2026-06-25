@@ -8,12 +8,10 @@ from typing import Any
 
 import rclpy
 from geometry_msgs.msg import Twist
-from nav_msgs.msg import Odometry
 from rclpy.node import Node
-from sensor_msgs.msg import BatteryState
 from std_msgs.msg import String
 
-from robot_msgs.msg import ExecutorState, RobotStatus
+from robot_msgs.msg import RobotStatus
 
 from .robokit_protocol import (
     CONFIG_PORT,
@@ -183,11 +181,6 @@ def _as_string_list(value: Any) -> list[str]:
     return [_clean_text(item) for item in value if _clean_text(item)]
 
 
-def _yaw_to_quaternion(yaw: float) -> tuple[float, float, float, float]:
-    half = float(yaw) * 0.5
-    return 0.0, 0.0, math.sin(half), math.cos(half)
-
-
 def _clamp(value: float, minimum: float, maximum: float) -> float:
     return min(max(float(value), minimum), maximum)
 
@@ -212,20 +205,14 @@ class RobotDriverNode(Node):
         self.release_control_on_shutdown = bool(self._param("release_control_on_shutdown", True))
         self.control_nick_name = str(self._param("control_nick_name", "warehouse_robot_driver")).strip()
         self.default_source_id = str(self._param("default_source_id", "")).strip()
-        self.odom_frame_id = str(self._param("odom_frame_id", "map")).strip() or "map"
-        self.base_frame_id = str(self._param("base_frame_id", "base_link")).strip() or "base_link"
-
         status_port = int(self._param("status_port", STATUS_PORT))
         control_port = int(self._param("control_port", CONTROL_PORT))
         navigation_port = int(self._param("navigation_port", NAVIGATION_PORT))
         config_port = int(self._param("config_port", CONFIG_PORT))
 
-        odom_topic = str(self._param("odom_topic", "/odom"))
         cmd_vel_topic = str(self._param("cmd_vel_topic", "/cmd_vel"))
         status_topic = str(self._param("status_topic", "/robot_status"))
-        bms_topic = str(self._param("bms_topic", "/bms"))
         go_to_lm_topic = str(self._param("go_to_lm_topic", "/go_to_lm"))
-        navigate_status_topic = str(self._param("navigate_status_topic", "/navigate_status"))
 
         self.client = RobokitClient(
             self.robot_ip,
@@ -245,13 +232,9 @@ class RobotDriverNode(Node):
         self._active_task_id = ""
         self._last_target_lm = ""
         self._last_nav_command_at: float | None = None
-        self._last_nav_result: tuple[int, str] | None = None
         self._shutdown_done = False
 
-        self.odom_pub = self.create_publisher(Odometry, odom_topic, 10)
         self.status_pub = self.create_publisher(RobotStatus, status_topic, 10)
-        self.bms_pub = self.create_publisher(BatteryState, bms_topic, 10)
-        self.navigate_status_pub = self.create_publisher(ExecutorState, navigate_status_topic, 10)
         self.create_subscription(Twist, cmd_vel_topic, self._on_cmd_vel, 10)
         self.create_subscription(String, go_to_lm_topic, self._on_go_to_lm, 10)
         self.create_timer(1.0 / self.status_rate_hz, self._poll_status)
@@ -313,21 +296,8 @@ class RobotDriverNode(Node):
         status.nearest_lm = self._last_current_station or self._last_station
         self.status_pub.publish(status)
 
-        nav = ExecutorState()
-        nav.stamp = stamp
-        nav.robot_id = self.robot_id
-        nav.map_id = self.map_id
-        nav.route_active = False
-        nav.state = "DISCONNECTED"
-        nav.message = status.message
-        nav.target_lm = self._last_target_lm
-        nav.route_id = self._active_task_id
-        self.navigate_status_pub.publish(nav)
-
     def _publish_from_payload(self, payload: dict[str, Any]) -> None:
         stamp = self.get_clock().now().to_msg()
-        self._publish_odom(payload, stamp)
-        self._publish_bms(payload, stamp)
 
         state, message, route_active, route_progress = self._derive_state(payload)
         map_id = _clean_text(payload.get("current_map")) or self.map_id
@@ -356,66 +326,15 @@ class RobotDriverNode(Node):
             status.pose_yaw = self._pose_yaw(payload)
         status.linear_velocity = _as_float(payload.get("vx"))
         status.angular_velocity = _as_float(payload.get("w"))
+        status.battery_level = _clamp(_as_float(payload.get("battery_level"), 0.0), 0.0, 1.0)
+        status.battery_voltage = _as_float(payload.get("voltage"))
+        status.battery_current = _as_float(payload.get("current"))
+        status.battery_temperature = _as_float(payload.get("battery_temp"))
+        status.battery_charging = _as_bool(payload.get("charging"))
         self.status_pub.publish(status)
 
-        nav = ExecutorState()
-        nav.stamp = stamp
-        nav.robot_id = self.robot_id
-        nav.map_id = map_id
-        nav.route_active = route_active
-        nav.state = state
-        nav.message = message
-        nav.target_lm = target_lm
-        nav.current_edge_id = status.current_edge_id
-        nav.route_id = route_id
-        nav.route_progress = float(route_progress)
-        self.navigate_status_pub.publish(nav)
-
         if task_status in {4, 5, 6}:
-            self._last_nav_result = (task_status, target_lm)
             self._active_task_id = ""
-
-    def _publish_odom(self, payload: dict[str, Any], stamp: Any) -> None:
-        if not self._has_pose(payload):
-            return
-        yaw = self._pose_yaw(payload)
-        qx, qy, qz, qw = _yaw_to_quaternion(yaw)
-
-        odom = Odometry()
-        odom.header.stamp = stamp
-        odom.header.frame_id = self.odom_frame_id
-        odom.child_frame_id = self.base_frame_id
-        odom.pose.pose.position.x = _as_float(payload.get("x"))
-        odom.pose.pose.position.y = _as_float(payload.get("y"))
-        odom.pose.pose.orientation.x = qx
-        odom.pose.pose.orientation.y = qy
-        odom.pose.pose.orientation.z = qz
-        odom.pose.pose.orientation.w = qw
-        odom.twist.twist.linear.x = _as_float(payload.get("vx"))
-        odom.twist.twist.linear.y = _as_float(payload.get("vy"))
-        odom.twist.twist.angular.z = _as_float(payload.get("w"))
-        self.odom_pub.publish(odom)
-
-    def _publish_bms(self, payload: dict[str, Any], stamp: Any) -> None:
-        if "battery_level" not in payload:
-            return
-        percentage = _clamp(_as_float(payload.get("battery_level"), 0.0), 0.0, 1.0)
-        battery = BatteryState()
-        battery.header.stamp = stamp
-        battery.percentage = percentage
-        battery.temperature = _as_float(payload.get("battery_temp"))
-        battery.voltage = _as_float(payload.get("voltage"))
-        battery.current = _as_float(payload.get("current"))
-        battery.present = True
-        battery.power_supply_health = BatteryState.POWER_SUPPLY_HEALTH_UNKNOWN
-        battery.power_supply_technology = BatteryState.POWER_SUPPLY_TECHNOLOGY_UNKNOWN
-        if _as_bool(payload.get("charging")):
-            battery.power_supply_status = BatteryState.POWER_SUPPLY_STATUS_CHARGING
-        elif percentage >= 0.995:
-            battery.power_supply_status = BatteryState.POWER_SUPPLY_STATUS_FULL
-        else:
-            battery.power_supply_status = BatteryState.POWER_SUPPLY_STATUS_DISCHARGING
-        self.bms_pub.publish(battery)
 
     def _on_cmd_vel(self, message: Twist) -> None:
         vx = float(message.linear.x)

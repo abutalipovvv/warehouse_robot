@@ -6,12 +6,10 @@ The driver talks to the robot over the Robokit TCP/IP API and bridges it into RO
 
 - subscribes `/cmd_vel` as `geometry_msgs/Twist` and sends API `2010`
 - subscribes `/go_to_lm` as `std_msgs/String` and sends API `3051`
-- publishes `/odom` as `nav_msgs/Odometry`
 - publishes `/robot_status` as `robot_msgs/RobotStatus`
-- publishes `/bms` as `sensor_msgs/BatteryState`
-- publishes `/navigate_status` as `robot_msgs/ExecutorState`
 
-Status, odometry, battery, and navigation state are read with API `1100` at 10 Hz by default.
+Pose, velocity, battery, robot status, and navigation state are read with API `1100` at 10 Hz by default
+and published in `/robot_status`.
 
 ## Build
 

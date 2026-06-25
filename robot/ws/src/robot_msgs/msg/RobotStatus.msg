@@ -19,3 +19,8 @@ float32 pose_y
 float32 pose_yaw
 float32 linear_velocity
 float32 angular_velocity
+float32 battery_level
+float32 battery_voltage
+float32 battery_current
+float32 battery_temperature
+bool battery_charging

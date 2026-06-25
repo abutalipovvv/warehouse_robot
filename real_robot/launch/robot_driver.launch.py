@@ -19,14 +19,9 @@ def generate_launch_description() -> LaunchDescription:
         DeclareLaunchArgument("release_control_on_shutdown", default_value="true"),
         DeclareLaunchArgument("control_nick_name", default_value="warehouse_robot_driver"),
         DeclareLaunchArgument("default_source_id", default_value=""),
-        DeclareLaunchArgument("odom_frame_id", default_value="map"),
-        DeclareLaunchArgument("base_frame_id", default_value="base_link"),
-        DeclareLaunchArgument("odom_topic", default_value="/odom"),
         DeclareLaunchArgument("cmd_vel_topic", default_value="/cmd_vel"),
         DeclareLaunchArgument("status_topic", default_value="/robot_status"),
-        DeclareLaunchArgument("bms_topic", default_value="/bms"),
         DeclareLaunchArgument("go_to_lm_topic", default_value="/go_to_lm"),
-        DeclareLaunchArgument("navigate_status_topic", default_value="/navigate_status"),
     ]
 
     driver_node = Node(
@@ -60,14 +55,9 @@ def generate_launch_description() -> LaunchDescription:
                 ),
                 "control_nick_name": LaunchConfiguration("control_nick_name"),
                 "default_source_id": LaunchConfiguration("default_source_id"),
-                "odom_frame_id": LaunchConfiguration("odom_frame_id"),
-                "base_frame_id": LaunchConfiguration("base_frame_id"),
-                "odom_topic": LaunchConfiguration("odom_topic"),
                 "cmd_vel_topic": LaunchConfiguration("cmd_vel_topic"),
                 "status_topic": LaunchConfiguration("status_topic"),
-                "bms_topic": LaunchConfiguration("bms_topic"),
                 "go_to_lm_topic": LaunchConfiguration("go_to_lm_topic"),
-                "navigate_status_topic": LaunchConfiguration("navigate_status_topic"),
             }
         ],
     )

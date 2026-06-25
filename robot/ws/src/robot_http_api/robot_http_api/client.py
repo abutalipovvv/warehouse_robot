@@ -119,6 +119,13 @@ class RobotRosClient:
                 "routeProgress": 0.0,
                 "pose": None,
                 "velocity": {"linear": 0.0, "angular": 0.0},
+                "battery": {
+                    "level": 0.0,
+                    "voltage": 0.0,
+                    "current": 0.0,
+                    "temperature": 0.0,
+                    "charging": False,
+                },
             }
 
         route_id = str(message.route_id or "")
@@ -145,6 +152,13 @@ class RobotRosClient:
             "velocity": {
                 "linear": float(message.linear_velocity),
                 "angular": float(message.angular_velocity),
+            },
+            "battery": {
+                "level": float(message.battery_level),
+                "voltage": float(message.battery_voltage),
+                "current": float(message.battery_current),
+                "temperature": float(message.battery_temperature),
+                "charging": bool(message.battery_charging),
             },
         }
 
