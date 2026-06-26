@@ -3,7 +3,10 @@ from __future__ import annotations
 import argparse
 import base64
 import hashlib
+import ipaddress
 import json
+import os
+import re
 import select
 import shutil
 import struct
@@ -26,8 +29,8 @@ from .ros_robot_bridge import RosRobotBridge
 
 DEFAULT_STATIC_DIR = Path(__file__).resolve().parent / "static"
 DEFAULT_FLEET_PARAMS_PATH = Path(__file__).resolve().parents[1] / "fleet_manager" / "params.yaml"
-LOCAL_ROS_ROBOT_ID = "ros2-local"
-LOCAL_ROS_ROBOT_NAME = "AIvison Robot"
+DEFAULT_ROS_ROBOT_NAME = "AIvison Robot"
+ROS_ROBOT_TYPES = {"ros2", "aivison_ros2", "real_ros2"}
 WEBSOCKET_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 DEFAULT_FLEET_WS_INTERVAL_MS = 180
 MIN_FLEET_WS_INTERVAL_MS = 50
@@ -39,6 +42,12 @@ def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
+def safe_robot_key(value: str) -> str:
+    clean = re.sub(r"[^A-Za-z0-9_.-]", "_", value.strip())
+    clean = re.sub(r"_+", "_", clean).strip("._-")
+    return clean or "robot"
+
+
 class OperatorAppState:
     def __init__(self, registry_path: Path, probe_timeout: float, fleet_params_path: Path, fleet_map_dir: Path) -> None:
         self.registry = RobotRegistry(registry_path)
@@ -47,10 +56,11 @@ class OperatorAppState:
         self.map_timeout = max(10.0, float(probe_timeout) * 10.0)
         self.fleet_params_path = Path(fleet_params_path).expanduser().resolve()
         self.fleet_manager = OperatorFleetManager(fleet_map_dir, self.fleet_params_path)
-        self.ros_robot = RosRobotBridge(robot_id=LOCAL_ROS_ROBOT_ID, robot_name=LOCAL_ROS_ROBOT_NAME)
+        self.ros_robots: dict[str, RosRobotBridge] = {}
+        self._cyclonedds_configured = False
+        self._cyclonedds_peer_ip = ""
         self._lock = Lock()
         self._fleet_lock = RLock()
-        self._ensure_ros_robot_map_cache()
 
     def list_robots_payload(self, probe_robots: bool = True) -> dict[str, Any]:
         with self._lock:
@@ -65,18 +75,59 @@ class OperatorAppState:
                 self._fleet_lock.release()
         else:
             fleet_payload = self.fleet_manager.sidebar_payload(include_runtime=False)
-        items = [self.ros_robot.sidebar_payload(), fleet_payload]
-        items.extend(self._robot_payload(robot, allow_probe=probe_robots) for robot in robots)
+        items = [self._robot_payload(robot, allow_probe=probe_robots) for robot in robots]
+        items.append(fleet_payload)
         return {"ok": True, "robots": items}
 
     def probe_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
         host = self._require_host(payload)
-        port = self._require_port(payload)
-        result = self._probe_robot(host, port)
+        if self._payload_robot_type(payload) in ROS_ROBOT_TYPES:
+            result = self._probe_ros_robot_payload(payload, host)
+        else:
+            port = self._require_port(payload)
+            result = self._probe_robot(host, port)
         return {"ok": True, "probe": result}
 
     def add_robot_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
         host = self._require_host(payload)
+        robot_type = self._payload_robot_type(payload)
+        if robot_type in ROS_ROBOT_TYPES:
+            probe = self._probe_ros_robot_payload(payload, host)
+            domain_id = self._require_domain_id(payload)
+            namespace = self._namespace_from_payload(payload)
+            identity = probe.get("identity", {})
+            status = probe.get("status", {}) if isinstance(probe.get("status"), dict) else {}
+            robot_name = str(
+                payload.get("name")
+                or identity.get("robotId")
+                or status.get("robotId")
+                or DEFAULT_ROS_ROBOT_NAME
+            ).strip()
+            robot_id = str(payload.get("robotId") or payload.get("robot_id") or "").strip()
+            if not robot_id:
+                robot_id = f"ros2:{domain_id}:{host}"
+            robot = KnownRobot(
+                id=robot_id,
+                name=robot_name,
+                host=host,
+                port=0,
+                type="ros2",
+                domain_id=domain_id,
+                namespace=namespace,
+                status_topic=str(probe.get("statusTopic") or payload.get("statusTopic") or "/robot_status"),
+                cmd_vel_topic=str(probe.get("cmdVelTopic") or payload.get("cmdVelTopic") or "/cmd_vel"),
+                go_to_lm_topic=str(probe.get("goToLmTopic") or payload.get("goToLmTopic") or "/go_to_lm"),
+                last_seen=utc_now(),
+                last_identity=identity if isinstance(identity, dict) else None,
+            )
+            with self._lock:
+                self.registry.upsert(robot)
+            self._ensure_ros_robot_map_cache(robot.id)
+            return {
+                "ok": True,
+                "robot": self._robot_payload(robot, probe=probe),
+            }
+
         port = self._require_port(payload)
         probe = self._probe_robot(host, port)
         identity = probe.get("identity", {})
@@ -97,8 +148,11 @@ class OperatorAppState:
         }
 
     def delete_robot_payload(self, robot_id: str) -> dict[str, Any]:
-        if robot_id in {FLEET_MANAGER_ID, LOCAL_ROS_ROBOT_ID}:
+        if robot_id == FLEET_MANAGER_ID:
             raise ValueError("system robot entries cannot be removed")
+        bridge = self.ros_robots.pop(robot_id, None)
+        if bridge is not None:
+            bridge.close()
         with self._lock:
             deleted = self.registry.remove(robot_id)
         if not deleted:
@@ -106,15 +160,6 @@ class OperatorAppState:
         return {"ok": True, "deleted": robot_id}
 
     def get_robot(self, robot_id: str) -> KnownRobot:
-        if robot_id == LOCAL_ROS_ROBOT_ID:
-            return KnownRobot(
-                id=LOCAL_ROS_ROBOT_ID,
-                name=LOCAL_ROS_ROBOT_NAME,
-                host="DDS",
-                port=0,
-                last_seen=utc_now(),
-                last_identity=self.ros_robot.identity_payload(),
-            )
         with self._lock:
             robots = self.registry.load()
         for robot in robots:
@@ -129,6 +174,44 @@ class OperatorAppState:
         *,
         allow_probe: bool = True,
     ) -> dict[str, Any]:
+        if robot.is_ros2:
+            if probe is None and allow_probe:
+                try:
+                    bridge = self._ensure_ros_bridge(robot)
+                    bridge.wait_for_status(0.15)
+                    probe = bridge.sidebar_payload()
+                except Exception as exc:
+                    probe = {
+                        "ok": False,
+                        "online": False,
+                        "error": str(exc),
+                        "identity": robot.last_identity or None,
+                        "status": None,
+                        "probed": True,
+                    }
+            if probe is None:
+                probe = {
+                    "ok": False,
+                    "online": False,
+                    "identity": robot.last_identity or None,
+                    "status": None,
+                    "error": "",
+                    "probed": False,
+                }
+            payload = robot.to_dict()
+            identity = probe.get("identity") if isinstance(probe.get("identity"), dict) else robot.last_identity or None
+            payload.update(
+                {
+                    "online": bool(probe.get("online", False)),
+                    "baseUrl": "",
+                    "identity": identity,
+                    "status": probe.get("status") if isinstance(probe.get("status"), dict) else None,
+                    "error": str(probe.get("error") or "").strip(),
+                    "probed": bool(probe.get("probed", True)),
+                }
+            )
+            return payload
+
         if probe is None and allow_probe:
             try:
                 probe = self._probe_robot(robot.host, robot.port)
@@ -173,6 +256,111 @@ class OperatorAppState:
         )
         return payload
 
+    def _probe_ros_robot_payload(self, payload: dict[str, Any], host: str) -> dict[str, Any]:
+        domain_id = self._require_domain_id(payload)
+        namespace = self._namespace_from_payload(payload)
+        robot_id = str(payload.get("robotId") or payload.get("robot_id") or f"ros2:{domain_id}:{host}").strip()
+        robot_name = str(payload.get("name") or DEFAULT_ROS_ROBOT_NAME).strip() or DEFAULT_ROS_ROBOT_NAME
+        robot = KnownRobot(
+            id=robot_id,
+            name=robot_name,
+            host=host,
+            port=0,
+            type="ros2",
+            domain_id=domain_id,
+            namespace=namespace,
+            status_topic=str(payload.get("statusTopic") or payload.get("status_topic") or "/robot_status").strip() or "/robot_status",
+            cmd_vel_topic=str(payload.get("cmdVelTopic") or payload.get("cmd_vel_topic") or "/cmd_vel").strip() or "/cmd_vel",
+            go_to_lm_topic=str(payload.get("goToLmTopic") or payload.get("go_to_lm_topic") or "/go_to_lm").strip() or "/go_to_lm",
+            last_seen=utc_now(),
+        )
+        bridge = self._ensure_ros_bridge(robot)
+        if not bridge.available:
+            raise RobotProbeError(bridge.error or "ROS2 bridge is not available")
+        bridge.wait_for_status(0.9)
+        result = bridge.sidebar_payload()
+        result["ok"] = bool(bridge.available)
+        result["online"] = bool((result.get("status") or {}).get("connected"))
+        result["host"] = host
+        result["domainId"] = domain_id
+        result["namespace"] = namespace
+        result["statusTopic"] = bridge.status_topic
+        result["cmdVelTopic"] = bridge.cmd_vel_topic
+        result["goToLmTopic"] = bridge.go_to_lm_topic
+        return result
+
+    def _ensure_ros_bridge(self, robot: KnownRobot) -> RosRobotBridge:
+        if not robot.is_ros2:
+            raise ValueError(f"robot is not ROS2-backed: {robot.id}")
+        bridge = self.ros_robots.get(robot.id)
+        if bridge is not None:
+            if bridge.available:
+                return bridge
+            bridge.close()
+            self.ros_robots.pop(robot.id, None)
+        self._configure_cyclonedds_peer(robot.host)
+        bridge = RosRobotBridge(
+            robot_id=robot.id,
+            robot_name=robot.name or DEFAULT_ROS_ROBOT_NAME,
+            host=robot.host,
+            domain_id=robot.domain_id,
+            namespace=robot.namespace,
+            status_topic=robot.status_topic,
+            cmd_vel_topic=robot.cmd_vel_topic,
+            go_to_lm_topic=robot.go_to_lm_topic,
+        )
+        self.ros_robots[robot.id] = bridge
+        return bridge
+
+    def _is_ros_robot_id(self, robot_id: str) -> bool:
+        try:
+            return self.get_robot(robot_id).is_ros2
+        except ValueError:
+            return False
+
+    def _configure_cyclonedds_peer(self, host: str) -> None:
+        if os.environ.get("CYCLONEDDS_URI"):
+            self._cyclonedds_configured = True
+            return
+        if self._cyclonedds_configured:
+            if self._cyclonedds_peer_ip and self._cyclonedds_peer_ip != host:
+                raise ValueError(
+                    "operator app already initialized CycloneDDS for "
+                    f"{self._cyclonedds_peer_ip}; restart it before connecting a different ROS2 peer"
+                )
+            return
+        config_path = Path("/tmp/warehouse_operator_cyclonedds") / f"{safe_robot_key(host)}.xml"
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+        config_path.write_text(
+            "\n".join(
+                [
+                    '<?xml version="1.0" encoding="UTF-8" ?>',
+                    '<CycloneDDS xmlns="https://cdds.io/config"',
+                    '            xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"',
+                    '            xsi:schemaLocation="https://cdds.io/config https://raw.githubusercontent.com/eclipse-cyclonedds/cyclonedds/master/etc/cyclonedds.xsd">',
+                    '  <Domain Id="any">',
+                    "    <General>",
+                    "      <Interfaces>",
+                    '        <NetworkInterface autodetermine="true" />',
+                    "      </Interfaces>",
+                    "      <AllowMulticast>false</AllowMulticast>",
+                    "    </General>",
+                    "    <Discovery>",
+                    "      <Peers>",
+                    f'        <Peer Address="{host}" />',
+                    "      </Peers>",
+                    "    </Discovery>",
+                    "  </Domain>",
+                    "</CycloneDDS>",
+                    "",
+                ]
+            ),
+            encoding="utf-8",
+        )
+        os.environ["CYCLONEDDS_URI"] = f"file://{config_path}"
+        self._cyclonedds_configured = True
+        self._cyclonedds_peer_ip = host
+
     def _probe_robot(self, host: str, port: int) -> dict[str, Any]:
         try:
             result = self.client.probe(host, port)
@@ -190,19 +378,19 @@ class OperatorAppState:
         headers: dict[str, str] | None = None,
         body: bytes | None = None,
     ) -> tuple[int, dict[str, str], bytes]:
-        if robot_id == LOCAL_ROS_ROBOT_ID:
-            return self._proxy_ros_robot_request(method, path, body=body)
         robot = self.get_robot(robot_id)
+        if robot.is_ros2:
+            return self._proxy_ros_robot_request(robot_id, method, path, body=body)
         return self.client.request(robot.base_url, path, method=method, headers=headers, body=body)
 
     def robot_maps_list_payload(self, robot_id: str) -> dict[str, Any]:
-        if robot_id == LOCAL_ROS_ROBOT_ID:
+        if self._is_ros_robot_id(robot_id):
             return self.local_maps_payload(robot_id)
         robot = self.get_robot(robot_id)
         return self.client.request_json(robot.base_url, "/api/maps/list", timeout=self.map_timeout)
 
     def robot_maps_active_payload(self, robot_id: str) -> dict[str, Any]:
-        if robot_id == LOCAL_ROS_ROBOT_ID:
+        if self._is_ros_robot_id(robot_id):
             active_name = self.map_cache.active_map_name(robot_id)
             active_payload = self.map_cache.load_active_map(robot_id)
             signature = str(active_payload.get("signature") or "") if isinstance(active_payload, dict) else ""
@@ -218,24 +406,28 @@ class OperatorAppState:
         return self.client.request_json(robot.base_url, "/api/maps/active", timeout=self.map_timeout)
 
     def robot_params_payload(self, robot_id: str) -> dict[str, Any]:
-        if robot_id == LOCAL_ROS_ROBOT_ID:
+        robot = self.get_robot(robot_id)
+        if robot.is_ros2:
+            bridge = self._ensure_ros_bridge(robot)
             return {
                 "ok": True,
                 "robotId": robot_id,
                 "path": "ros2-topics",
                 "params": {
                     "driver": "operator_app.ros_robot_bridge",
-                    "status_topic": self.ros_robot.status_topic,
-                    "cmd_vel_topic": self.ros_robot.cmd_vel_topic,
-                    "go_to_lm_topic": self.ros_robot.go_to_lm_topic,
+                    "host": robot.host,
+                    "domain_id": robot.domain_id,
+                    "namespace": robot.namespace,
+                    "status_topic": bridge.status_topic,
+                    "cmd_vel_topic": bridge.cmd_vel_topic,
+                    "go_to_lm_topic": bridge.go_to_lm_topic,
                 },
             }
-        robot = self.get_robot(robot_id)
         params = self.client.request_json(robot.base_url, "/api/params", timeout=self.map_timeout)
         return {"ok": True, "robotId": robot_id, "path": "/api/params", "params": params}
 
     def save_robot_params_payload(self, robot_id: str, payload: dict[str, Any]) -> dict[str, Any]:
-        if robot_id == LOCAL_ROS_ROBOT_ID:
+        if self._is_ros_robot_id(robot_id):
             return {"ok": True, "robotId": robot_id, "saved": self.robot_params_payload(robot_id)}
         robot = self.get_robot(robot_id)
         params_payload = payload.get("params")
@@ -694,8 +886,8 @@ class OperatorAppState:
         return {"ok": True, "pushed": result, "local": cached}
 
     def pull_sync_payload(self, robot_id: str) -> dict[str, Any]:
-        if robot_id == LOCAL_ROS_ROBOT_ID:
-            self._ensure_ros_robot_map_cache()
+        if self._is_ros_robot_id(robot_id):
+            self._ensure_ros_robot_map_cache(robot_id)
             active_name = self.map_cache.active_map_name(robot_id)
             local_active = self.map_cache.load_active_map(robot_id)
             return {
@@ -744,7 +936,7 @@ class OperatorAppState:
         }
 
     def load_robot_map_payload(self, robot_id: str, payload: dict[str, Any]) -> dict[str, Any]:
-        if robot_id == LOCAL_ROS_ROBOT_ID:
+        if self._is_ros_robot_id(robot_id):
             map_name = str(payload.get("mapName") or payload.get("folder") or "").strip()
             if not map_name:
                 raise ValueError("mapName is required")
@@ -768,7 +960,7 @@ class OperatorAppState:
         )
 
     def push_sync_payload(self, robot_id: str) -> dict[str, Any]:
-        if robot_id == LOCAL_ROS_ROBOT_ID:
+        if self._is_ros_robot_id(robot_id):
             active_name = self.map_cache.active_map_name(robot_id)
             return {
                 "ok": True,
@@ -828,7 +1020,7 @@ class OperatorAppState:
         }
 
     def _fetch_robot_map_payload(self, robot_id: str, map_name: str) -> dict[str, Any]:
-        if robot_id == LOCAL_ROS_ROBOT_ID:
+        if self._is_ros_robot_id(robot_id):
             active_name = map_name or self.map_cache.active_map_name(robot_id)
             payload = self.map_cache.load_map(robot_id, active_name)
             editable = payload.get("map")
@@ -841,7 +1033,8 @@ class OperatorAppState:
             path = f"{path}?name={map_name}"
         return self.client.request_json(robot.base_url, path, timeout=self.map_timeout)
 
-    def _proxy_ros_robot_request(self, method: str, path: str, *, body: bytes | None) -> tuple[int, dict[str, str], bytes]:
+    def _proxy_ros_robot_request(self, robot_id: str, method: str, path: str, *, body: bytes | None) -> tuple[int, dict[str, str], bytes]:
+        bridge = self._ensure_ros_bridge(self.get_robot(robot_id))
         parsed = urlparse(path)
         route = parsed.path.rstrip("/") or "/"
         payload: dict[str, Any] = {}
@@ -854,35 +1047,35 @@ class OperatorAppState:
                 payload = decoded
         method = method.upper()
         if method == "GET" and route == "/api/robot/identity":
-            return self._json_response_tuple(self.ros_robot.identity_payload())
+            return self._json_response_tuple(bridge.identity_payload())
         if method == "GET" and route == "/api/robot/status":
-            return self._json_response_tuple(self.ros_robot.status_payload())
+            return self._json_response_tuple(bridge.status_payload())
         if method == "POST" and route == "/api/robot/teleop":
             return self._json_response_tuple(
-                self.ros_robot.teleop(
+                bridge.teleop(
                     linear=float(payload.get("linear", 0.0) or 0.0),
                     angular=float(payload.get("angular", 0.0) or 0.0),
                     timeout_ms=int(payload.get("timeoutMs", 350) or 350),
                 )
             )
         if method == "POST" and route == "/api/robot/teleop/stop":
-            return self._json_response_tuple(self.ros_robot.teleop_stop())
+            return self._json_response_tuple(bridge.teleop_stop())
         if method == "POST" and route == "/api/robot/stop":
-            return self._json_response_tuple(self.ros_robot.stop())
+            return self._json_response_tuple(bridge.stop())
         if method == "POST" and route == "/api/robot/route/cancel":
-            return self._json_response_tuple(self.ros_robot.cancel_route())
+            return self._json_response_tuple(bridge.cancel_route())
         if method == "POST" and route == "/api/robot/route/execute":
-            return self._json_response_tuple(self.ros_robot.execute_route(payload))
+            return self._json_response_tuple(bridge.execute_route(payload))
         return self._json_response_tuple({"ok": False, "error": f"unsupported local ROS2 robot path: {method} {route}"}, status=404)
 
     def _json_response_tuple(self, payload: dict[str, Any], *, status: int = 200) -> tuple[int, dict[str, str], bytes]:
         encoded = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         return status, {"Content-Type": "application/json; charset=utf-8"}, encoded
 
-    def _ensure_ros_robot_map_cache(self) -> None:
-        if self.map_cache.active_map_name(LOCAL_ROS_ROBOT_ID):
+    def _ensure_ros_robot_map_cache(self, robot_id: str) -> None:
+        if self.map_cache.active_map_name(robot_id):
             return
-        target_dir = self.map_cache._robot_dir(LOCAL_ROS_ROBOT_ID)
+        target_dir = self.map_cache._robot_dir(robot_id)
         source_candidates = [
             self.map_cache.root / "robot1_127.0.0.1_8790",
             self.map_cache.root / FLEET_MANAGER_ID,
@@ -911,6 +1104,10 @@ class OperatorAppState:
                 f"{host} is a listen/bind address, not a robot address. "
                 "Use 127.0.0.1 on the same PC or the robot LAN IP like 192.168.x.x."
             )
+        try:
+            ipaddress.ip_address(host)
+        except ValueError as exc:
+            raise ValueError("robot host must be an IP address for ROS2 CycloneDDS peer mode") from exc
         return host
 
     @staticmethod
@@ -923,6 +1120,25 @@ class OperatorAppState:
         if port < 1 or port > 65535:
             raise ValueError("port must be in range 1..65535")
         return port
+
+    @staticmethod
+    def _payload_robot_type(payload: dict[str, Any]) -> str:
+        return str(payload.get("type") or payload.get("mode") or "ros2").strip().lower() or "ros2"
+
+    @staticmethod
+    def _namespace_from_payload(payload: dict[str, Any]) -> str:
+        return str(payload.get("namespace") or payload.get("robotNamespace") or "").strip().strip("/")
+
+    @staticmethod
+    def _require_domain_id(payload: dict[str, Any]) -> int:
+        raw = payload.get("domainId", payload.get("domain_id", os.environ.get("ROS_DOMAIN_ID", "0")))
+        try:
+            domain_id = int(raw)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("domainId must be an integer") from exc
+        if domain_id < 0 or domain_id > 232:
+            raise ValueError("domainId must be in range 0..232")
+        return domain_id
 
 
 class OperatorRequestHandler(SimpleHTTPRequestHandler):
@@ -1027,9 +1243,15 @@ class OperatorRequestHandler(SimpleHTTPRequestHandler):
         if not self._is_websocket_upgrade():
             self._send_error_json(400, "expected websocket upgrade")
             return
-        robot_id = str(parse_qs(parsed.query).get("robotId", [LOCAL_ROS_ROBOT_ID])[0] or "").strip()
-        if robot_id != LOCAL_ROS_ROBOT_ID:
-            self._send_error_json(404, f"local websocket is only available for {LOCAL_ROS_ROBOT_ID}")
+        robot_id = str(parse_qs(parsed.query).get("robotId", [""])[0] or "").strip()
+        if not robot_id:
+            self._send_error_json(400, "robotId is required")
+            return
+        state = self._require_state()
+        try:
+            bridge = state._ensure_ros_bridge(state.get_robot(robot_id))
+        except Exception as exc:
+            self._send_error_json(404, str(exc))
             return
         key = self.headers.get("Sec-WebSocket-Key", "").strip()
         if not key:
@@ -1046,7 +1268,6 @@ class OperatorRequestHandler(SimpleHTTPRequestHandler):
         self.end_headers()
         self.close_connection = True
 
-        state = self._require_state()
         interval_sec = self._fleet_ws_interval_sec(parsed)
         try:
             while True:
@@ -1056,7 +1277,7 @@ class OperatorRequestHandler(SimpleHTTPRequestHandler):
                     {
                         "ok": True,
                         "type": "state",
-                        "state": state.ros_robot.status_payload(),
+                        "state": bridge.status_payload(),
                         "sentAt": utc_now(),
                     }
                 )
@@ -1345,7 +1566,7 @@ class OperatorRequestHandler(SimpleHTTPRequestHandler):
                 body=body,
             )
         except ValueError as exc:
-            self._send_error_json(400 if robot_id == LOCAL_ROS_ROBOT_ID else 404, str(exc))
+            self._send_error_json(404, str(exc))
             return
         except RobotProbeError as exc:
             self._send_error_json(502, str(exc))
@@ -1603,5 +1824,6 @@ def main() -> None:
     except KeyboardInterrupt:
         pass
     finally:
-        state.ros_robot.close()
+        for bridge in list(state.ros_robots.values()):
+            bridge.close()
         server.server_close()

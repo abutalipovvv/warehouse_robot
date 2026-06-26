@@ -639,6 +639,7 @@ class OperatorApp {
     this.closeDialogButton = document.getElementById("closeDialogButton");
     this.robotNameInput = document.getElementById("robotNameInput");
     this.robotHostInput = document.getElementById("robotHostInput");
+    this.robotDomainInput = document.getElementById("robotDomainInput");
     this.robotPortInput = document.getElementById("robotPortInput");
     this.probeResult = document.getElementById("probeResult");
     this.probeRobotButton = document.getElementById("probeRobotButton");
@@ -1097,7 +1098,7 @@ class OperatorApp {
 
   isRos2Robot(robot = this.selectedRobot()) {
     const type = String(robot?.type || robot?.mode || "").toLowerCase();
-    return Boolean(robot && (robot.id === "ros2-local" || type === "ros2"));
+    return Boolean(robot && type === "ros2");
   }
 
   fleetRuntimeMode(status = this.currentStatus) {
@@ -1828,7 +1829,8 @@ class OperatorApp {
   }
 
   render() {
-    this.robotCountText.textContent = `${this.robots.length} saved`;
+    const savedCount = this.robots.filter((robot) => !this.isFleetManager(robot) && !robot.system).length;
+    this.robotCountText.textContent = `${savedCount} saved`;
     this.renderRobotList();
     this.renderSelectedRobot();
   }
@@ -1890,10 +1892,13 @@ class OperatorApp {
       const identity = robot.identity || robot.lastIdentity || {};
       const status = robot.status || {};
       const chipClass = robot.online ? "robot-chip online" : "robot-chip offline";
-      const chipText = (isFleet || isRos2) ? "system" : (robot.online ? "online" : "offline");
+      const systemRobot = isFleet || robot.system;
+      const chipText = systemRobot ? "system" : (robot.online ? "online" : "offline");
       const connectionLabel = isFleet
         ? "local fleet controller"
-        : (isRos2 ? "local ROS2 DDS" : `${this.escapeHtml(robot.host)}:${this.escapeHtml(String(robot.port))}`);
+        : (isRos2
+          ? `ROS2 ${this.escapeHtml(robot.host || "DDS")} domain ${this.escapeHtml(String(robot.domainId ?? 0))}`
+          : `${this.escapeHtml(robot.host)}:${this.escapeHtml(String(robot.port))}`);
       button.innerHTML = `
         <div class="robot-card-header">
           <div>
@@ -1902,7 +1907,7 @@ class OperatorApp {
           </div>
           <div class="robot-card-actions">
             <span class="${chipClass}">${chipText}</span>
-            ${(isFleet || isRos2 || robot.system) ? "" : '<button class="robot-card-remove" type="button" aria-label="Remove robot">Delete</button>'}
+            ${systemRobot ? "" : '<button class="robot-card-remove" type="button" aria-label="Remove robot">Delete</button>'}
           </div>
         </div>
         <div class="robot-card-meta">
@@ -2203,7 +2208,9 @@ class OperatorApp {
       confidence: this.formatConfidence(robot),
       pose: this.formatPose(pose),
       velocity: this.formatVelocity(robot.velocity),
-      api: this.isRos2Robot(selected) ? "local ROS2 DDS" : (selected?.baseUrl || "-"),
+      api: this.isRos2Robot(selected)
+        ? `ROS2 ${selected?.host || "DDS"} domain ${selected?.domainId ?? 0}`
+        : (selected?.baseUrl || "-"),
       reason: robot.message || "-",
     });
     this.robotMessageText.textContent = robot.message || (this.operatorMapPayload ? "Robot status ready." : "Pull the active robot map to display Map & Control.");
@@ -2244,7 +2251,9 @@ class OperatorApp {
       confidence: this.formatConfidence(robot),
       pose: this.formatPose(pose),
       velocity: this.formatVelocity(robot.velocity),
-      api: this.isRos2Robot(selected) ? "local ROS2 DDS" : (selected?.baseUrl || "-"),
+      api: this.isRos2Robot(selected)
+        ? `ROS2 ${selected?.host || "DDS"} domain ${selected?.domainId ?? 0}`
+        : (selected?.baseUrl || "-"),
       reason: robot.message || "-",
     });
     this.robotMessageText.textContent = robot.message || (this.operatorMapPayload ? "Robot status ready." : "Pull the active robot map to display Map & Control.");
@@ -5156,8 +5165,11 @@ class OperatorApp {
     this.lastProbe = null;
     this.robotNameInput.value = "";
     this.robotHostInput.value = "";
+    if (this.robotDomainInput) {
+      this.robotDomainInput.value = "0";
+    }
     this.robotPortInput.value = "8790";
-    this.showProbeResult("neutral", "Enter the robot IP, then check the connection. The name is read from the robot.");
+    this.showProbeResult("neutral", "Enter the robot IP and ROS domain, then check the connection.");
     this.addRobotDialog.showModal();
   }
 
@@ -5169,7 +5181,8 @@ class OperatorApp {
       this.lastProbe = result.probe;
       const identity = result.probe.identity || {};
       const status = result.probe.status || {};
-      this.showProbeResult("success", `Found ${identity.robotId || "robot"} on map ${identity.mapId || "-"}. Current state: ${status.state || "-"}`);
+      const online = result.probe.online ? "online" : "waiting for /robot_status";
+      this.showProbeResult("success", `ROS2 bridge ready for ${identity.robotId || "robot"} on map ${identity.mapId || "-"}. ${online}. State: ${status.state || "-"}`);
       if (!this.robotNameInput.value.trim()) {
         this.robotNameInput.value = identity.robotId || "";
       }
@@ -5493,8 +5506,10 @@ class OperatorApp {
 
   dialogPayload() {
     return {
+      type: "ros2",
       name: this.robotNameInput.value.trim(),
       host: this.robotHostInput.value.trim(),
+      domainId: Number(this.robotDomainInput?.value || 0),
       port: Number(this.robotPortInput.value || 8790),
     };
   }

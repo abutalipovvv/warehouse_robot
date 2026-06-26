@@ -371,16 +371,20 @@
       <div class="field-row">
         <label>
           IP Address
-          <input id="robotHostInput" type="text" placeholder="192.168.1.45" required />
+          <input id="robotHostInput" type="text" placeholder="192.168.11.189" required />
+        </label>
+        <label>
+          ROS Domain
+          <input id="robotDomainInput" type="number" min="0" max="232" step="1" value="0" />
         </label>
         <input id="robotPortInput" type="hidden" value="8790" />
       </div>
 
       <p class="field-hint">
-        The robot name is read from the robot identity. Port 8790 is used automatically. Use 127.0.0.1 on the same PC or the robot LAN IP like 192.168.x.x.
+        The backend connects to this ROS2 robot through CycloneDDS static peer mode. The robot publishes /robot_status and listens to /cmd_vel and /go_to_lm.
       </p>
 
-      <div id="probeResult" class="probe-result neutral">Enter the robot IP and check the connection.</div>
+      <div id="probeResult" class="probe-result neutral">Enter the robot IP and ROS domain, then check the connection.</div>
 
       <div class="dialog-actions">
         <button id="probeRobotButton" type="button">Check Robot</button>

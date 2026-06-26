@@ -1,26 +1,41 @@
 from __future__ import annotations
 
 import json
+import re
 import threading
-from time import monotonic
+from time import monotonic, sleep
 from typing import Any
+
+
+def _clean_node_suffix(value: str) -> str:
+    clean = re.sub(r"[^A-Za-z0-9_]", "_", value.strip())
+    clean = re.sub(r"_+", "_", clean).strip("_")
+    if not clean or clean[0].isdigit():
+        clean = f"robot_{clean or 'bridge'}"
+    return clean[:64]
 
 
 class RosRobotBridge:
     def __init__(
         self,
         *,
-        robot_id: str = "ros2-local",
-        robot_name: str = "AIvison Robot",
+        robot_id: str,
+        robot_name: str,
+        host: str = "",
+        domain_id: int | None = None,
+        namespace: str = "",
         status_topic: str = "/robot_status",
         cmd_vel_topic: str = "/cmd_vel",
         go_to_lm_topic: str = "/go_to_lm",
     ) -> None:
         self.robot_id = robot_id
         self.robot_name = robot_name
-        self.status_topic = status_topic
-        self.cmd_vel_topic = cmd_vel_topic
-        self.go_to_lm_topic = go_to_lm_topic
+        self.host = host
+        self.domain_id = domain_id
+        self.namespace = namespace.strip().strip("/")
+        self.status_topic = self._topic(status_topic)
+        self.cmd_vel_topic = self._topic(cmd_vel_topic)
+        self.go_to_lm_topic = self._topic(go_to_lm_topic)
         self._lock = threading.Lock()
         self._latest_status: Any | None = None
         self._latest_status_at: float | None = None
@@ -29,6 +44,7 @@ class RosRobotBridge:
         self._error = ""
         self._node = None
         self._rclpy = None
+        self._context = None
         self._twist_type = None
         self._string_type = None
         self._executor = None
@@ -45,10 +61,16 @@ class RosRobotBridge:
     def error(self) -> str:
         return self._error
 
+    def _topic(self, topic: str) -> str:
+        raw = str(topic or "").strip() or "/"
+        if not self.namespace:
+            return raw if raw.startswith("/") else f"/{raw}"
+        return f"/{self.namespace}/{raw.strip('/')}"
+
     def close(self) -> None:
         executor = self._executor
         node = self._node
-        rclpy = self._rclpy
+        context = self._context
         if executor is not None:
             try:
                 executor.shutdown()
@@ -61,10 +83,9 @@ class RosRobotBridge:
                 node.destroy_node()
             except Exception:
                 pass
-        if rclpy is not None:
+        if context is not None:
             try:
-                if rclpy.ok():
-                    rclpy.shutdown()
+                context.try_shutdown()
             except Exception:
                 pass
 
@@ -75,6 +96,9 @@ class RosRobotBridge:
             "robotId": status.get("robotId") or self.robot_name,
             "mapId": status.get("mapId") or "",
             "type": "ros2",
+            "host": self.host,
+            "domainId": self.domain_id,
+            "namespace": self.namespace,
             "statusTopic": self.status_topic,
             "cmdVelTopic": self.cmd_vel_topic,
             "goToLmTopic": self.go_to_lm_topic,
@@ -89,18 +113,19 @@ class RosRobotBridge:
         return {
             "id": self.robot_id,
             "name": self.robot_name,
-            "host": "DDS",
+            "host": self.host or "DDS",
             "port": 0,
             "baseUrl": "",
             "type": "ros2",
             "mode": "ros2",
+            "domainId": self.domain_id,
+            "namespace": self.namespace,
             "online": bool(robot_status.get("connected")),
             "identity": identity,
             "lastIdentity": identity,
             "status": robot_status,
             "error": "" if bool(robot_status.get("connected")) else (self._error or str(robot_status.get("message") or "")),
             "probed": True,
-            "system": True,
         }
 
     def status_payload(self) -> dict[str, Any]:
@@ -213,6 +238,7 @@ class RosRobotBridge:
     def _start(self) -> None:
         try:
             import rclpy
+            from rclpy.context import Context
             from geometry_msgs.msg import Twist
             from rclpy.executors import SingleThreadedExecutor
             from rclpy.node import Node
@@ -223,27 +249,45 @@ class RosRobotBridge:
             return
 
         try:
-            if not rclpy.ok():
-                rclpy.init(args=None)
-            node = Node("operator_app_ros_robot_bridge")
+            context = Context()
+            init_kwargs: dict[str, Any] = {"args": None, "context": context}
+            if self.domain_id is not None:
+                init_kwargs["domain_id"] = int(self.domain_id)
+            rclpy.init(**init_kwargs)
+            node_name = f"operator_app_ros_robot_bridge_{_clean_node_suffix(self.robot_id)}"
+            node = Node(node_name, context=context)
             self._cmd_vel_pub = node.create_publisher(Twist, self.cmd_vel_topic, 10)
             self._go_to_lm_pub = node.create_publisher(String, self.go_to_lm_topic, 10)
             node.create_subscription(RobotStatus, self.status_topic, self._on_status, 10)
-            executor = SingleThreadedExecutor()
+            executor = SingleThreadedExecutor(context=context)
             executor.add_node(node)
-            thread = threading.Thread(target=self._spin_executor, args=(executor,), name="operator-ros2-bridge", daemon=True)
+            thread = threading.Thread(
+                target=self._spin_executor,
+                args=(executor,),
+                name=f"operator-ros2-bridge-{_clean_node_suffix(self.robot_id)}",
+                daemon=True,
+            )
             thread.start()
         except Exception as exc:
             self._error = f"ROS2 bridge failed: {exc}"
             return
 
         self._rclpy = rclpy
+        self._context = context
         self._twist_type = Twist
         self._string_type = String
         self._node = node
         self._executor = executor
         self._thread = thread
         self._available = True
+
+    def wait_for_status(self, timeout_sec: float = 0.8) -> bool:
+        deadline = monotonic() + max(0.0, float(timeout_sec))
+        while monotonic() < deadline:
+            if self._latest_message() is not None:
+                return True
+            sleep(0.04)
+        return self._latest_message() is not None
 
     def _spin_executor(self, executor: Any) -> None:
         try:
