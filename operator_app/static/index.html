@@ -374,17 +374,17 @@
           <input id="robotHostInput" type="text" placeholder="192.168.11.189" required />
         </label>
         <label>
-          ROS Domain
-          <input id="robotDomainInput" type="number" min="0" max="232" step="1" value="0" />
+          gRPC Port
+          <input id="robotPortInput" type="number" min="1" max="65535" step="1" value="50051" />
         </label>
-        <input id="robotPortInput" type="hidden" value="8790" />
+        <input id="robotDomainInput" type="hidden" value="0" />
       </div>
 
       <p class="field-hint">
-        The backend connects to this ROS2 robot through CycloneDDS static peer mode. The robot publishes /robot_status and listens to /cmd_vel and /go_to_lm.
+        The browser talks to Operator App over HTTP. Operator App talks to the robot over the native gRPC robot API.
       </p>
 
-      <div id="probeResult" class="probe-result neutral">Enter the robot IP and ROS domain, then check the connection.</div>
+      <div id="probeResult" class="probe-result neutral">Enter the robot IP and check the gRPC connection.</div>
 
       <div class="dialog-actions">
         <button id="probeRobotButton" type="button">Check Robot</button>

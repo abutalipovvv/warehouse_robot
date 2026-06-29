@@ -14,7 +14,7 @@
   <depend>robot_status</depend>
   <depend>robot_planner</depend>
   <depend>robot_map_manager</depend>
-  <depend>robot_http_api</depend>
+  <depend>robot_api</depend>
 
 
   <test_depend>ament_lint_auto</test_depend>

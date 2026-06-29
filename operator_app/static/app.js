@@ -1098,7 +1098,7 @@ class OperatorApp {
 
   isRos2Robot(robot = this.selectedRobot()) {
     const type = String(robot?.type || robot?.mode || "").toLowerCase();
-    return Boolean(robot && type === "ros2");
+    return Boolean(robot && ["grpc", "aivison_grpc", "real_grpc"].includes(type));
   }
 
   fleetRuntimeMode(status = this.currentStatus) {
@@ -1111,7 +1111,7 @@ class OperatorApp {
 
   isFleetRemoteRobot(robot) {
     const mode = String(robot?.mode || robot?.type || "").toLowerCase();
-    return ["remote", "remote_ros", "ros", "robot", "real"].includes(mode);
+    return ["remote", "robot", "real", "grpc", "aivison_grpc", "real_grpc"].includes(mode);
   }
 
   shouldAnimateFleetRobot(robot) {
@@ -1897,7 +1897,9 @@ class OperatorApp {
       const connectionLabel = isFleet
         ? "local fleet controller"
         : (isRos2
-          ? `ROS2 ${this.escapeHtml(robot.host || "DDS")} domain ${this.escapeHtml(String(robot.domainId ?? 0))}`
+          ? (String(robot.type || "").toLowerCase().includes("grpc")
+            ? `gRPC ${this.escapeHtml(robot.host || "-")}:${this.escapeHtml(String(robot.port || 50051))}`
+            : `ROS2 ${this.escapeHtml(robot.host || "DDS")} domain ${this.escapeHtml(String(robot.domainId ?? 0))}`)
           : `${this.escapeHtml(robot.host)}:${this.escapeHtml(String(robot.port))}`);
       button.innerHTML = `
         <div class="robot-card-header">
@@ -2209,7 +2211,9 @@ class OperatorApp {
       pose: this.formatPose(pose),
       velocity: this.formatVelocity(robot.velocity),
       api: this.isRos2Robot(selected)
-        ? `ROS2 ${selected?.host || "DDS"} domain ${selected?.domainId ?? 0}`
+        ? (String(selected?.type || "").toLowerCase().includes("grpc")
+          ? (selected?.baseUrl || `grpc://${selected?.host || "-"}:${selected?.port || 50051}`)
+          : `ROS2 ${selected?.host || "DDS"} domain ${selected?.domainId ?? 0}`)
         : (selected?.baseUrl || "-"),
       reason: robot.message || "-",
     });
@@ -2252,7 +2256,9 @@ class OperatorApp {
       pose: this.formatPose(pose),
       velocity: this.formatVelocity(robot.velocity),
       api: this.isRos2Robot(selected)
-        ? `ROS2 ${selected?.host || "DDS"} domain ${selected?.domainId ?? 0}`
+        ? (String(selected?.type || "").toLowerCase().includes("grpc")
+          ? (selected?.baseUrl || `grpc://${selected?.host || "-"}:${selected?.port || 50051}`)
+          : `ROS2 ${selected?.host || "DDS"} domain ${selected?.domainId ?? 0}`)
         : (selected?.baseUrl || "-"),
       reason: robot.message || "-",
     });
@@ -5168,8 +5174,8 @@ class OperatorApp {
     if (this.robotDomainInput) {
       this.robotDomainInput.value = "0";
     }
-    this.robotPortInput.value = "8790";
-    this.showProbeResult("neutral", "Enter the robot IP and ROS domain, then check the connection.");
+    this.robotPortInput.value = "50051";
+    this.showProbeResult("neutral", "Enter the robot IP and check the gRPC connection.");
     this.addRobotDialog.showModal();
   }
 
@@ -5181,8 +5187,8 @@ class OperatorApp {
       this.lastProbe = result.probe;
       const identity = result.probe.identity || {};
       const status = result.probe.status || {};
-      const online = result.probe.online ? "online" : "waiting for /robot_status";
-      this.showProbeResult("success", `ROS2 bridge ready for ${identity.robotId || "robot"} on map ${identity.mapId || "-"}. ${online}. State: ${status.state || "-"}`);
+      const online = result.probe.online ? "online" : "waiting for robot status";
+      this.showProbeResult("success", `gRPC robot API ready for ${identity.robotId || "robot"} on map ${identity.mapId || "-"}. ${online}. State: ${status.state || "-"}`);
       if (!this.robotNameInput.value.trim()) {
         this.robotNameInput.value = identity.robotId || "";
       }
@@ -5506,11 +5512,11 @@ class OperatorApp {
 
   dialogPayload() {
     return {
-      type: "ros2",
+      type: "grpc",
       name: this.robotNameInput.value.trim(),
       host: this.robotHostInput.value.trim(),
       domainId: Number(this.robotDomainInput?.value || 0),
-      port: Number(this.robotPortInput.value || 8790),
+      port: Number(this.robotPortInput.value || 50051),
     };
   }
 

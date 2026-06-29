@@ -10,7 +10,7 @@ FLEET_MAPS_OUT_ROOT = FLEET_MAP_DATA_ROOT / "maps_out"
 DEFAULT_FLEET_MAP_DIR = FLEET_MAPS_OUT_ROOT / "22.05.26_smap.smap"
 FLEET_MANAGER_ID = "__fleet_manager__"
 
-from fleet_manager import FleetManager
+from fleet_manager.web_simulator import FleetManager
 from fleet_manager.route_core import (
     WarehouseMapLoader,
     build_editable_map_bundle_payload,
@@ -23,8 +23,9 @@ from fleet_manager.route_core import (
 
 
 class OperatorFleetManager:
-    def __init__(self, map_dir: Path, params_path: Path) -> None:
+    def __init__(self, map_dir: Path, params_path: Path, remote_adapter: Any | None = None) -> None:
         self.params_path = Path(params_path).expanduser().resolve()
+        self.remote_adapter = remote_adapter
         self.mode = "simulation"
         self.map_dir = self.resolve_map_dir(map_dir)
         self.maps_root = self.map_dir.parent
@@ -370,6 +371,7 @@ class OperatorFleetManager:
             params=params,
             map_dir=loaded_map.map_dir,
             map_metadata=loaded_map.map_metadata,
+            remote_adapter=self.remote_adapter,
         )
         self._sync_manager_mode()
 

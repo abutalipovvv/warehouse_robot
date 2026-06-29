@@ -9,6 +9,8 @@ def generate_launch_description() -> LaunchDescription:
     arguments = [
         DeclareLaunchArgument("robot_ip", default_value="192.168.192.5"),
         DeclareLaunchArgument("robot_id", default_value="robot1"),
+        DeclareLaunchArgument("robot_api_host", default_value="0.0.0.0"),
+        DeclareLaunchArgument("robot_api_port", default_value="50051"),
         DeclareLaunchArgument("map_id", default_value=""),
         DeclareLaunchArgument("status_rate_hz", default_value="10.0"),
         DeclareLaunchArgument("command_duration_ms", default_value="350"),
@@ -62,4 +64,27 @@ def generate_launch_description() -> LaunchDescription:
         ],
     )
 
-    return LaunchDescription(arguments + [driver_node])
+    robot_api_node = Node(
+        package="real_robot",
+        executable="robot_api_server",
+        name="robot_api",
+        output="screen",
+        arguments=[
+            "--host",
+            LaunchConfiguration("robot_api_host"),
+            "--port",
+            LaunchConfiguration("robot_api_port"),
+            "--robot-id",
+            LaunchConfiguration("robot_id"),
+            "--robot-name",
+            LaunchConfiguration("robot_id"),
+            "--status-topic",
+            LaunchConfiguration("status_topic"),
+            "--cmd-vel-topic",
+            LaunchConfiguration("cmd_vel_topic"),
+            "--go-to-lm-topic",
+            LaunchConfiguration("go_to_lm_topic"),
+        ],
+    )
+
+    return LaunchDescription(arguments + [driver_node, robot_api_node])

@@ -24,7 +24,7 @@ def _maps_root(project_root: Path) -> Path:
         project_root / "map_data" / "maps_out",
         project_root / "fleet_manager" / "map_data" / "maps_out",
         project_root / "robot" / "ws" / "src" / "robot_map_manager" / "maps_out",
-        project_root / "operator_app" / "map_out" / "robot1_127.0.0.1_8790",
+        project_root / "operator_app" / "map_out" / "robot1_127.0.0.1_50051",
     ]
     for candidate in candidates:
         if candidate.is_dir():
@@ -72,6 +72,8 @@ def generate_launch_description() -> LaunchDescription:
         DeclareLaunchArgument("state_file", default_value=default_state_file),
         DeclareLaunchArgument("params", default_value=default_params),
         DeclareLaunchArgument("robot_id", default_value="robot1"),
+        DeclareLaunchArgument("robot_api_host", default_value="0.0.0.0"),
+        DeclareLaunchArgument("robot_api_port", default_value="50051"),
         DeclareLaunchArgument("cmd_vel_topic", default_value="/cmd_vel"),
         DeclareLaunchArgument("amcl_topic", default_value="/amcl_pose"),
         DeclareLaunchArgument("odom_topic", default_value="/odom"),
@@ -84,9 +86,10 @@ def generate_launch_description() -> LaunchDescription:
         DeclareLaunchArgument("status_load_map_service", default_value="/status/load_map"),
         DeclareLaunchArgument("manager_load_map_service", default_value="/robot/maps/load"),
         DeclareLaunchArgument("manager_state_service", default_value="/robot/maps/state"),
+        DeclareLaunchArgument("manager_list_service", default_value="/robot/maps/list"),
+        DeclareLaunchArgument("manager_get_bundle_service", default_value="/robot/maps/get_bundle"),
+        DeclareLaunchArgument("manager_put_bundle_service", default_value="/robot/maps/put_bundle"),
         DeclareLaunchArgument("map_server_load_service", default_value="/map_server/load_map"),
-        DeclareLaunchArgument("http_host", default_value="0.0.0.0"),
-        DeclareLaunchArgument("http_port", default_value="8790"),
     ]
 
     status_node = Node(
@@ -167,29 +170,35 @@ def generate_launch_description() -> LaunchDescription:
             LaunchConfiguration("manager_load_map_service"),
             "--manager-state-service",
             LaunchConfiguration("manager_state_service"),
+            "--manager-list-service",
+            LaunchConfiguration("manager_list_service"),
+            "--manager-get-bundle-service",
+            LaunchConfiguration("manager_get_bundle_service"),
+            "--manager-put-bundle-service",
+            LaunchConfiguration("manager_put_bundle_service"),
         ],
     )
 
-    http_api_node = Node(
-        package="robot_http_api",
-        executable="robot_http_api",
-        name="robot_http_api",
+    robot_api_node = Node(
+        package="robot_api",
+        executable="robot_api_server",
+        name="robot_api",
         output="screen",
         arguments=[
-            "--map-dir",
-            LaunchConfiguration("map_dir"),
-            "--params",
-            LaunchConfiguration("params"),
+            "--host",
+            LaunchConfiguration("robot_api_host"),
+            "--port",
+            LaunchConfiguration("robot_api_port"),
             "--robot-id",
             LaunchConfiguration("robot_id"),
-            "--host",
-            LaunchConfiguration("http_host"),
-            "--port",
-            LaunchConfiguration("http_port"),
-            "--cmd-vel-topic",
-            LaunchConfiguration("cmd_vel_topic"),
+            "--robot-name",
+            LaunchConfiguration("robot_id"),
             "--status-topic",
             LaunchConfiguration("status_topic"),
+            "--cmd-vel-topic",
+            LaunchConfiguration("cmd_vel_topic"),
+            "--go-to-lm-topic",
+            "/go_to_lm",
             "--plan-service",
             LaunchConfiguration("plan_service"),
             "--execute-service",
@@ -200,7 +209,13 @@ def generate_launch_description() -> LaunchDescription:
             LaunchConfiguration("manager_state_service"),
             "--map-load-service",
             LaunchConfiguration("manager_load_map_service"),
+            "--map-list-service",
+            LaunchConfiguration("manager_list_service"),
+            "--map-get-bundle-service",
+            LaunchConfiguration("manager_get_bundle_service"),
+            "--map-put-bundle-service",
+            LaunchConfiguration("manager_put_bundle_service"),
         ],
     )
 
-    return LaunchDescription(arguments + [status_node, route_node, map_manager_node, http_api_node])
+    return LaunchDescription(arguments + [status_node, route_node, map_manager_node, robot_api_node])

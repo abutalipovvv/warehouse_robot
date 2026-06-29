@@ -47,12 +47,7 @@ class RobotRegistry:
         updated: list[KnownRobot] = []
         replaced = False
         for item in robots:
-            same_endpoint = (
-                (not item.is_ros2)
-                and (not robot.is_ros2)
-                and item.host == robot.host
-                and item.port == robot.port
-            )
+            same_endpoint = item.host == robot.host and item.port == robot.port
             if item.id == robot.id or same_endpoint:
                 updated.append(robot)
                 replaced = True

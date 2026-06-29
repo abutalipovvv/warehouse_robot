@@ -9,8 +9,8 @@ class KnownRobot:
     id: str
     name: str
     host: str
-    port: int = 8790
-    type: str = "http"
+    port: int = 50051
+    type: str = "grpc"
     domain_id: int = 0
     namespace: str = ""
     status_topic: str = "/robot_status"
@@ -21,13 +21,13 @@ class KnownRobot:
 
     @property
     def base_url(self) -> str:
-        if self.is_ros2:
-            return ""
-        return f"http://{self.host}:{self.port}"
+        if self.is_grpc:
+            return f"grpc://{self.host}:{self.port}"
+        return ""
 
     @property
-    def is_ros2(self) -> bool:
-        return self.type.lower() in {"ros2", "aivison_ros2", "real_ros2"}
+    def is_grpc(self) -> bool:
+        return self.type.lower() in {"grpc", "aivison_grpc", "real_grpc"}
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -49,17 +49,17 @@ class KnownRobot:
 
     @classmethod
     def from_dict(cls, payload: dict[str, Any]) -> "KnownRobot":
-        robot_type = str(payload.get("type") or payload.get("mode") or "http").strip().lower() or "http"
+        robot_type = str(payload.get("type") or payload.get("mode") or "grpc").strip().lower() or "grpc"
         domain_raw = payload.get("domainId", payload.get("domain_id", 0))
         try:
             domain_id = int(domain_raw)
         except (TypeError, ValueError):
             domain_id = 0
-        port_raw = payload.get("port", 8790)
+        port_raw = payload.get("port", 50051)
         try:
             port = int(port_raw)
         except (TypeError, ValueError):
-            port = 8790
+            port = 50051
         return cls(
             id=str(payload.get("id") or "").strip(),
             name=str(payload.get("name") or "").strip(),

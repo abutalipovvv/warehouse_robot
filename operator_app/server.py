@@ -5,9 +5,7 @@ import base64
 import hashlib
 import ipaddress
 import json
-import os
 import select
-import shutil
 import struct
 import time
 from datetime import datetime, timezone
@@ -23,18 +21,21 @@ from .map_cache import MapCache
 from .fleet_manager_app import DEFAULT_FLEET_MAP_DIR, FLEET_MANAGER_ID, OperatorFleetManager
 from .models import KnownRobot
 from .registry import RobotRegistry, default_registry_path
-from .robot_client import RobotClient, RobotProbeError
-from .ros_robot_link_client import RosRobotLinkManager
+from .robot_grpc_api import DEFAULT_GRPC_PORT, GrpcRobotAdapter
+from fleet_manager.route_core import build_editable_map_bundle_payload
 
 DEFAULT_STATIC_DIR = Path(__file__).resolve().parent / "static"
 DEFAULT_FLEET_PARAMS_PATH = Path(__file__).resolve().parents[1] / "fleet_manager" / "params.yaml"
-DEFAULT_ROS_ROBOT_NAME = "AIvison Robot"
-ROS_ROBOT_TYPES = {"ros2", "aivison_ros2", "real_ros2"}
+GRPC_ROBOT_TYPES = {"grpc", "aivison_grpc", "real_grpc"}
 WEBSOCKET_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 DEFAULT_FLEET_WS_INTERVAL_MS = 180
 MIN_FLEET_WS_INTERVAL_MS = 50
 MAX_FLEET_WS_INTERVAL_MS = 1000
 APP_ROUTES = {"/", "/home", "/params", "/robot_model", "/map_editor"}
+
+
+class RobotProbeError(RuntimeError):
+    pass
 
 
 def utc_now() -> str:
@@ -45,11 +46,14 @@ class OperatorAppState:
     def __init__(self, registry_path: Path, probe_timeout: float, fleet_params_path: Path, fleet_map_dir: Path) -> None:
         self.registry = RobotRegistry(registry_path)
         self.map_cache = MapCache()
-        self.client = RobotClient(timeout=probe_timeout)
+        self.grpc_adapter = GrpcRobotAdapter(timeout=max(1.5, float(probe_timeout)))
         self.map_timeout = max(10.0, float(probe_timeout) * 10.0)
         self.fleet_params_path = Path(fleet_params_path).expanduser().resolve()
-        self.fleet_manager = OperatorFleetManager(fleet_map_dir, self.fleet_params_path)
-        self.ros_links = RosRobotLinkManager(timeout=max(1.5, float(probe_timeout)))
+        self.fleet_manager = OperatorFleetManager(
+            fleet_map_dir,
+            self.fleet_params_path,
+            remote_adapter=self.grpc_adapter,
+        )
         self._lock = Lock()
         self._fleet_lock = RLock()
 
@@ -72,76 +76,51 @@ class OperatorAppState:
 
     def probe_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
         host = self._require_host(payload)
-        if self._payload_robot_type(payload) in ROS_ROBOT_TYPES:
-            result = self._probe_ros_robot_payload(payload, host)
-        else:
-            port = self._require_port(payload)
-            result = self._probe_robot(host, port)
+        robot_type = self._payload_robot_type(payload)
+        if robot_type not in GRPC_ROBOT_TYPES:
+            raise ValueError("robot transport must be grpc")
+        port = self._require_port(payload, default=DEFAULT_GRPC_PORT)
+        result = self._probe_grpc_robot(host, port)
         return {"ok": True, "probe": result}
 
     def add_robot_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
         host = self._require_host(payload)
         robot_type = self._payload_robot_type(payload)
-        if robot_type in ROS_ROBOT_TYPES:
-            probe = self._probe_ros_robot_payload(payload, host)
-            domain_id = self._require_domain_id(payload)
-            namespace = self._namespace_from_payload(payload)
+        if robot_type in GRPC_ROBOT_TYPES:
+            port = self._require_port(payload, default=DEFAULT_GRPC_PORT)
+            probe = self._probe_grpc_robot(host, port)
             identity = probe.get("identity", {})
             status = probe.get("status", {}) if isinstance(probe.get("status"), dict) else {}
             robot_name = str(
                 payload.get("name")
                 or identity.get("robotId")
+                or identity.get("name")
                 or status.get("robotId")
-                or DEFAULT_ROS_ROBOT_NAME
+                or f"robot@{host}"
             ).strip()
-            robot_id = str(payload.get("robotId") or payload.get("robot_id") or "").strip()
+            robot_id = str(payload.get("robotId") or payload.get("robot_id") or identity.get("robotId") or "").strip()
             if not robot_id:
-                robot_id = f"ros2:{domain_id}:{host}"
+                robot_id = f"grpc:{host}:{port}"
             robot = KnownRobot(
                 id=robot_id,
                 name=robot_name,
                 host=host,
-                port=0,
-                type="ros2",
-                domain_id=domain_id,
-                namespace=namespace,
-                status_topic=str(probe.get("statusTopic") or payload.get("statusTopic") or "/robot_status"),
-                cmd_vel_topic=str(probe.get("cmdVelTopic") or payload.get("cmdVelTopic") or "/cmd_vel"),
-                go_to_lm_topic=str(probe.get("goToLmTopic") or payload.get("goToLmTopic") or "/go_to_lm"),
+                port=port,
+                type="grpc",
                 last_seen=utc_now(),
                 last_identity=identity if isinstance(identity, dict) else None,
             )
             with self._lock:
                 self.registry.upsert(robot)
-            self._ensure_ros_robot_map_cache(robot.id)
             return {
                 "ok": True,
                 "robot": self._robot_payload(robot, probe=probe),
             }
-
-        port = self._require_port(payload)
-        probe = self._probe_robot(host, port)
-        identity = probe.get("identity", {})
-        robot_id = str(identity.get("robotId") or f"{host}:{port}").strip()
-        robot = KnownRobot(
-            id=f"{robot_id}@{host}:{port}",
-            name=robot_id,
-            host=host,
-            port=port,
-            last_seen=utc_now(),
-            last_identity=identity if isinstance(identity, dict) else None,
-        )
-        with self._lock:
-            self.registry.upsert(robot)
-        return {
-            "ok": True,
-            "robot": self._robot_payload(robot, probe=probe),
-        }
+        raise ValueError("robot transport must be grpc")
 
     def delete_robot_payload(self, robot_id: str) -> dict[str, Any]:
         if robot_id == FLEET_MANAGER_ID:
             raise ValueError("system robot entries cannot be removed")
-        self.ros_links.remove(robot_id)
         with self._lock:
             deleted = self.registry.remove(robot_id)
         if not deleted:
@@ -163,23 +142,23 @@ class OperatorAppState:
         *,
         allow_probe: bool = True,
     ) -> dict[str, Any]:
-        if robot.is_ros2:
+        if robot.is_grpc:
             if probe is None and allow_probe:
                 try:
-                    link = self._ensure_ros_link(robot)
-                    probe = link.sidebar_payload()
+                    probe = self._probe_grpc_robot(robot.host, robot.port)
                 except Exception as exc:
                     probe = {
                         "ok": False,
+                        "baseUrl": robot.base_url,
                         "online": False,
                         "error": str(exc),
                         "identity": robot.last_identity or None,
                         "status": None,
-                        "probed": True,
                     }
             if probe is None:
                 probe = {
                     "ok": False,
+                    "baseUrl": robot.base_url,
                     "online": False,
                     "identity": robot.last_identity or None,
                     "status": None,
@@ -187,12 +166,11 @@ class OperatorAppState:
                     "probed": False,
                 }
             payload = robot.to_dict()
-            identity = probe.get("identity") if isinstance(probe.get("identity"), dict) else robot.last_identity or None
             payload.update(
                 {
-                    "online": bool(probe.get("online", False)),
-                    "baseUrl": "",
-                    "identity": identity,
+                    "online": bool(probe.get("ok", False)),
+                    "baseUrl": str(probe.get("baseUrl") or robot.base_url),
+                    "identity": probe.get("identity") or robot.last_identity or None,
                     "status": probe.get("status") if isinstance(probe.get("status"), dict) else None,
                     "error": str(probe.get("error") or "").strip(),
                     "probed": bool(probe.get("probed", True)),
@@ -200,98 +178,49 @@ class OperatorAppState:
             )
             return payload
 
-        if probe is None and allow_probe:
-            try:
-                probe = self._probe_robot(robot.host, robot.port)
-            except RobotProbeError as exc:
-                probe = {
-                    "ok": False,
-                    "baseUrl": robot.base_url,
-                    "online": False,
-                    "error": str(exc),
-                    "identity": robot.last_identity or None,
-                    "status": None,
-                }
-            except Exception as exc:
-                probe = {
-                    "ok": False,
-                    "baseUrl": robot.base_url,
-                    "online": False,
-                    "error": str(exc),
-                    "identity": robot.last_identity or None,
-                    "status": None,
-                }
-        if probe is None:
-            probe = {
-                "ok": False,
-                "baseUrl": robot.base_url,
-                "online": False,
-                "identity": robot.last_identity or None,
-                "status": None,
-                "error": "",
-                "probed": False,
-            }
         payload = robot.to_dict()
         payload.update(
             {
-                "online": bool(probe.get("ok", False)),
-                "baseUrl": str(probe.get("baseUrl") or robot.base_url),
-                "identity": probe.get("identity") or robot.last_identity or None,
-                "status": probe.get("status") if isinstance(probe.get("status"), dict) else None,
-                "error": str(probe.get("error") or "").strip(),
-                "probed": bool(probe.get("probed", True)),
+                "online": False,
+                "baseUrl": "",
+                "identity": robot.last_identity or None,
+                "status": None,
+                "error": "unsupported robot transport; use grpc",
+                "probed": bool(allow_probe),
             }
         )
         return payload
 
-    def _probe_ros_robot_payload(self, payload: dict[str, Any], host: str) -> dict[str, Any]:
-        domain_id = self._require_domain_id(payload)
-        namespace = self._namespace_from_payload(payload)
-        robot_id = str(payload.get("robotId") or payload.get("robot_id") or f"ros2:{domain_id}:{host}").strip()
-        robot_name = str(payload.get("name") or DEFAULT_ROS_ROBOT_NAME).strip() or DEFAULT_ROS_ROBOT_NAME
-        robot = KnownRobot(
-            id=robot_id,
-            name=robot_name,
-            host=host,
-            port=0,
-            type="ros2",
-            domain_id=domain_id,
-            namespace=namespace,
-            status_topic=str(payload.get("statusTopic") or payload.get("status_topic") or "/robot_status").strip() or "/robot_status",
-            cmd_vel_topic=str(payload.get("cmdVelTopic") or payload.get("cmd_vel_topic") or "/cmd_vel").strip() or "/cmd_vel",
-            go_to_lm_topic=str(payload.get("goToLmTopic") or payload.get("go_to_lm_topic") or "/go_to_lm").strip() or "/go_to_lm",
-            last_seen=utc_now(),
-        )
-        link = self._ensure_ros_link(robot)
-        result = link.sidebar_payload()
-        result["ok"] = True
-        result["online"] = bool((result.get("status") or {}).get("connected"))
-        result["host"] = host
-        result["domainId"] = domain_id
-        result["namespace"] = namespace
-        result["statusTopic"] = robot.status_topic
-        result["cmdVelTopic"] = robot.cmd_vel_topic
-        result["goToLmTopic"] = robot.go_to_lm_topic
-        return result
-
-    def _ensure_ros_link(self, robot: KnownRobot):
-        if not robot.is_ros2:
-            raise ValueError(f"robot is not ROS2-backed: {robot.id}")
-        return self.ros_links.get(robot)
-
-    def _is_ros_robot_id(self, robot_id: str) -> bool:
+    def _is_grpc_robot_id(self, robot_id: str) -> bool:
         try:
-            return self.get_robot(robot_id).is_ros2
+            return self.get_robot(robot_id).is_grpc
         except ValueError:
             return False
 
-    def _probe_robot(self, host: str, port: int) -> dict[str, Any]:
+    def _grpc_endpoint(self, robot: KnownRobot) -> str:
+        if not robot.is_grpc:
+            raise ValueError(f"robot is not gRPC-backed: {robot.id}")
+        return robot.base_url
+
+    def _probe_grpc_robot(self, host: str, port: int) -> dict[str, Any]:
+        endpoint = f"grpc://{host}:{port}"
         try:
-            result = self.client.probe(host, port)
-        except RobotProbeError as exc:
-            raise RobotProbeError(f"{host}:{port} is not reachable: {exc}") from exc
-        result["online"] = True
-        return result
+            self.grpc_adapter.client.health(endpoint)
+            identity = self.grpc_adapter.identity(endpoint)
+            status_payload = self.grpc_adapter.status(endpoint)
+        except Exception as exc:
+            raise RobotProbeError(f"{endpoint} is not reachable: {exc}") from exc
+        robot_status = status_payload.get("robot", {})
+        if not isinstance(robot_status, dict):
+            robot_status = {}
+        return {
+            "ok": True,
+            "online": True,
+            "baseUrl": endpoint,
+            "identity": identity,
+            "status": robot_status,
+            "probed": True,
+        }
 
     def proxy_request(
         self,
@@ -303,67 +232,49 @@ class OperatorAppState:
         body: bytes | None = None,
     ) -> tuple[int, dict[str, str], bytes]:
         robot = self.get_robot(robot_id)
-        if robot.is_ros2:
-            return self._proxy_ros_robot_request(robot_id, method, path, body=body)
-        return self.client.request(robot.base_url, path, method=method, headers=headers, body=body)
+        if robot.is_grpc:
+            return self._proxy_grpc_robot_request(robot_id, method, path, body=body)
+        raise ValueError("unsupported robot transport; use grpc")
 
     def robot_maps_list_payload(self, robot_id: str) -> dict[str, Any]:
-        if self._is_ros_robot_id(robot_id):
-            return self.local_maps_payload(robot_id)
-        robot = self.get_robot(robot_id)
-        return self.client.request_json(robot.base_url, "/api/maps/list", timeout=self.map_timeout)
+        if self._is_grpc_robot_id(robot_id):
+            robot = self.get_robot(robot_id)
+            return self.grpc_adapter.list_maps(self._grpc_endpoint(robot))
+        raise ValueError("unsupported robot transport; use grpc")
 
     def robot_maps_active_payload(self, robot_id: str) -> dict[str, Any]:
-        if self._is_ros_robot_id(robot_id):
-            active_name = self.map_cache.active_map_name(robot_id)
-            active_payload = self.map_cache.load_active_map(robot_id)
-            signature = str(active_payload.get("signature") or "") if isinstance(active_payload, dict) else ""
-            map_dir = str(active_payload.get("mapDir") or "") if isinstance(active_payload, dict) else ""
-            return {
-                "ok": True,
-                "mapName": active_name,
-                "mapId": active_name,
-                "mapDir": map_dir,
-                "signature": signature,
-            }
-        robot = self.get_robot(robot_id)
-        return self.client.request_json(robot.base_url, "/api/maps/active", timeout=self.map_timeout)
+        if self._is_grpc_robot_id(robot_id):
+            robot = self.get_robot(robot_id)
+            active = self.grpc_adapter.active_map(self._grpc_endpoint(robot))
+            if not active.get("signature"):
+                try:
+                    bundle = self.grpc_adapter.get_map_bundle(self._grpc_endpoint(robot), str(active.get("mapName") or ""))
+                    active["signature"] = str(bundle.get("signature") or "")
+                except Exception:
+                    active.setdefault("signature", "")
+            return active
+        raise ValueError("unsupported robot transport; use grpc")
 
     def robot_params_payload(self, robot_id: str) -> dict[str, Any]:
         robot = self.get_robot(robot_id)
-        if robot.is_ros2:
+        if robot.is_grpc:
             return {
                 "ok": True,
                 "robotId": robot_id,
-                "path": "ros2-topics",
+                "path": "grpc",
                 "params": {
-                    "driver": "operator_app.ros_robot_bridge",
+                    "driver": "robot_grpc_api",
+                    "endpoint": robot.base_url,
                     "host": robot.host,
-                    "domain_id": robot.domain_id,
-                    "namespace": robot.namespace,
-                    "status_topic": robot.status_topic,
-                    "cmd_vel_topic": robot.cmd_vel_topic,
-                    "go_to_lm_topic": robot.go_to_lm_topic,
+                    "port": robot.port,
                 },
             }
-        params = self.client.request_json(robot.base_url, "/api/params", timeout=self.map_timeout)
-        return {"ok": True, "robotId": robot_id, "path": "/api/params", "params": params}
+        raise ValueError("unsupported robot transport; use grpc")
 
     def save_robot_params_payload(self, robot_id: str, payload: dict[str, Any]) -> dict[str, Any]:
-        if self._is_ros_robot_id(robot_id):
+        if self._is_grpc_robot_id(robot_id):
             return {"ok": True, "robotId": robot_id, "saved": self.robot_params_payload(robot_id)}
-        robot = self.get_robot(robot_id)
-        params_payload = payload.get("params")
-        if not isinstance(params_payload, dict):
-            params_payload = payload
-        result = self.client.request_json(
-            robot.base_url,
-            "/api/params",
-            method="POST",
-            payload=params_payload,
-            timeout=self.map_timeout,
-        )
-        return {"ok": True, "robotId": robot_id, "saved": result}
+        raise ValueError("unsupported robot transport; use grpc")
 
     def fleet_params_payload(self) -> dict[str, Any]:
         with self._fleet_lock:
@@ -681,20 +592,19 @@ class OperatorAppState:
     def pull_robot_map_payload(self, robot_id: str, payload: dict[str, Any]) -> dict[str, Any]:
         robot = self.get_robot(robot_id)
         map_name = str(payload.get("mapName") or "").strip()
-        path = "/api/maps/pull"
-        if map_name:
-            path = f"{path}?name={map_name}"
-        result = self.client.request_json(robot.base_url, path, timeout=self.map_timeout)
-        local_name = str(result.get("mapName") or map_name or "active").strip() or "active"
-        cached = self.map_cache.save_pulled_map(robot_id, result, activate=True)
-        return {
-            "ok": True,
-            "pulled": result,
-            "local": {
-                "mapName": str(cached.get("mapName") or local_name),
-                "savedAt": str(cached.get("savedAt") or ""),
-            },
-        }
+        if robot.is_grpc:
+            result = self.grpc_adapter.get_map_bundle(self._grpc_endpoint(robot), map_name)
+            local_name = str(result.get("mapName") or map_name or "active").strip() or "active"
+            cached = self.map_cache.save_pulled_map(robot_id, result, activate=True)
+            return {
+                "ok": True,
+                "pulled": result,
+                "local": {
+                    "mapName": str(cached.get("mapName") or local_name),
+                    "savedAt": str(cached.get("savedAt") or ""),
+                },
+            }
+        raise ValueError("unsupported robot transport; use grpc")
 
     def local_maps_payload(self, robot_id: str) -> dict[str, Any]:
         self.get_robot(robot_id)
@@ -770,6 +680,7 @@ class OperatorAppState:
     def push_robot_map_payload(self, robot_id: str, payload: dict[str, Any]) -> dict[str, Any]:
         robot = self.get_robot(robot_id)
         editable_map = payload.get("map")
+        cached: dict[str, Any] | None = None
         if not isinstance(editable_map, dict):
             local_name = str(payload.get("localMapName") or payload.get("mapName") or "").strip()
             cached = self.map_cache.load_map(robot_id, local_name)
@@ -782,45 +693,43 @@ class OperatorAppState:
             raise ValueError("map payload is required")
         target_map_name = str(payload.get("mapName") or editable_map.get("mapName") or "").strip()
         source_map_name = str(payload.get("sourceMapName") or target_map_name).strip()
-        output_name = str(payload.get("outputName") or "").strip()
-        if not output_name and target_map_name and source_map_name and target_map_name != source_map_name:
-            output_name = target_map_name
-        request_payload = {
-            "map": editable_map,
-            "mapName": target_map_name,
-            "sourceMapName": source_map_name,
-            "outputName": output_name,
-            "overwriteOutput": bool(payload.get("overwriteOutput", False)),
-        }
-        result = self.client.request_json(
-            robot.base_url,
-            "/api/maps/push",
-            method="POST",
-            payload=request_payload,
-            timeout=self.map_timeout,
-        )
-        local_name = str(result.get("mapName") or request_payload.get("outputName") or request_payload.get("mapName") or "map").strip()
-        cached = self.map_cache.save_map(
-            robot_id,
-            local_name,
-            result,
-            source_map_name=str(result.get("mapName") or local_name),
-        )
-        return {"ok": True, "pushed": result, "local": cached}
+        if robot.is_grpc:
+            local_name = str(payload.get("localMapName") or target_map_name or source_map_name or editable_map.get("mapName") or "").strip()
+            if not local_name:
+                raise ValueError("mapName is required")
+            if cached is None:
+                cached = self.map_cache.save_map(
+                    robot_id,
+                    local_name,
+                    editable_map,
+                    source_map_name=source_map_name or local_name,
+                    activate=True,
+                )
+            local_map_dir = Path(str(cached.get("path") or cached.get("mapDir") or ""))
+            if not local_map_dir.is_dir():
+                loaded_cache = self.map_cache.load_map(robot_id, local_name)
+                local_map_dir = Path(str(loaded_cache.get("mapDir") or ""))
+            if not local_map_dir.is_dir():
+                raise ValueError("local map bundle is not available; pull map first")
+            bundle = build_editable_map_bundle_payload(local_map_dir)
+            if target_map_name:
+                bundle["mapName"] = target_map_name
+            result = self.grpc_adapter.put_map_bundle(
+                self._grpc_endpoint(robot),
+                bundle,
+                map_name=target_map_name or str(bundle.get("mapName") or local_name),
+                activate=False,
+            )
+            synced = self.map_cache.mark_synced(
+                robot_id,
+                local_name,
+                robot_signature=str(result.get("signature") or bundle.get("signature") or ""),
+                robot_map_name=str(result.get("mapName") or target_map_name or local_name),
+            )
+            return {"ok": True, "pushed": result, "local": synced}
+        raise ValueError("unsupported robot transport; use grpc")
 
     def pull_sync_payload(self, robot_id: str) -> dict[str, Any]:
-        if self._is_ros_robot_id(robot_id):
-            self._ensure_ros_robot_map_cache(robot_id)
-            active_name = self.map_cache.active_map_name(robot_id)
-            local_active = self.map_cache.load_active_map(robot_id)
-            return {
-                "ok": True,
-                "changed": False,
-                "message": f"Using local ROS2 robot map {active_name or '-'}; no robot IP pull is needed.",
-                "robotActiveMapName": active_name,
-                "localActiveMapName": active_name,
-                "local": local_active,
-            }
         robot_active = self.robot_maps_active_payload(robot_id)
         robot_active_name = str(robot_active.get("mapName") or "").strip()
         local_active = self.map_cache.load_active_map(robot_id)
@@ -859,39 +768,17 @@ class OperatorAppState:
         }
 
     def load_robot_map_payload(self, robot_id: str, payload: dict[str, Any]) -> dict[str, Any]:
-        if self._is_ros_robot_id(robot_id):
+        if self._is_grpc_robot_id(robot_id):
+            robot = self.get_robot(robot_id)
             map_name = str(payload.get("mapName") or payload.get("folder") or "").strip()
             if not map_name:
                 raise ValueError("mapName is required")
+            loaded = self.grpc_adapter.load_map(self._grpc_endpoint(robot), map_name)
             self.map_cache.set_active_map(robot_id, map_name)
-            return {
-                "ok": True,
-                "mapName": map_name,
-                "mapId": map_name,
-                "mapDir": str(self.map_cache.load_map(robot_id, map_name).get("mapDir") or ""),
-            }
-        robot = self.get_robot(robot_id)
-        map_name = str(payload.get("mapName") or payload.get("folder") or "").strip()
-        if not map_name:
-            raise ValueError("mapName is required")
-        return self.client.request_json(
-            robot.base_url,
-            "/api/maps/load",
-            method="POST",
-            payload={"mapName": map_name},
-            timeout=self.map_timeout,
-        )
+            return loaded
+        raise ValueError("unsupported robot transport; use grpc")
 
     def push_sync_payload(self, robot_id: str) -> dict[str, Any]:
-        if self._is_ros_robot_id(robot_id):
-            active_name = self.map_cache.active_map_name(robot_id)
-            return {
-                "ok": True,
-                "changed": False,
-                "message": "ROS2 local robot has no robot-side HTTP map push. Local map kept active.",
-                "robotActiveMapName": active_name,
-                "localActiveMapName": active_name,
-            }
         robot_active = self.robot_maps_active_payload(robot_id)
         robot_active_name = str(robot_active.get("mapName") or "").strip()
         local_active = self.map_cache.load_active_map(robot_id)
@@ -943,21 +830,14 @@ class OperatorAppState:
         }
 
     def _fetch_robot_map_payload(self, robot_id: str, map_name: str) -> dict[str, Any]:
-        if self._is_ros_robot_id(robot_id):
-            active_name = map_name or self.map_cache.active_map_name(robot_id)
-            payload = self.map_cache.load_map(robot_id, active_name)
-            editable = payload.get("map")
-            if not isinstance(editable, dict):
-                raise ValueError("local ROS2 robot map is not available")
-            return editable
-        robot = self.get_robot(robot_id)
-        path = "/api/maps/pull"
-        if map_name:
-            path = f"{path}?name={map_name}"
-        return self.client.request_json(robot.base_url, path, timeout=self.map_timeout)
+        if self._is_grpc_robot_id(robot_id):
+            robot = self.get_robot(robot_id)
+            return self.grpc_adapter.get_map_bundle(self._grpc_endpoint(robot), map_name)
+        raise ValueError("unsupported robot transport; use grpc")
 
-    def _proxy_ros_robot_request(self, robot_id: str, method: str, path: str, *, body: bytes | None) -> tuple[int, dict[str, str], bytes]:
-        link = self._ensure_ros_link(self.get_robot(robot_id))
+    def _proxy_grpc_robot_request(self, robot_id: str, method: str, path: str, *, body: bytes | None) -> tuple[int, dict[str, str], bytes]:
+        robot = self.get_robot(robot_id)
+        endpoint = self._grpc_endpoint(robot)
         parsed = urlparse(path)
         route = parsed.path.rstrip("/") or "/"
         payload: dict[str, Any] = {}
@@ -969,57 +849,37 @@ class OperatorAppState:
             if isinstance(decoded, dict):
                 payload = decoded
         method = method.upper()
-        if method == "GET" and route == "/api/robot/identity":
-            return self._json_response_tuple(link.identity_payload())
-        if method == "GET" and route == "/api/robot/status":
-            return self._json_response_tuple(link.status_payload())
-        if method == "POST" and route == "/api/robot/teleop":
-            return link.request(
-                "/api/robot/teleop",
-                method="POST",
-                headers={"Content-Type": "application/json"},
-                body=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
-            )
-        if method == "POST" and route == "/api/robot/teleop/stop":
-            return link.request("/api/robot/teleop/stop", method="POST", headers={"Content-Type": "application/json"}, body=b"{}")
-        if method == "POST" and route == "/api/robot/stop":
-            return link.request("/api/robot/stop", method="POST", headers={"Content-Type": "application/json"}, body=b"{}")
-        if method == "POST" and route == "/api/robot/route/cancel":
-            return link.request("/api/robot/route/cancel", method="POST", headers={"Content-Type": "application/json"}, body=b"{}")
-        if method == "POST" and route == "/api/robot/route/execute":
-            return link.request(
-                "/api/robot/route/execute",
-                method="POST",
-                headers={"Content-Type": "application/json"},
-                body=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
-            )
-        return self._json_response_tuple({"ok": False, "error": f"unsupported local ROS2 robot path: {method} {route}"}, status=404)
+        try:
+            if method == "GET" and route == "/health":
+                return self._json_response_tuple(self.grpc_adapter.client.health(endpoint))
+            if method == "GET" and route == "/api/robot/identity":
+                return self._json_response_tuple(self.grpc_adapter.identity(endpoint))
+            if method == "GET" and route == "/api/robot/status":
+                return self._json_response_tuple(self.grpc_adapter.status(endpoint))
+            if method == "POST" and route == "/api/robot/teleop":
+                return self._json_response_tuple(
+                    self.grpc_adapter.teleop(
+                        endpoint,
+                        linear=float(payload.get("linear", 0.0) or 0.0),
+                        angular=float(payload.get("angular", 0.0) or 0.0),
+                        timeout_ms=int(payload.get("timeoutMs", 350) or 350),
+                    )
+                )
+            if method == "POST" and route == "/api/robot/teleop/stop":
+                return self._json_response_tuple(self.grpc_adapter.teleop_stop(endpoint))
+            if method == "POST" and route == "/api/robot/stop":
+                return self._json_response_tuple(self.grpc_adapter.stop(endpoint))
+            if method == "POST" and route == "/api/robot/route/cancel":
+                return self._json_response_tuple(self.grpc_adapter.cancel_route(endpoint))
+            if method == "POST" and route == "/api/robot/route/execute":
+                return self._json_response_tuple(self.grpc_adapter.execute_route(endpoint, payload))
+        except Exception as exc:
+            return self._json_response_tuple({"ok": False, "error": str(exc)}, status=500)
+        return self._json_response_tuple({"ok": False, "error": f"unsupported gRPC robot path: {method} {route}"}, status=404)
 
     def _json_response_tuple(self, payload: dict[str, Any], *, status: int = 200) -> tuple[int, dict[str, str], bytes]:
         encoded = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         return status, {"Content-Type": "application/json; charset=utf-8"}, encoded
-
-    def _ensure_ros_robot_map_cache(self, robot_id: str) -> None:
-        if self.map_cache.active_map_name(robot_id):
-            return
-        target_dir = self.map_cache._robot_dir(robot_id)
-        source_candidates = [
-            self.map_cache.root / "robot1_127.0.0.1_8790",
-            self.map_cache.root / FLEET_MANAGER_ID,
-            self.map_cache.root / "fleet_manager",
-        ]
-        source_dir = next((candidate for candidate in source_candidates if candidate.is_dir()), None)
-        if source_dir is None:
-            return
-        target_dir.mkdir(parents=True, exist_ok=True)
-        for item in source_dir.iterdir():
-            destination = target_dir / item.name
-            if destination.exists():
-                continue
-            if item.is_dir():
-                shutil.copytree(item, destination)
-            else:
-                shutil.copy2(item, destination)
 
     @staticmethod
     def _require_host(payload: dict[str, Any]) -> str:
@@ -1031,15 +891,18 @@ class OperatorAppState:
                 f"{host} is a listen/bind address, not a robot address. "
                 "Use 127.0.0.1 on the same PC or the robot LAN IP like 192.168.x.x."
             )
+        if any(ch.isspace() for ch in host):
+            raise ValueError("robot host must not contain whitespace")
         try:
             ipaddress.ip_address(host)
-        except ValueError as exc:
-            raise ValueError("robot host must be an IP address for ROS2 CycloneDDS peer mode") from exc
+        except ValueError:
+            if not all(ch.isalnum() or ch in ".-_" for ch in host):
+                raise ValueError("robot host must be an IP address or DNS name")
         return host
 
     @staticmethod
-    def _require_port(payload: dict[str, Any]) -> int:
-        raw = payload.get("port", 8790)
+    def _require_port(payload: dict[str, Any], *, default: int = DEFAULT_GRPC_PORT) -> int:
+        raw = payload.get("port", default)
         try:
             port = int(raw)
         except (TypeError, ValueError) as exc:
@@ -1050,22 +913,7 @@ class OperatorAppState:
 
     @staticmethod
     def _payload_robot_type(payload: dict[str, Any]) -> str:
-        return str(payload.get("type") or payload.get("mode") or "ros2").strip().lower() or "ros2"
-
-    @staticmethod
-    def _namespace_from_payload(payload: dict[str, Any]) -> str:
-        return str(payload.get("namespace") or payload.get("robotNamespace") or "").strip().strip("/")
-
-    @staticmethod
-    def _require_domain_id(payload: dict[str, Any]) -> int:
-        raw = payload.get("domainId", payload.get("domain_id", os.environ.get("ROS_DOMAIN_ID", "0")))
-        try:
-            domain_id = int(raw)
-        except (TypeError, ValueError) as exc:
-            raise ValueError("domainId must be an integer") from exc
-        if domain_id < 0 or domain_id > 232:
-            raise ValueError("domainId must be in range 0..232")
-        return domain_id
+        return str(payload.get("type") or payload.get("mode") or "grpc").strip().lower() or "grpc"
 
 
 class OperatorRequestHandler(SimpleHTTPRequestHandler):
@@ -1176,7 +1024,9 @@ class OperatorRequestHandler(SimpleHTTPRequestHandler):
             return
         state = self._require_state()
         try:
-            link = state._ensure_ros_link(state.get_robot(robot_id))
+            robot = state.get_robot(robot_id)
+            if not robot.is_grpc:
+                raise ValueError("unsupported robot transport; use grpc")
         except Exception as exc:
             self._send_error_json(404, str(exc))
             return
@@ -1204,7 +1054,7 @@ class OperatorRequestHandler(SimpleHTTPRequestHandler):
                     {
                         "ok": True,
                         "type": "state",
-                        "state": link.status_payload(),
+                        "state": state.grpc_adapter.status(state._grpc_endpoint(robot)),
                         "sentAt": utc_now(),
                     }
                 )
@@ -1751,5 +1601,4 @@ def main() -> None:
     except KeyboardInterrupt:
         pass
     finally:
-        state.ros_links.close()
         server.server_close()

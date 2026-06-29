@@ -4,12 +4,19 @@ from setuptools import find_packages, setup
 
 
 package_name = "real_robot"
+packages = find_packages(exclude=["test"]) + ["robot_grpc_api", "robot_grpc_api.proto"]
 
 
 setup(
     name=package_name,
     version="0.0.0",
-    packages=find_packages(exclude=["test"]),
+    packages=packages,
+    package_dir={
+        "robot_grpc_api": "../robot_grpc_api",
+        "robot_grpc_api.proto": "../robot_grpc_api/proto",
+    },
+    package_data={"robot_grpc_api.proto": ["*.proto"]},
+    include_package_data=True,
     data_files=[
         ("share/ament_index/resource_index/packages", [f"resource/{package_name}"]),
         (f"share/{package_name}", ["package.xml"]),
@@ -25,6 +32,7 @@ setup(
     entry_points={
         "console_scripts": [
             "robot_driver=real_robot.driver:main",
+            "robot_api_server=robot_grpc_api.ros_server_main:main",
         ],
     },
 )

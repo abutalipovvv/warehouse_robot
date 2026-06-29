@@ -5,7 +5,12 @@ from .route_core import (
     DEFAULT_ROUTE_PARAMS,
     LmRoutePlanner,
     WarehouseMapLoader,
+    build_editable_map_bundle_payload,
+    build_editable_map_payload,
+    editable_map_signature,
+    list_editable_maps,
     load_route_params,
+    restore_editable_map_bundle,
     save_route_params,
 )
 
@@ -43,7 +48,12 @@ __all__ = [
     "RobotRouteNode",
     "RoutePoint",
     "WarehouseMapLoader",
+    "build_editable_map_bundle_payload",
+    "build_editable_map_payload",
+    "editable_map_signature",
+    "list_editable_maps",
     "load_route_params",
+    "restore_editable_map_bundle",
     "route_update_is_stale",
     "save_route_params",
 ]
