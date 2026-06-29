@@ -7,6 +7,8 @@ source /opt/ros/jazzy/setup.bash
 
 if [ -f "${REPO_ROOT}/install/local_setup.bash" ]; then
   source "${REPO_ROOT}/install/local_setup.bash"
+elif [ -f "${REPO_ROOT}/aivison_robot/install/local_setup.bash" ]; then
+  source "${REPO_ROOT}/aivison_robot/install/local_setup.bash"
 elif [ -f "${REPO_ROOT}/robot/install/local_setup.bash" ]; then
   source "${REPO_ROOT}/robot/install/local_setup.bash"
 fi
