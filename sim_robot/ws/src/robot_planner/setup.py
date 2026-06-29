@@ -2,12 +2,14 @@ from setuptools import find_packages, setup
 
 
 package_name = "robot_planner"
+packages = find_packages() + ["warehouse_maps"]
 
 
 setup(
     name=package_name,
     version="0.0.0",
-    packages=find_packages(),
+    packages=packages,
+    package_dir={"warehouse_maps": "../../../../warehouse_maps"},
     data_files=[
         ("share/ament_index/resource_index/packages", [f"resource/{package_name}"]),
         (f"share/{package_name}", ["package.xml"]),

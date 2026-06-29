@@ -1,4 +1,4 @@
-from warehouse_mapf.lm_cbs import (
+from .lm_cbs import (
     Conflict,
     Constraints,
     EdgeConstraint,

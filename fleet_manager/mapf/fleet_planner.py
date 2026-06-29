@@ -5,7 +5,7 @@ from typing import Any
 
 from fleet_manager.route_core import GraphEdge, Landmark, LmRoutePlanner, PlannedRoute
 
-from .lm_cbs import LmCBSPlanner, LmRobotRequest
+from warehouse_mapf import LmCBSPlanner, LmRobotRequest
 
 
 class FleetMapfPlanner:
