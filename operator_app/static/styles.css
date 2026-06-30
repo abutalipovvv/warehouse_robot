@@ -1828,6 +1828,16 @@ body[data-fleet-page="fleet"] #mapSyncStatus {
   stroke-width: 3;
 }
 
+.scan-point-cloud {
+  fill: none;
+  stroke: #00b894;
+  stroke-width: 8.2;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+  opacity: 0.9;
+  pointer-events: none;
+}
+
 .robot-heading {
   stroke: #143158;
   stroke-width: 3;

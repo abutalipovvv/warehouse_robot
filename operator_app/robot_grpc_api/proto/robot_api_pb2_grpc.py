@@ -45,10 +45,20 @@ class RobotApiStub:
             request_serializer=robot__api__pb2.TeleopRequest.SerializeToString,
             response_deserializer=robot__api__pb2.CommandResponse.FromString,
         )
+        self.TeleopStream = channel.stream_stream(
+            "/robot.grpc.v1.RobotApi/TeleopStream",
+            request_serializer=robot__api__pb2.TeleopRequest.SerializeToString,
+            response_deserializer=robot__api__pb2.CommandResponse.FromString,
+        )
         self.Stop = channel.unary_unary(
             "/robot.grpc.v1.RobotApi/Stop",
             request_serializer=robot__api__pb2.StopRequest.SerializeToString,
             response_deserializer=robot__api__pb2.CommandResponse.FromString,
+        )
+        self.WatchLaserScan = channel.unary_stream(
+            "/robot.grpc.v1.RobotApi/WatchLaserScan",
+            request_serializer=robot__api__pb2.WatchLaserScanRequest.SerializeToString,
+            response_deserializer=robot__api__pb2.LaserScanFrame.FromString,
         )
         self.ListMaps = channel.unary_unary(
             "/robot.grpc.v1.RobotApi/ListMaps",
@@ -118,7 +128,17 @@ class RobotApiServicer:
         context.set_details("Method not implemented!")
         raise NotImplementedError("Method not implemented!")
 
+    def TeleopStream(self, request_iterator, context):
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details("Method not implemented!")
+        raise NotImplementedError("Method not implemented!")
+
     def Stop(self, request, context):
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details("Method not implemented!")
+        raise NotImplementedError("Method not implemented!")
+
+    def WatchLaserScan(self, request, context):
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details("Method not implemented!")
         raise NotImplementedError("Method not implemented!")
@@ -191,10 +211,20 @@ def add_RobotApiServicer_to_server(servicer, server):
             request_deserializer=robot__api__pb2.TeleopRequest.FromString,
             response_serializer=robot__api__pb2.CommandResponse.SerializeToString,
         ),
+        "TeleopStream": grpc.stream_stream_rpc_method_handler(
+            servicer.TeleopStream,
+            request_deserializer=robot__api__pb2.TeleopRequest.FromString,
+            response_serializer=robot__api__pb2.CommandResponse.SerializeToString,
+        ),
         "Stop": grpc.unary_unary_rpc_method_handler(
             servicer.Stop,
             request_deserializer=robot__api__pb2.StopRequest.FromString,
             response_serializer=robot__api__pb2.CommandResponse.SerializeToString,
+        ),
+        "WatchLaserScan": grpc.unary_stream_rpc_method_handler(
+            servicer.WatchLaserScan,
+            request_deserializer=robot__api__pb2.WatchLaserScanRequest.FromString,
+            response_serializer=robot__api__pb2.LaserScanFrame.SerializeToString,
         ),
         "ListMaps": grpc.unary_unary_rpc_method_handler(
             servicer.ListMaps,

@@ -3,8 +3,10 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import queue
 import select
 import struct
+import threading
 import time
 from http.server import SimpleHTTPRequestHandler
 from urllib.parse import parse_qs, unquote, urlparse
@@ -23,6 +25,13 @@ class OperatorRequestHandler(SimpleHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
     app_state: OperatorAppState | None = None
 
+    def end_headers(self) -> None:
+        static_path = urlparse(self.path).path
+        if static_path in {"/", "/index.html", "/app.js", "/styles.css"} or static_path in APP_ROUTES:
+            self.send_header("Cache-Control", "no-store, max-age=0")
+            self.send_header("Pragma", "no-cache")
+        super().end_headers()
+
     def do_GET(self) -> None:
         try:
             parsed = urlparse(self.path)
@@ -32,6 +41,12 @@ class OperatorRequestHandler(SimpleHTTPRequestHandler):
                 return
             if path == "/ws/robot/status":
                 self._handle_robot_status_ws(parsed)
+                return
+            if path == "/ws/robot/scan":
+                self._handle_robot_scan_ws(parsed)
+                return
+            if path == "/ws/robot/teleop":
+                self._handle_robot_teleop_ws(parsed)
                 return
             if path == "/health":
                 self._send_json({"ok": True})
@@ -170,6 +185,157 @@ class OperatorRequestHandler(SimpleHTTPRequestHandler):
             except (BrokenPipeError, ConnectionError, OSError):
                 return
 
+    def _handle_robot_scan_ws(self, parsed) -> None:
+        robot_id = str(parse_qs(parsed.query).get("robotId", [""])[0] or "").strip()
+        if not robot_id:
+            self._send_error_json(400, "robotId is required")
+            return
+        state = self._require_state()
+        try:
+            robot = state.get_robot(robot_id)
+            if not robot.is_grpc:
+                raise ValueError("unsupported robot transport; use grpc")
+        except Exception as exc:
+            self._send_error_json(404, str(exc))
+            return
+        if not self._accept_websocket():
+            return
+
+        query = parse_qs(parsed.query)
+        topic = str(query.get("topic", ["/scan"])[0] or "/scan")
+        try:
+            hz = float(query.get("hz", ["1"])[0] or 1.0)
+        except (TypeError, ValueError):
+            hz = 1.0
+        include_intensities = str(query.get("includeIntensities", ["0"])[0] or "0").strip().lower() in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }
+
+        try:
+            for frame in state.watch_robot_laser_scan(
+                robot_id,
+                topic=topic,
+                hz=hz,
+                include_intensities=include_intensities,
+            ):
+                if self._ws_client_closed():
+                    return
+                payload = dict(frame)
+                payload["type"] = "scan"
+                payload["robotId"] = robot_id
+                payload["sentAt"] = utc_now()
+                self._send_ws_json(payload)
+        except (BrokenPipeError, ConnectionError, OSError):
+            return
+        except Exception as exc:  # pragma: no cover - defensive websocket path
+            try:
+                self._send_ws_json({"ok": False, "type": "error", "error": str(exc)})
+            except (BrokenPipeError, ConnectionError, OSError):
+                return
+
+    def _handle_robot_teleop_ws(self, parsed) -> None:
+        robot_id = str(parse_qs(parsed.query).get("robotId", [""])[0] or "").strip()
+        if not robot_id:
+            self._send_error_json(400, "robotId is required")
+            return
+        state = self._require_state()
+        try:
+            robot = state.get_robot(robot_id)
+            if not robot.is_grpc:
+                raise ValueError("unsupported robot transport; use grpc")
+        except Exception as exc:
+            self._send_error_json(404, str(exc))
+            return
+        if not self._accept_websocket():
+            return
+
+        commands: queue.Queue[object] = queue.Queue(maxsize=4)
+        responses: queue.Queue[dict[str, object]] = queue.Queue()
+        stop_marker = object()
+
+        def put_latest(item: object) -> None:
+            while True:
+                try:
+                    commands.put_nowait(item)
+                    return
+                except queue.Full:
+                    try:
+                        commands.get_nowait()
+                    except queue.Empty:
+                        return
+
+        def command_iter():
+            while True:
+                item = commands.get()
+                if item is stop_marker:
+                    return
+                yield item
+
+        def grpc_worker() -> None:
+            try:
+                for response in state.robot_teleop_stream(robot_id, command_iter()):
+                    responses.put({"ok": True, "type": "teleopAck", "response": response, "sentAt": utc_now()})
+            except Exception as exc:
+                responses.put({"ok": False, "type": "error", "error": str(exc), "sentAt": utc_now()})
+
+        worker = threading.Thread(
+            target=grpc_worker,
+            name=f"operator-robot-teleop-{robot_id}",
+            daemon=True,
+        )
+        worker.start()
+
+        try:
+            while True:
+                message = self._read_ws_json(timeout_sec=0.05)
+                if isinstance(message, dict):
+                    if message.get("__closed"):
+                        break
+                    command = self._teleop_command_from_ws(message)
+                    if command is not None:
+                        put_latest(command)
+                while True:
+                    try:
+                        response = responses.get_nowait()
+                    except queue.Empty:
+                        break
+                    self._send_ws_json(response)
+                    if response.get("ok") is False and response.get("type") == "error":
+                        return
+        except (BrokenPipeError, ConnectionError, OSError):
+            return
+        finally:
+            while True:
+                try:
+                    commands.get_nowait()
+                except queue.Empty:
+                    break
+            put_latest({"linear": 0.0, "angular": 0.0, "timeoutMs": 80})
+            put_latest(stop_marker)
+            worker.join(timeout=0.5)
+
+    def _accept_websocket(self) -> bool:
+        if not self._is_websocket_upgrade():
+            self._send_error_json(400, "expected websocket upgrade")
+            return False
+        key = self.headers.get("Sec-WebSocket-Key", "").strip()
+        if not key:
+            self._send_error_json(400, "missing Sec-WebSocket-Key")
+            return False
+        accept = base64.b64encode(
+            hashlib.sha1(f"{key}{WEBSOCKET_GUID}".encode("ascii")).digest()
+        ).decode("ascii")
+        self.send_response(101, "Switching Protocols")
+        self.send_header("Upgrade", "websocket")
+        self.send_header("Connection", "Upgrade")
+        self.send_header("Sec-WebSocket-Accept", accept)
+        self.end_headers()
+        self.close_connection = True
+        return True
+
     def _is_websocket_upgrade(self) -> bool:
         upgrade = self.headers.get("Upgrade", "").strip().lower()
         connection = self.headers.get("Connection", "").strip().lower()
@@ -199,45 +365,75 @@ class OperatorRequestHandler(SimpleHTTPRequestHandler):
         return bytes([first_byte, 127]) + struct.pack("!Q", length) + payload
 
     def _ws_client_closed(self) -> bool:
-        readable, _, _ = select.select([self.connection], [], [], 0)
+        frame = self._read_ws_frame(timeout_sec=0.0)
+        return frame is not None and frame[0] == 0x8
+
+    def _read_ws_json(self, *, timeout_sec: float = 0.0) -> dict[str, object] | None:
+        frame = self._read_ws_frame(timeout_sec=timeout_sec)
+        if frame is None:
+            return None
+        opcode, payload = frame
+        if opcode == 0x8:
+            return {"__closed": True}
+        if opcode != 0x1:
+            return None
+        try:
+            decoded = json.loads(payload.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            return None
+        return decoded if isinstance(decoded, dict) else None
+
+    def _read_ws_frame(self, *, timeout_sec: float = 0.0) -> tuple[int, bytes] | None:
+        readable, _, _ = select.select([self.connection], [], [], max(0.0, float(timeout_sec)))
         if not readable:
-            return False
+            return None
         previous_timeout = self.connection.gettimeout()
         self.connection.settimeout(0.05)
         try:
             header = self._recv_exact(2)
             if not header:
-                return True
+                return (0x8, b"")
             opcode = header[0] & 0x0F
             masked = bool(header[1] & 0x80)
             length = header[1] & 0x7F
             if length == 126:
                 extended = self._recv_exact(2)
                 if not extended:
-                    return True
+                    return (0x8, b"")
                 length = struct.unpack("!H", extended)[0]
             elif length == 127:
                 extended = self._recv_exact(8)
                 if not extended:
-                    return True
+                    return (0x8, b"")
                 length = struct.unpack("!Q", extended)[0]
             mask = self._recv_exact(4) if masked else b""
             payload = self._recv_exact(length) if length else b""
             if length and not payload:
-                return True
+                return (0x8, b"")
             if masked and mask:
                 payload = bytes(byte ^ mask[index % 4] for index, byte in enumerate(payload))
-            if opcode == 0x8:
-                return True
             if opcode == 0x9:
                 self.connection.sendall(self._ws_frame(payload, opcode=0xA))
-            return False
+                return None
+            return opcode, payload
         except TimeoutError:
-            return False
+            return None
         except (ConnectionError, OSError):
-            return True
+            return (0x8, b"")
         finally:
             self.connection.settimeout(previous_timeout)
+
+    @staticmethod
+    def _teleop_command_from_ws(message: dict[str, object]) -> dict[str, object] | None:
+        if str(message.get("type") or "teleop") == "stop":
+            return {"linear": 0.0, "angular": 0.0, "timeoutMs": 80}
+        try:
+            linear = float(message.get("linear", 0.0) or 0.0)
+            angular = float(message.get("angular", 0.0) or 0.0)
+            timeout_ms = int(message.get("timeoutMs", message.get("timeout_ms", 350)) or 350)
+        except (TypeError, ValueError):
+            return None
+        return {"linear": linear, "angular": angular, "timeoutMs": max(80, timeout_ms)}
 
     def _recv_exact(self, size: int) -> bytes:
         chunks = []

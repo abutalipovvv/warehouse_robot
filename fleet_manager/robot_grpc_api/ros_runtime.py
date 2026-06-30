@@ -16,8 +16,6 @@ NAV2_RUNTIME_PARAMETERS: tuple[tuple[str, str, str], ...] = (
     ("nav2.amcl.min_particles", "/amcl/set_parameters", "min_particles"),
     ("nav2.amcl.max_particles", "/amcl/set_parameters", "max_particles"),
     ("nav2.controller_server.controller_frequency", "/controller_server/set_parameters", "controller_frequency"),
-    ("nav2.controller_server.xy_goal_tolerance", "/controller_server/set_parameters", "general_goal_checker.xy_goal_tolerance"),
-    ("nav2.controller_server.yaw_goal_tolerance", "/controller_server/set_parameters", "general_goal_checker.yaw_goal_tolerance"),
     ("nav2.controller_server.follow_path.vx_max", "/controller_server/set_parameters", "FollowPath.vx_max"),
     ("nav2.controller_server.follow_path.vx_min", "/controller_server/set_parameters", "FollowPath.vx_min"),
     ("nav2.controller_server.follow_path.wz_max", "/controller_server/set_parameters", "FollowPath.wz_max"),
@@ -411,6 +409,13 @@ class RosRobotRuntime:
             raise ValueError("params path is not configured")
         if not isinstance(params_payload, dict):
             raise ValueError("params payload must be an object")
+        previous_payload: dict[str, Any] | None = None
+        try:
+            loaded = yaml.safe_load(self.params_path.read_text(encoding="utf-8"))
+            if isinstance(loaded, dict):
+                previous_payload = loaded
+        except Exception:
+            previous_payload = None
         self.params_path.parent.mkdir(parents=True, exist_ok=True)
         self.params_path.write_text(
             yaml.safe_dump(params_payload, allow_unicode=True, sort_keys=False),
@@ -420,7 +425,7 @@ class RosRobotRuntime:
         reloaded = False
         if reload_runtime:
             try:
-                reloaded = self._apply_nav2_runtime_params(params_payload) or reloaded
+                reloaded = self._apply_nav2_runtime_params(params_payload, previous_payload=previous_payload) or reloaded
             except Exception as exc:
                 warnings.append(f"Nav2 runtime apply failed: {exc}")
             try:
@@ -452,7 +457,13 @@ class RosRobotRuntime:
             except Exception:
                 continue
 
-    def _apply_nav2_runtime_params(self, params_payload: dict[str, Any], *, require_available: bool = True) -> bool:
+    def _apply_nav2_runtime_params(
+        self,
+        params_payload: dict[str, Any],
+        *,
+        require_available: bool = True,
+        previous_payload: dict[str, Any] | None = None,
+    ) -> bool:
         if not isinstance(params_payload.get("nav2"), dict):
             return False
         if self._node is None or self._set_parameters_type is None:
@@ -465,17 +476,28 @@ class RosRobotRuntime:
             value = self._deep_get(params_payload, source_path)
             if value is None:
                 continue
+            if previous_payload is not None and self._values_equal(value, self._deep_get(previous_payload, source_path)):
+                continue
             grouped.setdefault(service_name, {})[param_name] = value
 
         velocity = params_payload.get("nav2", {}).get("velocity_smoother")
         if isinstance(velocity, dict):
             max_x = velocity.get("max_velocity_x")
             max_theta = velocity.get("max_velocity_theta")
-            if max_x is not None or max_theta is not None:
+            previous_velocity = previous_payload.get("nav2", {}).get("velocity_smoother") if isinstance(previous_payload, dict) else None
+            velocity_changed = max_x is not None or max_theta is not None
+            if isinstance(previous_velocity, dict):
+                velocity_changed = (
+                    not self._values_equal(max_x, previous_velocity.get("max_velocity_x"))
+                    or not self._values_equal(max_theta, previous_velocity.get("max_velocity_theta"))
+                )
+            if velocity_changed:
+                previous_max_x = previous_velocity.get("max_velocity_x") if isinstance(previous_velocity, dict) else None
+                previous_max_theta = previous_velocity.get("max_velocity_theta") if isinstance(previous_velocity, dict) else None
                 grouped.setdefault("/velocity_smoother/set_parameters", {})["max_velocity"] = [
-                    float(max_x if max_x is not None else 0.5),
+                    float(max_x if max_x is not None else (previous_max_x if previous_max_x is not None else 0.5)),
                     0.0,
-                    float(max_theta if max_theta is not None else 2.0),
+                    float(max_theta if max_theta is not None else (previous_max_theta if previous_max_theta is not None else 2.0)),
                 ]
 
         applied = False
@@ -537,6 +559,14 @@ class RosRobotRuntime:
                 return None
             current = current[part]
         return current
+
+    def _values_equal(self, left: Any, right: Any) -> bool:
+        if isinstance(left, (int, float)) or isinstance(right, (int, float)):
+            try:
+                return abs(float(left) - float(right)) < 0.000001
+            except (TypeError, ValueError):
+                return False
+        return left == right
 
     def _reload_route_status_params(self) -> bool:
         active = self.active_map_payload()
@@ -733,11 +763,6 @@ class RosRobotRuntime:
         self._executor = executor
         self._thread = thread
         self._available = True
-        threading.Thread(
-            target=self._apply_saved_nav2_params_when_ready,
-            name=f"robot-api-nav2-params-{_clean_node_suffix(self.robot_id)}",
-            daemon=True,
-        ).start()
 
     def wait_for_status(self, timeout_sec: float = 0.8) -> bool:
         deadline = monotonic() + max(0.0, float(timeout_sec))

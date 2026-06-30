@@ -10,7 +10,9 @@ service RobotApi {
   rpc ExecuteRoute(ExecuteRouteRequest) returns (CommandResponse);
   rpc CancelRoute(CancelRouteRequest) returns (CommandResponse);
   rpc Teleop(TeleopRequest) returns (CommandResponse);
+  rpc TeleopStream(stream TeleopRequest) returns (stream CommandResponse);
   rpc Stop(StopRequest) returns (CommandResponse);
+  rpc WatchLaserScan(WatchLaserScanRequest) returns (stream LaserScanFrame);
   rpc ListMaps(ListMapsRequest) returns (ListMapsResponse);
   rpc GetMapBundle(GetMapBundleRequest) returns (MapBundleResponse);
   rpc PutMapBundle(PutMapBundleRequest) returns (MapBundleResponse);
@@ -94,6 +96,30 @@ message TeleopRequest {
   float linear = 1;
   float angular = 2;
   uint32 timeout_ms = 3;
+}
+
+message WatchLaserScanRequest {
+  string topic = 1;
+  float hz = 2;
+  bool include_intensities = 3;
+}
+
+message LaserScanFrame {
+  bool ok = 1;
+  string error = 2;
+  string robot_id = 3;
+  string topic = 4;
+  string frame_id = 5;
+  double stamp_sec = 6;
+  float angle_min = 7;
+  float angle_max = 8;
+  float angle_increment = 9;
+  float time_increment = 10;
+  float scan_time = 11;
+  float range_min = 12;
+  float range_max = 13;
+  repeated float ranges = 14;
+  repeated float intensities = 15;
 }
 
 message StopRequest {

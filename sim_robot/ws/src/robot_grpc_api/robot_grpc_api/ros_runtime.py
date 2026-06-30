@@ -16,8 +16,6 @@ NAV2_RUNTIME_PARAMETERS: tuple[tuple[str, str, str], ...] = (
     ("nav2.amcl.min_particles", "/amcl/set_parameters", "min_particles"),
     ("nav2.amcl.max_particles", "/amcl/set_parameters", "max_particles"),
     ("nav2.controller_server.controller_frequency", "/controller_server/set_parameters", "controller_frequency"),
-    ("nav2.controller_server.xy_goal_tolerance", "/controller_server/set_parameters", "general_goal_checker.xy_goal_tolerance"),
-    ("nav2.controller_server.yaw_goal_tolerance", "/controller_server/set_parameters", "general_goal_checker.yaw_goal_tolerance"),
     ("nav2.controller_server.follow_path.vx_max", "/controller_server/set_parameters", "FollowPath.vx_max"),
     ("nav2.controller_server.follow_path.vx_min", "/controller_server/set_parameters", "FollowPath.vx_min"),
     ("nav2.controller_server.follow_path.wz_max", "/controller_server/set_parameters", "FollowPath.wz_max"),
@@ -60,6 +58,7 @@ class RosRobotRuntime:
         namespace: str = "",
         status_topic: str = "/robot_status",
         cmd_vel_topic: str = "/cmd_vel",
+        scan_topic: str = "/scan",
         go_to_lm_topic: str = "/go_to_lm",
         plan_service_name: str = "/route/plan",
         execute_service_name: str = "/route/execute",
@@ -80,6 +79,7 @@ class RosRobotRuntime:
         self.namespace = namespace.strip().strip("/")
         self.status_topic = self._topic(status_topic)
         self.cmd_vel_topic = self._topic(cmd_vel_topic)
+        self.scan_topic = self._topic(scan_topic)
         self.go_to_lm_topic = self._topic(go_to_lm_topic)
         self.plan_service_name = self._topic(plan_service_name)
         self.execute_service_name = self._topic(execute_service_name)
@@ -95,6 +95,8 @@ class RosRobotRuntime:
         self._lock = threading.Lock()
         self._latest_status: Any | None = None
         self._latest_status_at: float | None = None
+        self._latest_scan: Any | None = None
+        self._latest_scan_at: float | None = None
         self._events: list[dict[str, Any]] = []
         self._available = False
         self._error = ""
@@ -102,8 +104,10 @@ class RosRobotRuntime:
         self._rclpy = None
         self._context = None
         self._twist_type = None
+        self._laser_scan_type = None
         self._string_type = None
         self._set_parameters_type = None
+        self._list_parameters_type = None
         self._parameter_type = None
         self._parameter_value_type = None
         self._parameter_type_enum = None
@@ -122,6 +126,7 @@ class RosRobotRuntime:
         self._map_get_bundle_client = None
         self._map_put_bundle_client = None
         self._nav2_param_clients: dict[str, Any] = {}
+        self._nav2_list_param_clients: dict[str, Any] = {}
         self._start()
 
     @property
@@ -172,6 +177,7 @@ class RosRobotRuntime:
             "namespace": self.namespace,
             "statusTopic": self.status_topic,
             "cmdVelTopic": self.cmd_vel_topic,
+            "scanTopic": self.scan_topic,
             "goToLmTopic": self.go_to_lm_topic,
             "planService": self.plan_service_name,
             "executeService": self.execute_service_name,
@@ -231,6 +237,41 @@ class RosRobotRuntime:
     def teleop_stop(self) -> dict[str, Any]:
         self._publish_twist(0.0, 0.0)
         return {"ok": True}
+
+    def laser_scan_payload(self, *, topic: str = "/scan", include_intensities: bool = False) -> dict[str, Any]:
+        requested_topic = self._topic(topic or self.scan_topic)
+        if requested_topic != self.scan_topic:
+            raise ValueError(f"scan topic {requested_topic} is not configured; use {self.scan_topic}")
+        with self._lock:
+            message = self._latest_scan
+            received_at = self._latest_scan_at
+        if message is None:
+            raise ValueError(f"Waiting for LaserScan on {self.scan_topic}.")
+
+        header = getattr(message, "header", None)
+        stamp = getattr(header, "stamp", None)
+        stamp_sec = float(getattr(stamp, "sec", 0.0) or 0.0) + float(getattr(stamp, "nanosec", 0.0) or 0.0) / 1e9
+        ranges = [float(item) for item in list(getattr(message, "ranges", []) or [])]
+        intensities = []
+        if include_intensities:
+            intensities = [float(item) for item in list(getattr(message, "intensities", []) or [])]
+        return {
+            "ok": True,
+            "robotId": self.robot_id,
+            "topic": self.scan_topic,
+            "frameId": str(getattr(header, "frame_id", "") or ""),
+            "stampSec": stamp_sec,
+            "receivedAgeSec": 9999.0 if received_at is None else max(0.0, monotonic() - received_at),
+            "angleMin": float(getattr(message, "angle_min", 0.0)),
+            "angleMax": float(getattr(message, "angle_max", 0.0)),
+            "angleIncrement": float(getattr(message, "angle_increment", 0.0)),
+            "timeIncrement": float(getattr(message, "time_increment", 0.0)),
+            "scanTime": float(getattr(message, "scan_time", 0.0)),
+            "rangeMin": float(getattr(message, "range_min", 0.0)),
+            "rangeMax": float(getattr(message, "range_max", 0.0)),
+            "ranges": ranges,
+            "intensities": intensities,
+        }
 
     def stop(self) -> dict[str, Any]:
         self._publish_twist(0.0, 0.0)
@@ -411,6 +452,13 @@ class RosRobotRuntime:
             raise ValueError("params path is not configured")
         if not isinstance(params_payload, dict):
             raise ValueError("params payload must be an object")
+        previous_payload: dict[str, Any] | None = None
+        try:
+            loaded = yaml.safe_load(self.params_path.read_text(encoding="utf-8"))
+            if isinstance(loaded, dict):
+                previous_payload = loaded
+        except Exception:
+            previous_payload = None
         self.params_path.parent.mkdir(parents=True, exist_ok=True)
         self.params_path.write_text(
             yaml.safe_dump(params_payload, allow_unicode=True, sort_keys=False),
@@ -420,7 +468,7 @@ class RosRobotRuntime:
         reloaded = False
         if reload_runtime:
             try:
-                reloaded = self._apply_nav2_runtime_params(params_payload) or reloaded
+                reloaded = self._apply_nav2_runtime_params(params_payload, previous_payload=previous_payload) or reloaded
             except Exception as exc:
                 warnings.append(f"Nav2 runtime apply failed: {exc}")
             try:
@@ -452,7 +500,13 @@ class RosRobotRuntime:
             except Exception:
                 continue
 
-    def _apply_nav2_runtime_params(self, params_payload: dict[str, Any], *, require_available: bool = True) -> bool:
+    def _apply_nav2_runtime_params(
+        self,
+        params_payload: dict[str, Any],
+        *,
+        require_available: bool = True,
+        previous_payload: dict[str, Any] | None = None,
+    ) -> bool:
         if not isinstance(params_payload.get("nav2"), dict):
             return False
         if self._node is None or self._set_parameters_type is None:
@@ -465,17 +519,28 @@ class RosRobotRuntime:
             value = self._deep_get(params_payload, source_path)
             if value is None:
                 continue
+            if previous_payload is not None and self._values_equal(value, self._deep_get(previous_payload, source_path)):
+                continue
             grouped.setdefault(service_name, {})[param_name] = value
 
         velocity = params_payload.get("nav2", {}).get("velocity_smoother")
         if isinstance(velocity, dict):
             max_x = velocity.get("max_velocity_x")
             max_theta = velocity.get("max_velocity_theta")
-            if max_x is not None or max_theta is not None:
+            previous_velocity = previous_payload.get("nav2", {}).get("velocity_smoother") if isinstance(previous_payload, dict) else None
+            velocity_changed = max_x is not None or max_theta is not None
+            if isinstance(previous_velocity, dict):
+                velocity_changed = (
+                    not self._values_equal(max_x, previous_velocity.get("max_velocity_x"))
+                    or not self._values_equal(max_theta, previous_velocity.get("max_velocity_theta"))
+                )
+            if velocity_changed:
+                previous_max_x = previous_velocity.get("max_velocity_x") if isinstance(previous_velocity, dict) else None
+                previous_max_theta = previous_velocity.get("max_velocity_theta") if isinstance(previous_velocity, dict) else None
                 grouped.setdefault("/velocity_smoother/set_parameters", {})["max_velocity"] = [
-                    float(max_x if max_x is not None else 0.5),
+                    float(max_x if max_x is not None else (previous_max_x if previous_max_x is not None else 0.5)),
                     0.0,
-                    float(max_theta if max_theta is not None else 2.0),
+                    float(max_theta if max_theta is not None else (previous_max_theta if previous_max_theta is not None else 2.0)),
                 ]
 
         applied = False
@@ -487,6 +552,9 @@ class RosRobotRuntime:
                 self._nav2_param_clients[service_name] = client
             if not self._service_available(client, 0.25):
                 missing.append(service_name)
+                continue
+            values = self._filter_declared_parameters(service_name, values, require_available=require_available)
+            if not values:
                 continue
             request = self._set_parameters_type.Request()
             request.parameters = [
@@ -505,6 +573,31 @@ class RosRobotRuntime:
         if missing and require_available:
             raise ValueError(f"Nav2 parameter services unavailable: {', '.join(missing)}")
         return applied
+
+    def _filter_declared_parameters(
+        self,
+        set_service_name: str,
+        values: dict[str, Any],
+        *,
+        require_available: bool,
+    ) -> dict[str, Any]:
+        if self._node is None or self._list_parameters_type is None:
+            return values
+        list_service_name = set_service_name.rsplit("/", 1)[0] + "/list_parameters"
+        client = self._nav2_list_param_clients.get(list_service_name)
+        if client is None:
+            client = self._node.create_client(self._list_parameters_type, list_service_name)
+            self._nav2_list_param_clients[list_service_name] = client
+        if not self._service_available(client, 0.15):
+            return values if require_available else {}
+        request = self._list_parameters_type.Request()
+        request.prefixes = []
+        request.depth = 0
+        response = self._call_service(client, request, f"{list_service_name} list_parameters", timeout_sec=2.0)
+        declared = set(str(name) for name in getattr(getattr(response, "result", None), "names", []))
+        if not declared:
+            return values
+        return {name: value for name, value in values.items() if name in declared}
 
     def _parameter_message(self, name: str, value: Any) -> Any:
         if self._parameter_type is None or self._parameter_value_type is None or self._parameter_type_enum is None:
@@ -537,6 +630,14 @@ class RosRobotRuntime:
                 return None
             current = current[part]
         return current
+
+    def _values_equal(self, left: Any, right: Any) -> bool:
+        if isinstance(left, (int, float)) or isinstance(right, (int, float)):
+            try:
+                return abs(float(left) - float(right)) < 0.000001
+            except (TypeError, ValueError):
+                return False
+        return left == right
 
     def _reload_route_status_params(self) -> bool:
         active = self.active_map_payload()
@@ -670,7 +771,7 @@ class RosRobotRuntime:
             from rclpy.executors import SingleThreadedExecutor
             from rclpy.node import Node
             from rcl_interfaces.msg import Parameter, ParameterType, ParameterValue
-            from rcl_interfaces.srv import SetParameters
+            from rcl_interfaces.srv import ListParameters, SetParameters
             from robot_msgs.msg import RobotStatus
             from robot_msgs.srv import (
                 CancelRoute,
@@ -682,6 +783,7 @@ class RosRobotRuntime:
                 PlanRoute,
                 PutRobotMapBundle,
             )
+            from sensor_msgs.msg import LaserScan
             from std_msgs.msg import String
         except Exception as exc:
             self._error = f"ROS2 Python imports failed: {exc}"
@@ -708,6 +810,7 @@ class RosRobotRuntime:
             self._map_get_bundle_client = node.create_client(GetRobotMapBundle, self.map_get_bundle_service_name)
             self._map_put_bundle_client = node.create_client(PutRobotMapBundle, self.map_put_bundle_service_name)
             node.create_subscription(RobotStatus, self.status_topic, self._on_status, 10)
+            node.create_subscription(LaserScan, self.scan_topic, self._on_scan, 10)
             executor = SingleThreadedExecutor(context=context)
             executor.add_node(node)
             thread = threading.Thread(
@@ -724,8 +827,10 @@ class RosRobotRuntime:
         self._rclpy = rclpy
         self._context = context
         self._twist_type = Twist
+        self._laser_scan_type = LaserScan
         self._string_type = String
         self._set_parameters_type = SetParameters
+        self._list_parameters_type = ListParameters
         self._parameter_type = Parameter
         self._parameter_value_type = ParameterValue
         self._parameter_type_enum = ParameterType
@@ -733,11 +838,6 @@ class RosRobotRuntime:
         self._executor = executor
         self._thread = thread
         self._available = True
-        threading.Thread(
-            target=self._apply_saved_nav2_params_when_ready,
-            name=f"robot-api-nav2-params-{_clean_node_suffix(self.robot_id)}",
-            daemon=True,
-        ).start()
 
     def wait_for_status(self, timeout_sec: float = 0.8) -> bool:
         deadline = monotonic() + max(0.0, float(timeout_sec))
@@ -762,6 +862,11 @@ class RosRobotRuntime:
             self._latest_status = message
             self._latest_status_at = monotonic()
         self._persist_event(previous, message)
+
+    def _on_scan(self, message: Any) -> None:
+        with self._lock:
+            self._latest_scan = message
+            self._latest_scan_at = monotonic()
 
     def _latest_message(self) -> Any | None:
         with self._lock:

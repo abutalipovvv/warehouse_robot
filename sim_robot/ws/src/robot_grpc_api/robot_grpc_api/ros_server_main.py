@@ -18,6 +18,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--namespace", default="")
     parser.add_argument("--status-topic", default="/robot_status")
     parser.add_argument("--cmd-vel-topic", default="/cmd_vel")
+    parser.add_argument("--scan-topic", default="/scan")
     parser.add_argument("--go-to-lm-topic", default="/go_to_lm")
     parser.add_argument("--plan-service", default="/route/plan")
     parser.add_argument("--execute-service", default="/route/execute")
@@ -42,6 +43,7 @@ def main() -> None:
         namespace=args.namespace,
         status_topic=args.status_topic,
         cmd_vel_topic=args.cmd_vel_topic,
+        scan_topic=args.scan_topic,
         go_to_lm_topic=args.go_to_lm_topic,
         plan_service_name=args.plan_service,
         execute_service_name=args.execute_service,

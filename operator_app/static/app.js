@@ -935,6 +935,12 @@ class OperatorApp {
     this.robotStatusStreamFallback = false;
     this.robotStreamIntervalMs = 180;
     this.robotStatusRobotId = "";
+    this.scanSocket = null;
+    this.scanRobotId = "";
+    this.scanEnabled = false;
+    this.latestScanFrame = null;
+    this.teleopSocket = null;
+    this.teleopRobotId = "";
     this.fleetStatusReceivedAt = 0;
     this.fleetStatusObjectRef = null;
     this.fleetAnimationFrame = null;
@@ -1000,6 +1006,7 @@ class OperatorApp {
     this.cancelRouteButton = document.getElementById("cancelRouteButton");
     this.stopRobotButton = document.getElementById("stopRobotButton");
     this.refreshRobotStatusButton = document.getElementById("refreshRobotStatusButton");
+    this.scanToggleButton = document.getElementById("scanToggleButton");
     this.controlPullMapButton = document.getElementById("controlPullMapButton");
     this.controlPushMapButton = document.getElementById("controlPushMapButton");
     this.controlLoadMapButton = document.getElementById("controlLoadMapButton");
@@ -1083,6 +1090,7 @@ class OperatorApp {
     this.operatorLookaheadLayer = document.getElementById("operatorLookaheadLayer");
     this.operatorLandmarkLayer = document.getElementById("operatorLandmarkLayer");
     this.operatorEditorLayer = document.getElementById("operatorEditorLayer");
+    this.operatorScanLayer = document.getElementById("operatorScanLayer");
     this.operatorRobotLayer = document.getElementById("operatorRobotLayer");
     this.operatorZoomInButton = document.getElementById("operatorZoomInButton");
     this.operatorZoomOutButton = document.getElementById("operatorZoomOutButton");
@@ -1182,6 +1190,14 @@ class OperatorApp {
     this.cancelRouteButton.addEventListener("click", () => this.cancelRoute());
     this.stopRobotButton.addEventListener("click", () => this.stopRobot());
     this.refreshRobotStatusButton.addEventListener("click", () => this.fetchSelectedRobotStatus(false));
+    this.scanToggleButton?.addEventListener("click", () => {
+      this.toggleScanStream().catch((error) => {
+        if (this.robotMessageText) {
+          this.robotMessageText.textContent = `Scan failed: ${error.message || error}`;
+        }
+        this.closeScanStream();
+      });
+    });
     this.controlPullMapButton.addEventListener("click", () => this.handlePullMap());
     this.controlPushMapButton.addEventListener("click", () => this.handlePushMap());
     this.controlLoadMapButton.addEventListener("click", () => this.handleLoadMap());
@@ -1287,6 +1303,10 @@ class OperatorApp {
       }
       this.setManualKey(key, false);
     });
+    window.addEventListener("beforeunload", () => {
+      this.closeScanStream();
+      this.closeTeleopSocket(true);
+    });
   }
 
   applyDeferredUiActions() {
@@ -1370,6 +1390,8 @@ class OperatorApp {
     this.setFleetTab("robots");
     this.closeRobotStatusStream();
     this.closeFleetStatusStream();
+    this.closeScanStream();
+    this.closeTeleopSocket(true);
     this.stopFleetAnimationLoop();
     this.renderSelectedRobot();
   }
@@ -1398,6 +1420,8 @@ class OperatorApp {
       window.history[method]({ fleetPage: "params" }, "", path);
     }
     this.setFleetTab("params");
+    this.closeScanStream();
+    this.closeTeleopSocket(true);
     await this.ensureCurrentParamsLoaded();
     this.renderSelectedRobot();
   }
@@ -1441,6 +1465,8 @@ class OperatorApp {
       window.history[method]({ fleetPage: "model" }, "", path);
     }
     this.setFleetTab("model");
+    this.closeScanStream();
+    this.closeTeleopSocket(true);
     const selectedChanged = this.ensureRobotSelectedForModel();
     if (selectedChanged) {
       await this.refreshRobotMapState({ quiet: true });
@@ -1495,6 +1521,8 @@ class OperatorApp {
     window.localStorage.setItem("operator:selectedRobotId", fleet.id);
     this.currentStatus = null;
     this.currentRoute = null;
+    this.closeScanStream();
+    this.closeTeleopSocket(true);
     this.syncFleetStatusStream();
     return true;
   }
@@ -1510,6 +1538,8 @@ class OperatorApp {
       window.localStorage.removeItem("operator:selectedRobotId");
       this.currentStatus = null;
       this.currentRoute = null;
+      this.closeScanStream();
+      this.closeTeleopSocket(true);
       this.syncFleetStatusStream();
       return false;
     }
@@ -1517,6 +1547,8 @@ class OperatorApp {
     window.localStorage.setItem("operator:selectedRobotId", robot.id);
     this.currentStatus = null;
     this.currentRoute = null;
+    this.closeScanStream();
+    this.closeTeleopSocket(true);
     this.syncFleetStatusStream();
     return true;
   }
@@ -1886,6 +1918,353 @@ class OperatorApp {
     }
   }
 
+  scanStreamOpen() {
+    return typeof WebSocket !== "undefined"
+      && this.scanSocket
+      && this.scanSocket.readyState === WebSocket.OPEN;
+  }
+
+  scanStreamConnecting() {
+    return typeof WebSocket !== "undefined"
+      && this.scanSocket
+      && this.scanSocket.readyState === WebSocket.CONNECTING;
+  }
+
+  async toggleScanStream() {
+    if (this.scanStreamOpen() || this.scanStreamConnecting() || this.scanEnabled) {
+      this.closeScanStream();
+      return;
+    }
+    await this.openScanStream();
+  }
+
+  async openScanStream() {
+    const robot = this.selectedRobot();
+    if (!robot || this.isFleetManager(robot) || typeof WebSocket === "undefined") {
+      this.closeScanStream();
+      return;
+    }
+    if (this.robotParamsRobotId !== robot.id || !this.robotParamsLoaded) {
+      await this.ensureRobotParamsLoaded();
+    }
+    if (this.scanRobotId && this.scanRobotId !== robot.id) {
+      this.closeScanStream();
+    }
+    if (this.scanStreamOpen() || this.scanStreamConnecting()) {
+      return;
+    }
+    const socket = new WebSocket(this.scanWsUrl(robot));
+    this.scanSocket = socket;
+    this.scanRobotId = robot.id;
+    this.scanEnabled = true;
+    this.latestScanFrame = null;
+    this.syncScanUi("connecting");
+    socket.addEventListener("open", () => {
+      if (this.scanSocket !== socket) {
+        return;
+      }
+      this.syncScanUi("waiting");
+    });
+    socket.addEventListener("message", (event) => {
+      if (this.scanSocket !== socket) {
+        return;
+      }
+      this.handleScanStreamMessage(event);
+    });
+    socket.addEventListener("error", () => {
+      if (this.scanSocket === socket) {
+        this.syncScanUi("error");
+      }
+    });
+    socket.addEventListener("close", () => {
+      if (this.scanSocket !== socket) {
+        return;
+      }
+      this.scanSocket = null;
+      this.scanRobotId = "";
+      this.scanEnabled = false;
+      this.syncScanUi("off");
+    });
+  }
+
+  scanWsUrl(robot) {
+    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+    return `${protocol}//${window.location.host}/ws/robot/scan?robotId=${encodeURIComponent(robot.id)}&hz=1`;
+  }
+
+  closeScanStream() {
+    this.scanEnabled = false;
+    this.latestScanFrame = null;
+    const socket = this.scanSocket;
+    this.scanSocket = null;
+    this.scanRobotId = "";
+    if (socket) {
+      try {
+        socket.close(1000, "scan disabled");
+      } catch (_) {
+        // Some browsers throw if the socket is already closing.
+      }
+    }
+    this.clearScanOverlay();
+    this.syncScanUi("off");
+  }
+
+  handleScanStreamMessage(event) {
+    let payload = null;
+    try {
+      payload = JSON.parse(event.data);
+    } catch (_) {
+      return;
+    }
+    if (!payload || typeof payload !== "object") {
+      return;
+    }
+    if (!payload.ok) {
+      this.syncScanUi(payload.error || "waiting");
+      return;
+    }
+    this.latestScanFrame = payload;
+    this.drawScanOverlay(payload);
+    const count = Array.isArray(payload.ranges) ? payload.ranges.filter((item) => Number.isFinite(Number(item))).length : 0;
+    this.syncScanUi(`${count} pts`);
+  }
+
+  syncScanUi(statusText = "") {
+    const robot = this.selectedRobot();
+    this.scanToggleButton?.classList.toggle("primary", this.scanEnabled);
+    this.scanToggleButton?.classList.toggle("hidden", !robot || this.isFleetManager(robot) || this.isRobotModelPage() || this.isParamsPage());
+    if (this.scanToggleButton) {
+      this.scanToggleButton.textContent = this.scanEnabled ? "Scan Off" : "Scan";
+      this.scanToggleButton.title = statusText ? `Laser scan: ${statusText}` : "Show LaserScan on the map";
+    }
+  }
+
+  clearScanOverlay() {
+    if (this.operatorScanLayer) {
+      this.operatorScanLayer.innerHTML = "";
+    }
+  }
+
+  drawScanOverlay(frame = this.latestScanFrame) {
+    if (!this.operatorScanLayer) {
+      return;
+    }
+    this.operatorScanLayer.innerHTML = "";
+    if (!this.scanEnabled || this.isFleetManager() || !frame || !frame.ok) {
+      return;
+    }
+    const payload = this.activeOperatorMapPayload();
+    if (!payload || !payload.map) {
+      return;
+    }
+    const robot = this.currentStatus && this.currentStatus.robot ? this.currentStatus.robot : null;
+    const pose = robot && robot.pose ? robot.pose : null;
+    if (!pose) {
+      return;
+    }
+    const ranges = Array.isArray(frame.ranges) ? frame.ranges : [];
+    if (!ranges.length) {
+      return;
+    }
+    const rangeMin = Math.max(0, Number(frame.rangeMin || 0));
+    const rangeMax = Number(frame.rangeMax || 0) > 0 ? Number(frame.rangeMax) : Infinity;
+    const angleMin = Number(frame.angleMin || 0);
+    const angleIncrement = Number(frame.angleIncrement || 0);
+    const sensorPose = this.scanSensorPose(pose, frame);
+    const yaw = sensorPose.yaw;
+    const originX = sensorPose.x;
+    const originY = sensorPose.y;
+    const segments = [];
+    const stride = Math.max(1, Math.ceil(ranges.length / 1600));
+    for (let index = 0; index < ranges.length; index += 1) {
+      if (index % stride !== 0) {
+        continue;
+      }
+      const range = Number(ranges[index]);
+      if (!Number.isFinite(range) || range <= rangeMin || range > rangeMax) {
+        continue;
+      }
+      const angle = yaw + angleMin + (index * angleIncrement);
+      const point = this.worldToPixel({
+        x: originX + (Math.cos(angle) * range),
+        y: originY + (Math.sin(angle) * range),
+      });
+      segments.push(`M ${point.x.toFixed(2)} ${point.y.toFixed(2)} h 0.01`);
+    }
+    if (!segments.length) {
+      return;
+    }
+    const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    path.setAttribute("class", "scan-point-cloud");
+    path.setAttribute("d", segments.join(" "));
+    this.operatorScanLayer.append(path);
+  }
+
+  scanSensorPose(pose, frame = {}) {
+    const baseX = Number(pose.x || 0);
+    const baseY = Number(pose.y || 0);
+    const yaw = Number(pose.yaw || 0);
+    const sensor = this.scanSensorFrame(frame);
+    if (!sensor) {
+      return { x: baseX, y: baseY, yaw };
+    }
+    const offsetX = Number(sensor.x || 0);
+    const offsetY = Number(sensor.y || 0);
+    const offsetYaw = Number(sensor.yaw || sensor.theta || 0);
+    const cos = Math.cos(yaw);
+    const sin = Math.sin(yaw);
+    return {
+      x: baseX + (offsetX * cos) - (offsetY * sin),
+      y: baseY + (offsetX * sin) + (offsetY * cos),
+      yaw: yaw + offsetYaw,
+    };
+  }
+
+  scanSensorFrame(frame = {}) {
+    const model = this.currentRobotModel();
+    const frames = model && model.frames && typeof model.frames === "object" ? model.frames : null;
+    if (!frames) {
+      return null;
+    }
+    const frameId = String(frame.frameId || "").replace(/^\//, "").toLowerCase();
+    if (frameId && ["base_link", "base_footprint", "base"].includes(frameId)) {
+      return null;
+    }
+    const normalized = (value) => String(value || "").replace(/^\//, "").toLowerCase();
+    for (const [key, value] of Object.entries(frames)) {
+      if (frameId && normalized(key) === frameId && value && typeof value === "object") {
+        return value;
+      }
+    }
+    if (frameId && /laser|lidar|scan/.test(frameId)) {
+      for (const key of ["lidar", "laser", "scan", "base_scan"]) {
+        const value = frames[key];
+        if (value && typeof value === "object") {
+          return value;
+        }
+      }
+    }
+    return null;
+  }
+
+  currentRobotModel() {
+    const robot = this.selectedRobot();
+    if (!robot || this.isFleetManager(robot)) {
+      return null;
+    }
+    if (this.robotParamsRobotId !== robot.id || !this.robotParams || typeof this.robotParams !== "object") {
+      return null;
+    }
+    const model = this.robotParams.robot_model;
+    return model && typeof model === "object" ? model : null;
+  }
+
+  teleopSocketOpenFor(robot) {
+    return typeof WebSocket !== "undefined"
+      && this.teleopSocket
+      && this.teleopSocket.readyState === WebSocket.OPEN
+      && this.teleopRobotId === robot?.id;
+  }
+
+  teleopSocketConnectingFor(robot) {
+    return typeof WebSocket !== "undefined"
+      && this.teleopSocket
+      && this.teleopSocket.readyState === WebSocket.CONNECTING
+      && this.teleopRobotId === robot?.id;
+  }
+
+  ensureTeleopSocket() {
+    const robot = this.selectedRobot();
+    if (!robot || this.isFleetManager(robot) || typeof WebSocket === "undefined") {
+      return null;
+    }
+    if (this.teleopSocketOpenFor(robot) || this.teleopSocketConnectingFor(robot)) {
+      return this.teleopSocket;
+    }
+    this.closeTeleopSocket(false);
+    const socket = new WebSocket(this.teleopWsUrl(robot));
+    this.teleopSocket = socket;
+    this.teleopRobotId = robot.id;
+    socket.addEventListener("message", (event) => {
+      if (this.teleopSocket !== socket) {
+        return;
+      }
+      this.handleTeleopStreamMessage(event);
+    });
+    socket.addEventListener("close", () => {
+      if (this.teleopSocket !== socket) {
+        return;
+      }
+      this.teleopSocket = null;
+      this.teleopRobotId = "";
+    });
+    socket.addEventListener("error", () => {
+      if (this.robotMessageText) {
+        this.robotMessageText.textContent = "Manual control stream error.";
+      }
+    });
+    return socket;
+  }
+
+  teleopWsUrl(robot) {
+    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+    return `${protocol}//${window.location.host}/ws/robot/teleop?robotId=${encodeURIComponent(robot.id)}`;
+  }
+
+  closeTeleopSocket(sendStop = false) {
+    const socket = this.teleopSocket;
+    this.teleopSocket = null;
+    this.teleopRobotId = "";
+    if (!socket) {
+      return;
+    }
+    try {
+      if (sendStop && socket.readyState === WebSocket.OPEN) {
+        socket.send(JSON.stringify({ type: "stop", linear: 0, angular: 0, timeoutMs: 80 }));
+      }
+      socket.close(1000, "manual control closed");
+    } catch (_) {
+      // Some browsers throw if the socket is already closing.
+    }
+  }
+
+  sendRobotTeleop(twist, timeoutMs = 350) {
+    const socket = this.ensureTeleopSocket();
+    if (!socket || socket.readyState !== WebSocket.OPEN) {
+      return false;
+    }
+    socket.send(JSON.stringify({
+      type: "teleop",
+      linear: Number(twist.linear || 0),
+      angular: Number(twist.angular || 0),
+      timeoutMs,
+    }));
+    return true;
+  }
+
+  handleTeleopStreamMessage(event) {
+    let payload = null;
+    try {
+      payload = JSON.parse(event.data);
+    } catch (_) {
+      return;
+    }
+    if (!payload || typeof payload !== "object") {
+      return;
+    }
+    if (!payload.ok) {
+      if (this.robotMessageText) {
+        this.robotMessageText.textContent = payload.error || "Manual control failed.";
+      }
+      return;
+    }
+    const response = payload.response || {};
+    if (response.status && typeof response.status === "object") {
+      this.currentStatus = response.status;
+      this.renderSelectedRobot();
+    }
+  }
+
   scheduleRobotStatusReconnect() {
     if (!this.robotStatusStreamShouldRun || this.isFleetManager() || this.robotStatusReconnectTimer) {
       return;
@@ -2097,6 +2476,8 @@ class OperatorApp {
     if (this.selectedRobotId && !this.selectedRobot()) {
       this.selectedRobotId = "";
       window.localStorage.removeItem("operator:selectedRobotId");
+      this.closeScanStream();
+      this.closeTeleopSocket(true);
     }
     if (!this.selectedRobotId && this.robots.length && !this.isGlobalHomePage()) {
       this.selectedRobotId = this.robots[0].id;
@@ -2425,6 +2806,12 @@ class OperatorApp {
         button.classList.add("active");
       }
       const selectRobot = async () => {
+        if (this.selectedRobotId !== robot.id) {
+          this.closeScanStream();
+          this.closeTeleopSocket(true);
+          this.manualKeys.clear();
+          this.syncManualButtons();
+        }
         this.selectedRobotId = robot.id;
         window.localStorage.setItem("operator:selectedRobotId", robot.id);
         this.currentStatus = null;
@@ -2739,6 +3126,7 @@ class OperatorApp {
     this.robotParamsPanel.classList.toggle("hidden", !showRobotParams);
     this.robotModelPanel.classList.toggle("hidden", !isRobotModel);
     this.manualPad.classList.toggle("hidden", isRobotModel || isParams);
+    this.syncScanUi();
     this.controlPullMapButton.classList.toggle("hidden", false);
     this.controlPushMapButton.classList.toggle("hidden", false);
     this.cancelRouteButton.textContent = isFleet ? "Stop Active" : "Cancel Route";
@@ -2861,6 +3249,7 @@ class OperatorApp {
     this.syncModeButtons();
     this.syncManualButtons();
     this.drawRoute();
+    this.drawScanOverlay();
     this.drawRobot();
     this.syncMapControls();
   }
@@ -3605,6 +3994,9 @@ class OperatorApp {
       this.operatorLookaheadLayer.innerHTML = "";
       this.operatorLandmarkLayer.innerHTML = "";
       this.operatorEditorLayer.innerHTML = "";
+      if (this.operatorScanLayer) {
+        this.operatorScanLayer.innerHTML = "";
+      }
       this.operatorRobotLayer.innerHTML = "";
       return;
     }
@@ -3621,6 +4013,7 @@ class OperatorApp {
     this.drawLookahead();
     this.drawLandmarks();
     this.drawFleetEditorOverlay();
+    this.drawScanOverlay();
     this.drawRobot();
     this.syncMapControls();
   }
@@ -5743,7 +6136,7 @@ class OperatorApp {
         if (this.isFleetManager()) {
           this.releaseFleetManualControl().catch(() => {});
         } else {
-          this.postJson(this.robotApiPath("/api/robot/teleop/stop"), {}).catch(() => {});
+          this.sendRobotTeleop({ linear: 0, angular: 0 }, 80);
         }
       }
     }
@@ -5774,34 +6167,33 @@ class OperatorApp {
   }
 
   async sendTeleopIfNeeded() {
-    if (!this.manualKeys.size || this.teleopPending || !this.selectedRobot()) {
+    if (!this.manualKeys.size || !this.selectedRobot()) {
       return;
     }
     const twist = this.manualTwist();
     if (Math.abs(twist.linear) < 0.0001 && Math.abs(twist.angular) < 0.0001) {
       return;
     }
-    this.teleopPending = true;
-    try {
-      if (this.isFleetManager()) {
-        await this.sendFleetManualStep(twist);
+    if (this.isFleetManager()) {
+      if (this.teleopPending) {
         return;
       }
-      await this.postJson(this.robotApiPath("/api/robot/teleop"), {
-        linear: twist.linear,
-        angular: twist.angular,
-        timeoutMs: 350,
-      });
-    } finally {
-      this.teleopPending = false;
+      this.teleopPending = true;
+      try {
+        await this.sendFleetManualStep(twist);
+      } finally {
+        this.teleopPending = false;
+      }
+      return;
     }
+    this.sendRobotTeleop(twist, 350);
   }
 
   releaseManualControl() {
     this.manualKeys.clear();
     this.syncManualButtons();
     if (this.selectedRobot() && !this.isFleetManager()) {
-      this.postJson(this.robotApiPath("/api/robot/teleop/stop"), {}).catch(() => {});
+      this.closeTeleopSocket(true);
     }
     if (this.isFleetManager()) {
       this.releaseFleetManualControl().catch(() => {});
@@ -6046,6 +6438,8 @@ class OperatorApp {
     try {
       const result = await this.postJson("/api/robots", payload);
       this.addRobotDialog.close();
+      this.closeScanStream();
+      this.closeTeleopSocket(true);
       this.selectedRobotId = result.robot.id;
       window.localStorage.setItem("operator:selectedRobotId", this.selectedRobotId);
       this.closeSidebar();
@@ -6076,6 +6470,8 @@ class OperatorApp {
       if (this.selectedRobotId === robot.id) {
         this.selectedRobotId = "";
         window.localStorage.removeItem("operator:selectedRobotId");
+        this.closeScanStream();
+        this.closeTeleopSocket(true);
       }
       await this.refreshRobots({ quiet: true });
     } catch (error) {

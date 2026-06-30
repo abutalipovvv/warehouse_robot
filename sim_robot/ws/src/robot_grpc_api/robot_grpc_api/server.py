@@ -95,6 +95,12 @@ class RobotApiService:
         except Exception as exc:
             return robot_api_pb2.CommandResponse(ok=False, error=str(exc))
 
+    def TeleopStream(self, request_iterator, context):
+        for request in request_iterator:
+            if not context.is_active():
+                return
+            yield self.Teleop(request, context)
+
     def Stop(self, request, context) -> robot_api_pb2.CommandResponse:
         del context
         try:
@@ -102,6 +108,27 @@ class RobotApiService:
             return self._command_response(result, command_id=request.command_id)
         except Exception as exc:
             return robot_api_pb2.CommandResponse(ok=False, error=str(exc), command_id=str(request.command_id or ""))
+
+    def WatchLaserScan(self, request, context):
+        hz = max(0.1, min(10.0, float(request.hz or 1.0)))
+        interval_sec = 1.0 / hz
+        topic = str(request.topic or "/scan")
+        include_intensities = bool(request.include_intensities)
+        while context.is_active():
+            try:
+                payload = self.runtime.laser_scan_payload(
+                    topic=topic,
+                    include_intensities=include_intensities,
+                )
+                yield self._laser_scan_response(payload, topic=topic)
+            except Exception as exc:
+                yield robot_api_pb2.LaserScanFrame(
+                    ok=False,
+                    error=str(exc),
+                    robot_id=str(getattr(self.runtime, "robot_id", "") or ""),
+                    topic=topic,
+                )
+            time.sleep(interval_sec)
 
     def ListMaps(self, request, context) -> robot_api_pb2.ListMapsResponse:
         del request, context
@@ -224,6 +251,36 @@ class RobotApiService:
             params_json=json.dumps(params, ensure_ascii=False),
             params_path=str(result.get("path") or result.get("paramsPath") or ""),
             reloaded=bool(result.get("reloaded")),
+        )
+
+    def _laser_scan_response(self, result: dict[str, Any], *, topic: str) -> robot_api_pb2.LaserScanFrame:
+        def float_list(items: Any) -> list[float]:
+            if not isinstance(items, list):
+                return []
+            values: list[float] = []
+            for item in items:
+                try:
+                    values.append(float(item))
+                except (TypeError, ValueError):
+                    values.append(float("nan"))
+            return values
+
+        return robot_api_pb2.LaserScanFrame(
+            ok=bool(result.get("ok", True)),
+            error=str(result.get("error") or ""),
+            robot_id=str(result.get("robotId") or getattr(self.runtime, "robot_id", "") or ""),
+            topic=str(result.get("topic") or topic),
+            frame_id=str(result.get("frameId") or ""),
+            stamp_sec=float(result.get("stampSec", 0.0) or 0.0),
+            angle_min=float(result.get("angleMin", 0.0) or 0.0),
+            angle_max=float(result.get("angleMax", 0.0) or 0.0),
+            angle_increment=float(result.get("angleIncrement", 0.0) or 0.0),
+            time_increment=float(result.get("timeIncrement", 0.0) or 0.0),
+            scan_time=float(result.get("scanTime", 0.0) or 0.0),
+            range_min=float(result.get("rangeMin", 0.0) or 0.0),
+            range_max=float(result.get("rangeMax", 0.0) or 0.0),
+            ranges=float_list(result.get("ranges")),
+            intensities=float_list(result.get("intensities")),
         )
 
 

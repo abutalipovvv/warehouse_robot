@@ -936,6 +936,30 @@ class OperatorAppState:
             return self.grpc_adapter.get_map_bundle(self._grpc_endpoint(robot), map_name)
         raise ValueError("unsupported robot transport; use grpc")
 
+    def watch_robot_laser_scan(
+        self,
+        robot_id: str,
+        *,
+        topic: str = "/scan",
+        hz: float = 1.0,
+        include_intensities: bool = False,
+    ) -> Any:
+        robot = self.get_robot(robot_id)
+        if not robot.is_grpc:
+            raise ValueError("unsupported robot transport; use grpc")
+        return self.grpc_adapter.watch_laser_scan(
+            self._grpc_endpoint(robot),
+            topic=topic,
+            hz=hz,
+            include_intensities=include_intensities,
+        )
+
+    def robot_teleop_stream(self, robot_id: str, commands) -> Any:
+        robot = self.get_robot(robot_id)
+        if not robot.is_grpc:
+            raise ValueError("unsupported robot transport; use grpc")
+        return self.grpc_adapter.teleop_stream(self._grpc_endpoint(robot), commands)
+
     def _proxy_grpc_robot_request(self, robot_id: str, method: str, path: str, *, body: bytes | None) -> tuple[int, dict[str, str], bytes]:
         robot = self.get_robot(robot_id)
         endpoint = self._grpc_endpoint(robot)

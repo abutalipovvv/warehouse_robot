@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 from typing import Any
 
 from .contracts import (
@@ -19,6 +20,21 @@ from .proto import robot_api_pb2
 
 class GrpcRobotError(RobotApiError):
     pass
+
+
+def _finite_or_none(value: Any) -> float | None:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(number):
+        return None
+    return number
+
+
+def _finite_or_default(value: Any, default: float = 0.0) -> float:
+    number = _finite_or_none(value)
+    return float(default) if number is None else number
 
 
 def _load_grpc_modules():
@@ -113,6 +129,51 @@ class GrpcRobotClient:
 
     def teleop_stop(self, endpoint: str) -> dict[str, Any]:
         return self.teleop(endpoint, linear=0.0, angular=0.0, timeout_ms=80)
+
+    def teleop_stream(self, endpoint: str, commands) -> Any:
+        stub = self._stub(endpoint)
+
+        def _requests():
+            for command in commands:
+                if not isinstance(command, dict):
+                    continue
+                yield robot_api_pb2.TeleopRequest(
+                    linear=float(command.get("linear", 0.0) or 0.0),
+                    angular=float(command.get("angular", 0.0) or 0.0),
+                    timeout_ms=max(80, int(command.get("timeoutMs", command.get("timeout_ms", 350)) or 350)),
+                )
+
+        call = stub.TeleopStream(_requests())
+        try:
+            for response in call:
+                yield self._command_response(response)
+        finally:
+            cancel = getattr(call, "cancel", None)
+            if callable(cancel):
+                cancel()
+
+    def watch_laser_scan(
+        self,
+        endpoint: str,
+        *,
+        topic: str = "/scan",
+        hz: float = 1.0,
+        include_intensities: bool = False,
+    ) -> Any:
+        stub = self._stub(endpoint)
+        request = robot_api_pb2.WatchLaserScanRequest(
+            topic=str(topic or "/scan"),
+            hz=max(0.1, min(10.0, float(hz or 1.0))),
+            include_intensities=bool(include_intensities),
+        )
+        call = stub.WatchLaserScan(request)
+        try:
+            for response in call:
+                yield self._laser_scan_frame(response)
+        finally:
+            cancel = getattr(call, "cancel", None)
+            if callable(cancel):
+                cancel()
 
     def stop(self, endpoint: str) -> dict[str, Any]:
         stub = self._stub(endpoint)
@@ -292,6 +353,25 @@ class GrpcRobotClient:
             payload["warning"] = str(response.error)
         return payload
 
+    def _laser_scan_frame(self, response: robot_api_pb2.LaserScanFrame) -> dict[str, Any]:
+        return {
+            "ok": bool(response.ok),
+            "error": str(response.error or ""),
+            "robotId": str(response.robot_id or ""),
+            "topic": str(response.topic or ""),
+            "frameId": str(response.frame_id or ""),
+            "stampSec": _finite_or_default(response.stamp_sec),
+            "angleMin": _finite_or_default(response.angle_min),
+            "angleMax": _finite_or_default(response.angle_max),
+            "angleIncrement": _finite_or_default(response.angle_increment),
+            "timeIncrement": _finite_or_default(response.time_increment),
+            "scanTime": _finite_or_default(response.scan_time),
+            "rangeMin": _finite_or_default(response.range_min),
+            "rangeMax": _finite_or_default(response.range_max),
+            "ranges": [_finite_or_none(item) for item in response.ranges],
+            "intensities": [_finite_or_none(item) for item in response.intensities],
+        }
+
     def _route_payload(self, robot: dict[str, Any]) -> dict[str, Any]:
         return {
             "active": str(robot.get("state") or "").upper() in {"EXECUTING_ROUTE", "MOVING", "WAITING"},
@@ -324,6 +404,24 @@ class GrpcRobotAdapter:
 
     def teleop_stop(self, endpoint: str) -> dict[str, Any]:
         return self.client.teleop_stop(endpoint)
+
+    def teleop_stream(self, endpoint: str, commands) -> Any:
+        return self.client.teleop_stream(endpoint, commands)
+
+    def watch_laser_scan(
+        self,
+        endpoint: str,
+        *,
+        topic: str = "/scan",
+        hz: float = 1.0,
+        include_intensities: bool = False,
+    ) -> Any:
+        return self.client.watch_laser_scan(
+            endpoint,
+            topic=topic,
+            hz=hz,
+            include_intensities=include_intensities,
+        )
 
     def stop(self, endpoint: str) -> dict[str, Any]:
         return self.client.stop(endpoint)

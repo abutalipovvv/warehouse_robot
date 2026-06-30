@@ -8,10 +8,6 @@ setup(
     name=package_name,
     version="0.0.0",
     packages=["robot_grpc_api", "robot_grpc_api.proto"],
-    package_dir={
-        "robot_grpc_api": ".",
-        "robot_grpc_api.proto": "proto",
-    },
     package_data={"robot_grpc_api.proto": ["*.proto"]},
     include_package_data=True,
     data_files=[
