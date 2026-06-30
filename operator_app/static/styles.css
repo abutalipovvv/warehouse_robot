@@ -306,6 +306,73 @@ button.danger {
   overflow: hidden;
 }
 
+.home-page {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  gap: 0.85rem;
+  padding: 1rem;
+  overflow: hidden;
+}
+
+.home-page-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: end;
+  gap: 1rem;
+}
+
+.home-page-head h2 {
+  margin: 0.16rem 0 0;
+  font-size: 1.65rem;
+}
+
+.home-page-head p {
+  margin: 0.25rem 0 0;
+  color: var(--muted);
+}
+
+.home-page-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.home-page-summary {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.72rem 0.82rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel-soft);
+  color: var(--muted);
+}
+
+.home-page-summary strong {
+  color: var(--text);
+}
+
+.home-robot-grid {
+  min-height: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 0.85rem;
+  align-content: start;
+  overflow: auto;
+  padding: 0.05rem 0.2rem 0.2rem 0.05rem;
+}
+
+.home-robot-card {
+  min-height: 182px;
+  display: grid;
+  align-content: space-between;
+}
+
 .empty-state {
   margin: auto;
   max-width: 440px;
@@ -326,6 +393,38 @@ button.danger {
   min-height: 0;
   flex-direction: column;
   gap: 0.55rem;
+}
+
+.robot-workspace-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 0.6rem;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.96);
+}
+
+.robot-workspace-context {
+  min-width: 0;
+}
+
+.robot-workspace-context strong {
+  display: block;
+  margin-top: 0.12rem;
+  font-size: 1rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.robot-page-nav {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 0.45rem;
+  flex-wrap: wrap;
 }
 
 .robot-control-bar {
@@ -2154,9 +2253,30 @@ select {
 
   .robot-control-bar,
   .robot-control-summary,
-  .robot-control-actions {
+  .robot-control-actions,
+  .robot-workspace-toolbar,
+  .home-page-head,
+  .home-page-summary {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .home-page {
+    padding: 0.75rem;
+  }
+
+  .home-robot-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .home-page-actions,
+  .robot-page-nav {
+    justify-content: stretch;
+  }
+
+  .home-page-actions button,
+  .robot-page-nav button {
+    flex: 1 1 auto;
   }
 
   .fleet-control-row {

@@ -31,12 +31,13 @@ class RobotMapEditorApp {
     this.localMapsList = document.getElementById("localMapsList");
     this.editorLog = document.getElementById("editorLog");
 
+    this.editorGlobalHomeButton = document.getElementById("editorGlobalHomeButton");
+    this.editorGlobalRefreshButton = document.getElementById("editorGlobalRefreshButton");
+    this.editorGlobalAddRobotButton = document.getElementById("editorGlobalAddRobotButton");
     this.editorHomeButton = document.getElementById("editorHomeButton");
     this.editorParamsButton = document.getElementById("editorParamsButton");
     this.editorMapEditorButton = document.getElementById("editorMapEditorButton");
     this.editorRobotModelButton = document.getElementById("editorRobotModelButton");
-    this.editorRobotsButton = document.getElementById("editorRobotsButton");
-    this.editorAddRobotButton = document.getElementById("editorAddRobotButton");
     this.refreshMapsButton = document.getElementById("refreshMapsButton");
     this.saveLocalButton = document.getElementById("saveLocalButton");
     this.saveAsButton = document.getElementById("saveAsButton");
@@ -83,12 +84,13 @@ class RobotMapEditorApp {
   }
 
   bindEvents() {
-    this.editorHomeButton.addEventListener("click", () => this.goOperatorPage("/home"));
+    this.editorGlobalHomeButton.addEventListener("click", () => this.goOperatorPage("/home"));
+    this.editorGlobalRefreshButton.addEventListener("click", () => this.refreshAll());
+    this.editorGlobalAddRobotButton.addEventListener("click", () => this.goOperatorPage("/home", { openAddRobot: true }));
+    this.editorHomeButton.addEventListener("click", () => this.goOperatorPage("/robot"));
     this.editorParamsButton.addEventListener("click", () => this.goOperatorPage("/params"));
     this.editorMapEditorButton.addEventListener("click", () => this.refreshAll());
     this.editorRobotModelButton.addEventListener("click", () => this.goOperatorPage("/robot_model"));
-    this.editorRobotsButton.addEventListener("click", () => this.goOperatorPage("/home", { openRobots: true }));
-    this.editorAddRobotButton.addEventListener("click", () => this.goOperatorPage("/home", { openAddRobot: true }));
     this.refreshMapsButton.addEventListener("click", () => this.refreshAll());
     this.saveLocalButton.addEventListener("click", () => this.saveLocalDraft());
     this.saveAsButton.addEventListener("click", () => this.handleSaveAsAndClose());
@@ -1351,7 +1353,7 @@ class RobotMapEditorApp {
           window.history.back();
           return;
         }
-        window.location.assign("/");
+        window.location.assign("/robot");
       }
     }, 120);
   }

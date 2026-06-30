@@ -17,12 +17,13 @@ from typing import Any
 from urllib.parse import parse_qs, unquote, urlparse
 import webbrowser
 
-from .map_cache import MapCache
+from .map_cache import MapCache, default_maps_cache_root
 from .fleet_manager_app import DEFAULT_FLEET_MAP_DIR, FLEET_MANAGER_ID, OperatorFleetManager
 from .models import KnownRobot
 from .registry import RobotRegistry, default_registry_path
 from .robot_grpc_api.client import GrpcRobotAdapter
 from .robot_grpc_api.contracts import DEFAULT_GRPC_PORT
+from .workspace_cache import OperatorWorkspace
 from fleet_manager.route_core import build_editable_map_bundle_payload
 
 DEFAULT_STATIC_DIR = Path(__file__).resolve().parent / "static"
@@ -32,7 +33,7 @@ WEBSOCKET_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 DEFAULT_FLEET_WS_INTERVAL_MS = 180
 MIN_FLEET_WS_INTERVAL_MS = 50
 MAX_FLEET_WS_INTERVAL_MS = 1000
-APP_ROUTES = {"/", "/home", "/params", "/robot_model", "/map_editor"}
+APP_ROUTES = {"/", "/home", "/robot", "/params", "/robot_model", "/map_editor"}
 
 
 class RobotProbeError(RuntimeError):
@@ -46,7 +47,9 @@ def utc_now() -> str:
 class OperatorAppState:
     def __init__(self, registry_path: Path, probe_timeout: float, fleet_params_path: Path, fleet_map_dir: Path) -> None:
         self.registry = RobotRegistry(registry_path)
-        self.map_cache = MapCache()
+        self.workspace = OperatorWorkspace()
+        self.legacy_map_cache_root = default_maps_cache_root().expanduser().resolve()
+        self.map_cache = MapCache(robot_dir_resolver=self._maps_dir_for_robot_id)
         self.grpc_adapter = GrpcRobotAdapter(timeout=max(1.5, float(probe_timeout)))
         self.map_timeout = max(10.0, float(probe_timeout) * 10.0)
         self.fleet_params_path = Path(fleet_params_path).expanduser().resolve()
@@ -57,6 +60,89 @@ class OperatorAppState:
         )
         self._lock = Lock()
         self._fleet_lock = RLock()
+
+    def _maps_dir_for_robot_id(self, robot_id: str) -> Path:
+        if robot_id == FLEET_MANAGER_ID:
+            directory = self.workspace.maps_dir("fleet_manager")
+            directory.mkdir(parents=True, exist_ok=True)
+            return directory
+        with self._lock:
+            robots = self.registry.load()
+        for robot in robots:
+            if robot.id == robot_id:
+                self._ensure_robot_workspace(robot)
+                return self.workspace.maps_dir(robot)
+        directory = self.workspace.maps_dir(robot_id)
+        directory.mkdir(parents=True, exist_ok=True)
+        return directory
+
+    def _legacy_maps_dir_for_robot_id(self, robot_id: str) -> Path:
+        safe = self.map_cache._safe_name(robot_id)
+        return self.legacy_map_cache_root / safe
+
+    def _ensure_robot_workspace(self, robot: KnownRobot) -> dict[str, Any]:
+        return self.workspace.ensure_robot_workspace(
+            robot,
+            legacy_maps_dir=self._legacy_maps_dir_for_robot_id(robot.id),
+        )
+
+    def _cache_robot_params(self, robot: KnownRobot, params: dict[str, Any], *, source: str = "robot") -> dict[str, Any]:
+        return self.workspace.save_params(robot, params, source=source)
+
+    def _bootstrap_robot_workspace(self, robot: KnownRobot, endpoint: str) -> dict[str, Any]:
+        workspace = self._ensure_robot_workspace(robot)
+        warnings: list[str] = []
+        cached_maps: list[str] = []
+        map_index: dict[str, Any] = {"ok": False, "maps": []}
+        active_map: dict[str, Any] = {"ok": False, "mapName": ""}
+
+        try:
+            map_index = self.grpc_adapter.list_maps(endpoint)
+            if isinstance(map_index, dict):
+                self.workspace.save_map_index(robot, map_index)
+        except Exception as exc:
+            warnings.append(f"list maps failed: {exc}")
+
+        try:
+            active_map = self.grpc_adapter.active_map(endpoint)
+            if isinstance(active_map, dict):
+                self.workspace.save_active_map_meta(robot, active_map)
+        except Exception as exc:
+            warnings.append(f"active map failed: {exc}")
+
+        map_names: list[str] = []
+        for item in map_index.get("maps", []) if isinstance(map_index, dict) else []:
+            if not isinstance(item, dict):
+                continue
+            name = str(item.get("name") or item.get("mapName") or "").strip()
+            if name:
+                map_names.append(name)
+        active_name = str(active_map.get("mapName") or "").strip() if isinstance(active_map, dict) else ""
+        if active_name and active_name not in map_names:
+            map_names.insert(0, active_name)
+
+        for map_name in map_names:
+            try:
+                bundle = self.grpc_adapter.get_map_bundle(endpoint, map_name)
+                self.map_cache.save_pulled_map(robot.id, bundle, activate=map_name == active_name or not cached_maps)
+                cached_maps.append(str(bundle.get("mapName") or map_name))
+            except Exception as exc:
+                warnings.append(f"map {map_name} failed: {exc}")
+
+        try:
+            params_payload = self.grpc_adapter.get_params(endpoint)
+            params = params_payload.get("params") if isinstance(params_payload, dict) else None
+            if isinstance(params, dict):
+                self._cache_robot_params(robot, params, source="robot")
+        except Exception as exc:
+            warnings.append(f"params failed: {exc}")
+
+        return {
+            "workspace": workspace,
+            "cachedMaps": cached_maps,
+            "activeMapName": active_name,
+            "warnings": warnings,
+        }
 
     def list_robots_payload(self, probe_robots: bool = True) -> dict[str, Any]:
         with self._lock:
@@ -113,9 +199,11 @@ class OperatorAppState:
             )
             with self._lock:
                 self.registry.upsert(robot)
+            cache = self._bootstrap_robot_workspace(robot, robot.base_url)
             return {
                 "ok": True,
                 "robot": self._robot_payload(robot, probe=probe),
+                "cache": cache,
             }
         raise ValueError("robot transport must be grpc")
 
@@ -175,6 +263,7 @@ class OperatorAppState:
                     "status": probe.get("status") if isinstance(probe.get("status"), dict) else None,
                     "error": str(probe.get("error") or "").strip(),
                     "probed": bool(probe.get("probed", True)),
+                    "workspace": self.workspace.workspace_payload(robot),
                 }
             )
             return payload
@@ -240,7 +329,10 @@ class OperatorAppState:
     def robot_maps_list_payload(self, robot_id: str) -> dict[str, Any]:
         if self._is_grpc_robot_id(robot_id):
             robot = self.get_robot(robot_id)
-            return self.grpc_adapter.list_maps(self._grpc_endpoint(robot))
+            result = self.grpc_adapter.list_maps(self._grpc_endpoint(robot))
+            if isinstance(result, dict):
+                self.workspace.save_map_index(robot, result)
+            return result
         raise ValueError("unsupported robot transport; use grpc")
 
     def robot_maps_active_payload(self, robot_id: str) -> dict[str, Any]:
@@ -253,15 +345,31 @@ class OperatorAppState:
                     active["signature"] = str(bundle.get("signature") or "")
                 except Exception:
                     active.setdefault("signature", "")
+            self.workspace.save_active_map_meta(robot, active)
             return active
         raise ValueError("unsupported robot transport; use grpc")
 
     def robot_params_payload(self, robot_id: str) -> dict[str, Any]:
         robot = self.get_robot(robot_id)
         if robot.is_grpc:
-            result = self.grpc_adapter.get_params(self._grpc_endpoint(robot))
-            result["robotId"] = robot_id
-            return result
+            try:
+                result = self.grpc_adapter.get_params(self._grpc_endpoint(robot))
+                params = result.get("params") if isinstance(result, dict) else None
+                if isinstance(params, dict):
+                    result["cache"] = self._cache_robot_params(robot, params, source="robot")
+                result["robotId"] = robot_id
+                return result
+            except Exception as exc:
+                cached = self.workspace.load_params(robot)
+                if isinstance(cached, dict):
+                    return {
+                        "ok": True,
+                        "robotId": robot_id,
+                        "cached": True,
+                        "warning": f"using cached params because robot is unavailable: {exc}",
+                        "params": cached,
+                    }
+                raise
         raise ValueError("unsupported robot transport; use grpc")
 
     def save_robot_params_payload(self, robot_id: str, payload: dict[str, Any]) -> dict[str, Any]:
@@ -269,6 +377,10 @@ class OperatorAppState:
             robot = self.get_robot(robot_id)
             params = payload.get("params") if isinstance(payload.get("params"), dict) else payload
             result = self.grpc_adapter.put_params(self._grpc_endpoint(robot), params)
+            if not isinstance(result, dict):
+                result = {"ok": True}
+            saved_params = result.get("params") if isinstance(result.get("params"), dict) else params
+            result["cache"] = self._cache_robot_params(robot, saved_params, source="operator")
             result["robotId"] = robot_id
             return result
         raise ValueError("unsupported robot transport; use grpc")
@@ -593,6 +705,7 @@ class OperatorAppState:
             result = self.grpc_adapter.get_map_bundle(self._grpc_endpoint(robot), map_name)
             local_name = str(result.get("mapName") or map_name or "active").strip() or "active"
             cached = self.map_cache.save_pulled_map(robot_id, result, activate=True)
+            self.workspace.save_active_map_meta(robot, {"ok": True, "mapName": str(result.get("mapName") or local_name), "signature": str(result.get("signature") or "")})
             return {
                 "ok": True,
                 "pulled": result,
@@ -747,6 +860,11 @@ class OperatorAppState:
                 "localActiveMapName": local_active_name,
             }
         cached = self.map_cache.save_pulled_map(robot_id, robot_current, activate=True)
+        robot = self.get_robot(robot_id)
+        self.workspace.save_active_map_meta(
+            robot,
+            {"ok": True, "mapName": str(robot_current.get("mapName") or robot_active_name), "signature": str(robot_current.get("signature") or "")},
+        )
         pulled = {
             "ok": True,
             "pulled": robot_current,
@@ -772,6 +890,7 @@ class OperatorAppState:
                 raise ValueError("mapName is required")
             loaded = self.grpc_adapter.load_map(self._grpc_endpoint(robot), map_name)
             self.map_cache.set_active_map(robot_id, map_name)
+            self.workspace.save_active_map_meta(robot, {"ok": True, **loaded})
             return loaded
         raise ValueError("unsupported robot transport; use grpc")
 
@@ -815,6 +934,7 @@ class OperatorAppState:
             robot_map_name=str(loaded.get("mapName") or local_map_name),
             activate=True,
         )
+        self.workspace.save_active_map_meta(self.get_robot(robot_id), {"ok": True, **loaded})
         return {
             "ok": True,
             "changed": True,

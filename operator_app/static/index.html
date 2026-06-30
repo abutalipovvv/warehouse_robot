@@ -17,12 +17,9 @@
         </div>
       </div>
       <div class="toolbar">
-        <button id="homeButton" type="button">Home</button>
-        <button id="paramsNavButton" type="button">Params</button>
-        <button id="mapEditorNavButton" type="button">Map Editor</button>
-        <button id="robotModelNavButton" type="button">Robot Model</button>
-        <button id="openSidebarButton" type="button">Robots</button>
-        <button id="refreshButton" type="button">Refresh</button>
+        <button id="globalHomeButton" type="button">Home</button>
+        <button id="openSidebarButton" class="hidden" type="button">Robots</button>
+        <button id="refreshButton" type="button">Refresh All</button>
         <button id="addRobotButton" class="primary" type="button">Add Robot +</button>
       </div>
     </header>
@@ -42,6 +39,25 @@
       </aside>
 
       <section class="detail-panel">
+        <section id="homePage" class="home-page hidden">
+          <div class="home-page-head">
+            <div>
+              <div class="eyebrow">Home</div>
+              <h2>Robots</h2>
+              <p>Connect to a robot by IP address, then open its workspace.</p>
+            </div>
+            <div class="home-page-actions">
+              <button id="homeRefreshButton" type="button">Refresh All</button>
+              <button id="homeAddRobotButton" class="primary" type="button">Add Robot +</button>
+            </div>
+          </div>
+          <div class="home-page-summary">
+            <strong id="homeRobotCountText">0 robots</strong>
+            <span>Saved robot endpoints available to Operator App.</span>
+          </div>
+          <div id="homeRobotGrid" class="home-robot-grid"></div>
+        </section>
+
         <div id="emptyState" class="empty-state">
           <h2>Select a robot</h2>
           <p>Add a robot by IP address, then open its control view or map editor here.</p>
@@ -49,6 +65,18 @@
 
         <div id="robotView" class="robot-view hidden">
           <div class="robot-view-shell">
+            <div class="robot-workspace-toolbar">
+              <div class="robot-workspace-context">
+                <div class="eyebrow">Robot Workspace</div>
+                <strong id="robotWorkspaceTitle">-</strong>
+              </div>
+              <div class="robot-page-nav">
+                <button id="homeButton" type="button">Home</button>
+                <button id="paramsNavButton" type="button">Params</button>
+                <button id="mapEditorNavButton" type="button">Map Editor</button>
+                <button id="robotModelNavButton" type="button">Robot Model</button>
+              </div>
+            </div>
             <div class="robot-control-bar">
               <div class="robot-control-summary">
                 <div class="summary-card">

@@ -1,22 +1,19 @@
 robot_model:
-  source: nav2
-  radius: 0.22
-  footprint_segments: 16
   footprint:
   - x: 0.22
     y: 0
   - x: 0.203
     y: 0.084
-  - x: 0.156
-    y: 0.156
-  - x: 0.084
-    y: 0.203
+  - x: 0.402
+    y: 0.546
+  - x: 0.118
+    y: 0.609
   - x: 0
-    y: 0.22
-  - x: -0.084
-    y: 0.203
-  - x: -0.156
-    y: 0.156
+    y: 0.609
+  - x: -0.123
+    y: 0.609
+  - x: -0.361
+    y: 0.546
   - x: -0.203
     y: 0.084
   - x: -0.22
@@ -48,7 +45,7 @@ robot_model:
       color: '#d95521'
     wheel_left:
       x: 0
-      y: 0.218
+      y: 0.203
       label: WL
       color: '#2f3a4a'
     wheel_right:
@@ -56,6 +53,9 @@ robot_model:
       y: -0.218
       label: WR
       color: '#2f3a4a'
+  source: nav2
+  radius: 0.22
+  footprint_segments: 16
 navigation:
   route_speed: 1
   footprint_lookahead: 0.45

@@ -975,8 +975,14 @@ class OperatorApp {
 
     this.robotsList = document.getElementById("robotsList");
     this.robotCountText = document.getElementById("robotCountText");
+    this.homePage = document.getElementById("homePage");
+    this.homeRobotGrid = document.getElementById("homeRobotGrid");
+    this.homeRobotCountText = document.getElementById("homeRobotCountText");
+    this.homeRefreshButton = document.getElementById("homeRefreshButton");
+    this.homeAddRobotButton = document.getElementById("homeAddRobotButton");
     this.sidebarDrawer = document.getElementById("sidebarDrawer");
     this.sidebarBackdrop = document.getElementById("sidebarBackdrop");
+    this.globalHomeButton = document.getElementById("globalHomeButton");
     this.homeButton = document.getElementById("homeButton");
     this.paramsNavButton = document.getElementById("paramsNavButton");
     this.mapEditorNavButton = document.getElementById("mapEditorNavButton");
@@ -985,6 +991,7 @@ class OperatorApp {
     this.closeSidebarButton = document.getElementById("closeSidebarButton");
     this.emptyState = document.getElementById("emptyState");
     this.robotView = document.getElementById("robotView");
+    this.robotWorkspaceTitle = document.getElementById("robotWorkspaceTitle");
     this.robotActiveMapText = document.getElementById("robotActiveMapText");
     this.operatorActiveMapText = document.getElementById("operatorActiveMapText");
     this.robotStateText = document.getElementById("robotStateText");
@@ -1159,15 +1166,18 @@ class OperatorApp {
   }
 
   bindEvents() {
-    this.homeButton.addEventListener("click", async () => this.navigateHomePage());
-    this.paramsNavButton.addEventListener("click", async () => this.navigateParamsPage());
-    this.mapEditorNavButton.addEventListener("click", async () => this.navigateMapEditorPage());
-    this.robotModelNavButton.addEventListener("click", async () => this.navigateRobotModelPage());
-    this.openSidebarButton.addEventListener("click", () => this.openSidebar());
-    this.closeSidebarButton.addEventListener("click", () => this.closeSidebar());
-    this.sidebarBackdrop.addEventListener("click", () => this.closeSidebar());
-    this.refreshButton.addEventListener("click", () => this.refreshRobots());
-    this.addRobotButton.addEventListener("click", () => this.openAddRobotDialog());
+    this.globalHomeButton?.addEventListener("click", async () => this.navigateGlobalHomePage());
+    this.homeButton?.addEventListener("click", async () => this.navigateHomePage());
+    this.paramsNavButton?.addEventListener("click", async () => this.navigateParamsPage());
+    this.mapEditorNavButton?.addEventListener("click", async () => this.navigateMapEditorPage());
+    this.robotModelNavButton?.addEventListener("click", async () => this.navigateRobotModelPage());
+    this.openSidebarButton?.addEventListener("click", () => this.openSidebar());
+    this.closeSidebarButton?.addEventListener("click", () => this.closeSidebar());
+    this.sidebarBackdrop?.addEventListener("click", () => this.closeSidebar());
+    this.refreshButton?.addEventListener("click", () => this.refreshRobots());
+    this.addRobotButton?.addEventListener("click", () => this.openAddRobotDialog());
+    this.homeRefreshButton?.addEventListener("click", () => this.refreshRobots());
+    this.homeAddRobotButton?.addEventListener("click", () => this.openAddRobotDialog());
     this.navigateRobotButton.addEventListener("click", () => this.toggleNavigateMode());
     this.cancelRouteButton.addEventListener("click", () => this.cancelRoute());
     this.stopRobotButton.addEventListener("click", () => this.stopRobot());
@@ -1322,6 +1332,12 @@ class OperatorApp {
 
   pageForPath(pathname) {
     const path = String(pathname || "/").replace(/\/+$/, "") || "/";
+    if (path === "/" || path === "/home") {
+      return "robots";
+    }
+    if (path === "/robot" || path === "/robot-home") {
+      return "fleet";
+    }
     if (path === "/params") {
       return "params";
     }
@@ -1331,17 +1347,31 @@ class OperatorApp {
     if (path === "/map_editor" || path === "/map-editor") {
       return "map";
     }
-    return "fleet";
+    return "robots";
   }
 
   pathForFleetPage(tabName) {
-    const tab = ["fleet", "params", "model", "map"].includes(tabName) ? tabName : "fleet";
+    const tab = ["robots", "fleet", "params", "model", "map"].includes(tabName) ? tabName : "robots";
     return {
-      fleet: "/home",
+      robots: "/home",
+      fleet: "/robot",
       params: "/params",
       model: "/robot_model",
       map: "/map_editor",
     }[tab];
+  }
+
+  async navigateGlobalHomePage(options = {}) {
+    const path = this.pathForFleetPage("robots");
+    const method = options.replace ? "replaceState" : "pushState";
+    if (window.location.pathname !== path) {
+      window.history[method]({ fleetPage: "robots" }, "", path);
+    }
+    this.setFleetTab("robots");
+    this.closeRobotStatusStream();
+    this.closeFleetStatusStream();
+    this.stopFleetAnimationLoop();
+    this.renderSelectedRobot();
   }
 
   async navigateHomePage(options = {}) {
@@ -1351,6 +1381,13 @@ class OperatorApp {
       window.history[method]({ fleetPage: "fleet" }, "", path);
     }
     this.setFleetTab("fleet");
+    if (!this.selectedRobot() && this.robots.length) {
+      const robot = this.robots.find((item) => !item.system) || this.robots[0];
+      this.selectedRobotId = robot.id;
+      window.localStorage.setItem("operator:selectedRobotId", robot.id);
+    }
+    await this.refreshRobotMapState({ quiet: true });
+    await this.fetchSelectedRobotStatus(true);
     this.renderSelectedRobot();
   }
 
@@ -1433,6 +1470,10 @@ class OperatorApp {
       window.history.replaceState({ fleetPage: tab }, "", canonical);
     }
     this.setFleetTab(tab);
+    if (tab === "robots") {
+      this.renderSelectedRobot();
+      return;
+    }
     if (tab === "model") {
       this.ensureRobotSelectedForModel();
       await this.ensureRobotParamsLoaded();
@@ -1481,7 +1522,7 @@ class OperatorApp {
   }
 
   setFleetTab(tabName) {
-    const tab = ["fleet", "params", "model", "map"].includes(tabName) ? tabName : "fleet";
+    const tab = ["robots", "fleet", "params", "model", "map"].includes(tabName) ? tabName : "robots";
     this.fleetActiveTab = tab;
     window.localStorage.setItem("operator:fleetActiveTab", tab);
     this.fleetTabButtons.forEach((button) => button.classList.toggle("active", button.dataset.fleetTab === tab));
@@ -1506,10 +1547,14 @@ class OperatorApp {
   }
 
   syncFleetPageClass(isFleet = this.isFleetManager()) {
+    const isRobotsHome = this.fleetActiveTab === "robots";
     const isRobotModel = this.fleetActiveTab === "model";
     const isRobotParams = !isFleet && this.fleetActiveTab === "params";
-    const pageKey = isRobotModel ? "robot-model" : (isFleet ? (this.fleetActiveTab || "fleet") : (isRobotParams ? "robot-params" : "robot"));
+    const pageKey = isRobotsHome ? "robots-home" : (isRobotModel ? "robot-model" : (isFleet ? (this.fleetActiveTab || "fleet") : (isRobotParams ? "robot-params" : "robot")));
     document.body.dataset.fleetPage = pageKey;
+    if (this.globalHomeButton) {
+      this.globalHomeButton.classList.toggle("primary", isRobotsHome);
+    }
     if (this.homeButton) {
       this.homeButton.classList.toggle("primary", this.fleetActiveTab === "fleet");
     }
@@ -1532,7 +1577,7 @@ class OperatorApp {
     for (const page of ["fleet", "params", "model", "map"]) {
       this.operatorConsole.classList.remove(`fleet-page-${page}`);
     }
-    if (isFleet && !isRobotModel) {
+    if (isFleet && !isRobotModel && !isRobotsHome) {
       this.operatorConsole.classList.add(`fleet-page-${this.fleetActiveTab || "fleet"}`);
     }
   }
@@ -1602,6 +1647,12 @@ class OperatorApp {
   }
 
   syncFleetStatusStream() {
+    if (this.isGlobalHomePage()) {
+      this.closeRobotStatusStream();
+      this.closeFleetStatusStream();
+      this.stopFleetAnimationLoop();
+      return;
+    }
     if (this.isFleetManager()) {
       this.closeRobotStatusStream();
       this.openFleetStatusStream();
@@ -2047,7 +2098,7 @@ class OperatorApp {
       this.selectedRobotId = "";
       window.localStorage.removeItem("operator:selectedRobotId");
     }
-    if (!this.selectedRobotId && this.robots.length) {
+    if (!this.selectedRobotId && this.robots.length && !this.isGlobalHomePage()) {
       this.selectedRobotId = this.robots[0].id;
       window.localStorage.setItem("operator:selectedRobotId", this.selectedRobotId);
     }
@@ -2062,6 +2113,16 @@ class OperatorApp {
     this.syncFleetStatusStream();
     if (options.lightweight) {
       this.renderRobotList();
+      return;
+    }
+    if (this.isGlobalHomePage()) {
+      this.robotMapState = this.emptyMapState();
+      this.operatorMapPayload = null;
+      this.operatorMapSignature = "";
+      this.render();
+      if (!options.quiet) {
+        this.showProbeResult("neutral", "Robot list refreshed.");
+      }
       return;
     }
     await this.refreshRobotMapState({ quiet: true });
@@ -2194,6 +2255,9 @@ class OperatorApp {
   }
 
   async fetchSelectedRobotStatus(silent = false) {
+    if (silent && this.isGlobalHomePage()) {
+      return;
+    }
     const robot = this.selectedRobot();
     if (!robot || this.statusRequestPending) {
       return;
@@ -2243,6 +2307,11 @@ class OperatorApp {
   }
 
   async tickFleetIfSelected() {
+    if (this.isGlobalHomePage()) {
+      this.closeFleetStatusStream();
+      this.stopFleetAnimationLoop();
+      return;
+    }
     if (!this.selectedRobot() || !this.isFleetManager() || this.fleetTickPending || this.manualKeys.size) {
       if (!this.isFleetManager()) {
         this.closeFleetStatusStream();
@@ -2303,17 +2372,45 @@ class OperatorApp {
   render() {
     const savedCount = this.robots.filter((robot) => !this.isFleetManager(robot) && !robot.system).length;
     this.robotCountText.textContent = `${savedCount} saved`;
+    if (this.homeRobotCountText) {
+      this.homeRobotCountText.textContent = this.homeRobotCountLabel();
+    }
     this.renderRobotList();
     this.renderSelectedRobot();
   }
 
+  homeRobotCountLabel() {
+    const robotCount = this.robots.filter((robot) => !this.isFleetManager(robot) && !robot.system).length;
+    const systemCount = this.robots.length - robotCount;
+    const robotLabel = `${robotCount} ${robotCount === 1 ? "robot" : "robots"}`;
+    if (!systemCount) {
+      return robotLabel;
+    }
+    return `${robotLabel}, ${systemCount} system`;
+  }
+
   renderRobotList() {
-    this.robotsList.innerHTML = "";
+    this.renderRobotCards(this.robotsList, { openWorkspace: false });
+    this.renderHomeRobotGrid();
+  }
+
+  renderHomeRobotGrid() {
+    if (this.homeRobotCountText) {
+      this.homeRobotCountText.textContent = this.homeRobotCountLabel();
+    }
+    this.renderRobotCards(this.homeRobotGrid, { openWorkspace: true, home: true });
+  }
+
+  renderRobotCards(container, options = {}) {
+    if (!container) {
+      return;
+    }
+    container.innerHTML = "";
     if (!this.robots.length) {
       const empty = document.createElement("div");
       empty.className = "probe-result neutral";
       empty.textContent = "No robots added yet. Use Add Robot + to connect by IP.";
-      this.robotsList.append(empty);
+      container.append(empty);
       return;
     }
 
@@ -2321,7 +2418,7 @@ class OperatorApp {
       const isFleet = this.isFleetManager(robot);
       const isRos2 = this.isRos2Robot(robot);
       const button = document.createElement("div");
-      button.className = "robot-card";
+      button.className = options.home ? "robot-card home-robot-card" : "robot-card";
       button.tabIndex = 0;
       button.setAttribute("role", "button");
       if (robot.id === this.selectedRobotId) {
@@ -2334,6 +2431,10 @@ class OperatorApp {
         this.currentRoute = null;
         this.syncFleetStatusStream();
         this.closeSidebar();
+        if (options.openWorkspace) {
+          await this.navigateHomePage();
+          return;
+        }
         if (this.isRobotModelPage() && this.isFleetManager(robot)) {
           await this.navigateFleetPage("fleet", { replace: true });
           return;
@@ -2398,13 +2499,24 @@ class OperatorApp {
           await this.handleRemoveRobot(robot);
         });
       }
-      this.robotsList.append(button);
+      container.append(button);
     }
   }
 
   renderSelectedRobot() {
     const robot = this.selectedRobot();
     this.renderSidebar();
+    this.renderHomeRobotGrid();
+    if (this.isGlobalHomePage()) {
+      this.homePage?.classList.remove("hidden");
+      this.emptyState.classList.add("hidden");
+      this.robotView.classList.add("hidden");
+      this.fleetControlPanel.classList.add("hidden");
+      this.robotParamsPanel.classList.add("hidden");
+      this.robotModelPanel.classList.add("hidden");
+      return;
+    }
+    this.homePage?.classList.add("hidden");
     if (!robot) {
       this.emptyState.classList.remove("hidden");
       this.robotView.classList.add("hidden");
@@ -2422,6 +2534,10 @@ class OperatorApp {
 
     this.emptyState.classList.add("hidden");
     this.robotView.classList.remove("hidden");
+    if (this.robotWorkspaceTitle) {
+      const identity = robot.identity || robot.lastIdentity || {};
+      this.robotWorkspaceTitle.textContent = robot.name || identity.robotId || robot.id || "-";
+    }
     this.robotActiveMapText.textContent = this.robotMapState.robotActiveMapName || "-";
     this.operatorActiveMapText.textContent = this.robotMapState.operatorActiveMapName || "-";
     this.renderMapSyncStatus();
@@ -2591,6 +2707,10 @@ class OperatorApp {
       return `offline: ${robot.remoteError}`;
     }
     return robot.online === false ? "offline" : "online";
+  }
+
+  isGlobalHomePage() {
+    return this.fleetActiveTab === "robots";
   }
 
   isRobotModelPage() {
@@ -5930,7 +6050,14 @@ class OperatorApp {
       window.localStorage.setItem("operator:selectedRobotId", this.selectedRobotId);
       this.closeSidebar();
       await this.refreshRobots({ quiet: true });
-      this.showProbeResult("success", "Robot saved. Use Pull Map when you want to copy its active map into the operator cache.");
+      const warnings = Array.isArray(result.cache?.warnings) ? result.cache.warnings : [];
+      const cachedMaps = Array.isArray(result.cache?.cachedMaps) ? result.cache.cachedMaps.length : 0;
+      this.showProbeResult(
+        warnings.length ? "neutral" : "success",
+        warnings.length
+          ? `Robot saved. Workspace created with ${cachedMaps} cached map(s); ${warnings.length} cache warning(s).`
+          : `Robot saved. Workspace created with ${cachedMaps} cached map(s), params, and robot model.`,
+      );
     } catch (error) {
       this.showProbeResult("error", error.message || String(error));
     }

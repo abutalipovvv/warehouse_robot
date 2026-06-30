@@ -8,25 +8,47 @@
 </head>
 <body>
   <div class="editor-shell">
-    <header class="editor-topbar">
+    <header class="editor-global-topbar">
+      <div class="editor-brand">
+        <span class="brand-mark" aria-hidden="true"></span>
+        <div>
+          <h1>Warehouse Operator</h1>
+          <p>Robot map editing workspace.</p>
+        </div>
+      </div>
+      <div class="editor-global-actions">
+        <button id="editorGlobalHomeButton" type="button">Home</button>
+        <button id="editorGlobalRefreshButton" type="button">Refresh All</button>
+        <button id="editorGlobalAddRobotButton" class="primary" type="button">Add Robot +</button>
+      </div>
+    </header>
+
+    <section class="editor-context-bar">
       <div class="editor-title">
         <div class="eyebrow">Robot Map Editor</div>
         <h1 id="editorRobotTitle">Select robot</h1>
         <p id="editorStatusText">Waiting for robot map data.</p>
       </div>
-      <div class="editor-actions">
+      <nav class="editor-robot-nav" aria-label="Robot workspace">
         <button id="editorHomeButton" type="button">Home</button>
         <button id="editorParamsButton" type="button">Params</button>
         <button id="editorMapEditorButton" class="active" type="button">Map Editor</button>
         <button id="editorRobotModelButton" type="button">Robot Model</button>
-        <button id="editorRobotsButton" type="button">Robots</button>
+      </nav>
+    </section>
+
+    <section class="editor-command-bar">
+      <div>
+        <div class="eyebrow">Local Draft Commands</div>
+        <strong>Save changes before pushing the map from Control.</strong>
+      </div>
+      <div class="editor-actions">
         <button id="refreshMapsButton" type="button">Refresh</button>
-        <button id="editorAddRobotButton" class="primary" type="button">Add Robot +</button>
         <button id="saveLocalButton" class="primary" type="button">Save Local</button>
         <button id="saveAsButton" type="button">Save As</button>
         <button id="closeEditorButton" type="button">Close Editor</button>
       </div>
-    </header>
+    </section>
 
     <main class="editor-workspace">
       <aside class="editor-sidebar">

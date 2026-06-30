@@ -6,7 +6,7 @@ import re
 import shutil
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from fleet_manager.route_core import (
     build_editable_map_payload,
@@ -28,8 +28,9 @@ def utc_now() -> str:
 
 
 class MapCache:
-    def __init__(self, root: Path | None = None) -> None:
+    def __init__(self, root: Path | None = None, *, robot_dir_resolver: Callable[[str], Path] | None = None) -> None:
         self.root = (root or default_maps_cache_root()).expanduser().resolve()
+        self.robot_dir_resolver = robot_dir_resolver
 
     def list_maps(self, robot_id: str) -> list[dict[str, Any]]:
         robot_dir = self._robot_dir(robot_id)
@@ -230,6 +231,8 @@ class MapCache:
         return map_dir if map_dir.is_dir() else None
 
     def _robot_dir(self, robot_id: str) -> Path:
+        if self.robot_dir_resolver is not None:
+            return self.robot_dir_resolver(robot_id).expanduser().resolve()
         return self.root / self._safe_name(robot_id)
 
     def _map_dir(self, robot_id: str, map_name: str) -> Path:
