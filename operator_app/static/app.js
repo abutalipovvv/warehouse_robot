@@ -1,3 +1,467 @@
+const ROBOT_PARAM_SCHEMA = [
+  {
+    group: "Nav2",
+    section: "AMCL",
+    path: "nav2.amcl.update_min_d",
+    label: "AMCL update distance",
+    description: "Minimum linear movement before AMCL updates localization.",
+    type: "number",
+    default: 0.01,
+    min: 0,
+    step: 0.001,
+    unit: "m",
+  },
+  {
+    group: "Nav2",
+    section: "AMCL",
+    path: "nav2.amcl.update_min_a",
+    label: "AMCL update angle",
+    description: "Minimum angular movement before AMCL updates localization.",
+    type: "number",
+    default: 0.01,
+    min: 0,
+    step: 0.001,
+    unit: "rad",
+  },
+  {
+    group: "Nav2",
+    section: "AMCL",
+    path: "nav2.amcl.transform_tolerance",
+    label: "AMCL transform tolerance",
+    description: "Allowed TF timing tolerance for AMCL map to odom transform.",
+    type: "number",
+    default: 0.2,
+    min: 0,
+    step: 0.01,
+    unit: "s",
+  },
+  {
+    group: "Nav2",
+    section: "AMCL",
+    path: "nav2.amcl.min_particles",
+    label: "AMCL min particles",
+    description: "Lower particle count used by AMCL localization.",
+    type: "integer",
+    default: 1000,
+    min: 100,
+    step: 50,
+  },
+  {
+    group: "Nav2",
+    section: "AMCL",
+    path: "nav2.amcl.max_particles",
+    label: "AMCL max particles",
+    description: "Upper particle count used by AMCL localization.",
+    type: "integer",
+    default: 2500,
+    min: 100,
+    step: 50,
+  },
+  {
+    group: "Nav2",
+    section: "Controller",
+    path: "nav2.controller_server.controller_frequency",
+    label: "Controller frequency",
+    description: "How often Nav2 computes velocity commands.",
+    type: "number",
+    default: 20,
+    min: 1,
+    step: 1,
+    unit: "Hz",
+  },
+  {
+    group: "Nav2",
+    section: "Controller",
+    path: "nav2.controller_server.xy_goal_tolerance",
+    label: "Goal position tolerance",
+    description: "Accepted XY distance to a Nav2 goal.",
+    type: "number",
+    default: 0.05,
+    min: 0,
+    step: 0.01,
+    unit: "m",
+  },
+  {
+    group: "Nav2",
+    section: "Controller",
+    path: "nav2.controller_server.yaw_goal_tolerance",
+    label: "Goal yaw tolerance",
+    description: "Accepted heading error at a Nav2 goal.",
+    type: "number",
+    default: 0.05,
+    min: 0,
+    step: 0.01,
+    unit: "rad",
+  },
+  {
+    group: "Nav2",
+    section: "Controller",
+    path: "nav2.controller_server.follow_path.vx_max",
+    label: "MPPI max forward speed",
+    description: "Maximum forward velocity sampled by the Nav2 MPPI controller.",
+    type: "number",
+    default: 0.5,
+    min: 0,
+    step: 0.05,
+    unit: "m/s",
+  },
+  {
+    group: "Nav2",
+    section: "Controller",
+    path: "nav2.controller_server.follow_path.vx_min",
+    label: "MPPI max reverse speed",
+    description: "Minimum X velocity sampled by MPPI. Negative values allow reverse motion.",
+    type: "number",
+    default: -0.35,
+    step: 0.05,
+    unit: "m/s",
+  },
+  {
+    group: "Nav2",
+    section: "Controller",
+    path: "nav2.controller_server.follow_path.wz_max",
+    label: "MPPI max angular speed",
+    description: "Maximum angular velocity sampled by the Nav2 MPPI controller.",
+    type: "number",
+    default: 1.9,
+    min: 0,
+    step: 0.05,
+    unit: "rad/s",
+  },
+  {
+    group: "Nav2",
+    section: "Costmaps",
+    path: "nav2.local_costmap.robot_radius",
+    label: "Local robot radius",
+    description: "Robot radius used by the local Nav2 costmap.",
+    type: "number",
+    default: 0.22,
+    min: 0.01,
+    step: 0.01,
+    unit: "m",
+  },
+  {
+    group: "Nav2",
+    section: "Costmaps",
+    path: "nav2.local_costmap.inflation_radius",
+    label: "Local inflation radius",
+    description: "Obstacle inflation radius in the local costmap.",
+    type: "number",
+    default: 0.7,
+    min: 0,
+    step: 0.05,
+    unit: "m",
+  },
+  {
+    group: "Nav2",
+    section: "Costmaps",
+    path: "nav2.local_costmap.cost_scaling_factor",
+    label: "Local cost scaling",
+    description: "How quickly inflated obstacle costs decay in the local costmap.",
+    type: "number",
+    default: 3,
+    min: 0,
+    step: 0.1,
+  },
+  {
+    group: "Nav2",
+    section: "Costmaps",
+    path: "nav2.global_costmap.robot_radius",
+    label: "Global robot radius",
+    description: "Robot radius used by the global Nav2 costmap.",
+    type: "number",
+    default: 0.22,
+    min: 0.01,
+    step: 0.01,
+    unit: "m",
+  },
+  {
+    group: "Nav2",
+    section: "Costmaps",
+    path: "nav2.global_costmap.inflation_radius",
+    label: "Global inflation radius",
+    description: "Obstacle inflation radius in the global costmap.",
+    type: "number",
+    default: 0.7,
+    min: 0,
+    step: 0.05,
+    unit: "m",
+  },
+  {
+    group: "Nav2",
+    section: "Velocity smoother",
+    path: "nav2.velocity_smoother.max_velocity_x",
+    label: "Smoothed max linear speed",
+    description: "Maximum X velocity allowed by the Nav2 velocity smoother.",
+    type: "number",
+    default: 0.5,
+    min: 0,
+    step: 0.05,
+    unit: "m/s",
+  },
+  {
+    group: "Nav2",
+    section: "Velocity smoother",
+    path: "nav2.velocity_smoother.max_velocity_theta",
+    label: "Smoothed max angular speed",
+    description: "Maximum angular velocity allowed by the Nav2 velocity smoother.",
+    type: "number",
+    default: 2,
+    min: 0,
+    step: 0.05,
+    unit: "rad/s",
+  },
+  {
+    group: "Route Planner",
+    section: "Execution",
+    path: "navigation.route_speed",
+    label: "Route speed",
+    description: "Linear speed used by the LM route executor.",
+    type: "number",
+    default: 0.35,
+    min: 0.02,
+    step: 0.05,
+    unit: "m/s",
+  },
+  {
+    group: "Route Planner",
+    section: "Execution",
+    path: "navigation.footprint_lookahead",
+    label: "Footprint lookahead",
+    description: "Distance checked ahead of the robot footprint for route collisions.",
+    type: "number",
+    default: 0.8,
+    min: 0,
+    step: 0.05,
+    unit: "m",
+  },
+  {
+    group: "Route Planner",
+    section: "Execution",
+    path: "navigation.collision_margin",
+    label: "Collision margin",
+    description: "Extra clearance around the robot footprint.",
+    type: "number",
+    default: 0.04,
+    min: 0,
+    step: 0.01,
+    unit: "m",
+  },
+  {
+    group: "Route Planner",
+    section: "Execution",
+    path: "navigation.stop_distance",
+    label: "Stop distance",
+    description: "Distance from the target at which route execution can stop.",
+    type: "number",
+    default: 0.4,
+    min: 0,
+    step: 0.05,
+    unit: "m",
+  },
+  {
+    group: "Route Planner",
+    section: "Execution",
+    path: "navigation.angular_gain",
+    label: "Angular gain",
+    description: "Heading correction gain used during LM route following.",
+    type: "number",
+    default: 2.2,
+    min: 0,
+    step: 0.1,
+  },
+  {
+    group: "Route Planner",
+    section: "Execution",
+    path: "navigation.max_angular_speed",
+    label: "Max angular speed",
+    description: "Maximum angular speed commanded by the route executor.",
+    type: "number",
+    default: 0.9,
+    min: 0,
+    step: 0.05,
+    unit: "rad/s",
+  },
+  {
+    group: "Route Planner",
+    section: "Execution",
+    path: "navigation.rotate_in_place_angle_deg",
+    label: "Rotate-in-place angle",
+    description: "Heading error that triggers in-place rotation behavior.",
+    type: "number",
+    default: 32,
+    min: 0,
+    max: 180,
+    step: 1,
+    unit: "deg",
+  },
+  {
+    group: "Route Planner",
+    section: "Execution",
+    path: "navigation.curve_speed_limit",
+    label: "Curve speed limit",
+    description: "Speed limit while following curved graph edges.",
+    type: "number",
+    default: 0.25,
+    min: 0,
+    step: 0.01,
+    unit: "m/s",
+  },
+  {
+    group: "Route Planner",
+    section: "Planner",
+    path: "planner.nearest_lm_tolerance",
+    label: "Nearest LM tolerance",
+    description: "Distance threshold for accepting that the robot is already at an LM.",
+    type: "number",
+    default: 0.05,
+    min: 0,
+    step: 0.01,
+    unit: "m",
+  },
+  {
+    group: "Route Planner",
+    section: "Planner",
+    path: "planner.trajectory_sample_distance",
+    label: "Trajectory sample distance",
+    description: "Spacing between generated trajectory samples.",
+    type: "number",
+    default: 0.05,
+    min: 0.01,
+    step: 0.01,
+    unit: "m",
+  },
+  {
+    group: "Route Planner",
+    section: "Planner",
+    path: "planner.on_route_tolerance",
+    label: "On-route tolerance",
+    description: "Allowed lateral distance when reconnecting current pose to a route.",
+    type: "number",
+    default: 0.12,
+    min: 0,
+    step: 0.01,
+    unit: "m",
+  },
+  {
+    group: "Robot",
+    section: "Model",
+    path: "robot_model.source",
+    label: "Model source",
+    description: "Where the robot footprint is derived from.",
+    type: "select",
+    default: "nav2",
+    options: [
+      ["nav2", "Nav2"],
+      ["manual", "Manual"],
+    ],
+  },
+  {
+    group: "Robot",
+    section: "Model",
+    path: "robot_model.radius",
+    label: "Robot radius",
+    description: "Fallback circular radius used for planning and footprint generation.",
+    type: "number",
+    default: 0.22,
+    min: 0.01,
+    step: 0.01,
+    unit: "m",
+  },
+  {
+    group: "Robot",
+    section: "Model",
+    path: "robot_model.footprint_segments",
+    label: "Footprint segments",
+    description: "Number of points used when generating a circular footprint.",
+    type: "integer",
+    default: 16,
+    min: 8,
+    step: 1,
+  },
+  {
+    group: "Robot",
+    section: "Localization",
+    path: "localization.localization_timeout",
+    label: "Localization timeout",
+    description: "Maximum age of localization before route execution treats it as stale.",
+    type: "number",
+    default: 0.5,
+    min: 0,
+    step: 0.05,
+    unit: "s",
+  },
+  {
+    group: "Robot",
+    section: "Localization",
+    path: "localization.allowed_lateral_error",
+    label: "Allowed lateral error",
+    description: "Maximum route lateral error before status reports degraded tracking.",
+    type: "number",
+    default: 0.02,
+    min: 0,
+    step: 0.01,
+    unit: "m",
+  },
+  {
+    group: "Robot",
+    section: "Localization",
+    path: "localization.allowed_yaw_error_deg",
+    label: "Allowed yaw error",
+    description: "Maximum route yaw error before status reports degraded tracking.",
+    type: "number",
+    default: 1,
+    min: 0,
+    step: 0.5,
+    unit: "deg",
+  },
+  {
+    group: "Robot",
+    section: "Localization",
+    path: "localization.accept_stale_pose_when_stationary",
+    label: "Accept stale stationary pose",
+    description: "Keep using the last pose if the robot is stationary and AMCL is temporarily stale.",
+    type: "boolean",
+    default: true,
+  },
+  {
+    group: "Robot",
+    section: "Manual Control",
+    path: "manual.linear_speed",
+    label: "Manual linear speed",
+    description: "Linear speed used by manual teleop buttons.",
+    type: "number",
+    default: 0.25,
+    min: 0,
+    step: 0.05,
+    unit: "m/s",
+  },
+  {
+    group: "Robot",
+    section: "Manual Control",
+    path: "manual.angular_speed",
+    label: "Manual angular speed",
+    description: "Angular speed used by manual teleop buttons.",
+    type: "number",
+    default: 0.9,
+    min: 0,
+    step: 0.05,
+    unit: "rad/s",
+  },
+  {
+    group: "Robot",
+    section: "Manual Control",
+    path: "manual.prediction_time",
+    label: "Manual prediction time",
+    description: "Lookahead time used to draw the manual-control projected pose.",
+    type: "number",
+    default: 1,
+    min: 0.1,
+    step: 0.1,
+    unit: "s",
+  },
+];
+
 class FleetRobotModelEditor {
   constructor(dom, onChange) {
     this.dom = dom;
@@ -536,9 +1000,12 @@ class OperatorApp {
     this.operatorConsole = document.getElementById("operatorConsole");
     this.fleetControlPanel = document.getElementById("fleetControlPanel");
     this.robotParamsPanel = document.getElementById("robotParamsPanel");
+    this.robotParamsSummary = document.getElementById("robotParamsSummary");
+    this.robotParamsTable = document.getElementById("robotParamsTable");
     this.robotParamsJsonInput = document.getElementById("robotParamsJsonInput");
     this.robotReloadParamsButton = document.getElementById("robotReloadParamsButton");
     this.robotFormatParamsButton = document.getElementById("robotFormatParamsButton");
+    this.robotDefaultsParamsButton = document.getElementById("robotDefaultsParamsButton");
     this.robotSaveParamsButton = document.getElementById("robotSaveParamsButton");
     this.robotModelPanel = document.getElementById("robotModelPanel");
     this.fleetModeSelect = document.getElementById("fleetModeSelect");
@@ -734,6 +1201,7 @@ class OperatorApp {
       this.renderSelectedRobot();
     });
     this.robotFormatParamsButton.addEventListener("click", () => this.formatParamsJson(this.robotParamsJsonInput, this.robotParams));
+    this.robotDefaultsParamsButton.addEventListener("click", () => this.resetRobotParamsToDefaults());
     this.robotSaveParamsButton.addEventListener("click", () => this.saveRobotParams());
     this.fleetModelSaveButton.addEventListener("click", () => this.saveRobotModelParams());
     this.fleetTabButtons.forEach((button) => {
@@ -843,6 +1311,10 @@ class OperatorApp {
       (model) => {
         this.robotParams = this.robotParams || {};
         this.robotParams.robot_model = model;
+        if (this.isParamsPage() && !this.isFleetManager()) {
+          this.renderRobotParamsTable();
+          this.syncRobotParamsJson(true);
+        }
       }
     );
     this.fleetModelEditor.init();
@@ -4575,6 +5047,251 @@ class OperatorApp {
     this.robotParamsJsonInput.value = this.paramsJson(this.robotParams);
   }
 
+  cloneJson(value) {
+    return JSON.parse(JSON.stringify(value || {}));
+  }
+
+  getParamPath(source, path) {
+    const parts = String(path || "").split(".").filter(Boolean);
+    let current = source;
+    for (const part of parts) {
+      if (!current || typeof current !== "object" || !(part in current)) {
+        return undefined;
+      }
+      current = current[part];
+    }
+    return current;
+  }
+
+  setParamPath(target, path, value) {
+    const parts = String(path || "").split(".").filter(Boolean);
+    if (!parts.length) {
+      return;
+    }
+    let current = target;
+    for (let index = 0; index < parts.length - 1; index += 1) {
+      const part = parts[index];
+      if (!current[part] || typeof current[part] !== "object" || Array.isArray(current[part])) {
+        current[part] = {};
+      }
+      current = current[part];
+    }
+    current[parts[parts.length - 1]] = value;
+  }
+
+  normalizeRobotParamValue(field, rawValue) {
+    if (field.type === "boolean") {
+      return Boolean(rawValue);
+    }
+    if (field.type === "integer") {
+      const parsed = Number.parseInt(String(rawValue), 10);
+      if (!Number.isFinite(parsed)) {
+        return Number(field.default || 0);
+      }
+      return parsed;
+    }
+    if (field.type === "number") {
+      const parsed = Number.parseFloat(String(rawValue));
+      if (!Number.isFinite(parsed)) {
+        return Number(field.default || 0);
+      }
+      return parsed;
+    }
+    return String(rawValue ?? "");
+  }
+
+  robotParamEquals(a, b) {
+    if (typeof a === "number" || typeof b === "number") {
+      return Math.abs(Number(a || 0) - Number(b || 0)) < 0.000001;
+    }
+    return JSON.stringify(a) === JSON.stringify(b);
+  }
+
+  defaultRobotParams() {
+    const params = {};
+    for (const field of ROBOT_PARAM_SCHEMA) {
+      this.setParamPath(params, field.path, field.default);
+    }
+    if (this.fleetModelEditor) {
+      params.robot_model = {
+        ...(params.robot_model || {}),
+        ...this.fleetModelEditor.defaultModel(),
+        source: this.getParamPath(params, "robot_model.source") || "nav2",
+        radius: this.getParamPath(params, "robot_model.radius") ?? 0.22,
+        footprint_segments: this.getParamPath(params, "robot_model.footprint_segments") ?? 16,
+      };
+    }
+    return params;
+  }
+
+  renderRobotParamsTable() {
+    if (!this.robotParamsTable) {
+      return;
+    }
+    const params = this.robotParams || {};
+    this.robotParamsTable.innerHTML = "";
+    let currentGroup = "";
+    let changedCount = 0;
+
+    for (const field of ROBOT_PARAM_SCHEMA) {
+      if (field.group !== currentGroup) {
+        currentGroup = field.group;
+        const group = document.createElement("div");
+        group.className = "robot-param-group";
+        group.textContent = currentGroup;
+        this.robotParamsTable.append(group);
+      }
+
+      const value = this.getParamPath(params, field.path);
+      const displayValue = value === undefined ? field.default : value;
+      const dirty = !this.robotParamEquals(displayValue, field.default);
+      if (dirty) {
+        changedCount += 1;
+      }
+
+      const row = document.createElement("div");
+      row.className = `robot-param-row${dirty ? " dirty" : ""}`;
+      row.dataset.paramPath = field.path;
+
+      const nameCell = document.createElement("div");
+      nameCell.className = "robot-param-name";
+      const label = document.createElement("div");
+      label.className = "robot-param-label";
+      label.textContent = field.label;
+      const path = document.createElement("div");
+      path.className = "robot-param-path";
+      path.textContent = `${field.section} / ${field.path}`;
+      nameCell.append(label, path);
+
+      const description = document.createElement("div");
+      description.className = "robot-param-description";
+      description.textContent = field.description;
+
+      const valueCell = document.createElement("div");
+      valueCell.className = "robot-param-value";
+      const input = this.createRobotParamInput(field, displayValue);
+      const defaultText = document.createElement("div");
+      defaultText.className = "robot-param-default";
+      defaultText.textContent = `default: ${this.robotParamDisplay(field.default)}${field.unit ? ` ${field.unit}` : ""}`;
+      const resetButton = document.createElement("button");
+      resetButton.type = "button";
+      resetButton.className = "robot-param-reset";
+      resetButton.textContent = "Default";
+      resetButton.addEventListener("click", () => {
+        this.setParamPath(this.robotParams, field.path, field.default);
+        this.renderRobotParamsTable();
+        this.syncRobotParamsJson(true);
+        this.robotMessageText.textContent = `${field.label} reset to default.`;
+      });
+      valueCell.append(input, defaultText, resetButton);
+      row.append(nameCell, description, valueCell);
+      this.robotParamsTable.append(row);
+    }
+    this.updateRobotParamsSummary(changedCount);
+  }
+
+  createRobotParamInput(field, value) {
+    let input;
+    if (field.type === "select") {
+      input = document.createElement("select");
+      for (const [optionValue, optionLabel] of field.options || []) {
+        const option = document.createElement("option");
+        option.value = String(optionValue);
+        option.textContent = String(optionLabel);
+        input.append(option);
+      }
+      input.value = String(value ?? field.default ?? "");
+    } else if (field.type === "boolean") {
+      input = document.createElement("input");
+      input.type = "checkbox";
+      input.checked = Boolean(value);
+    } else {
+      input = document.createElement("input");
+      input.type = field.type === "integer" || field.type === "number" ? "number" : "text";
+      input.value = String(value ?? field.default ?? "");
+      if (field.min !== undefined) {
+        input.min = String(field.min);
+      }
+      if (field.max !== undefined) {
+        input.max = String(field.max);
+      }
+      if (field.step !== undefined) {
+        input.step = String(field.step);
+      }
+    }
+    input.dataset.paramPath = field.path;
+    input.dataset.paramType = field.type;
+    input.addEventListener("input", () => this.handleRobotParamInput(field, input));
+    input.addEventListener("change", () => this.handleRobotParamInput(field, input));
+    return input;
+  }
+
+  handleRobotParamInput(field, input) {
+    this.robotParams = this.robotParams || {};
+    const rawValue = field.type === "boolean" ? input.checked : input.value;
+    const value = this.normalizeRobotParamValue(field, rawValue);
+    this.setParamPath(this.robotParams, field.path, value);
+    const row = input.closest(".robot-param-row");
+    const dirty = !this.robotParamEquals(value, field.default);
+    if (row) {
+      row.classList.toggle("dirty", dirty);
+    }
+    this.syncRobotParamsJson(true);
+    this.updateRobotParamsSummary();
+  }
+
+  updateRobotParamsSummary(changedCount = null) {
+    if (!this.robotParamsSummary) {
+      return;
+    }
+    const count = changedCount === null
+      ? ROBOT_PARAM_SCHEMA.filter((field) => {
+        const value = this.getParamPath(this.robotParams || {}, field.path);
+        return !this.robotParamEquals(value === undefined ? field.default : value, field.default);
+      }).length
+      : changedCount;
+    const total = ROBOT_PARAM_SCHEMA.length;
+    this.robotParamsSummary.textContent = count
+      ? `${count} of ${total} parameters differ from default. Save writes params.yaml on the robot and applies changes immediately.`
+      : `${total} robot parameters are at default values. Save writes params.yaml on the robot and applies changes immediately.`;
+  }
+
+  robotParamDisplay(value) {
+    if (typeof value === "boolean") {
+      return value ? "true" : "false";
+    }
+    if (typeof value === "number") {
+      return Number.isInteger(value) ? String(value) : String(Math.round(value * 1000000) / 1000000);
+    }
+    return String(value ?? "");
+  }
+
+  collectRobotParamsFromTable() {
+    const params = this.cloneJson(this.robotParams || {});
+    if (!this.robotParamsTable) {
+      return params;
+    }
+    for (const field of ROBOT_PARAM_SCHEMA) {
+      const input = this.robotParamsTable.querySelector(`.robot-param-value [data-param-path="${CSS.escape(field.path)}"]`);
+      if (!input) {
+        continue;
+      }
+      const rawValue = field.type === "boolean" ? input.checked : input.value;
+      this.setParamPath(params, field.path, this.normalizeRobotParamValue(field, rawValue));
+    }
+    return params;
+  }
+
+  resetRobotParamsToDefaults() {
+    this.robotParams = this.defaultRobotParams();
+    if (this.fleetModelEditor && this.robotParams.robot_model) {
+      this.fleetModelEditor.setModel(this.robotParams.robot_model);
+    }
+    this.renderRobotParamsTable();
+    this.syncRobotParamsJson(true);
+    this.robotMessageText.textContent = "Robot params reset to defaults. Press Save Robot Params to apply.";
+  }
+
   parseParamsJson(input, label, fallback = {}) {
     if (!input || !input.value.trim()) {
       return JSON.parse(JSON.stringify(fallback || {}));
@@ -4633,6 +5350,7 @@ class OperatorApp {
         this.fleetModelEditor.setModel(this.fleetModelEditor.defaultModel());
       }
     }
+    this.renderRobotParamsTable();
     this.syncRobotParamsJson();
   }
 
@@ -4658,7 +5376,7 @@ class OperatorApp {
   }
 
   collectRobotParams() {
-    const params = JSON.parse(JSON.stringify(this.robotParams || {}));
+    const params = this.collectRobotParamsFromTable();
     if (this.fleetModelEditor) {
       params.robot_model = {
         ...(params.robot_model || {}),
@@ -4703,14 +5421,16 @@ class OperatorApp {
       return;
     }
     try {
-      const params = this.parseParamsJson(this.robotParamsJsonInput, "Robot params", this.robotParams || {});
+      const params = this.collectRobotParams();
       const result = await this.postJson(`/api/robots/${encodeURIComponent(robot.id)}/params`, { params });
       this.robotParams = result.params || result.saved?.params || params;
       this.robotParamsRobotId = robot.id;
       this.robotParamsLoaded = true;
       this.applyRobotParams(this.robotParams);
       this.syncRobotParamsJson(true);
-      this.robotMessageText.textContent = "Robot params saved.";
+      this.robotMessageText.textContent = result.warning
+        ? `Robot params saved with warning: ${result.warning}`
+        : "Robot params saved and applied.";
     } catch (error) {
       this.robotMessageText.textContent = `Save robot params failed: ${error.message || error}`;
     }
@@ -4729,7 +5449,10 @@ class OperatorApp {
       this.robotParamsRobotId = robot.id;
       this.robotParamsLoaded = true;
       this.syncRobotParamsJson(true);
-      this.robotMessageText.textContent = "Robot model saved.";
+      this.applyRobotParams(this.robotParams);
+      this.robotMessageText.textContent = result.warning
+        ? `Robot model saved with warning: ${result.warning}`
+        : "Robot model saved and applied.";
     } catch (error) {
       this.robotMessageText.textContent = `Save robot model failed: ${error.message || error}`;
     }

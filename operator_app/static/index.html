@@ -224,10 +224,13 @@
               </section>
               <section id="robotParamsPanel" class="panel-block robot-params-panel hidden">
                 <div class="block-title">Robot Params</div>
-                <textarea id="robotParamsJsonInput" class="params-json-input" spellcheck="false"></textarea>
-                <div class="fleet-action-row">
+                <div id="robotParamsSummary" class="robot-params-summary"></div>
+                <div id="robotParamsTable" class="robot-params-table"></div>
+                <textarea id="robotParamsJsonInput" class="params-json-input hidden" spellcheck="false"></textarea>
+                <button id="robotFormatParamsButton" class="hidden" type="button">Format</button>
+                <div class="fleet-action-row robot-params-actions">
                   <button id="robotReloadParamsButton" type="button">Reload</button>
-                  <button id="robotFormatParamsButton" type="button">Format</button>
+                  <button id="robotDefaultsParamsButton" type="button">Default Params</button>
                   <button id="robotSaveParamsButton" class="primary" type="button">Save Robot Params</button>
                 </div>
               </section>

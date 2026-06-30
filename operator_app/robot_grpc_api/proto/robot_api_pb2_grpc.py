@@ -70,6 +70,16 @@ class RobotApiStub:
             request_serializer=robot__api__pb2.LoadMapRequest.SerializeToString,
             response_deserializer=robot__api__pb2.MapBundleResponse.FromString,
         )
+        self.GetParams = channel.unary_unary(
+            "/robot.grpc.v1.RobotApi/GetParams",
+            request_serializer=robot__api__pb2.ParamsRequest.SerializeToString,
+            response_deserializer=robot__api__pb2.ParamsResponse.FromString,
+        )
+        self.PutParams = channel.unary_unary(
+            "/robot.grpc.v1.RobotApi/PutParams",
+            request_serializer=robot__api__pb2.PutParamsRequest.SerializeToString,
+            response_deserializer=robot__api__pb2.ParamsResponse.FromString,
+        )
 
 
 class RobotApiServicer:
@@ -129,6 +139,16 @@ class RobotApiServicer:
         raise NotImplementedError("Method not implemented!")
 
     def LoadMap(self, request, context):
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details("Method not implemented!")
+        raise NotImplementedError("Method not implemented!")
+
+    def GetParams(self, request, context):
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details("Method not implemented!")
+        raise NotImplementedError("Method not implemented!")
+
+    def PutParams(self, request, context):
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details("Method not implemented!")
         raise NotImplementedError("Method not implemented!")
@@ -195,6 +215,16 @@ def add_RobotApiServicer_to_server(servicer, server):
             servicer.LoadMap,
             request_deserializer=robot__api__pb2.LoadMapRequest.FromString,
             response_serializer=robot__api__pb2.MapBundleResponse.SerializeToString,
+        ),
+        "GetParams": grpc.unary_unary_rpc_method_handler(
+            servicer.GetParams,
+            request_deserializer=robot__api__pb2.ParamsRequest.FromString,
+            response_serializer=robot__api__pb2.ParamsResponse.SerializeToString,
+        ),
+        "PutParams": grpc.unary_unary_rpc_method_handler(
+            servicer.PutParams,
+            request_deserializer=robot__api__pb2.PutParamsRequest.FromString,
+            response_serializer=robot__api__pb2.ParamsResponse.SerializeToString,
         ),
     }
     generic_handler = grpc.method_handlers_generic_handler("robot.grpc.v1.RobotApi", rpc_method_handlers)

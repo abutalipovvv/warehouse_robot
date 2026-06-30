@@ -1,9 +1,0 @@
-string map_name
----
-bool ok
-string error
-string map_name
-string map_dir
-string map_id
-string signature
-string bundle_json

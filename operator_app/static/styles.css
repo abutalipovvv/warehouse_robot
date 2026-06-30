@@ -343,6 +343,7 @@ body[data-fleet-page="params"] .robot-control-bar,
 body[data-fleet-page="params"] #mapSyncStatus,
 body[data-fleet-page="robot-params"] .robot-control-bar,
 body[data-fleet-page="robot-params"] #mapSyncStatus,
+body[data-fleet-page="robot-model"] .robot-control-bar,
 body[data-fleet-page="robot-model"] #mapSyncStatus {
   display: none;
 }
@@ -667,9 +668,115 @@ body[data-fleet-page="fleet"] #mapSyncStatus {
   display: grid;
   gap: 0.65rem;
   min-height: 0;
-  max-width: 980px;
+  max-width: 1180px;
   width: 100%;
   justify-self: center;
+}
+
+.robot-params-summary {
+  padding: 0.62rem 0.72rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #f7fbff;
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.35;
+}
+
+.robot-params-table {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.robot-param-group {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 0.55rem 0.1rem 0.2rem;
+  background: var(--panel);
+  color: var(--text);
+  font-size: 0.82rem;
+  font-weight: 850;
+  border-bottom: 1px solid var(--border);
+}
+
+.robot-param-row {
+  display: grid;
+  grid-template-columns: minmax(190px, 0.85fr) minmax(260px, 1.35fr) minmax(220px, 0.9fr);
+  gap: 0.75rem;
+  align-items: center;
+  padding: 0.62rem 0.68rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.robot-param-row.dirty {
+  border-color: rgba(211, 122, 34, 0.72);
+  background: #fff8ef;
+}
+
+.robot-param-label {
+  font-size: 0.82rem;
+  font-weight: 800;
+  color: var(--text);
+}
+
+.robot-param-path,
+.robot-param-default {
+  margin-top: 0.18rem;
+  color: var(--muted);
+  font-size: 0.68rem;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.robot-param-description {
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
+.robot-param-value {
+  display: grid;
+  grid-template-columns: minmax(110px, 1fr) auto;
+  gap: 0.28rem 0.42rem;
+  align-items: center;
+}
+
+.robot-param-value input,
+.robot-param-value select {
+  min-width: 0;
+  width: 100%;
+  padding: 0.46rem 0.52rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #ffffff;
+  color: var(--text);
+}
+
+.robot-param-value input[type="checkbox"] {
+  width: 1.12rem;
+  height: 1.12rem;
+  justify-self: start;
+}
+
+.robot-param-default {
+  grid-column: 1;
+}
+
+.robot-param-reset {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  min-height: 2rem;
+  padding: 0.36rem 0.52rem;
+  border-radius: 8px;
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.robot-params-actions {
+  justify-content: end;
 }
 
 .fleet-model-toolbar {
@@ -1108,9 +1215,12 @@ body[data-fleet-page="fleet"] #mapSyncStatus {
 
 .operator-console.robot-page-model #robotModelPanel {
   display: grid;
-  grid-template-columns: minmax(420px, 760px) minmax(300px, 420px);
-  grid-template-rows: auto auto auto minmax(0, 1fr) auto minmax(0, auto) auto;
-  justify-content: center;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-rows: auto auto minmax(0, 1fr) auto minmax(0, 0.62fr) auto;
+  max-width: none;
+  width: 100%;
+  justify-self: stretch;
+  justify-content: stretch;
   gap: 0.55rem 0.75rem;
   overflow: hidden;
 }
@@ -1121,9 +1231,10 @@ body[data-fleet-page="fleet"] #mapSyncStatus {
 }
 
 .operator-console.robot-page-model .robot-model-toolbar {
-  grid-column: 1 / -1;
-  grid-template-columns: repeat(4, minmax(110px, 160px));
-  justify-content: start;
+  grid-column: 1;
+  grid-row: 2;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  justify-content: stretch;
 }
 
 .operator-console.robot-page-model .robot-model-toolbar button {
@@ -1137,23 +1248,24 @@ body[data-fleet-page="fleet"] #mapSyncStatus {
   grid-column: 1;
   grid-row: 3 / 7;
   width: 100%;
-  max-width: 760px;
-  height: clamp(320px, 46vh, 460px);
+  max-width: none;
+  height: 100%;
   min-height: 0;
-  align-self: start;
-  justify-self: center;
+  align-self: stretch;
+  justify-self: stretch;
 }
 
 .operator-console.robot-page-model .robot-model-footprint-title {
   grid-column: 2;
-  grid-row: 3;
+  grid-row: 2;
   margin: 0;
 }
 
 .operator-console.robot-page-model .robot-model-footprint-fields {
   grid-column: 2;
-  grid-row: 4;
-  max-height: min(34vh, 300px);
+  grid-row: 3;
+  min-height: 0;
+  max-height: none;
   overflow: auto;
   padding-right: 0.2rem;
   gap: 0.34rem;
@@ -1161,14 +1273,15 @@ body[data-fleet-page="fleet"] #mapSyncStatus {
 
 .operator-console.robot-page-model .robot-model-tf-title {
   grid-column: 2;
-  grid-row: 5;
+  grid-row: 4;
   margin: 0.25rem 0 0;
 }
 
 .operator-console.robot-page-model .robot-model-tf-fields {
   grid-column: 2;
-  grid-row: 6;
-  max-height: 160px;
+  grid-row: 5;
+  min-height: 0;
+  max-height: none;
   overflow: auto;
   padding-right: 0.2rem;
   gap: 0.34rem;
@@ -1187,8 +1300,8 @@ body[data-fleet-page="fleet"] #mapSyncStatus {
 }
 
 .operator-console.robot-page-model .robot-model-save-button {
-  grid-column: 1 / -1;
-  grid-row: 7;
+  grid-column: 2;
+  grid-row: 6;
   justify-self: end;
   min-width: 180px;
 }
@@ -1911,6 +2024,11 @@ select {
     grid-template-columns: 1fr;
   }
 
+  .operator-console.robot-page-model {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr);
+  }
+
   #fleetControlPanel,
   .operator-map-panel,
   .operator-inspector,
@@ -1939,6 +2057,8 @@ select {
 
   .operator-console.robot-page-model #robotModelPanel,
   .operator-console.robot-page-params #robotParamsPanel {
+    grid-column: 1;
+    grid-row: auto;
     grid-template-columns: minmax(0, 1fr);
     overflow: auto;
   }

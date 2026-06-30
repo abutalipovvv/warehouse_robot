@@ -21,7 +21,8 @@ from .map_cache import MapCache
 from .fleet_manager_app import DEFAULT_FLEET_MAP_DIR, FLEET_MANAGER_ID, OperatorFleetManager
 from .models import KnownRobot
 from .registry import RobotRegistry, default_registry_path
-from .robot_grpc_api import DEFAULT_GRPC_PORT, GrpcRobotAdapter
+from .robot_grpc_api.client import GrpcRobotAdapter
+from .robot_grpc_api.contracts import DEFAULT_GRPC_PORT
 from fleet_manager.route_core import build_editable_map_bundle_payload
 
 DEFAULT_STATIC_DIR = Path(__file__).resolve().parent / "static"
@@ -258,22 +259,18 @@ class OperatorAppState:
     def robot_params_payload(self, robot_id: str) -> dict[str, Any]:
         robot = self.get_robot(robot_id)
         if robot.is_grpc:
-            return {
-                "ok": True,
-                "robotId": robot_id,
-                "path": "grpc",
-                "params": {
-                    "driver": "robot_grpc_api",
-                    "endpoint": robot.base_url,
-                    "host": robot.host,
-                    "port": robot.port,
-                },
-            }
+            result = self.grpc_adapter.get_params(self._grpc_endpoint(robot))
+            result["robotId"] = robot_id
+            return result
         raise ValueError("unsupported robot transport; use grpc")
 
     def save_robot_params_payload(self, robot_id: str, payload: dict[str, Any]) -> dict[str, Any]:
         if self._is_grpc_robot_id(robot_id):
-            return {"ok": True, "robotId": robot_id, "saved": self.robot_params_payload(robot_id)}
+            robot = self.get_robot(robot_id)
+            params = payload.get("params") if isinstance(payload.get("params"), dict) else payload
+            result = self.grpc_adapter.put_params(self._grpc_endpoint(robot), params)
+            result["robotId"] = robot_id
+            return result
         raise ValueError("unsupported robot transport; use grpc")
 
     def fleet_params_payload(self) -> dict[str, Any]:

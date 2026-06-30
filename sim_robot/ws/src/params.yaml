@@ -4,40 +4,40 @@ robot_model:
   footprint_segments: 16
   footprint:
   - x: 0.22
-    y: 0.0
-  - x: 0.203253
-    y: 0.08419
-  - x: 0.155563
-    y: 0.155563
-  - x: 0.08419
-    y: 0.203253
-  - x: 0.0
+    y: 0
+  - x: 0.203
+    y: 0.084
+  - x: 0.156
+    y: 0.156
+  - x: 0.084
+    y: 0.203
+  - x: 0
     y: 0.22
-  - x: -0.08419
-    y: 0.203253
-  - x: -0.155563
-    y: 0.155563
-  - x: -0.203253
-    y: 0.08419
+  - x: -0.084
+    y: 0.203
+  - x: -0.156
+    y: 0.156
+  - x: -0.203
+    y: 0.084
   - x: -0.22
-    y: 0.0
-  - x: -0.203253
-    y: -0.08419
-  - x: -0.155563
-    y: -0.155563
-  - x: -0.08419
-    y: -0.203253
-  - x: 0.0
+    y: 0
+  - x: -0.203
+    y: -0.084
+  - x: -0.156
+    y: -0.156
+  - x: -0.084
+    y: -0.203
+  - x: 0
     y: -0.22
-  - x: 0.08419
-    y: -0.203253
-  - x: 0.155563
-    y: -0.155563
-  - x: 0.203253
-    y: -0.08419
+  - x: 0.084
+    y: -0.203
+  - x: 0.156
+    y: -0.156
+  - x: 0.203
+    y: -0.084
   frames:
     lidar:
-      x: 0.28
+      x: 0.218
       y: 0
       label: LiDAR
       color: '#1f6feb'
@@ -48,12 +48,12 @@ robot_model:
       color: '#d95521'
     wheel_left:
       x: 0
-      y: 0.225
+      y: 0.218
       label: WL
       color: '#2f3a4a'
     wheel_right:
       x: 0
-      y: -0.225
+      y: -0.218
       label: WR
       color: '#2f3a4a'
 navigation:
@@ -82,7 +82,32 @@ localization:
   stationary_linear_velocity_epsilon: 0.02
   stationary_angular_velocity_epsilon: 0.05
 manual:
-  linear_speed: 0.5
+  linear_speed: 1
   angular_speed: 1.8
   prediction_time: 1
   prediction_step: 0.1
+nav2:
+  amcl:
+    update_min_d: 0.01
+    update_min_a: 0.01
+    transform_tolerance: 0.2
+    min_particles: 1000
+    max_particles: 2500
+  controller_server:
+    controller_frequency: 20
+    xy_goal_tolerance: 0.05
+    yaw_goal_tolerance: 0.05
+    follow_path:
+      vx_max: 0.5
+      vx_min: -0.35
+      wz_max: 1.9
+  local_costmap:
+    robot_radius: 0.22
+    inflation_radius: 0.7
+    cost_scaling_factor: 3
+  global_costmap:
+    robot_radius: 0.22
+    inflation_radius: 0.7
+  velocity_smoother:
+    max_velocity_x: 0.5
+    max_velocity_theta: 2

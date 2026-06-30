@@ -8,6 +8,11 @@ from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 from .proto import robot_api_pb2
 
 DEFAULT_GRPC_PORT = 50051
+DEFAULT_GRPC_MAX_MESSAGE_BYTES = 128 * 1024 * 1024
+GRPC_CHANNEL_OPTIONS: tuple[tuple[str, int], ...] = (
+    ("grpc.max_send_message_length", DEFAULT_GRPC_MAX_MESSAGE_BYTES),
+    ("grpc.max_receive_message_length", DEFAULT_GRPC_MAX_MESSAGE_BYTES),
+)
 API_VERSION = "robot.grpc.v1"
 
 

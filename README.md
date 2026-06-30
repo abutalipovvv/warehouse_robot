@@ -7,8 +7,9 @@ Main runtime split:
 - `sim_robot/ws/src/robot_planner` - route planning and execution ROS 2 node.
 - `sim_robot/ws/src/robot_status` - robot status ROS 2 node.
 - `sim_robot/ws/src/robot_map_manager` - robot map state/load/sync ROS 2 services.
-- `sim_robot/ws/src/robot_api` - native gRPC robot API backed by local ROS 2 topics/services.
-- `robot_grpc_api` - local gRPC transport library used by robots, Operator App, and Fleet Manager.
+- `sim_robot/ws/src/robot_grpc_api` - local ROS 2 robot gRPC API backed by robot topics/services.
+- `operator_app/robot_grpc_api` - local Operator App copy of the robot gRPC client contract.
+- `fleet_manager/robot_grpc_api` - local Fleet Manager copy of the robot gRPC client contract.
 - `operator_app` - desktop/web operator application. Browser talks to it over HTTP/WebSocket; robot communication uses gRPC.
 - `fleet_manager/web_simulator` - web/no-ROS fleet simulator runtime.
 - `fleet_manager` - Fleet Manager map/MAPF/runtime code.
@@ -30,7 +31,7 @@ Runtime transport rule:
 Install gRPC runtime on the operator/server and on each robot:
 
 ```bash
-python3 -m pip install grpcio
+sudo apt install python3-grpcio
 ```
 
 ## Build Robot Packages
@@ -38,7 +39,7 @@ python3 -m pip install grpcio
 ```bash
 cd ~/warehouse_robot/sim_robot/ws
 source /opt/ros/jazzy/setup.bash
-colcon build --packages-select robot_msgs robot_planner robot_status robot_map_manager robot_api robot_launch
+colcon build --packages-select robot_msgs robot_planner robot_status robot_map_manager robot_grpc_api robot_launch
 source install/local_setup.bash
 ```
 

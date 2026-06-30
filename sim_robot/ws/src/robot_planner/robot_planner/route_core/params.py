@@ -98,6 +98,20 @@ def _apply_nav2_robot_model(params: dict[str, Any], params_path: Path) -> dict[s
     source = str(robot_model.get("source") or "").strip().lower()
     if source not in {"nav2", "nav2_params", "nav2_costmap"}:
         return params
+
+    nav2_overrides = params.get("nav2")
+    if isinstance(nav2_overrides, dict):
+        segments = int(robot_model.get("footprint_segments", DEFAULT_NAV2_FOOTPRINT_SEGMENTS) or DEFAULT_NAV2_FOOTPRINT_SEGMENTS)
+        for costmap_name in ("local_costmap", "global_costmap"):
+            costmap = nav2_overrides.get(costmap_name)
+            if not isinstance(costmap, dict) or "robot_radius" not in costmap:
+                continue
+            radius = float(costmap["robot_radius"])
+            robot_model["radius"] = radius
+            robot_model["footprint"] = _circle_footprint(radius, segments)
+            robot_model["nav2_costmap"] = costmap_name
+            return params
+
     nav2_path = _resolve_nav2_params_path(robot_model, params_path)
     if nav2_path is None:
         return params

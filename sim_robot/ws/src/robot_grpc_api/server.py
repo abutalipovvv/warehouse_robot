@@ -5,7 +5,7 @@ import time
 from concurrent import futures
 from typing import Any
 
-from .contracts import API_VERSION, json_loads_object, robot_status_from_json
+from .contracts import API_VERSION, GRPC_CHANNEL_OPTIONS, json_loads_object, robot_status_from_json
 from .proto import robot_api_pb2
 
 
@@ -14,7 +14,7 @@ def _load_grpc_modules():
         import grpc  # type: ignore
     except ModuleNotFoundError as exc:
         raise RuntimeError(
-            "grpcio is not installed. Install it on the robot: python3 -m pip install grpcio"
+            "grpcio is not installed. Install it on the robot: sudo apt install python3-grpcio"
         ) from exc
     from .proto import robot_api_pb2_grpc
 
@@ -168,6 +168,23 @@ class RobotApiService:
         except Exception as exc:
             return robot_api_pb2.MapBundleResponse(ok=False, error=str(exc), map_name=str(request.map_name or ""))
 
+    def GetParams(self, request, context) -> robot_api_pb2.ParamsResponse:
+        del request, context
+        try:
+            payload = self.runtime.params_payload()
+            return self._params_response(payload)
+        except Exception as exc:
+            return robot_api_pb2.ParamsResponse(ok=False, error=str(exc))
+
+    def PutParams(self, request, context) -> robot_api_pb2.ParamsResponse:
+        del context
+        try:
+            params = json_loads_object(request.params_json)
+            payload = self.runtime.save_params_payload(params, reload_runtime=bool(request.reload_runtime))
+            return self._params_response(payload)
+        except Exception as exc:
+            return robot_api_pb2.ParamsResponse(ok=False, error=str(exc))
+
     def _status_response(self) -> robot_api_pb2.StatusResponse:
         try:
             payload = self.runtime.status_payload()
@@ -199,10 +216,23 @@ class RobotApiService:
             bundle_json=str(result.get("bundleJson") or ""),
         )
 
+    def _params_response(self, result: dict[str, Any]) -> robot_api_pb2.ParamsResponse:
+        params = result.get("params") if isinstance(result.get("params"), dict) else {}
+        return robot_api_pb2.ParamsResponse(
+            ok=bool(result.get("ok", True)),
+            error=str(result.get("error") or result.get("warning") or ""),
+            params_json=json.dumps(params, ensure_ascii=False),
+            params_path=str(result.get("path") or result.get("paramsPath") or ""),
+            reloaded=bool(result.get("reloaded")),
+        )
+
 
 def serve_robot_api(runtime: Any, *, host: str = "0.0.0.0", port: int = 50051, max_workers: int = 8):
     grpc, robot_api_pb2_grpc = _load_grpc_modules()
-    server = grpc.server(futures.ThreadPoolExecutor(max_workers=max(2, int(max_workers))))
+    server = grpc.server(
+        futures.ThreadPoolExecutor(max_workers=max(2, int(max_workers))),
+        options=GRPC_CHANNEL_OPTIONS,
+    )
     robot_api_pb2_grpc.add_RobotApiServicer_to_server(RobotApiService(runtime), server)
     bind = f"{host}:{int(port)}"
     actual_port = server.add_insecure_port(bind)

@@ -3,8 +3,42 @@ from __future__ import annotations
 import json
 import re
 import threading
+from pathlib import Path
 from time import monotonic, sleep
 from typing import Any
+
+import yaml
+
+NAV2_RUNTIME_PARAMETERS: tuple[tuple[str, str, str], ...] = (
+    ("nav2.amcl.update_min_d", "/amcl/set_parameters", "update_min_d"),
+    ("nav2.amcl.update_min_a", "/amcl/set_parameters", "update_min_a"),
+    ("nav2.amcl.transform_tolerance", "/amcl/set_parameters", "transform_tolerance"),
+    ("nav2.amcl.min_particles", "/amcl/set_parameters", "min_particles"),
+    ("nav2.amcl.max_particles", "/amcl/set_parameters", "max_particles"),
+    ("nav2.controller_server.controller_frequency", "/controller_server/set_parameters", "controller_frequency"),
+    ("nav2.controller_server.xy_goal_tolerance", "/controller_server/set_parameters", "general_goal_checker.xy_goal_tolerance"),
+    ("nav2.controller_server.yaw_goal_tolerance", "/controller_server/set_parameters", "general_goal_checker.yaw_goal_tolerance"),
+    ("nav2.controller_server.follow_path.vx_max", "/controller_server/set_parameters", "FollowPath.vx_max"),
+    ("nav2.controller_server.follow_path.vx_min", "/controller_server/set_parameters", "FollowPath.vx_min"),
+    ("nav2.controller_server.follow_path.wz_max", "/controller_server/set_parameters", "FollowPath.wz_max"),
+    ("nav2.local_costmap.robot_radius", "/local_costmap/local_costmap/set_parameters", "robot_radius"),
+    (
+        "nav2.local_costmap.inflation_radius",
+        "/local_costmap/local_costmap/set_parameters",
+        "inflation_layer.inflation_radius",
+    ),
+    (
+        "nav2.local_costmap.cost_scaling_factor",
+        "/local_costmap/local_costmap/set_parameters",
+        "inflation_layer.cost_scaling_factor",
+    ),
+    ("nav2.global_costmap.robot_radius", "/global_costmap/global_costmap/set_parameters", "robot_radius"),
+    (
+        "nav2.global_costmap.inflation_radius",
+        "/global_costmap/global_costmap/set_parameters",
+        "inflation_layer.inflation_radius",
+    ),
+)
 
 
 def _clean_node_suffix(value: str) -> str:
@@ -30,11 +64,14 @@ class RosRobotRuntime:
         plan_service_name: str = "/route/plan",
         execute_service_name: str = "/route/execute",
         cancel_service_name: str = "/route/cancel",
+        route_load_map_service_name: str = "/route/load_map",
+        status_load_map_service_name: str = "/status/load_map",
         map_state_service_name: str = "/robot/maps/state",
         map_load_service_name: str = "/robot/maps/load",
         map_list_service_name: str = "/robot/maps/list",
         map_get_bundle_service_name: str = "/robot/maps/get_bundle",
         map_put_bundle_service_name: str = "/robot/maps/put_bundle",
+        params_path: str | None = None,
     ) -> None:
         self.robot_id = robot_id
         self.robot_name = robot_name
@@ -47,11 +84,14 @@ class RosRobotRuntime:
         self.plan_service_name = self._topic(plan_service_name)
         self.execute_service_name = self._topic(execute_service_name)
         self.cancel_service_name = self._topic(cancel_service_name)
+        self.route_load_map_service_name = self._topic(route_load_map_service_name)
+        self.status_load_map_service_name = self._topic(status_load_map_service_name)
         self.map_state_service_name = self._topic(map_state_service_name)
         self.map_load_service_name = self._topic(map_load_service_name)
         self.map_list_service_name = self._topic(map_list_service_name)
         self.map_get_bundle_service_name = self._topic(map_get_bundle_service_name)
         self.map_put_bundle_service_name = self._topic(map_put_bundle_service_name)
+        self.params_path = Path(params_path).expanduser().resolve() if params_path else None
         self._lock = threading.Lock()
         self._latest_status: Any | None = None
         self._latest_status_at: float | None = None
@@ -63,6 +103,10 @@ class RosRobotRuntime:
         self._context = None
         self._twist_type = None
         self._string_type = None
+        self._set_parameters_type = None
+        self._parameter_type = None
+        self._parameter_value_type = None
+        self._parameter_type_enum = None
         self._executor = None
         self._thread: threading.Thread | None = None
         self._cmd_vel_pub = None
@@ -70,11 +114,14 @@ class RosRobotRuntime:
         self._plan_route_client = None
         self._execute_route_client = None
         self._cancel_route_client = None
+        self._route_load_map_client = None
+        self._status_load_map_client = None
         self._map_state_client = None
         self._map_load_client = None
         self._map_list_client = None
         self._map_get_bundle_client = None
         self._map_put_bundle_client = None
+        self._nav2_param_clients: dict[str, Any] = {}
         self._start()
 
     @property
@@ -129,11 +176,14 @@ class RosRobotRuntime:
             "planService": self.plan_service_name,
             "executeService": self.execute_service_name,
             "cancelService": self.cancel_service_name,
+            "routeLoadMapService": self.route_load_map_service_name,
+            "statusLoadMapService": self.status_load_map_service_name,
             "mapStateService": self.map_state_service_name,
             "mapLoadService": self.map_load_service_name,
             "mapListService": self.map_list_service_name,
             "mapGetBundleService": self.map_get_bundle_service_name,
             "mapPutBundleService": self.map_put_bundle_service_name,
+            "paramsPath": str(self.params_path or ""),
             "available": self._available,
             "error": self._error,
         }
@@ -343,6 +393,178 @@ class RosRobotRuntime:
             "mapId": str(response.map_id or ""),
         }
 
+    def params_payload(self) -> dict[str, Any]:
+        if self.params_path is None:
+            raise ValueError("params path is not configured")
+        try:
+            payload = yaml.safe_load(self.params_path.read_text(encoding="utf-8"))
+        except FileNotFoundError as exc:
+            raise ValueError(f"params file does not exist: {self.params_path}") from exc
+        if payload is None:
+            payload = {}
+        if not isinstance(payload, dict):
+            raise ValueError(f"params file must contain a YAML object: {self.params_path}")
+        return {"ok": True, "params": payload, "path": str(self.params_path)}
+
+    def save_params_payload(self, params_payload: dict[str, Any], *, reload_runtime: bool = True) -> dict[str, Any]:
+        if self.params_path is None:
+            raise ValueError("params path is not configured")
+        if not isinstance(params_payload, dict):
+            raise ValueError("params payload must be an object")
+        self.params_path.parent.mkdir(parents=True, exist_ok=True)
+        self.params_path.write_text(
+            yaml.safe_dump(params_payload, allow_unicode=True, sort_keys=False),
+            encoding="utf-8",
+        )
+        warnings = []
+        reloaded = False
+        if reload_runtime:
+            try:
+                reloaded = self._apply_nav2_runtime_params(params_payload) or reloaded
+            except Exception as exc:
+                warnings.append(f"Nav2 runtime apply failed: {exc}")
+            try:
+                reloaded = self._reload_route_status_params() or reloaded
+            except Exception as exc:
+                warnings.append(f"route/status reload failed: {exc}")
+        return {
+            "ok": True,
+            "params": params_payload,
+            "path": str(self.params_path),
+            "reloaded": reloaded,
+            "warning": "; ".join(warnings),
+        }
+
+    def _apply_saved_nav2_params_when_ready(self) -> None:
+        if self.params_path is None:
+            return
+        for _attempt in range(20):
+            sleep(1.0)
+            try:
+                payload = yaml.safe_load(self.params_path.read_text(encoding="utf-8"))
+            except Exception:
+                return
+            if not isinstance(payload, dict) or "nav2" not in payload:
+                return
+            try:
+                if self._apply_nav2_runtime_params(payload, require_available=False):
+                    return
+            except Exception:
+                continue
+
+    def _apply_nav2_runtime_params(self, params_payload: dict[str, Any], *, require_available: bool = True) -> bool:
+        if not isinstance(params_payload.get("nav2"), dict):
+            return False
+        if self._node is None or self._set_parameters_type is None:
+            if require_available:
+                raise ValueError("ROS2 parameter runtime is not available")
+            return False
+
+        grouped: dict[str, dict[str, Any]] = {}
+        for source_path, service_name, param_name in NAV2_RUNTIME_PARAMETERS:
+            value = self._deep_get(params_payload, source_path)
+            if value is None:
+                continue
+            grouped.setdefault(service_name, {})[param_name] = value
+
+        velocity = params_payload.get("nav2", {}).get("velocity_smoother")
+        if isinstance(velocity, dict):
+            max_x = velocity.get("max_velocity_x")
+            max_theta = velocity.get("max_velocity_theta")
+            if max_x is not None or max_theta is not None:
+                grouped.setdefault("/velocity_smoother/set_parameters", {})["max_velocity"] = [
+                    float(max_x if max_x is not None else 0.5),
+                    0.0,
+                    float(max_theta if max_theta is not None else 2.0),
+                ]
+
+        applied = False
+        missing: list[str] = []
+        for service_name, values in grouped.items():
+            client = self._nav2_param_clients.get(service_name)
+            if client is None:
+                client = self._node.create_client(self._set_parameters_type, service_name)
+                self._nav2_param_clients[service_name] = client
+            if not self._service_available(client, 0.25):
+                missing.append(service_name)
+                continue
+            request = self._set_parameters_type.Request()
+            request.parameters = [
+                self._parameter_message(param_name, value)
+                for param_name, value in values.items()
+            ]
+            response = self._call_service(client, request, f"{service_name} set_parameters", timeout_sec=3.0)
+            failed = [
+                result.reason or "parameter rejected"
+                for result in getattr(response, "results", [])
+                if not bool(getattr(result, "successful", False))
+            ]
+            if failed:
+                raise ValueError(f"{service_name}: {'; '.join(failed)}")
+            applied = True
+        if missing and require_available:
+            raise ValueError(f"Nav2 parameter services unavailable: {', '.join(missing)}")
+        return applied
+
+    def _parameter_message(self, name: str, value: Any) -> Any:
+        if self._parameter_type is None or self._parameter_value_type is None or self._parameter_type_enum is None:
+            raise ValueError("ROS2 parameter message types are not available")
+        parameter = self._parameter_type()
+        parameter.name = str(name)
+        parameter_value = self._parameter_value_type()
+        if isinstance(value, bool):
+            parameter_value.type = self._parameter_type_enum.PARAMETER_BOOL
+            parameter_value.bool_value = bool(value)
+        elif isinstance(value, int) and not isinstance(value, bool):
+            parameter_value.type = self._parameter_type_enum.PARAMETER_INTEGER
+            parameter_value.integer_value = int(value)
+        elif isinstance(value, float):
+            parameter_value.type = self._parameter_type_enum.PARAMETER_DOUBLE
+            parameter_value.double_value = float(value)
+        elif isinstance(value, list):
+            parameter_value.type = self._parameter_type_enum.PARAMETER_DOUBLE_ARRAY
+            parameter_value.double_array_value = [float(item) for item in value]
+        else:
+            parameter_value.type = self._parameter_type_enum.PARAMETER_STRING
+            parameter_value.string_value = str(value)
+        parameter.value = parameter_value
+        return parameter
+
+    def _deep_get(self, source: dict[str, Any], path: str) -> Any:
+        current: Any = source
+        for part in str(path).split("."):
+            if not isinstance(current, dict) or part not in current:
+                return None
+            current = current[part]
+        return current
+
+    def _reload_route_status_params(self) -> bool:
+        active = self.active_map_payload()
+        map_dir = str(active.get("mapDir") or "").strip()
+        map_name = str(active.get("mapName") or active.get("mapId") or "").strip()
+        if not map_dir:
+            raise ValueError("active map directory is not available")
+
+        reloaded = False
+        for client, label in (
+            (self._route_load_map_client, "route/load_map"),
+            (self._status_load_map_client, "status/load_map"),
+        ):
+            if client is None:
+                continue
+            if not self._service_available(client, 0.2):
+                continue
+            request = client.srv_type.Request()
+            request.map_name = map_name
+            request.map_dir = map_dir
+            response = self._call_service(client, request, label, timeout_sec=5.0)
+            if not bool(response.ok):
+                raise ValueError(str(response.error or f"{label} failed"))
+            reloaded = True
+        if not reloaded:
+            raise ValueError("route/status load-map services are not available")
+        return reloaded
+
     def _execute_pose_route(self, pose: dict[str, float], payload: dict[str, Any]) -> dict[str, Any]:
         script_args: dict[str, Any] = {
             "x": pose["x"],
@@ -447,6 +669,8 @@ class RosRobotRuntime:
             from geometry_msgs.msg import Twist
             from rclpy.executors import SingleThreadedExecutor
             from rclpy.node import Node
+            from rcl_interfaces.msg import Parameter, ParameterType, ParameterValue
+            from rcl_interfaces.srv import SetParameters
             from robot_msgs.msg import RobotStatus
             from robot_msgs.srv import (
                 CancelRoute,
@@ -476,6 +700,8 @@ class RosRobotRuntime:
             self._plan_route_client = node.create_client(PlanRoute, self.plan_service_name)
             self._execute_route_client = node.create_client(ExecuteRoute, self.execute_service_name)
             self._cancel_route_client = node.create_client(CancelRoute, self.cancel_service_name)
+            self._route_load_map_client = node.create_client(LoadRobotMap, self.route_load_map_service_name)
+            self._status_load_map_client = node.create_client(LoadRobotMap, self.status_load_map_service_name)
             self._map_state_client = node.create_client(GetRobotMapState, self.map_state_service_name)
             self._map_load_client = node.create_client(LoadRobotMap, self.map_load_service_name)
             self._map_list_client = node.create_client(ListRobotMaps, self.map_list_service_name)
@@ -499,10 +725,19 @@ class RosRobotRuntime:
         self._context = context
         self._twist_type = Twist
         self._string_type = String
+        self._set_parameters_type = SetParameters
+        self._parameter_type = Parameter
+        self._parameter_value_type = ParameterValue
+        self._parameter_type_enum = ParameterType
         self._node = node
         self._executor = executor
         self._thread = thread
         self._available = True
+        threading.Thread(
+            target=self._apply_saved_nav2_params_when_ready,
+            name=f"robot-api-nav2-params-{_clean_node_suffix(self.robot_id)}",
+            daemon=True,
+        ).start()
 
     def wait_for_status(self, timeout_sec: float = 0.8) -> bool:
         deadline = monotonic() + max(0.0, float(timeout_sec))

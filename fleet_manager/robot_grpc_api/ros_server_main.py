@@ -22,12 +22,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--plan-service", default="/route/plan")
     parser.add_argument("--execute-service", default="/route/execute")
     parser.add_argument("--cancel-service", default="/route/cancel")
+    parser.add_argument("--route-load-map-service", default="/route/load_map")
+    parser.add_argument("--status-load-map-service", default="/status/load_map")
     parser.add_argument("--map-state-service", default="/robot/maps/state")
     parser.add_argument("--map-load-service", default="/robot/maps/load")
     parser.add_argument("--map-list-service", default="/robot/maps/list")
     parser.add_argument("--map-get-bundle-service", default="/robot/maps/get_bundle")
     parser.add_argument("--map-put-bundle-service", default="/robot/maps/put_bundle")
-    return parser.parse_args()
+    parser.add_argument("--params", default="")
+    args, _unknown_ros_args = parser.parse_known_args()
+    return args
 
 
 def main() -> None:
@@ -42,11 +46,14 @@ def main() -> None:
         plan_service_name=args.plan_service,
         execute_service_name=args.execute_service,
         cancel_service_name=args.cancel_service,
+        route_load_map_service_name=args.route_load_map_service,
+        status_load_map_service_name=args.status_load_map_service,
         map_state_service_name=args.map_state_service,
         map_load_service_name=args.map_load_service,
         map_list_service_name=args.map_list_service,
         map_get_bundle_service_name=args.map_get_bundle_service,
         map_put_bundle_service_name=args.map_put_bundle_service,
+        params_path=args.params,
     )
     server = serve_robot_api(runtime, host=args.host, port=args.port)
     stop = False

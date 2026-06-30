@@ -15,7 +15,8 @@ from fleet_manager.route_core import (
     PlannedRoute,
     WarehouseMapLoader,
 )
-from fleet_manager.robot_grpc_api import DEFAULT_GRPC_PORT, GrpcRobotAdapter, normalize_grpc_endpoint
+from fleet_manager.robot_grpc_api.client import GrpcRobotAdapter
+from fleet_manager.robot_grpc_api.contracts import DEFAULT_GRPC_PORT, normalize_grpc_endpoint
 
 
 TERMINAL_ORDER_STATUSES = {"COMPLETED", "FAILED", "CANCELED"}

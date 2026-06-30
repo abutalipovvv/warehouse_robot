@@ -6,6 +6,7 @@ from typing import Any
 from .contracts import (
     API_VERSION,
     DEFAULT_GRPC_PORT,
+    GRPC_CHANNEL_OPTIONS,
     RobotApiError,
     json_dumps,
     json_loads_object,
@@ -25,7 +26,7 @@ def _load_grpc_modules():
         import grpc  # type: ignore
     except ModuleNotFoundError as exc:
         raise GrpcRobotError(
-            "grpcio is not installed. Install it on operator/server and robot: python3 -m pip install grpcio"
+            "grpcio is not installed. Install it on operator/server and robot: sudo apt install python3-grpcio"
         ) from exc
     from .proto import robot_api_pb2_grpc
 
@@ -189,6 +190,28 @@ class GrpcRobotClient:
         )
         return self._map_bundle_response(response, include_bundle=False)
 
+    def get_params(self, endpoint: str) -> dict[str, Any]:
+        stub = self._stub(endpoint)
+        response = stub.GetParams(robot_api_pb2.ParamsRequest(), timeout=max(self.timeout, 5.0))
+        return self._params_response(response)
+
+    def put_params(
+        self,
+        endpoint: str,
+        params_payload: dict[str, Any],
+        *,
+        reload_runtime: bool = True,
+    ) -> dict[str, Any]:
+        stub = self._stub(endpoint)
+        response = stub.PutParams(
+            robot_api_pb2.PutParamsRequest(
+                params_json=json_dumps(params_payload),
+                reload_runtime=bool(reload_runtime),
+            ),
+            timeout=max(self.timeout, 15.0),
+        )
+        return self._params_response(response)
+
     def normalize_endpoint(self, endpoint: str) -> str:
         return normalize_grpc_endpoint(endpoint, default_port=self.default_port)
 
@@ -200,9 +223,9 @@ class GrpcRobotClient:
             return cached
         grpc, robot_api_pb2_grpc = _load_grpc_modules()
         if parsed.secure:
-            channel = grpc.secure_channel(parsed.target, grpc.ssl_channel_credentials())
+            channel = grpc.secure_channel(parsed.target, grpc.ssl_channel_credentials(), options=GRPC_CHANNEL_OPTIONS)
         else:
-            channel = grpc.insecure_channel(parsed.target)
+            channel = grpc.insecure_channel(parsed.target, options=GRPC_CHANNEL_OPTIONS)
         stub = robot_api_pb2_grpc.RobotApiStub(channel)
         self._channels[key] = channel
         self._stubs[key] = stub
@@ -248,6 +271,25 @@ class GrpcRobotClient:
             bundle.setdefault("mapDir", payload["mapDir"])
             bundle.setdefault("signature", payload["signature"])
             return bundle
+        return payload
+
+    def _params_response(self, response: robot_api_pb2.ParamsResponse) -> dict[str, Any]:
+        if not bool(response.ok):
+            raise GrpcRobotError(str(response.error or "robot params RPC failed"))
+        try:
+            params = json.loads(str(response.params_json or "{}"))
+        except json.JSONDecodeError as exc:
+            raise GrpcRobotError("robot returned invalid params JSON") from exc
+        if not isinstance(params, dict):
+            raise GrpcRobotError("robot returned invalid params payload")
+        payload: dict[str, Any] = {
+            "ok": True,
+            "params": params,
+            "path": str(response.params_path or ""),
+            "reloaded": bool(response.reloaded),
+        }
+        if response.error:
+            payload["warning"] = str(response.error)
         return payload
 
     def _route_payload(self, robot: dict[str, Any]) -> dict[str, Any]:
@@ -307,6 +349,18 @@ class GrpcRobotAdapter:
 
     def load_map(self, endpoint: str, map_name: str) -> dict[str, Any]:
         return self.client.load_map(endpoint, map_name)
+
+    def get_params(self, endpoint: str) -> dict[str, Any]:
+        return self.client.get_params(endpoint)
+
+    def put_params(
+        self,
+        endpoint: str,
+        params_payload: dict[str, Any],
+        *,
+        reload_runtime: bool = True,
+    ) -> dict[str, Any]:
+        return self.client.put_params(endpoint, params_payload, reload_runtime=reload_runtime)
 
     def normalize_endpoint(self, endpoint: str) -> str:
         return self.client.normalize_endpoint(endpoint)

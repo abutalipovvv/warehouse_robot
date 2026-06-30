@@ -12,6 +12,10 @@ from launch_ros.actions import Node
 def _project_root() -> Path:
     share_dir = Path(get_package_share_directory("robot_launch"))
     for parent in share_dir.parents:
+        if (parent / "src" / "robot_map_manager").is_dir() and (parent / "src" / "params.yaml").is_file():
+            return (parent / "src").resolve()
+        if (parent / "robot_map_manager").is_dir() and (parent / "params.yaml").is_file():
+            return parent.resolve()
         if (parent / "commands.txt").exists() and (parent / "robot").exists():
             return parent
         if (parent / "fleet_manager").exists() and (parent / "robot").exists():
@@ -21,6 +25,7 @@ def _project_root() -> Path:
 
 def _maps_root(project_root: Path) -> Path:
     candidates = [
+        project_root / "robot_map_manager" / "maps_out",
         project_root / "map_data" / "maps_out",
         project_root / "fleet_manager" / "map_data" / "maps_out",
         project_root / "robot" / "ws" / "src" / "robot_map_manager" / "maps_out",
@@ -35,6 +40,7 @@ def _maps_root(project_root: Path) -> Path:
 def _params_path(project_root: Path) -> Path:
     candidates = [
         project_root / "params.yaml",
+        project_root / "sim_robot" / "ws" / "src" / "params.yaml",
         project_root / "fleet_manager" / "params.yaml",
     ]
     for candidate in candidates:
@@ -45,7 +51,7 @@ def _params_path(project_root: Path) -> Path:
 
 def _default_active_map_dir(project_root: Path) -> Path:
     fallback = _maps_root(project_root) / "22.05.26_smap.smap"
-    state_file = project_root / "robot" / ".active_map.json"
+    state_file = project_root / "robot_map_manager" / ".active_map.json"
     if not state_file.exists():
         return fallback
     try:
@@ -64,7 +70,7 @@ def generate_launch_description() -> LaunchDescription:
     default_map_dir = str(_default_active_map_dir(project_root))
     default_params = str(_params_path(project_root))
     default_maps_root = str(maps_root)
-    default_state_file = str((project_root / "robot" / ".active_map.json").resolve())
+    default_state_file = str((project_root / "robot_map_manager" / ".active_map.json").resolve())
 
     arguments = [
         DeclareLaunchArgument("map_dir", default_value=default_map_dir),
@@ -180,7 +186,7 @@ def generate_launch_description() -> LaunchDescription:
     )
 
     robot_api_node = Node(
-        package="robot_api",
+        package="robot_grpc_api",
         executable="robot_api_server",
         name="robot_api",
         output="screen",
@@ -205,6 +211,10 @@ def generate_launch_description() -> LaunchDescription:
             LaunchConfiguration("execute_service"),
             "--cancel-service",
             LaunchConfiguration("cancel_service"),
+            "--route-load-map-service",
+            LaunchConfiguration("route_load_map_service"),
+            "--status-load-map-service",
+            LaunchConfiguration("status_load_map_service"),
             "--map-state-service",
             LaunchConfiguration("manager_state_service"),
             "--map-load-service",
@@ -215,6 +225,8 @@ def generate_launch_description() -> LaunchDescription:
             LaunchConfiguration("manager_get_bundle_service"),
             "--map-put-bundle-service",
             LaunchConfiguration("manager_put_bundle_service"),
+            "--params",
+            LaunchConfiguration("params"),
         ],
     )
 

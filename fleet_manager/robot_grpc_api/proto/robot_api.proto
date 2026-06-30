@@ -15,6 +15,8 @@ service RobotApi {
   rpc GetMapBundle(GetMapBundleRequest) returns (MapBundleResponse);
   rpc PutMapBundle(PutMapBundleRequest) returns (MapBundleResponse);
   rpc LoadMap(LoadMapRequest) returns (MapBundleResponse);
+  rpc GetParams(ParamsRequest) returns (ParamsResponse);
+  rpc PutParams(PutParamsRequest) returns (ParamsResponse);
 }
 
 message HealthRequest {}
@@ -148,4 +150,19 @@ message MapBundleResponse {
   string map_id = 5;
   string signature = 6;
   string bundle_json = 7;
+}
+
+message ParamsRequest {}
+
+message PutParamsRequest {
+  string params_json = 1;
+  bool reload_runtime = 2;
+}
+
+message ParamsResponse {
+  bool ok = 1;
+  string error = 2;
+  string params_json = 3;
+  string params_path = 4;
+  bool reloaded = 5;
 }

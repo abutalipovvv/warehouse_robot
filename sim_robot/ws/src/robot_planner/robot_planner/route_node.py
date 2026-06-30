@@ -180,11 +180,16 @@ class RobotRouteNode(Node):
             map_dir = Path(str(request.map_dir or "")).resolve()
             if not map_dir.is_dir():
                 raise ValueError(f"map_dir does not exist: {map_dir}")
-            self.runtime.cancel_route("Map changed.")
-            self._publish_cmd_vel(0.0, 0.0)
-            self.route_planner.reload_map(map_dir)
+            same_map = map_dir == self.route_planner.map_dir
+            if not same_map:
+                self.runtime.cancel_route("Map changed.")
+                self._publish_cmd_vel(0.0, 0.0)
+            self.route_planner.reload_params_from_disk()
+            if not same_map:
+                self.route_planner.reload_map(map_dir)
             self.runtime.set_map(self.route_planner.map_id)
-            self.runtime.add_event("warn", f"map reloaded: {self.route_planner.map_id}")
+            event = "params reloaded" if same_map else f"map reloaded: {self.route_planner.map_id}"
+            self.runtime.add_event("warn", event)
             response.ok = True
             response.error = ""
             response.map_name = str(request.map_name or self.route_planner.map_id)
