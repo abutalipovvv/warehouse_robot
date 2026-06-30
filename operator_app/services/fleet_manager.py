@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 FLEET_ROOT = PROJECT_ROOT / "fleet_manager"
 FLEET_MAP_DATA_ROOT = FLEET_ROOT / "map_data"
 FLEET_MAPS_OUT_ROOT = FLEET_MAP_DATA_ROOT / "maps_out"

@@ -11,6 +11,7 @@ class RobotMapEditorApp {
     this.currentLocalMapName = "";
     this.currentSourceMapName = "";
     this.selectedLocalMapName = "";
+    this.currentHasLocalChanges = false;
     this.selectedTool = "select";
     this.selection = { type: "none", key: "" };
     this.previewWorld = null;
@@ -22,13 +23,12 @@ class RobotMapEditorApp {
 
     this.editorRobotTitle = document.getElementById("editorRobotTitle");
     this.editorStatusText = document.getElementById("editorStatusText");
-    this.activeRobotMapText = document.getElementById("activeRobotMapText");
-    this.localDraftCountText = document.getElementById("localDraftCountText");
-    this.currentDraftText = document.getElementById("currentDraftText");
-    this.draftStateChip = document.getElementById("draftStateChip");
-    this.draftMetaText = document.getElementById("draftMetaText");
-    this.robotMapsList = document.getElementById("robotMapsList");
-    this.localMapsList = document.getElementById("localMapsList");
+    this.editorWorkflowHeadline = document.getElementById("editorWorkflowHeadline");
+    this.workflowStatusTitle = document.getElementById("workflowStatusTitle");
+    this.workflowStateChip = document.getElementById("workflowStateChip");
+    this.workflowStatusText = document.getElementById("workflowStatusText");
+    this.workflowLmCountText = document.getElementById("workflowLmCountText");
+    this.workflowEdgeCountText = document.getElementById("workflowEdgeCountText");
     this.editorLog = document.getElementById("editorLog");
 
     this.editorGlobalHomeButton = document.getElementById("editorGlobalHomeButton");
@@ -40,7 +40,8 @@ class RobotMapEditorApp {
     this.editorRobotModelButton = document.getElementById("editorRobotModelButton");
     this.refreshMapsButton = document.getElementById("refreshMapsButton");
     this.saveLocalButton = document.getElementById("saveLocalButton");
-    this.saveAsButton = document.getElementById("saveAsButton");
+    this.pushRobotButton = document.getElementById("pushRobotButton");
+    this.cancelMapChangesButton = document.getElementById("cancelMapChangesButton");
     this.closeEditorButton = document.getElementById("closeEditorButton");
 
     this.toolButtons = Array.from(document.querySelectorAll("[data-tool]"));
@@ -93,7 +94,8 @@ class RobotMapEditorApp {
     this.editorRobotModelButton.addEventListener("click", () => this.goOperatorPage("/robot_model"));
     this.refreshMapsButton.addEventListener("click", () => this.refreshAll());
     this.saveLocalButton.addEventListener("click", () => this.saveLocalDraft());
-    this.saveAsButton.addEventListener("click", () => this.handleSaveAsAndClose());
+    this.pushRobotButton.addEventListener("click", () => this.pushToRobot());
+    this.cancelMapChangesButton.addEventListener("click", () => this.cancelMapChanges());
     this.closeEditorButton.addEventListener("click", () => this.handleCloseEditor());
     this.zoomInButton.addEventListener("click", () => this.zoomView(0.88));
     this.zoomOutButton.addEventListener("click", () => this.zoomView(1.14));
@@ -157,11 +159,11 @@ class RobotMapEditorApp {
       }
       this.render();
       if (!this.currentMap) {
-        this.setStatus("No local map draft is open. Use Pull Map in Control first, then open the editor.");
+        this.setStatus("No map is ready for editing. Pull or load a robot map from Control first.");
         return;
       }
       if (!options.silent) {
-        this.setStatus(`Local drafts refreshed. Current draft: ${this.currentMap.mapName || "-"}.`);
+        this.setStatus("Map refreshed.");
       }
     } catch (error) {
       this.handleError(error);
@@ -182,7 +184,7 @@ class RobotMapEditorApp {
   }
 
   async openLocalDraft(mapName, options = {}) {
-    if (this.dirty && !window.confirm("Current draft has unsaved changes. Open another local draft?")) {
+    if (this.dirty && !options.skipDirtyConfirm && !window.confirm("Discard unsaved map edits and reload the map?")) {
       return;
     }
     try {
@@ -191,16 +193,17 @@ class RobotMapEditorApp {
       }
       const payload = await this.getJson(`/api/robots/${encodeURIComponent(this.robotId)}/maps/local/${encodeURIComponent(mapName)}`);
       if (!payload.map || typeof payload.map !== "object") {
-        throw new Error("Local draft payload is invalid.");
+        throw new Error("Map payload is invalid.");
       }
       this.currentLocalMapName = String(payload.mapName || mapName || "");
       this.currentSourceMapName = String(payload.robotMapName || payload.sourceMapName || payload.map.mapName || "");
       this.selectedLocalMapName = this.currentLocalMapName;
+      this.currentHasLocalChanges = Boolean(payload.hasLocalChanges);
       this.loadEditableMap(payload.map);
       this.dirty = false;
       if (!options.silent) {
-        this.setStatus(`Loaded local draft ${this.currentLocalMapName}.`);
-        this.log("info", `Opened local draft ${this.currentLocalMapName}.`);
+        this.setStatus("Map loaded.");
+        this.log("info", "Map loaded.");
       }
       this.render();
     } catch (error) {
@@ -208,10 +211,10 @@ class RobotMapEditorApp {
     }
   }
 
-  async saveLocalDraft() {
+  async saveLocalDraft(options = {}) {
     if (!this.currentMap) {
-      this.handleError(new Error("No map draft is loaded."));
-      return;
+      this.handleError(new Error("No map is loaded."));
+      return null;
     }
     const defaultName = this.currentLocalMapName || this.currentMap.mapName || this.currentSourceMapName || "draft_map";
     const mapName = String(defaultName || "").trim();
@@ -228,28 +231,93 @@ class RobotMapEditorApp {
       this.currentLocalMapName = String(local.mapName || mapName);
       this.selectedLocalMapName = this.currentLocalMapName;
       this.dirty = false;
-      this.markPendingPush();
+      this.currentHasLocalChanges = Boolean(local.hasLocalChanges);
+      if (this.currentHasLocalChanges) {
+        this.markPendingPush();
+      } else {
+        this.clearPendingPush();
+      }
       await this.refreshLocalMaps({ silent: true });
-      this.setStatus(`Saved local draft ${this.currentLocalMapName}.`);
-      this.log("info", `Saved local draft ${this.currentLocalMapName}.`);
+      if (!options.silent) {
+        this.setStatus("Map saved locally. Push it to the robot to apply it.");
+        this.log("info", "Map saved locally.");
+      }
+      this.render();
+      return payload;
+    } catch (error) {
+      this.handleError(error);
+      if (options.throwOnError) {
+        throw error;
+      }
+      return null;
+    }
+  }
+
+  async pushToRobot() {
+    if (!this.currentMap) {
+      this.handleError(new Error("No map is loaded."));
+      return;
+    }
+    const confirmed = window.confirm(
+      this.dirty
+        ? "Save the current map and push it to the robot?"
+        : "Push the saved map to the robot?",
+    );
+    if (!confirmed) {
+      return;
+    }
+    try {
+      if (this.dirty) {
+        await this.saveLocalDraft({ silent: true, throwOnError: true });
+      }
+      const payload = await this.postJson(`/api/robots/${encodeURIComponent(this.robotId)}/maps/push-sync`, {});
+      this.clearPendingPush();
+      this.currentHasLocalChanges = false;
+      await this.refreshLocalMaps({ silent: true });
+      this.setStatus(payload.message || "Map pushed to robot. Operator and robot are synced.");
+      this.log("info", "Map pushed to robot.");
       this.render();
     } catch (error) {
       this.handleError(error);
     }
   }
 
-  async handleSaveAsAndClose() {
+  async cancelMapChanges() {
     if (!this.currentMap) {
-      this.handleError(new Error("No map draft is loaded."));
+      this.handleError(new Error("No map is loaded."));
       return;
     }
-    const outputName = window.prompt("Save edited map as", this.currentMap.mapName || this.currentLocalMapName || "") || "";
-    if (!outputName.trim()) {
+    const hasSavedLocalChanges = this.hasSavedLocalChanges();
+    if (!this.dirty && !hasSavedLocalChanges) {
+      this.setStatus("No map changes to cancel.");
+      return;
+    }
+    const confirmed = window.confirm(
+      hasSavedLocalChanges
+        ? "Cancel all local map changes and restore the current robot map?"
+        : "Cancel unsaved map edits?",
+    );
+    if (!confirmed) {
       return;
     }
     try {
-      await this.saveLocalDraftAs(outputName.trim(), { activate: false });
-      this.closeWindow();
+      let restoredMapName = this.currentLocalMapName || this.selectedLocalMapName;
+      if (hasSavedLocalChanges) {
+        const payload = await this.postJson(`/api/robots/${encodeURIComponent(this.robotId)}/maps/pull-sync`, {});
+        restoredMapName = String(payload.localActiveMapName || payload.robotActiveMapName || restoredMapName || "").trim();
+      }
+      if (restoredMapName) {
+        await this.openLocalDraft(restoredMapName, { silent: true, activate: false, skipDirtyConfirm: true });
+      } else {
+        await this.refreshAll({ autoOpenLocal: true, silent: true });
+      }
+      this.dirty = false;
+      this.currentHasLocalChanges = false;
+      this.clearPendingPush();
+      await this.refreshLocalMaps({ silent: true });
+      this.setStatus("Map changes canceled. Operator and robot are synced.");
+      this.log("info", "Map changes canceled.");
+      this.render();
     } catch (error) {
       this.handleError(error);
     }
@@ -260,64 +328,19 @@ class RobotMapEditorApp {
       this.closeWindow();
       return;
     }
-    const shouldSave = window.confirm("Save changes to the current local map draft before closing?");
+    const shouldSave = window.confirm("Save map changes before closing?");
     if (!shouldSave) {
       this.closeWindow();
       return;
     }
     try {
-      await this.saveCurrentMapThenClose();
+      await this.saveLocalDraft({ silent: true, throwOnError: true });
+      this.setStatus("Map saved locally. Push it to the robot to apply it.");
+      this.log("info", "Map saved locally; push not sent.");
+      this.closeWindow();
     } catch (error) {
       this.handleError(error);
     }
-  }
-
-  async saveLocalDraftAs(mapName, options = {}) {
-    if (!this.currentMap) {
-      this.handleError(new Error("No map draft is loaded."));
-      return;
-    }
-    const safeName = String(mapName || "").trim();
-    if (!safeName) {
-      throw new Error("Map name is required.");
-    }
-    const mapPayload = this.clone(this.currentMap);
-    mapPayload.mapName = safeName;
-    const payload = await this.postJson(
-      `/api/robots/${encodeURIComponent(this.robotId)}/maps/local/save`,
-      {
-        mapName: safeName,
-        sourceMapName: this.currentSourceMapName || this.currentMap.mapName || safeName,
-        activate: Boolean(options.activate),
-        map: mapPayload,
-      },
-    );
-    const local = payload.local || {};
-    if (options.activate !== false) {
-      this.currentLocalMapName = String(local.mapName || safeName);
-      this.selectedLocalMapName = this.currentLocalMapName;
-      this.loadEditableMap(mapPayload);
-      this.dirty = false;
-      this.markPendingPush();
-    }
-    await this.refreshLocalMaps({ silent: true });
-    this.setStatus(`Saved local draft ${safeName}.`);
-    this.log("info", `Saved local draft ${safeName}.`);
-    this.render();
-  }
-
-  async saveCurrentMapThenClose() {
-    if (!this.currentMap) {
-      throw new Error("No map draft is loaded.");
-    }
-    const localName = String(this.currentLocalMapName || this.currentMap.mapName || this.currentSourceMapName || "").trim();
-    if (!localName) {
-      throw new Error("Current local draft name is empty.");
-    }
-    await this.saveLocalDraftAs(localName, { activate: true });
-    this.setStatus(`Saved local draft ${localName}. Push Map is available in Control.`);
-    this.log("info", `Saved local draft ${localName}; push not sent.`);
-    this.closeWindow();
   }
 
   loadEditableMap(payload) {
@@ -785,9 +808,7 @@ class RobotMapEditorApp {
 
   render() {
     this.renderHeader();
-    this.renderRobotMaps();
-    this.renderLocalMaps();
-    this.renderDraftSummary();
+    this.renderWorkflowSummary();
     this.renderCanvas();
     this.renderInspector();
     this.renderLogs();
@@ -796,66 +817,82 @@ class RobotMapEditorApp {
   renderHeader() {
     const robotName = this.robot?.name || this.robotName || this.robotId;
     this.editorRobotTitle.textContent = robotName;
-    const currentName = this.currentMap?.mapName || "-";
-    const dirtyText = this.dirty ? "Draft has local edits." : "Draft is clean.";
-    this.editorStatusText.textContent = `Current local draft: ${currentName}. ${dirtyText}`;
-  }
-
-  renderRobotMaps() {
-    this.activeRobotMapText.textContent = this.currentSourceMapName || "-";
-    this.robotMapsList.innerHTML = "";
-    this.robotMapsList.append(this.infoCard("Robot map sync is managed from Control. This editor works only with local drafts."));
-  }
-
-  renderLocalMaps() {
-    this.localDraftCountText.textContent = `${this.localMaps.length} saved`;
-    this.localMapsList.innerHTML = "";
-    if (!this.localMaps.length) {
-      this.localMapsList.append(this.infoCard("No local drafts yet. Pull a robot map or save the current draft."));
-      return;
-    }
-    for (const item of this.localMaps) {
-      const card = document.createElement("div");
-      card.className = "map-card";
-      if (item.mapName === this.currentLocalMapName || item.mapName === this.selectedLocalMapName) {
-        card.classList.add("active");
-      }
-      card.innerHTML = `
-        <div class="map-card-head">
-          <div>
-            <strong>${this.escapeHtml(item.mapName || "-")}</strong>
-            <p>source: ${this.escapeHtml(item.sourceMapName || "-")}</p>
-          </div>
-          <span class="state-chip ${item.hasLocalChanges ? "dirty" : "clean"}">${item.hasLocalChanges ? "not pushed" : "synced"}</span>
-        </div>
-        <div class="map-card-actions">
-          <button type="button" data-action="open">Open</button>
-        </div>
-      `;
-      card.querySelector('[data-action="open"]').addEventListener("click", () => this.openLocalDraft(item.mapName));
-      this.localMapsList.append(card);
-    }
-  }
-
-  renderDraftSummary() {
-    this.currentDraftText.textContent = this.currentMap?.mapName || "-";
-    this.draftStateChip.textContent = this.dirty ? "dirty" : "clean";
-    this.draftStateChip.classList.toggle("dirty", this.dirty);
-    this.draftStateChip.classList.toggle("clean", !this.dirty);
     if (!this.currentMap) {
-      this.draftMetaText.textContent = "No local draft loaded.";
+      this.editorStatusText.textContent = "No map loaded.";
       return;
     }
-    const parts = [];
-    if (this.currentLocalMapName) {
-      parts.push(`local: ${this.currentLocalMapName}`);
+    const state = this.mapWorkflowState();
+    this.editorStatusText.textContent = state.message;
+  }
+
+  renderWorkflowSummary() {
+    const state = this.mapWorkflowState();
+    this.editorWorkflowHeadline.textContent = state.headline;
+    this.workflowStatusTitle.textContent = state.title;
+    this.workflowStateChip.textContent = state.chip;
+    this.workflowStateChip.classList.toggle("dirty", state.kind !== "synced");
+    this.workflowStateChip.classList.toggle("clean", state.kind === "synced");
+    this.workflowStatusText.textContent = state.detail;
+    this.workflowLmCountText.textContent = String(this.currentMap?.lms?.length || 0);
+    this.workflowEdgeCountText.textContent = String(this.currentMap?.edges?.length || 0);
+    const hasMap = Boolean(this.currentMap);
+    const hasSavedLocalChanges = this.hasSavedLocalChanges();
+    this.saveLocalButton.disabled = !hasMap || !this.dirty;
+    this.pushRobotButton.disabled = !hasMap || (!this.dirty && !hasSavedLocalChanges);
+    this.cancelMapChangesButton.disabled = !hasMap || (!this.dirty && !hasSavedLocalChanges);
+    if (!this.currentMap) {
+      return;
     }
-    if (this.currentSourceMapName) {
-      parts.push(`robot source: ${this.currentSourceMapName}`);
+  }
+
+  mapWorkflowState() {
+    if (!this.currentMap) {
+      return {
+        kind: "empty",
+        chip: "not ready",
+        title: "No map loaded",
+        headline: "No map loaded.",
+        message: "No map loaded.",
+        detail: "Pull or load a robot map from Control, then open the editor.",
+      };
     }
-    parts.push(`${this.currentMap.lms.length} LM`);
-    parts.push(`${this.currentMap.edges.length} edges`);
-    this.draftMetaText.textContent = parts.join(" • ");
+    if (this.dirty) {
+      return {
+        kind: "unsaved",
+        chip: "unsaved",
+        title: "Unsaved edits",
+        headline: "Unsaved edits in this editor.",
+        message: "Unsaved edits. Save or push to apply them.",
+        detail: "Save keeps the changes on this PC. Push to Robot saves and applies them on the robot.",
+      };
+    }
+    if (this.hasSavedLocalChanges()) {
+      return {
+        kind: "not_synced",
+        chip: "not synced",
+        title: "Not synced",
+        headline: "Saved locally, not pushed to robot.",
+        message: "Operator map is not synced with the robot.",
+        detail: "Push to Robot applies this map on the robot. Cancel Changes restores the robot map.",
+      };
+    }
+    return {
+      kind: "synced",
+      chip: "synced",
+      title: "Synced",
+      headline: "Operator and robot maps are synced.",
+      message: "Operator and robot maps are synced.",
+      detail: "Edits here stay on this PC until you save or push them.",
+    };
+  }
+
+  hasSavedLocalChanges() {
+    if (this.currentHasLocalChanges) {
+      return true;
+    }
+    const activeName = this.currentLocalMapName || this.selectedLocalMapName;
+    const active = this.localMaps.find((item) => item.mapName === activeName || item.active);
+    return Boolean(active?.hasLocalChanges);
   }
 
   renderCanvas() {

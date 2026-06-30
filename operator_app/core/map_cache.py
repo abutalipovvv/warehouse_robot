@@ -20,7 +20,7 @@ def default_maps_cache_root() -> Path:
     override = os.environ.get("WAREHOUSE_OPERATOR_MAP_CACHE", "").strip()
     if override:
         return Path(override).expanduser()
-    return Path(__file__).resolve().parent / "map_out"
+    return Path(__file__).resolve().parents[1] / "map_out"
 
 
 def utc_now() -> str:

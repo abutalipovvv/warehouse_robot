@@ -20,7 +20,7 @@ def default_operator_data_root() -> Path:
     override = os.environ.get("WAREHOUSE_OPERATOR_DATA", "").strip()
     if override:
         return Path(override).expanduser()
-    return Path(__file__).resolve().parent / "operator_data"
+    return Path(__file__).resolve().parents[1] / "operator_data"
 
 
 def utc_now() -> str:

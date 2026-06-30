@@ -66,6 +66,13 @@ button:hover {
   border-color: var(--line-strong);
 }
 
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+  transform: none;
+  box-shadow: none;
+}
+
 button.primary,
 button.active {
   color: #fff;
@@ -262,6 +269,45 @@ label {
 .state-chip.clean {
   background: rgba(30, 157, 98, 0.14);
   color: var(--success);
+}
+
+.editor-workflow-panel {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.workflow-status-text {
+  color: var(--muted);
+  line-height: 1.45;
+  font-size: 0.95rem;
+}
+
+.workflow-stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.7rem;
+  margin-top: 0.9rem;
+}
+
+.workflow-stats div {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 0.72rem;
+  background: var(--surface-soft);
+}
+
+.workflow-stats span {
+  display: block;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.workflow-stats strong {
+  display: block;
+  margin-top: 0.18rem;
+  font-size: 1.18rem;
 }
 
 .hint-text {

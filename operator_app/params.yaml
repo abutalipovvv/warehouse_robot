@@ -1,0 +1,15 @@
+server:
+  host: 0.0.0.0
+  port: 8780
+  probe_timeout: 1.0
+  open_browser: false
+
+paths:
+  # Empty registry path keeps the default:
+  # ~/.config/warehouse_operator/robots.json
+  registry: ""
+  static_dir: static
+
+fleet:
+  params_path: ../fleet_manager/params.yaml
+  map_dir: ../fleet_manager/map_data/maps_out/22.05.26_smap.smap

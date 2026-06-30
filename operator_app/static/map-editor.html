@@ -39,49 +39,39 @@
 
     <section class="editor-command-bar">
       <div>
-        <div class="eyebrow">Local Draft Commands</div>
-        <strong>Save changes before pushing the map from Control.</strong>
+        <div class="eyebrow">Map Changes</div>
+        <strong id="editorWorkflowHeadline">No map loaded.</strong>
       </div>
       <div class="editor-actions">
         <button id="refreshMapsButton" type="button">Refresh</button>
-        <button id="saveLocalButton" class="primary" type="button">Save Local</button>
-        <button id="saveAsButton" type="button">Save As</button>
-        <button id="closeEditorButton" type="button">Close Editor</button>
+        <button id="saveLocalButton" type="button">Save</button>
+        <button id="pushRobotButton" class="primary" type="button">Push to Robot</button>
+        <button id="cancelMapChangesButton" type="button">Cancel Changes</button>
+        <button id="closeEditorButton" type="button">Close</button>
       </div>
     </section>
 
     <main class="editor-workspace">
       <aside class="editor-sidebar">
-        <section class="editor-panel">
+        <section class="editor-panel editor-workflow-panel">
           <div class="panel-head">
             <div>
-              <div class="eyebrow">Source Map</div>
-              <strong id="activeRobotMapText">-</strong>
+              <div class="eyebrow">Map Status</div>
+              <strong id="workflowStatusTitle">Ready</strong>
             </div>
+            <span id="workflowStateChip" class="state-chip clean">synced</span>
           </div>
-          <div class="hint-text">Use Control to pull, push, or load maps on the robot. This page edits only local drafts in Operator App.</div>
-          <div id="robotMapsList" class="map-list"></div>
-        </section>
-
-        <section class="editor-panel">
-          <div class="panel-head">
+          <div id="workflowStatusText" class="workflow-status-text">Open a robot map to start editing.</div>
+          <div class="workflow-stats">
             <div>
-              <div class="eyebrow">Local Drafts</div>
-              <strong id="localDraftCountText">0 saved</strong>
+              <span>LM</span>
+              <strong id="workflowLmCountText">0</strong>
             </div>
-          </div>
-          <div id="localMapsList" class="map-list"></div>
-        </section>
-
-        <section class="editor-panel">
-          <div class="panel-head">
             <div>
-              <div class="eyebrow">Current Draft</div>
-              <strong id="currentDraftText">-</strong>
+              <span>Edges</span>
+              <strong id="workflowEdgeCountText">0</strong>
             </div>
-            <span id="draftStateChip" class="state-chip">clean</span>
           </div>
-          <div id="draftMetaText" class="hint-text">No local draft loaded.</div>
         </section>
       </aside>
 
