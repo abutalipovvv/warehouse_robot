@@ -49,6 +49,28 @@ def _params_path(project_root: Path) -> Path:
     return candidates[0].resolve()
 
 
+def _slam_params_path(project_root: Path) -> Path:
+    candidates = [
+        project_root / "slam_toolbox" / "config" / "mapper_params_online_async.yaml",
+        project_root / "sim_robot" / "ws" / "src" / "slam_toolbox" / "config" / "mapper_params_online_async.yaml",
+    ]
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate.resolve()
+    return candidates[0].resolve()
+
+
+def _slam_launch_path(project_root: Path) -> Path:
+    candidates = [
+        project_root / "slam_toolbox" / "launch" / "online_async_launch.py",
+        project_root / "sim_robot" / "ws" / "src" / "slam_toolbox" / "launch" / "online_async_launch.py",
+    ]
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate.resolve()
+    return candidates[0].resolve()
+
+
 def _default_active_map_dir(project_root: Path) -> Path:
     fallback = _maps_root(project_root) / "22.05.26_smap.smap"
     state_file = project_root / "robot_map_manager" / ".active_map.json"
@@ -69,6 +91,8 @@ def generate_launch_description() -> LaunchDescription:
     maps_root = _maps_root(project_root)
     default_map_dir = str(_default_active_map_dir(project_root))
     default_params = str(_params_path(project_root))
+    default_slam_params = str(_slam_params_path(project_root))
+    default_slam_launch = str(_slam_launch_path(project_root))
     default_maps_root = str(maps_root)
     default_state_file = str((project_root / "robot_map_manager" / ".active_map.json").resolve())
 
@@ -88,6 +112,7 @@ def generate_launch_description() -> LaunchDescription:
         DeclareLaunchArgument("plan_service", default_value="/route/plan"),
         DeclareLaunchArgument("execute_service", default_value="/route/execute"),
         DeclareLaunchArgument("cancel_service", default_value="/route/cancel"),
+        DeclareLaunchArgument("route_pause_service", default_value="/route/pause"),
         DeclareLaunchArgument("route_load_map_service", default_value="/route/load_map"),
         DeclareLaunchArgument("status_load_map_service", default_value="/status/load_map"),
         DeclareLaunchArgument("manager_load_map_service", default_value="/robot/maps/load"),
@@ -96,6 +121,10 @@ def generate_launch_description() -> LaunchDescription:
         DeclareLaunchArgument("manager_get_bundle_service", default_value="/robot/maps/get_bundle"),
         DeclareLaunchArgument("manager_put_bundle_service", default_value="/robot/maps/put_bundle"),
         DeclareLaunchArgument("map_server_load_service", default_value="/map_server/load_map"),
+        DeclareLaunchArgument("map_topic", default_value="/map"),
+        DeclareLaunchArgument("slam_save_map_service", default_value="/slam_toolbox/save_map"),
+        DeclareLaunchArgument("slam_params_file", default_value=default_slam_params),
+        DeclareLaunchArgument("slam_launch_file", default_value=default_slam_launch),
     ]
 
     status_node = Node(
@@ -149,6 +178,8 @@ def generate_launch_description() -> LaunchDescription:
             LaunchConfiguration("execute_service"),
             "--cancel-service",
             LaunchConfiguration("cancel_service"),
+            "--pause-service",
+            LaunchConfiguration("route_pause_service"),
             "--load-map-service",
             LaunchConfiguration("route_load_map_service"),
         ],
@@ -211,6 +242,8 @@ def generate_launch_description() -> LaunchDescription:
             LaunchConfiguration("execute_service"),
             "--cancel-service",
             LaunchConfiguration("cancel_service"),
+            "--route-pause-service",
+            LaunchConfiguration("route_pause_service"),
             "--route-load-map-service",
             LaunchConfiguration("route_load_map_service"),
             "--status-load-map-service",
@@ -225,6 +258,14 @@ def generate_launch_description() -> LaunchDescription:
             LaunchConfiguration("manager_get_bundle_service"),
             "--map-put-bundle-service",
             LaunchConfiguration("manager_put_bundle_service"),
+            "--map-topic",
+            LaunchConfiguration("map_topic"),
+            "--slam-save-map-service",
+            LaunchConfiguration("slam_save_map_service"),
+            "--slam-params-file",
+            LaunchConfiguration("slam_params_file"),
+            "--slam-launch-file",
+            LaunchConfiguration("slam_launch_file"),
             "--params",
             LaunchConfiguration("params"),
         ],

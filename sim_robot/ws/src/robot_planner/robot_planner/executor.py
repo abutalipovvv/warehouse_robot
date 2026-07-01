@@ -26,6 +26,11 @@ class RouteExecutor:
                 self.runtime.set_state("IDLE", "Ready.")
             return
 
+        if self.runtime.route_paused():
+            self.runtime.set_route_paused(True)
+            self._publish_cmd_vel(0.0, 0.0)
+            return
+
         pose_payload = status.get("pose")
         if not isinstance(pose_payload, dict):
             self.runtime.finish_route(False, "Robot pose is not available.")
@@ -307,4 +312,3 @@ class RouteExecutor:
             edge_id=second.edge_id if ratio > 0.5 and second.edge_id else first.edge_id,
             motion_direction=second.motion_direction if ratio > 0.5 else first.motion_direction,
         )
-

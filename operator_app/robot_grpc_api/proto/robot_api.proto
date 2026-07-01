@@ -12,7 +12,19 @@ service RobotApi {
   rpc Teleop(TeleopRequest) returns (CommandResponse);
   rpc TeleopStream(stream TeleopRequest) returns (stream CommandResponse);
   rpc Stop(StopRequest) returns (CommandResponse);
+  rpc AcquireControl(ControlRequest) returns (CommandResponse);
+  rpc ReleaseControl(ControlRequest) returns (CommandResponse);
+  rpc Relocate(RelocateRequest) returns (CommandResponse);
+  rpc ConfirmLocalization(ConfirmLocalizationRequest) returns (CommandResponse);
+  rpc PauseRoute(PauseRouteRequest) returns (CommandResponse);
+  rpc ResumeRoute(ResumeRouteRequest) returns (CommandResponse);
   rpc WatchLaserScan(WatchLaserScanRequest) returns (stream LaserScanFrame);
+  rpc GetSlamDefaults(SlamDefaultsRequest) returns (SlamDefaultsResponse);
+  rpc StartSlam(StartSlamRequest) returns (SlamStateResponse);
+  rpc GetSlamState(SlamStateRequest) returns (SlamStateResponse);
+  rpc WatchSlamMap(WatchSlamMapRequest) returns (stream SlamMapFrame);
+  rpc FinishSlam(FinishSlamRequest) returns (SlamFinishResponse);
+  rpc CancelSlam(CancelSlamRequest) returns (SlamStateResponse);
   rpc ListMaps(ListMapsRequest) returns (ListMapsResponse);
   rpc GetMapBundle(GetMapBundleRequest) returns (MapBundleResponse);
   rpc PutMapBundle(PutMapBundleRequest) returns (MapBundleResponse);
@@ -85,17 +97,20 @@ message ExecuteRouteRequest {
   string goal_lm = 3;
   string start_lm = 4;
   string order_json = 5;
+  string owner_id = 6;
 }
 
 message CancelRouteRequest {
   string command_id = 1;
   string message = 2;
+  string owner_id = 3;
 }
 
 message TeleopRequest {
   float linear = 1;
   float angular = 2;
   uint32 timeout_ms = 3;
+  string owner_id = 4;
 }
 
 message WatchLaserScanRequest {
@@ -122,8 +137,139 @@ message LaserScanFrame {
   repeated float intensities = 15;
 }
 
+message SlamDefaultsRequest {}
+
+message SlamDefaultsResponse {
+  bool ok = 1;
+  string error = 2;
+  string params_json = 3;
+  string params_path = 4;
+}
+
+message StartSlamRequest {
+  string command_id = 1;
+  string params_json = 2;
+  bool use_sim_time = 3;
+}
+
+message SlamStateRequest {}
+
+message WatchSlamMapRequest {
+  float hz = 1;
+  bool include_cells = 2;
+}
+
+message Pose2D {
+  double x = 1;
+  double y = 2;
+  double yaw = 3;
+  double stamp_sec = 4;
+}
+
+message SlamState {
+  bool active = 1;
+  string state = 2;
+  string message = 3;
+  string session_id = 4;
+  double started_at_sec = 5;
+  int32 progress = 6;
+  string saved_map_name = 7;
+  string map_dir = 8;
+  uint32 map_width = 9;
+  uint32 map_height = 10;
+  float resolution = 11;
+  string frame_id = 12;
+  uint32 trail_points = 13;
+}
+
+message SlamStateResponse {
+  bool ok = 1;
+  string error = 2;
+  SlamState state = 3;
+}
+
+message SlamMapFrame {
+  bool ok = 1;
+  string error = 2;
+  string robot_id = 3;
+  string session_id = 4;
+  string frame_id = 5;
+  double stamp_sec = 6;
+  uint32 width = 7;
+  uint32 height = 8;
+  float resolution = 9;
+  double origin_x = 10;
+  double origin_y = 11;
+  double origin_yaw = 12;
+  bytes cells = 13;
+  Pose2D pose = 14;
+  repeated Pose2D trail = 15;
+  SlamState state = 16;
+}
+
+message FinishSlamRequest {
+  string command_id = 1;
+  string map_name = 2;
+  bool activate = 3;
+}
+
+message SlamFinishResponse {
+  bool ok = 1;
+  string error = 2;
+  SlamState state = 3;
+  string map_name = 4;
+  string map_dir = 5;
+  string map_id = 6;
+  string signature = 7;
+  string bundle_json = 8;
+}
+
+message CancelSlamRequest {
+  string command_id = 1;
+  string reason = 2;
+}
+
 message StopRequest {
   string command_id = 1;
+  string owner_id = 2;
+}
+
+message ControlRequest {
+  string command_id = 1;
+  string owner_id = 2;
+  string owner_name = 3;
+  bool force = 4;
+  uint32 lease_ms = 5;
+}
+
+message RelocateRequest {
+  string command_id = 1;
+  string owner_id = 2;
+  double x = 3;
+  double y = 4;
+  double yaw = 5;
+  string frame_id = 6;
+  string covariance_json = 7;
+  bool confirm = 8;
+}
+
+message ConfirmLocalizationRequest {
+  string command_id = 1;
+  string owner_id = 2;
+  bool accepted = 3;
+  string message = 4;
+}
+
+message PauseRouteRequest {
+  string command_id = 1;
+  string owner_id = 2;
+  string message = 3;
+}
+
+message ResumeRouteRequest {
+  string command_id = 1;
+  string owner_id = 2;
+  string message = 3;
 }
 
 message CommandResponse {

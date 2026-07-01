@@ -82,7 +82,7 @@ localization:
   stationary_linear_velocity_epsilon: 0.02
   stationary_angular_velocity_epsilon: 0.05
 manual:
-  linear_speed: 1
+  linear_speed: 0.9
   angular_speed: 1.8
   prediction_time: 1
   prediction_step: 0.1

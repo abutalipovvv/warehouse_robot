@@ -234,6 +234,7 @@ class RobotRuntime:
         self._current_edge_id = ""
         self._route_progress = 0.0
         self._active_route: PlannedRobotRoute | None = None
+        self._route_paused = False
         self._events: list[RobotEvent] = []
         self.add_event("info", "robot runtime initialized")
 
@@ -249,6 +250,7 @@ class RobotRuntime:
             self._target_lm = ""
             self._current_edge_id = ""
             self._route_progress = 0.0
+            self._route_paused = False
             self._state = "LOCALIZING"
             self._message = f"Map changed to {self.map_id}. Waiting for localization."
 
@@ -289,6 +291,7 @@ class RobotRuntime:
             self._target_lm = route.goal_lm
             self._current_edge_id = route.trajectory[0].edge_id if route.trajectory else ""
             self._route_progress = 0.0
+            self._route_paused = False
             self._state = "EXECUTING_ROUTE"
             self._message = f"Executing route to {route.goal_lm}."
 
@@ -324,12 +327,32 @@ class RobotRuntime:
             self._current_edge_id = edge_id
             self._route_progress = max(0.0, min(1.0, progress))
 
+    def set_route_paused(self, paused: bool, message: str = "") -> None:
+        with self._lock:
+            self._route_paused = bool(paused)
+            if self._active_route is None:
+                if paused:
+                    self._state = "IDLE"
+                    self._message = message or "No active route to pause."
+                return
+            if paused:
+                self._state = "PAUSED"
+                self._message = message or f"Route to {self._active_route.goal_lm} paused."
+            else:
+                self._state = "EXECUTING_ROUTE"
+                self._message = message or f"Resuming route to {self._active_route.goal_lm}."
+
+    def route_paused(self) -> bool:
+        with self._lock:
+            return self._route_paused
+
     def cancel_route(self, message: str = "Route canceled.") -> None:
         with self._lock:
             self._active_route = None
             self._target_lm = ""
             self._current_edge_id = ""
             self._route_progress = 0.0
+            self._route_paused = False
             self._state = "IDLE"
             self._message = message
 
@@ -340,6 +363,7 @@ class RobotRuntime:
             self._target_lm = ""
             self._current_edge_id = ""
             self._route_progress = 1.0 if arrived else self._route_progress
+            self._route_paused = False
             self._state = "ARRIVED" if arrived else "ERROR"
             if arrived and goal_lm:
                 self._nearest_lm = goal_lm
@@ -361,6 +385,7 @@ class RobotRuntime:
                 "targetLm": self._target_lm,
                 "currentEdgeId": self._current_edge_id,
                 "routeProgress": self._route_progress,
+                "routePaused": self._route_paused,
                 "route": route,
                 "localizationAgeSec": self.localization_age(),
                 "events": [item.to_dict() for item in self._events[-120:]],

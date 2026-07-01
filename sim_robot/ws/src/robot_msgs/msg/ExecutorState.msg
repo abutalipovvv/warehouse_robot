@@ -2,6 +2,7 @@ builtin_interfaces/Time stamp
 string robot_id
 string map_id
 bool route_active
+bool route_paused
 string state
 string message
 string target_lm

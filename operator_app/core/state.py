@@ -19,6 +19,9 @@ from ..robot_grpc_api.client import GrpcRobotAdapter
 from ..robot_grpc_api.contracts import DEFAULT_GRPC_PORT
 from .workspace import OperatorWorkspace
 
+OPERATOR_CONTROL_OWNER_ID = "operator-app"
+OPERATOR_CONTROL_OWNER_NAME = "Operator App"
+
 
 class RobotProbeError(RuntimeError):
     pass
@@ -954,11 +957,102 @@ class OperatorAppState:
             include_intensities=include_intensities,
         )
 
+    def robot_slam_defaults_payload(self, robot_id: str) -> dict[str, Any]:
+        robot = self.get_robot(robot_id)
+        if not robot.is_grpc:
+            raise ValueError("unsupported robot transport; use grpc")
+        result = self.grpc_adapter.get_slam_defaults(self._grpc_endpoint(robot))
+        result["robotId"] = robot_id
+        return result
+
+    def robot_slam_state_payload(self, robot_id: str) -> dict[str, Any]:
+        robot = self.get_robot(robot_id)
+        if not robot.is_grpc:
+            raise ValueError("unsupported robot transport; use grpc")
+        result = self.grpc_adapter.get_slam_state(self._grpc_endpoint(robot))
+        result["robotId"] = robot_id
+        return result
+
+    def start_robot_slam_payload(self, robot_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        robot = self.get_robot(robot_id)
+        if not robot.is_grpc:
+            raise ValueError("unsupported robot transport; use grpc")
+        params = payload.get("params") if isinstance(payload.get("params"), dict) else payload
+        result = self.grpc_adapter.start_slam(
+            self._grpc_endpoint(robot),
+            params if isinstance(params, dict) else {},
+            use_sim_time=bool(payload.get("useSimTime", True)),
+        )
+        result["robotId"] = robot_id
+        return result
+
+    def finish_robot_slam_payload(self, robot_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        robot = self.get_robot(robot_id)
+        if not robot.is_grpc:
+            raise ValueError("unsupported robot transport; use grpc")
+        map_name = str(payload.get("mapName") or payload.get("map_name") or "").strip()
+        result = self.grpc_adapter.finish_slam(
+            self._grpc_endpoint(robot),
+            map_name=map_name,
+            activate=bool(payload.get("activate", True)),
+        )
+        bundle = result.get("bundle") if isinstance(result.get("bundle"), dict) else None
+        if isinstance(bundle, dict):
+            cached = self.map_cache.save_pulled_map(robot.id, bundle, activate=True)
+            result["local"] = cached
+            self.workspace.save_active_map_meta(
+                robot,
+                {
+                    "ok": True,
+                    "mapName": str(result.get("mapName") or map_name),
+                    "mapDir": str(result.get("mapDir") or ""),
+                    "mapId": str(result.get("mapId") or ""),
+                    "signature": str(result.get("signature") or ""),
+                },
+            )
+            try:
+                self.workspace.save_map_index(robot, self.grpc_adapter.list_maps(self._grpc_endpoint(robot)))
+            except Exception:
+                pass
+        result["robotId"] = robot_id
+        return result
+
+    def cancel_robot_slam_payload(self, robot_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        robot = self.get_robot(robot_id)
+        if not robot.is_grpc:
+            raise ValueError("unsupported robot transport; use grpc")
+        result = self.grpc_adapter.cancel_slam(
+            self._grpc_endpoint(robot),
+            reason=str(payload.get("reason") or "SLAM canceled by operator."),
+        )
+        result["robotId"] = robot_id
+        return result
+
+    def watch_robot_slam_map(
+        self,
+        robot_id: str,
+        *,
+        hz: float = 1.0,
+        include_cells: bool = True,
+    ) -> Any:
+        robot = self.get_robot(robot_id)
+        if not robot.is_grpc:
+            raise ValueError("unsupported robot transport; use grpc")
+        return self.grpc_adapter.watch_slam_map(
+            self._grpc_endpoint(robot),
+            hz=hz,
+            include_cells=include_cells,
+        )
+
     def robot_teleop_stream(self, robot_id: str, commands) -> Any:
         robot = self.get_robot(robot_id)
         if not robot.is_grpc:
             raise ValueError("unsupported robot transport; use grpc")
-        return self.grpc_adapter.teleop_stream(self._grpc_endpoint(robot), commands)
+        return self.grpc_adapter.teleop_stream(
+            self._grpc_endpoint(robot),
+            commands,
+            owner_id=OPERATOR_CONTROL_OWNER_ID,
+        )
 
     def _proxy_grpc_robot_request(self, robot_id: str, method: str, path: str, *, body: bytes | None) -> tuple[int, dict[str, str], bytes]:
         robot = self.get_robot(robot_id)
@@ -988,15 +1082,74 @@ class OperatorAppState:
                         linear=float(payload.get("linear", 0.0) or 0.0),
                         angular=float(payload.get("angular", 0.0) or 0.0),
                         timeout_ms=int(payload.get("timeoutMs", 350) or 350),
+                        owner_id=OPERATOR_CONTROL_OWNER_ID,
                     )
                 )
             if method == "POST" and route == "/api/robot/teleop/stop":
-                return self._json_response_tuple(self.grpc_adapter.teleop_stop(endpoint))
+                return self._json_response_tuple(self.grpc_adapter.teleop_stop(endpoint, owner_id=OPERATOR_CONTROL_OWNER_ID))
             if method == "POST" and route == "/api/robot/stop":
-                return self._json_response_tuple(self.grpc_adapter.stop(endpoint))
+                return self._json_response_tuple(self.grpc_adapter.stop(endpoint, owner_id=OPERATOR_CONTROL_OWNER_ID))
+            if method == "POST" and route == "/api/robot/control/acquire":
+                return self._json_response_tuple(
+                    self.grpc_adapter.acquire_control(
+                        endpoint,
+                        owner_id=OPERATOR_CONTROL_OWNER_ID,
+                        owner_name=OPERATOR_CONTROL_OWNER_NAME,
+                        force=bool(payload.get("force")),
+                        lease_ms=int(payload.get("leaseMs", payload.get("lease_ms", 0)) or 0),
+                    )
+                )
+            if method == "POST" and route == "/api/robot/control/release":
+                return self._json_response_tuple(
+                    self.grpc_adapter.release_control(
+                        endpoint,
+                        owner_id=OPERATOR_CONTROL_OWNER_ID,
+                        force=bool(payload.get("force")),
+                    )
+                )
+            if method == "POST" and route == "/api/robot/relocate":
+                pose = payload.get("pose") if isinstance(payload.get("pose"), dict) else payload
+                return self._json_response_tuple(
+                    self.grpc_adapter.relocate(
+                        endpoint,
+                        x=float(pose.get("x", 0.0) or 0.0),
+                        y=float(pose.get("y", 0.0) or 0.0),
+                        yaw=float(pose.get("yaw", pose.get("theta", 0.0)) or 0.0),
+                        owner_id=OPERATOR_CONTROL_OWNER_ID,
+                        frame_id=str(payload.get("frameId") or payload.get("frame_id") or "map"),
+                        covariance=payload.get("covariance") if isinstance(payload.get("covariance"), list) else None,
+                        confirm=bool(payload.get("confirm")),
+                    )
+                )
+            if method == "POST" and route == "/api/robot/localization/confirm":
+                return self._json_response_tuple(
+                    self.grpc_adapter.confirm_localization(
+                        endpoint,
+                        owner_id=OPERATOR_CONTROL_OWNER_ID,
+                        accepted=bool(payload.get("accepted", True)),
+                        message=str(payload.get("message") or ""),
+                    )
+                )
             if method == "POST" and route == "/api/robot/route/cancel":
-                return self._json_response_tuple(self.grpc_adapter.cancel_route(endpoint))
+                return self._json_response_tuple(self.grpc_adapter.cancel_route(endpoint, owner_id=OPERATOR_CONTROL_OWNER_ID))
+            if method == "POST" and route == "/api/robot/route/pause":
+                return self._json_response_tuple(
+                    self.grpc_adapter.pause_route(
+                        endpoint,
+                        owner_id=OPERATOR_CONTROL_OWNER_ID,
+                        message=str(payload.get("message") or ""),
+                    )
+                )
+            if method == "POST" and route == "/api/robot/route/resume":
+                return self._json_response_tuple(
+                    self.grpc_adapter.resume_route(
+                        endpoint,
+                        owner_id=OPERATOR_CONTROL_OWNER_ID,
+                        message=str(payload.get("message") or ""),
+                    )
+                )
             if method == "POST" and route == "/api/robot/route/execute":
+                payload.setdefault("ownerId", OPERATOR_CONTROL_OWNER_ID)
                 return self._json_response_tuple(self.grpc_adapter.execute_route(endpoint, payload))
         except Exception as exc:
             return self._json_response_tuple({"ok": False, "error": str(exc)}, status=500)

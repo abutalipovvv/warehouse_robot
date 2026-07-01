@@ -16,6 +16,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "srv/PlanRoute.srv"
   "srv/ExecuteRoute.srv"
   "srv/CancelRoute.srv"
+  "srv/SetRoutePaused.srv"
   "srv/LoadRobotMap.srv"
   "srv/GetRobotMapState.srv"
   "srv/ListRobotMaps.srv"

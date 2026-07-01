@@ -55,10 +55,70 @@ class RobotApiStub:
             request_serializer=robot__api__pb2.StopRequest.SerializeToString,
             response_deserializer=robot__api__pb2.CommandResponse.FromString,
         )
+        self.AcquireControl = channel.unary_unary(
+            "/robot.grpc.v1.RobotApi/AcquireControl",
+            request_serializer=robot__api__pb2.ControlRequest.SerializeToString,
+            response_deserializer=robot__api__pb2.CommandResponse.FromString,
+        )
+        self.ReleaseControl = channel.unary_unary(
+            "/robot.grpc.v1.RobotApi/ReleaseControl",
+            request_serializer=robot__api__pb2.ControlRequest.SerializeToString,
+            response_deserializer=robot__api__pb2.CommandResponse.FromString,
+        )
+        self.Relocate = channel.unary_unary(
+            "/robot.grpc.v1.RobotApi/Relocate",
+            request_serializer=robot__api__pb2.RelocateRequest.SerializeToString,
+            response_deserializer=robot__api__pb2.CommandResponse.FromString,
+        )
+        self.ConfirmLocalization = channel.unary_unary(
+            "/robot.grpc.v1.RobotApi/ConfirmLocalization",
+            request_serializer=robot__api__pb2.ConfirmLocalizationRequest.SerializeToString,
+            response_deserializer=robot__api__pb2.CommandResponse.FromString,
+        )
+        self.PauseRoute = channel.unary_unary(
+            "/robot.grpc.v1.RobotApi/PauseRoute",
+            request_serializer=robot__api__pb2.PauseRouteRequest.SerializeToString,
+            response_deserializer=robot__api__pb2.CommandResponse.FromString,
+        )
+        self.ResumeRoute = channel.unary_unary(
+            "/robot.grpc.v1.RobotApi/ResumeRoute",
+            request_serializer=robot__api__pb2.ResumeRouteRequest.SerializeToString,
+            response_deserializer=robot__api__pb2.CommandResponse.FromString,
+        )
         self.WatchLaserScan = channel.unary_stream(
             "/robot.grpc.v1.RobotApi/WatchLaserScan",
             request_serializer=robot__api__pb2.WatchLaserScanRequest.SerializeToString,
             response_deserializer=robot__api__pb2.LaserScanFrame.FromString,
+        )
+        self.GetSlamDefaults = channel.unary_unary(
+            "/robot.grpc.v1.RobotApi/GetSlamDefaults",
+            request_serializer=robot__api__pb2.SlamDefaultsRequest.SerializeToString,
+            response_deserializer=robot__api__pb2.SlamDefaultsResponse.FromString,
+        )
+        self.StartSlam = channel.unary_unary(
+            "/robot.grpc.v1.RobotApi/StartSlam",
+            request_serializer=robot__api__pb2.StartSlamRequest.SerializeToString,
+            response_deserializer=robot__api__pb2.SlamStateResponse.FromString,
+        )
+        self.GetSlamState = channel.unary_unary(
+            "/robot.grpc.v1.RobotApi/GetSlamState",
+            request_serializer=robot__api__pb2.SlamStateRequest.SerializeToString,
+            response_deserializer=robot__api__pb2.SlamStateResponse.FromString,
+        )
+        self.WatchSlamMap = channel.unary_stream(
+            "/robot.grpc.v1.RobotApi/WatchSlamMap",
+            request_serializer=robot__api__pb2.WatchSlamMapRequest.SerializeToString,
+            response_deserializer=robot__api__pb2.SlamMapFrame.FromString,
+        )
+        self.FinishSlam = channel.unary_unary(
+            "/robot.grpc.v1.RobotApi/FinishSlam",
+            request_serializer=robot__api__pb2.FinishSlamRequest.SerializeToString,
+            response_deserializer=robot__api__pb2.SlamFinishResponse.FromString,
+        )
+        self.CancelSlam = channel.unary_unary(
+            "/robot.grpc.v1.RobotApi/CancelSlam",
+            request_serializer=robot__api__pb2.CancelSlamRequest.SerializeToString,
+            response_deserializer=robot__api__pb2.SlamStateResponse.FromString,
         )
         self.ListMaps = channel.unary_unary(
             "/robot.grpc.v1.RobotApi/ListMaps",
@@ -138,7 +198,67 @@ class RobotApiServicer:
         context.set_details("Method not implemented!")
         raise NotImplementedError("Method not implemented!")
 
+    def AcquireControl(self, request, context):
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details("Method not implemented!")
+        raise NotImplementedError("Method not implemented!")
+
+    def ReleaseControl(self, request, context):
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details("Method not implemented!")
+        raise NotImplementedError("Method not implemented!")
+
+    def Relocate(self, request, context):
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details("Method not implemented!")
+        raise NotImplementedError("Method not implemented!")
+
+    def ConfirmLocalization(self, request, context):
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details("Method not implemented!")
+        raise NotImplementedError("Method not implemented!")
+
+    def PauseRoute(self, request, context):
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details("Method not implemented!")
+        raise NotImplementedError("Method not implemented!")
+
+    def ResumeRoute(self, request, context):
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details("Method not implemented!")
+        raise NotImplementedError("Method not implemented!")
+
     def WatchLaserScan(self, request, context):
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details("Method not implemented!")
+        raise NotImplementedError("Method not implemented!")
+
+    def GetSlamDefaults(self, request, context):
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details("Method not implemented!")
+        raise NotImplementedError("Method not implemented!")
+
+    def StartSlam(self, request, context):
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details("Method not implemented!")
+        raise NotImplementedError("Method not implemented!")
+
+    def GetSlamState(self, request, context):
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details("Method not implemented!")
+        raise NotImplementedError("Method not implemented!")
+
+    def WatchSlamMap(self, request, context):
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details("Method not implemented!")
+        raise NotImplementedError("Method not implemented!")
+
+    def FinishSlam(self, request, context):
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details("Method not implemented!")
+        raise NotImplementedError("Method not implemented!")
+
+    def CancelSlam(self, request, context):
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details("Method not implemented!")
         raise NotImplementedError("Method not implemented!")
@@ -221,10 +341,70 @@ def add_RobotApiServicer_to_server(servicer, server):
             request_deserializer=robot__api__pb2.StopRequest.FromString,
             response_serializer=robot__api__pb2.CommandResponse.SerializeToString,
         ),
+        "AcquireControl": grpc.unary_unary_rpc_method_handler(
+            servicer.AcquireControl,
+            request_deserializer=robot__api__pb2.ControlRequest.FromString,
+            response_serializer=robot__api__pb2.CommandResponse.SerializeToString,
+        ),
+        "ReleaseControl": grpc.unary_unary_rpc_method_handler(
+            servicer.ReleaseControl,
+            request_deserializer=robot__api__pb2.ControlRequest.FromString,
+            response_serializer=robot__api__pb2.CommandResponse.SerializeToString,
+        ),
+        "Relocate": grpc.unary_unary_rpc_method_handler(
+            servicer.Relocate,
+            request_deserializer=robot__api__pb2.RelocateRequest.FromString,
+            response_serializer=robot__api__pb2.CommandResponse.SerializeToString,
+        ),
+        "ConfirmLocalization": grpc.unary_unary_rpc_method_handler(
+            servicer.ConfirmLocalization,
+            request_deserializer=robot__api__pb2.ConfirmLocalizationRequest.FromString,
+            response_serializer=robot__api__pb2.CommandResponse.SerializeToString,
+        ),
+        "PauseRoute": grpc.unary_unary_rpc_method_handler(
+            servicer.PauseRoute,
+            request_deserializer=robot__api__pb2.PauseRouteRequest.FromString,
+            response_serializer=robot__api__pb2.CommandResponse.SerializeToString,
+        ),
+        "ResumeRoute": grpc.unary_unary_rpc_method_handler(
+            servicer.ResumeRoute,
+            request_deserializer=robot__api__pb2.ResumeRouteRequest.FromString,
+            response_serializer=robot__api__pb2.CommandResponse.SerializeToString,
+        ),
         "WatchLaserScan": grpc.unary_stream_rpc_method_handler(
             servicer.WatchLaserScan,
             request_deserializer=robot__api__pb2.WatchLaserScanRequest.FromString,
             response_serializer=robot__api__pb2.LaserScanFrame.SerializeToString,
+        ),
+        "GetSlamDefaults": grpc.unary_unary_rpc_method_handler(
+            servicer.GetSlamDefaults,
+            request_deserializer=robot__api__pb2.SlamDefaultsRequest.FromString,
+            response_serializer=robot__api__pb2.SlamDefaultsResponse.SerializeToString,
+        ),
+        "StartSlam": grpc.unary_unary_rpc_method_handler(
+            servicer.StartSlam,
+            request_deserializer=robot__api__pb2.StartSlamRequest.FromString,
+            response_serializer=robot__api__pb2.SlamStateResponse.SerializeToString,
+        ),
+        "GetSlamState": grpc.unary_unary_rpc_method_handler(
+            servicer.GetSlamState,
+            request_deserializer=robot__api__pb2.SlamStateRequest.FromString,
+            response_serializer=robot__api__pb2.SlamStateResponse.SerializeToString,
+        ),
+        "WatchSlamMap": grpc.unary_stream_rpc_method_handler(
+            servicer.WatchSlamMap,
+            request_deserializer=robot__api__pb2.WatchSlamMapRequest.FromString,
+            response_serializer=robot__api__pb2.SlamMapFrame.SerializeToString,
+        ),
+        "FinishSlam": grpc.unary_unary_rpc_method_handler(
+            servicer.FinishSlam,
+            request_deserializer=robot__api__pb2.FinishSlamRequest.FromString,
+            response_serializer=robot__api__pb2.SlamFinishResponse.SerializeToString,
+        ),
+        "CancelSlam": grpc.unary_unary_rpc_method_handler(
+            servicer.CancelSlam,
+            request_deserializer=robot__api__pb2.CancelSlamRequest.FromString,
+            response_serializer=robot__api__pb2.SlamStateResponse.SerializeToString,
         ),
         "ListMaps": grpc.unary_unary_rpc_method_handler(
             servicer.ListMaps,

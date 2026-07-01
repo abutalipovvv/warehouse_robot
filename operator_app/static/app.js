@@ -907,6 +907,7 @@ class OperatorApp {
     this.currentRoute = null;
     this.statusRequestPending = false;
     this.navigateMode = false;
+    this.relocateMode = false;
     this.pendingFleetAction = "";
     this.pendingFleetRobotName = "";
     this.fleetQueue = [];
@@ -939,6 +940,13 @@ class OperatorApp {
     this.scanRobotId = "";
     this.scanEnabled = false;
     this.latestScanFrame = null;
+    this.slamSocket = null;
+    this.slamRobotId = "";
+    this.slamActive = false;
+    this.slamState = null;
+    this.slamMapPayload = null;
+    this.slamMapFrame = null;
+    this.slamDefaults = null;
     this.teleopSocket = null;
     this.teleopRobotId = "";
     this.fleetStatusReceivedAt = 0;
@@ -968,6 +976,7 @@ class OperatorApp {
     this.fleetEditorFieldSyncing = false;
     this.fleetModelEditor = null;
     this.mapDrag = null;
+    this.relocationDrag = null;
     this.mapClickConsumed = false;
     this.manualKeys = new Set();
     this.teleopPending = false;
@@ -1001,8 +1010,21 @@ class OperatorApp {
     this.robotActiveMapText = document.getElementById("robotActiveMapText");
     this.operatorActiveMapText = document.getElementById("operatorActiveMapText");
     this.robotStateText = document.getElementById("robotStateText");
+    this.robotControlText = document.getElementById("robotControlText");
     this.nearestLmText = document.getElementById("nearestLmText");
+    this.driveActionGroup = document.getElementById("driveActionGroup");
+    this.localizationActionGroup = document.getElementById("localizationActionGroup");
+    this.navigationActionGroup = document.getElementById("navigationActionGroup");
+    this.visualActionGroup = document.getElementById("visualActionGroup");
+    this.mapActionGroup = document.getElementById("mapActionGroup");
+    this.slamActionGroup = document.getElementById("slamActionGroup");
     this.navigateRobotButton = document.getElementById("navigateRobotButton");
+    this.takeControlButton = document.getElementById("takeControlButton");
+    this.releaseControlButton = document.getElementById("releaseControlButton");
+    this.relocateRobotButton = document.getElementById("relocateRobotButton");
+    this.confirmLocalizationButton = document.getElementById("confirmLocalizationButton");
+    this.pauseRouteButton = document.getElementById("pauseRouteButton");
+    this.resumeRouteButton = document.getElementById("resumeRouteButton");
     this.cancelRouteButton = document.getElementById("cancelRouteButton");
     this.stopRobotButton = document.getElementById("stopRobotButton");
     this.refreshRobotStatusButton = document.getElementById("refreshRobotStatusButton");
@@ -1010,6 +1032,9 @@ class OperatorApp {
     this.controlPullMapButton = document.getElementById("controlPullMapButton");
     this.controlPushMapButton = document.getElementById("controlPushMapButton");
     this.controlLoadMapButton = document.getElementById("controlLoadMapButton");
+    this.startSlamButton = document.getElementById("startSlamButton");
+    this.doneSlamButton = document.getElementById("doneSlamButton");
+    this.cancelSlamButton = document.getElementById("cancelSlamButton");
     this.mapSyncStatus = document.getElementById("mapSyncStatus");
     this.operatorConsole = document.getElementById("operatorConsole");
     this.fleetControlPanel = document.getElementById("fleetControlPanel");
@@ -1092,6 +1117,7 @@ class OperatorApp {
     this.operatorEditorLayer = document.getElementById("operatorEditorLayer");
     this.operatorScanLayer = document.getElementById("operatorScanLayer");
     this.operatorRobotLayer = document.getElementById("operatorRobotLayer");
+    this.operatorRelocateLayer = document.getElementById("operatorRelocateLayer");
     this.operatorZoomInButton = document.getElementById("operatorZoomInButton");
     this.operatorZoomOutButton = document.getElementById("operatorZoomOutButton");
     this.operatorResetViewButton = document.getElementById("operatorResetViewButton");
@@ -1145,6 +1171,12 @@ class OperatorApp {
     this.mapTransferBar = document.getElementById("mapTransferBar");
     this.mapTransferStatus = document.getElementById("mapTransferStatus");
     this.mapTransferCloseButton = document.getElementById("mapTransferCloseButton");
+    this.slamDialog = document.getElementById("slamDialog");
+    this.closeSlamDialogButton = document.getElementById("closeSlamDialogButton");
+    this.cancelSlamDialogButton = document.getElementById("cancelSlamDialogButton");
+    this.confirmStartSlamButton = document.getElementById("confirmStartSlamButton");
+    this.slamParamsInput = document.getElementById("slamParamsInput");
+    this.slamDialogStatus = document.getElementById("slamDialogStatus");
   }
 
   async init() {
@@ -1187,6 +1219,12 @@ class OperatorApp {
     this.homeRefreshButton?.addEventListener("click", () => this.refreshRobots());
     this.homeAddRobotButton?.addEventListener("click", () => this.openAddRobotDialog());
     this.navigateRobotButton.addEventListener("click", () => this.toggleNavigateMode());
+    this.takeControlButton?.addEventListener("click", () => this.acquireRobotControl());
+    this.releaseControlButton?.addEventListener("click", () => this.releaseRobotControl());
+    this.relocateRobotButton?.addEventListener("click", () => this.toggleRelocateMode());
+    this.confirmLocalizationButton?.addEventListener("click", () => this.confirmRobotLocalization());
+    this.pauseRouteButton?.addEventListener("click", () => this.pauseRobotRoute());
+    this.resumeRouteButton?.addEventListener("click", () => this.resumeRobotRoute());
     this.cancelRouteButton.addEventListener("click", () => this.cancelRoute());
     this.stopRobotButton.addEventListener("click", () => this.stopRobot());
     this.refreshRobotStatusButton.addEventListener("click", () => this.fetchSelectedRobotStatus(false));
@@ -1201,6 +1239,9 @@ class OperatorApp {
     this.controlPullMapButton.addEventListener("click", () => this.handlePullMap());
     this.controlPushMapButton.addEventListener("click", () => this.handlePushMap());
     this.controlLoadMapButton.addEventListener("click", () => this.handleLoadMap());
+    this.startSlamButton?.addEventListener("click", () => this.openSlamDialog());
+    this.doneSlamButton?.addEventListener("click", () => this.finishSlam());
+    this.cancelSlamButton?.addEventListener("click", () => this.cancelSlam());
     this.fleetModeSelect.addEventListener("change", () => {
       this.syncFleetRemoteFields();
       this.handleFleetModeChange();
@@ -1260,6 +1301,9 @@ class OperatorApp {
       this.resolveMapSyncDecision("cancel");
     });
     this.mapTransferCloseButton.addEventListener("click", () => this.mapTransferDialog.close());
+    this.closeSlamDialogButton?.addEventListener("click", () => this.slamDialog.close());
+    this.cancelSlamDialogButton?.addEventListener("click", () => this.slamDialog.close());
+    this.confirmStartSlamButton?.addEventListener("click", () => this.startSlamFromDialog());
 
     this.operatorZoomInButton.addEventListener("click", () => this.zoomMap(1.16));
     this.operatorZoomOutButton.addEventListener("click", () => this.zoomMap(0.86));
@@ -1305,6 +1349,7 @@ class OperatorApp {
     });
     window.addEventListener("beforeunload", () => {
       this.closeScanStream();
+      this.closeSlamStream();
       this.closeTeleopSocket(true);
     });
   }
@@ -1391,6 +1436,7 @@ class OperatorApp {
     this.closeRobotStatusStream();
     this.closeFleetStatusStream();
     this.closeScanStream();
+    this.closeSlamStream();
     this.closeTeleopSocket(true);
     this.stopFleetAnimationLoop();
     this.renderSelectedRobot();
@@ -1421,6 +1467,7 @@ class OperatorApp {
     }
     this.setFleetTab("params");
     this.closeScanStream();
+    this.closeSlamStream();
     this.closeTeleopSocket(true);
     await this.ensureCurrentParamsLoaded();
     this.renderSelectedRobot();
@@ -1466,6 +1513,7 @@ class OperatorApp {
     }
     this.setFleetTab("model");
     this.closeScanStream();
+    this.closeSlamStream();
     this.closeTeleopSocket(true);
     const selectedChanged = this.ensureRobotSelectedForModel();
     if (selectedChanged) {
@@ -1522,6 +1570,7 @@ class OperatorApp {
     this.currentStatus = null;
     this.currentRoute = null;
     this.closeScanStream();
+    this.closeSlamStream();
     this.closeTeleopSocket(true);
     this.syncFleetStatusStream();
     return true;
@@ -1539,6 +1588,7 @@ class OperatorApp {
       this.currentStatus = null;
       this.currentRoute = null;
       this.closeScanStream();
+      this.closeSlamStream();
       this.closeTeleopSocket(true);
       this.syncFleetStatusStream();
       return false;
@@ -1548,6 +1598,7 @@ class OperatorApp {
     this.currentStatus = null;
     this.currentRoute = null;
     this.closeScanStream();
+    this.closeSlamStream();
     this.closeTeleopSocket(true);
     this.syncFleetStatusStream();
     return true;
@@ -2039,6 +2090,347 @@ class OperatorApp {
     }
   }
 
+  slamStreamOpen() {
+    return typeof WebSocket !== "undefined"
+      && this.slamSocket
+      && this.slamSocket.readyState === WebSocket.OPEN;
+  }
+
+  slamStreamConnecting() {
+    return typeof WebSocket !== "undefined"
+      && this.slamSocket
+      && this.slamSocket.readyState === WebSocket.CONNECTING;
+  }
+
+  async openSlamDialog() {
+    const robot = this.selectedRobot();
+    if (!robot || this.isFleetManager(robot)) {
+      return;
+    }
+    try {
+      this.slamDialogStatus.className = "probe-result neutral";
+      this.slamDialogStatus.textContent = "Loading default SLAM parameters...";
+      if (typeof this.slamDialog.showModal === "function" && !this.slamDialog.open) {
+        this.slamDialog.showModal();
+      }
+      const defaults = await this.getJson(`/api/robots/${encodeURIComponent(robot.id)}/slam/defaults`);
+      const params = defaults.params && typeof defaults.params === "object" ? defaults.params : {};
+      this.slamDefaults = params;
+      this.slamParamsInput.value = JSON.stringify(params, null, 2);
+      this.slamDialogStatus.className = "probe-result success";
+      this.slamDialogStatus.textContent = defaults.paramsPath
+        ? `Loaded from ${defaults.paramsPath}.`
+        : "Default parameters loaded from robot.";
+    } catch (error) {
+      this.slamDialogStatus.className = "probe-result error";
+      this.slamDialogStatus.textContent = error.message || String(error);
+    }
+  }
+
+  async startSlamFromDialog() {
+    const robot = this.selectedRobot();
+    if (!robot || this.isFleetManager(robot)) {
+      return;
+    }
+    let params = {};
+    try {
+      params = JSON.parse(this.slamParamsInput.value || "{}");
+      if (!params || typeof params !== "object" || Array.isArray(params)) {
+        throw new Error("SLAM parameters must be a JSON object.");
+      }
+    } catch (error) {
+      this.slamDialogStatus.className = "probe-result error";
+      this.slamDialogStatus.textContent = error.message || String(error);
+      return;
+    }
+    try {
+      this.confirmStartSlamButton.disabled = true;
+      this.slamDialogStatus.className = "probe-result neutral";
+      this.slamDialogStatus.textContent = "Starting slam_toolbox...";
+      const result = await this.postJson(`/api/robots/${encodeURIComponent(robot.id)}/slam/start`, {
+        params,
+        useSimTime: true,
+      });
+      this.slamState = result.state || null;
+      this.slamActive = Boolean(result.state?.active ?? true);
+      this.slamMapPayload = null;
+      this.slamMapFrame = null;
+      this.resetMapView(true);
+      this.slamDialog.close();
+      this.openSlamStream();
+      this.syncSlamUi("mapping");
+      this.robotMessageText.textContent = "2D SLAM started. WASD teleop remains available.";
+    } catch (error) {
+      this.slamDialogStatus.className = "probe-result error";
+      this.slamDialogStatus.textContent = error.message || String(error);
+    } finally {
+      this.confirmStartSlamButton.disabled = false;
+    }
+  }
+
+  openSlamStream() {
+    const robot = this.selectedRobot();
+    if (!robot || this.isFleetManager(robot) || typeof WebSocket === "undefined") {
+      this.closeSlamStream();
+      return;
+    }
+    if (this.slamRobotId && this.slamRobotId !== robot.id) {
+      this.closeSlamStream();
+    }
+    if (this.slamStreamOpen() || this.slamStreamConnecting()) {
+      return;
+    }
+    const socket = new WebSocket(this.slamWsUrl(robot));
+    this.slamSocket = socket;
+    this.slamRobotId = robot.id;
+    this.slamActive = true;
+    this.syncSlamUi("connecting");
+    socket.addEventListener("open", () => {
+      if (this.slamSocket !== socket) {
+        return;
+      }
+      this.syncSlamUi("waiting for /map");
+    });
+    socket.addEventListener("message", (event) => {
+      if (this.slamSocket !== socket) {
+        return;
+      }
+      this.handleSlamStreamMessage(event);
+    });
+    socket.addEventListener("error", () => {
+      if (this.slamSocket === socket) {
+        this.syncSlamUi("error");
+      }
+    });
+    socket.addEventListener("close", () => {
+      if (this.slamSocket !== socket) {
+        return;
+      }
+      this.slamSocket = null;
+      this.slamRobotId = "";
+      this.syncSlamUi(this.slamActive ? "disconnected" : "off");
+    });
+  }
+
+  slamWsUrl(robot) {
+    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+    return `${protocol}//${window.location.host}/ws/robot/slam?robotId=${encodeURIComponent(robot.id)}&hz=1&includeCells=1`;
+  }
+
+  closeSlamStream(options = {}) {
+    const clearLive = options.clearLive !== false;
+    const socket = this.slamSocket;
+    this.slamSocket = null;
+    this.slamRobotId = "";
+    if (socket) {
+      try {
+        socket.close(1000, "slam stream closed");
+      } catch (_) {
+        // Some browsers throw if the socket is already closing.
+      }
+    }
+    if (clearLive) {
+      this.slamActive = false;
+      this.slamState = null;
+      this.slamMapPayload = null;
+      this.slamMapFrame = null;
+      this.renderOperatorMap();
+    }
+    this.syncSlamUi("off");
+  }
+
+  handleSlamStreamMessage(event) {
+    let payload = null;
+    try {
+      payload = JSON.parse(event.data);
+    } catch (_) {
+      return;
+    }
+    if (!payload || typeof payload !== "object") {
+      return;
+    }
+    if (!payload.ok) {
+      this.syncSlamUi(payload.error || "waiting");
+      return;
+    }
+    this.slamState = payload.state || this.slamState;
+    this.slamActive = Boolean(payload.state?.active ?? this.slamActive);
+    this.slamMapFrame = payload;
+    const nextPayload = this.slamFrameToMapPayload(payload);
+    if (nextPayload) {
+      const previousSignature = String(this.slamMapPayload?.signature || "");
+      this.slamMapPayload = nextPayload;
+      if (nextPayload.signature !== previousSignature && !previousSignature) {
+        this.resetMapView(true);
+      }
+    }
+    const progress = Number(payload.state?.progress || 0);
+    const size = Number(payload.width || 0) && Number(payload.height || 0)
+      ? `${payload.width}x${payload.height}`
+      : "waiting";
+    this.syncSlamUi(progress ? `${size} ${Math.round(progress)}%` : size);
+    this.renderOperatorMap();
+  }
+
+  slamFrameToMapPayload(frame) {
+    const width = Number(frame.width || 0);
+    const height = Number(frame.height || 0);
+    const resolution = Number(frame.resolution || 0);
+    if (width <= 0 || height <= 0 || resolution <= 0 || !frame.cellsBase64) {
+      return null;
+    }
+    const imageDataUrl = this.slamCellsToImageDataUrl(frame);
+    if (!imageDataUrl) {
+      return null;
+    }
+    const padding = 36;
+    const originX = Number(frame.originX || frame.origin_x || 0);
+    const originY = Number(frame.originY || frame.origin_y || 0);
+    const originYaw = Number(frame.originYaw || frame.origin_yaw || 0);
+    const stamp = Number(frame.stampSec || frame.stamp_sec || Date.now() / 1000);
+    return {
+      mapName: "SLAM live",
+      signature: `slam:${width}:${height}:${resolution}:${originX}:${originY}:${stamp}`,
+      map: {
+        mapName: "SLAM live",
+        imageDataUrl,
+        width,
+        height,
+        resolution,
+        origin: [originX, originY, originYaw],
+        viewPadding: padding,
+        viewWidth: width + (padding * 2),
+        viewHeight: height + (padding * 2),
+      },
+      lms: [],
+      edges: [],
+    };
+  }
+
+  slamCellsToImageDataUrl(frame) {
+    const width = Number(frame.width || 0);
+    const height = Number(frame.height || 0);
+    let binary = "";
+    try {
+      binary = window.atob(String(frame.cellsBase64 || ""));
+    } catch (_) {
+      return "";
+    }
+    if (!width || !height || binary.length < width * height) {
+      return "";
+    }
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const context = canvas.getContext("2d");
+    if (!context) {
+      return "";
+    }
+    const image = context.createImageData(width, height);
+    for (let y = 0; y < height; y += 1) {
+      for (let x = 0; x < width; x += 1) {
+        const src = ((height - 1 - y) * width) + x;
+        const encoded = binary.charCodeAt(src);
+        const value = encoded - 1;
+        let shade = 205;
+        if (value >= 0) {
+          shade = 255 - Math.round(Math.min(100, value) * 2.35);
+        }
+        const dst = ((y * width) + x) * 4;
+        image.data[dst] = shade;
+        image.data[dst + 1] = shade;
+        image.data[dst + 2] = shade;
+        image.data[dst + 3] = 255;
+      }
+    }
+    context.putImageData(image, 0, 0);
+    return canvas.toDataURL("image/png");
+  }
+
+  async finishSlam() {
+    const robot = this.selectedRobot();
+    if (!robot || this.isFleetManager(robot)) {
+      return;
+    }
+    const defaultName = `slam_${new Date().toISOString().slice(0, 16).replace(/[-:T]/g, "")}`;
+    const mapName = String(window.prompt("New map name", defaultName) || "").trim();
+    if (!mapName) {
+      return;
+    }
+    try {
+      const result = await this.runMapTransfer("slam", async (progress) => {
+        await progress(3, "Preparing SLAM save...", 100);
+        let staged = 8;
+        const timer = window.setInterval(() => {
+          staged = Math.min(92, staged + (staged < 60 ? 7 : 3));
+          this.setMapTransferProgress(staged, "Saving SLAM map and creating smap files...", 0);
+        }, 380);
+        try {
+          const response = await this.postJson(`/api/robots/${encodeURIComponent(robot.id)}/slam/finish`, {
+            mapName,
+            activate: true,
+          });
+          await progress(95, "Pulling saved map into Operator App...", 150);
+          return response;
+        } finally {
+          window.clearInterval(timer);
+        }
+      });
+      this.slamActive = false;
+      this.slamState = result.state || null;
+      this.closeSlamStream();
+      await this.refreshRobotMapState({ quiet: true });
+      await this.refreshRobots({ quiet: true });
+      await this.fetchSelectedRobotStatus(true);
+      this.renderSelectedRobot();
+      this.robotMessageText.textContent = `SLAM map saved: ${result.mapName || mapName}.`;
+    } catch (error) {
+      this.robotMessageText.textContent = `Finish SLAM failed: ${error.message || error}`;
+    }
+  }
+
+  async cancelSlam() {
+    const robot = this.selectedRobot();
+    if (!robot || this.isFleetManager(robot)) {
+      return;
+    }
+    if (!window.confirm("Cancel current SLAM session? The live map will not be saved.")) {
+      return;
+    }
+    try {
+      const result = await this.postJson(`/api/robots/${encodeURIComponent(robot.id)}/slam/cancel`, {
+        reason: "SLAM canceled by operator.",
+      });
+      this.slamActive = false;
+      this.slamState = result.state || null;
+      this.closeSlamStream();
+      this.syncSlamUi("canceled");
+      this.robotMessageText.textContent = "SLAM canceled.";
+    } catch (error) {
+      this.robotMessageText.textContent = `Cancel SLAM failed: ${error.message || error}`;
+    }
+  }
+
+  syncSlamUi(statusText = "") {
+    const robot = this.selectedRobot();
+    const visible = Boolean(robot) && !this.isFleetManager(robot) && !this.isRobotModelPage() && !this.isParamsPage();
+    this.slamActionGroup?.classList.toggle("hidden", !visible);
+    this.startSlamButton?.classList.toggle("primary", !this.slamActive);
+    if (this.startSlamButton) {
+      this.startSlamButton.disabled = this.slamActive;
+      this.startSlamButton.textContent = this.slamActive ? "Running" : "Start 2D";
+      this.startSlamButton.title = statusText ? `SLAM: ${statusText}` : "Start 2D SLAM";
+    }
+    if (this.doneSlamButton) {
+      this.doneSlamButton.disabled = !this.slamActive;
+      this.doneSlamButton.title = "Save the live SLAM map as a new smap.";
+    }
+    if (this.cancelSlamButton) {
+      this.cancelSlamButton.disabled = !this.slamActive;
+      this.cancelSlamButton.title = "Cancel SLAM without saving.";
+    }
+  }
+
   clearScanOverlay() {
     if (this.operatorScanLayer) {
       this.operatorScanLayer.innerHTML = "";
@@ -2477,6 +2869,7 @@ class OperatorApp {
       this.selectedRobotId = "";
       window.localStorage.removeItem("operator:selectedRobotId");
       this.closeScanStream();
+      this.closeSlamStream();
       this.closeTeleopSocket(true);
     }
     if (!this.selectedRobotId && this.robots.length && !this.isGlobalHomePage()) {
@@ -2808,6 +3201,7 @@ class OperatorApp {
       const selectRobot = async () => {
         if (this.selectedRobotId !== robot.id) {
           this.closeScanStream();
+          this.closeSlamStream();
           this.closeTeleopSocket(true);
           this.manualKeys.clear();
           this.syncManualButtons();
@@ -2913,6 +3307,9 @@ class OperatorApp {
       this.robotActiveMapText.textContent = "-";
       this.operatorActiveMapText.textContent = "-";
       this.robotStateText.textContent = "-";
+      if (this.robotControlText) {
+        this.robotControlText.textContent = "-";
+      }
       this.nearestLmText.textContent = "-";
       this.mapSyncStatus.className = "probe-result neutral";
       this.mapSyncStatus.textContent = "Select a robot to see map sync state.";
@@ -2979,6 +3376,52 @@ class OperatorApp {
     }
     const ratio = numeric <= 1 ? numeric : numeric / 100;
     return `${Math.round(Math.max(0, Math.min(1, ratio)) * 100)}%`;
+  }
+
+  robotControlPayload(robot) {
+    const control = robot && typeof robot.control === "object" ? robot.control : {};
+    return {
+      state: String(robot?.controlState || control.state || "").toUpperCase(),
+      ownerId: String(robot?.controlOwner || control.ownerId || ""),
+      ownerName: String(robot?.controlOwnerName || control.ownerName || ""),
+    };
+  }
+
+  robotControlLabel(robot) {
+    const control = this.robotControlPayload(robot);
+    if (!control.ownerId) {
+      return "free";
+    }
+    return control.ownerName || control.ownerId;
+  }
+
+  robotNavigationPaused(robot) {
+    return Boolean(robot?.navigationPaused) || String(robot?.state || "").toUpperCase() === "PAUSED";
+  }
+
+  robotLocalizationLabel(robot) {
+    const localized = robot?.localizationOk
+      ? `ok (${Number(robot.localizationAgeSec || 0).toFixed(2)} s)`
+      : "waiting";
+    const confirmed = robot?.localizationConfirmed ? "confirmed" : "not confirmed";
+    return `${localized} | ${confirmed}`;
+  }
+
+  robotLifecycleReason(robot) {
+    const parts = [];
+    const control = this.robotControlPayload(robot);
+    if (control.ownerId) {
+      parts.push(`control: ${control.ownerName || control.ownerId}`);
+    } else {
+      parts.push("control: free");
+    }
+    if (this.robotNavigationPaused(robot)) {
+      parts.push("navigation paused");
+    }
+    if (robot?.message) {
+      parts.push(robot.message);
+    }
+    return parts.join(" | ") || "-";
   }
 
   nestedStatusValue(payload, keys) {
@@ -3126,12 +3569,30 @@ class OperatorApp {
     this.robotParamsPanel.classList.toggle("hidden", !showRobotParams);
     this.robotModelPanel.classList.toggle("hidden", !isRobotModel);
     this.manualPad.classList.toggle("hidden", isRobotModel || isParams);
+    const showRobotLifecycle = !isFleet && !isRobotModel && !isParams;
+    this.driveActionGroup?.classList.toggle("hidden", !showRobotLifecycle);
+    this.localizationActionGroup?.classList.toggle("hidden", !showRobotLifecycle);
+    this.navigationActionGroup?.classList.toggle("hidden", isRobotModel || isParams);
+    this.visualActionGroup?.classList.toggle("hidden", isRobotModel || isParams);
+    this.mapActionGroup?.classList.toggle("hidden", isRobotModel || isParams);
+    this.slamActionGroup?.classList.toggle("hidden", !showRobotLifecycle);
+    for (const button of [
+      this.takeControlButton,
+      this.releaseControlButton,
+      this.relocateRobotButton,
+      this.confirmLocalizationButton,
+      this.pauseRouteButton,
+      this.resumeRouteButton,
+    ]) {
+      button?.classList.toggle("hidden", !showRobotLifecycle);
+    }
     this.syncScanUi();
+    this.syncSlamUi();
     this.controlPullMapButton.classList.toggle("hidden", false);
     this.controlPushMapButton.classList.toggle("hidden", false);
     this.cancelRouteButton.textContent = isFleet ? "Stop Active" : "Cancel Route";
     this.stopRobotButton.textContent = isFleet ? "Stop Fleet" : "Stop";
-    this.navigateRobotButton.textContent = this.navigateMode ? "Cancel Navigate" : this.navigateButtonIdleText();
+    this.syncModeButtons();
     if (isFleet) {
       this.setFleetTab(this.fleetActiveTab);
     } else {
@@ -3175,6 +3636,9 @@ class OperatorApp {
     const state = String(robot.state || (selected && selected.online ? "ONLINE" : "OFFLINE") || "-");
 
     this.robotStateText.textContent = state;
+    if (this.robotControlText) {
+      this.robotControlText.textContent = this.robotControlLabel(robot);
+    }
     this.nearestLmText.textContent = robot.nearestLm || "-";
     this.renderInspectorDetails({
       robot: robot.robotId || selected?.name || selected?.id || "-",
@@ -3182,7 +3646,7 @@ class OperatorApp {
       connection: this.robotStatusStreamOpen() ? "robot websocket" : (connected ? "online" : "offline"),
       map: robot.mapId || selected?.identity?.mapId || this.robotMapState.robotActiveMapName || "-",
       currentLm: robot.nearestLm || "-",
-      localization: robot.localizationOk ? `ok (${Number(robot.localizationAgeSec || 0).toFixed(2)} s)` : "waiting",
+      localization: this.robotLocalizationLabel(robot),
       targetLm: robot.targetLm || "-",
       currentEdge: robot.currentEdgeId || "-",
       progress: this.formatProgress(robot.routeProgress, "0%"),
@@ -3195,7 +3659,7 @@ class OperatorApp {
           ? (selected?.baseUrl || `grpc://${selected?.host || "-"}:${selected?.port || 50051}`)
           : `ROS2 ${selected?.host || "DDS"} domain ${selected?.domainId ?? 0}`)
         : (selected?.baseUrl || "-"),
-      reason: robot.message || "-",
+      reason: this.robotLifecycleReason(robot),
     });
     this.robotMessageText.textContent = robot.message || (this.operatorMapPayload ? "Robot status ready." : "Pull the active robot map to display Map & Control.");
     this.routeNodesText.textContent = route && Array.isArray(route.nodes) && route.nodes.length
@@ -3220,6 +3684,9 @@ class OperatorApp {
     const state = String(robot.state || (selected && selected.online ? "ONLINE" : "OFFLINE") || "-");
 
     this.robotStateText.textContent = state;
+    if (this.robotControlText) {
+      this.robotControlText.textContent = this.robotControlLabel(robot);
+    }
     this.nearestLmText.textContent = robot.nearestLm || "-";
     this.renderInspectorDetails({
       robot: robot.robotId || selected?.name || selected?.id || "-",
@@ -3227,7 +3694,7 @@ class OperatorApp {
       connection: this.robotStatusStreamOpen() ? "robot websocket" : (connected ? "online" : "offline"),
       map: robot.mapId || selected?.identity?.mapId || this.robotMapState.robotActiveMapName || "-",
       currentLm: robot.nearestLm || "-",
-      localization: robot.localizationOk ? `ok (${Number(robot.localizationAgeSec || 0).toFixed(2)} s)` : "waiting",
+      localization: this.robotLocalizationLabel(robot),
       targetLm: robot.targetLm || "-",
       currentEdge: robot.currentEdgeId || "-",
       progress: this.formatProgress(robot.routeProgress, "0%"),
@@ -3240,7 +3707,7 @@ class OperatorApp {
           ? (selected?.baseUrl || `grpc://${selected?.host || "-"}:${selected?.port || 50051}`)
           : `ROS2 ${selected?.host || "DDS"} domain ${selected?.domainId ?? 0}`)
         : (selected?.baseUrl || "-"),
-      reason: robot.message || "-",
+      reason: this.robotLifecycleReason(robot),
     });
     this.robotMessageText.textContent = robot.message || (this.operatorMapPayload ? "Robot status ready." : "Pull the active robot map to display Map & Control.");
     this.routeNodesText.textContent = route && Array.isArray(route.nodes) && route.nodes.length
@@ -3280,6 +3747,9 @@ class OperatorApp {
 
     this.fleetModeSelect.value = mode;
     this.robotStateText.textContent = selectedFleetRobot ? String(selectedFleetRobot.status || "-") : mode.toUpperCase();
+    if (this.robotControlText) {
+      this.robotControlText.textContent = mode;
+    }
     this.nearestLmText.textContent = selectedFleetRobot ? (selectedFleetRobot.currentLm || "-") : `${robots.length} robots`;
     this.renderInspectorDetails({
       robot: selectedFleetRobot ? selectedFleetRobot.name : "Fleet Manager",
@@ -3346,6 +3816,9 @@ class OperatorApp {
       : mode;
 
     this.robotStateText.textContent = selectedFleetRobot ? String(selectedFleetRobot.status || "-") : mode.toUpperCase();
+    if (this.robotControlText) {
+      this.robotControlText.textContent = mode;
+    }
     this.nearestLmText.textContent = selectedFleetRobot ? (selectedFleetRobot.currentLm || "-") : `${robots.length} robots`;
     this.renderInspectorDetails({
       robot: selectedFleetRobot ? selectedFleetRobot.name : "Fleet Manager",
@@ -3998,6 +4471,7 @@ class OperatorApp {
         this.operatorScanLayer.innerHTML = "";
       }
       this.operatorRobotLayer.innerHTML = "";
+      this.clearRelocationPreview();
       return;
     }
     const map = payload.map;
@@ -4021,6 +4495,9 @@ class OperatorApp {
   activeOperatorMapPayload() {
     if (this.isFleetManager() && this.fleetMapEditorActive && this.fleetMapDraft) {
       return this.fleetMapDraft;
+    }
+    if (!this.isFleetManager() && this.slamActive && this.slamMapPayload) {
+      return this.slamMapPayload;
     }
     return this.operatorMapPayload;
   }
@@ -4082,6 +4559,7 @@ class OperatorApp {
       }
       return;
     }
+    this.drawSlamTrail();
     const route = (this.currentStatus && this.currentStatus.route) || this.currentRoute;
     if (!route || !Array.isArray(route.trajectory) || route.trajectory.length < 2) {
       return;
@@ -4093,6 +4571,14 @@ class OperatorApp {
       return `${px.x},${px.y}`;
     }).join(" "));
     this.operatorRouteLayer.append(polyline);
+  }
+
+  drawSlamTrail() {
+    const trail = Array.isArray(this.slamMapFrame?.trail) ? this.slamMapFrame.trail : [];
+    if (!this.slamActive || trail.length < 2) {
+      return;
+    }
+    this.appendRoutePolyline(trail, "slam-trail");
   }
 
   drawFleetRoute(robot) {
@@ -4238,7 +4724,7 @@ class OperatorApp {
         landmark.name === nearest ? "nearest" : "",
         landmark.name === target ? "target" : "",
         this.fleetMapEditorActive && landmark.name === this.fleetSelectedLmName ? "selected" : "",
-        this.navigateMode ? "armed" : "",
+        (this.navigateMode || this.relocateMode) ? "armed" : "",
       ].filter(Boolean).join(" "));
       group.dataset.lmName = landmark.name;
       group.addEventListener("pointerdown", (event) => {
@@ -4497,6 +4983,10 @@ class OperatorApp {
       this.handleFleetEditorPointerDown(event);
       return;
     }
+    if (this.relocateMode && !this.isFleetManager()) {
+      this.beginRelocationDrag(event);
+      return;
+    }
     if (event.button !== 0 || this.navigateMode || event.target.closest(".landmark")) {
       return;
     }
@@ -4513,6 +5003,9 @@ class OperatorApp {
   handleMapPointerMove(event) {
     if (this.isFleetManager() && this.fleetMapEditorActive) {
       this.handleFleetEditorPointerMove(event);
+      return;
+    }
+    if (this.updateRelocationDrag(event)) {
       return;
     }
     this.applyMapDragMove(event);
@@ -4545,6 +5038,9 @@ class OperatorApp {
       this.handleFleetEditorPointerUp(event);
       return;
     }
+    if (this.finishRelocationDrag(event)) {
+      return;
+    }
     if (this.mapDrag && this.mapDrag.pointerId === event.pointerId) {
       if (this.operatorMapSvg.hasPointerCapture(event.pointerId)) {
         this.operatorMapSvg.releasePointerCapture(event.pointerId);
@@ -4571,17 +5067,18 @@ class OperatorApp {
       this.mapClickConsumed = false;
       return;
     }
-    if (!this.navigateMode || event.target.closest(".landmark")) {
+    if (this.relocateMode) {
+      event.preventDefault();
       return;
     }
-    const point = this.screenToSvg(event.clientX, event.clientY);
-    if (!point) {
+    if ((!this.navigateMode && !this.relocateMode) || event.target.closest(".landmark")) {
       return;
     }
-    const world = this.pixelToWorld({
-      x: (point.x - this.mapView.tx) / this.mapView.scale,
-      y: (point.y - this.mapView.ty) / this.mapView.scale,
-    });
+    const mapPixel = this.screenToMapPixel(event.clientX, event.clientY);
+    if (!mapPixel) {
+      return;
+    }
+    const world = this.pixelToWorld(mapPixel);
     if (this.isRos2Robot() && !this.isFleetManager()) {
       this.startPoseNavigation(world);
       return;
@@ -4592,6 +5089,172 @@ class OperatorApp {
       return;
     }
     this.handleLandmarkTarget(nearest.landmark.name);
+  }
+
+  beginRelocationDrag(event) {
+    if (event.button !== 0 || !this.operatorMapPayload?.map) {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    const start = this.screenToMapPixel(event.clientX, event.clientY);
+    if (!start) {
+      return;
+    }
+    const robot = this.currentStatus && this.currentStatus.robot ? this.currentStatus.robot : {};
+    const fallbackYaw = Number(robot.pose?.yaw || 0);
+    const yaw = Number.isFinite(fallbackYaw) ? fallbackYaw : 0;
+    const previewLength = 34 / Math.max(1, this.mapView.scale);
+    this.relocationDrag = {
+      pointerId: event.pointerId,
+      start,
+      end: {
+        x: start.x + (Math.cos(yaw) * previewLength),
+        y: start.y - (Math.sin(yaw) * previewLength),
+      },
+      hasDirection: false,
+    };
+    this.mapClickConsumed = true;
+    this.operatorMapSvg.classList.add("relocating");
+    this.operatorMapSvg.setPointerCapture(event.pointerId);
+    this.drawRelocationPreview();
+    this.robotMessageText.textContent = "Relocate armed: hold and drag to set yaw, release to apply.";
+  }
+
+  updateRelocationDrag(event) {
+    if (!this.relocationDrag || this.relocationDrag.pointerId !== event.pointerId) {
+      return false;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    const end = this.screenToMapPixel(event.clientX, event.clientY);
+    if (!end) {
+      return true;
+    }
+    const distance = Math.hypot(end.x - this.relocationDrag.start.x, end.y - this.relocationDrag.start.y) * this.mapView.scale;
+    this.relocationDrag.end = end;
+    this.relocationDrag.hasDirection = distance >= 8;
+    this.drawRelocationPreview();
+    return true;
+  }
+
+  finishRelocationDrag(event) {
+    if (!this.relocationDrag || this.relocationDrag.pointerId !== event.pointerId) {
+      return false;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    const canceled = event.type === "pointercancel";
+    const end = this.screenToMapPixel(event.clientX, event.clientY);
+    if (end) {
+      this.relocationDrag.end = end;
+      const distance = Math.hypot(end.x - this.relocationDrag.start.x, end.y - this.relocationDrag.start.y) * this.mapView.scale;
+      this.relocationDrag.hasDirection = distance >= 8;
+    }
+    if (this.operatorMapSvg.hasPointerCapture(event.pointerId)) {
+      this.operatorMapSvg.releasePointerCapture(event.pointerId);
+    }
+    this.operatorMapSvg.classList.remove("relocating");
+    const pose = this.relocationPoseFromDrag(this.relocationDrag);
+    this.relocationDrag = null;
+    this.mapClickConsumed = true;
+    window.setTimeout(() => {
+      this.mapClickConsumed = false;
+    }, 150);
+    if (canceled) {
+      this.clearRelocationPreview();
+      this.robotMessageText.textContent = "Relocate still armed: hold and drag again.";
+      return true;
+    }
+    if (!pose) {
+      this.clearRelocationPreview();
+      this.robotMessageText.textContent = "Relocate still armed: drag farther to set yaw.";
+      return true;
+    }
+    this.startRelocation(pose);
+    return true;
+  }
+
+  relocationPoseFromDrag(drag) {
+    if (!drag || !drag.hasDirection) {
+      return null;
+    }
+    const dx = drag.end.x - drag.start.x;
+    const dy = drag.end.y - drag.start.y;
+    if (Math.hypot(dx, dy) <= 0.001) {
+      return null;
+    }
+    const world = this.pixelToWorld(drag.start);
+    return {
+      x: Number(world.x || 0),
+      y: Number(world.y || 0),
+      yaw: Math.atan2(-dy, dx),
+    };
+  }
+
+  clearRelocationPreview() {
+    if (this.operatorRelocateLayer) {
+      this.operatorRelocateLayer.innerHTML = "";
+    }
+    this.operatorMapSvg?.classList.remove("relocating");
+  }
+
+  drawRelocationPreview() {
+    if (!this.operatorRelocateLayer) {
+      return;
+    }
+    this.operatorRelocateLayer.innerHTML = "";
+    const drag = this.relocationDrag;
+    if (!drag) {
+      return;
+    }
+    const dx = drag.end.x - drag.start.x;
+    const dy = drag.end.y - drag.start.y;
+    const length = Math.hypot(dx, dy);
+    const group = document.createElementNS("http://www.w3.org/2000/svg", "g");
+    group.setAttribute("class", drag.hasDirection ? "relocate-preview" : "relocate-preview pending");
+
+    const anchor = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+    anchor.setAttribute("class", "relocate-anchor");
+    anchor.setAttribute("cx", String(drag.start.x));
+    anchor.setAttribute("cy", String(drag.start.y));
+    anchor.setAttribute("r", "7");
+    group.append(anchor);
+
+    if (length > 0.001) {
+      const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+      line.setAttribute("class", "relocate-heading-line");
+      line.setAttribute("x1", String(drag.start.x));
+      line.setAttribute("y1", String(drag.start.y));
+      line.setAttribute("x2", String(drag.end.x));
+      line.setAttribute("y2", String(drag.end.y));
+      group.append(line);
+
+      const ux = dx / length;
+      const uy = dy / length;
+      const px = -uy;
+      const py = ux;
+      const headLength = Math.min(16, Math.max(9, length * 0.34));
+      const headWidth = Math.min(10, Math.max(6, length * 0.2));
+      const base = {
+        x: drag.end.x - (ux * headLength),
+        y: drag.end.y - (uy * headLength),
+      };
+      const left = {
+        x: base.x + (px * headWidth),
+        y: base.y + (py * headWidth),
+      };
+      const right = {
+        x: base.x - (px * headWidth),
+        y: base.y - (py * headWidth),
+      };
+      const head = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
+      head.setAttribute("class", "relocate-heading-head");
+      head.setAttribute("points", `${drag.end.x},${drag.end.y} ${left.x},${left.y} ${right.x},${right.y}`);
+      group.append(head);
+    }
+
+    this.operatorRelocateLayer.append(group);
   }
 
   handleMapContextMenu(event) {
@@ -5228,13 +5891,24 @@ class OperatorApp {
     return new DOMPoint(clientX, clientY).matrixTransform(ctm.inverse());
   }
 
+  screenToMapPixel(clientX, clientY) {
+    const point = this.screenToSvg(clientX, clientY);
+    if (!point) {
+      return null;
+    }
+    return {
+      x: (point.x - this.mapView.tx) / this.mapView.scale,
+      y: (point.y - this.mapView.ty) / this.mapView.scale,
+    };
+  }
+
   zoomMap(factor, anchor = null) {
     const previous = this.mapView.scale;
     const next = Math.max(1, Math.min(9, previous * factor));
     if (Math.abs(next - previous) < 0.001) {
       return;
     }
-    const map = this.operatorMapPayload?.map || {};
+    const map = this.activeOperatorMapPayload()?.map || {};
     const pivot = anchor || {
       x: Number(map.viewWidth || 100) / 2,
       y: Number(map.viewHeight || 100) / 2,
@@ -5257,7 +5931,7 @@ class OperatorApp {
   }
 
   focusMapOn(pixel) {
-    const map = this.operatorMapPayload?.map || {};
+    const map = this.activeOperatorMapPayload()?.map || {};
     const center = {
       x: Number(map.viewWidth || 100) / 2,
       y: Number(map.viewHeight || 100) / 2,
@@ -5281,6 +5955,7 @@ class OperatorApp {
       this.robotMessageText.textContent = `Pull or load the robot map before ${this.navigateButtonIdleText()}.`;
       return;
     }
+    this.relocateMode = false;
     if (this.isFleetManager()) {
       if (this.navigateMode && this.pendingFleetAction === "navigate") {
         this.navigateMode = false;
@@ -5308,6 +5983,27 @@ class OperatorApp {
     this.robotMessageText.textContent = this.navigateMode
       ? (target ? `Navigate armed for ${target}: ${targetHint}` : `Navigate armed: ${targetHint}`)
       : "Navigate canceled.";
+  }
+
+  toggleRelocateMode() {
+    if (this.isFleetManager()) {
+      return;
+    }
+    if (!this.operatorMapPayload || !this.operatorMapPayload.map) {
+      this.robotMessageText.textContent = "Pull or load the robot map before Relocate.";
+      return;
+    }
+    this.navigateMode = false;
+    this.pendingFleetAction = "";
+    this.pendingFleetRobotName = "";
+    this.relocateMode = !this.relocateMode;
+    this.relocationDrag = null;
+    this.clearRelocationPreview();
+    this.syncModeButtons();
+    this.drawLandmarks();
+    this.robotMessageText.textContent = this.relocateMode
+      ? "Relocate armed: hold on the map, drag heading, release."
+      : "Relocate canceled.";
   }
 
   toggleFleetQueueMode() {
@@ -5344,12 +6040,36 @@ class OperatorApp {
     const isFleet = this.isFleetManager();
     const navigateArmed = this.navigateMode && (!isFleet || this.pendingFleetAction === "navigate");
     const queueArmed = this.navigateMode && isFleet && this.pendingFleetAction === "queue";
+    const relocateArmed = this.relocateMode && !isFleet;
+    const robot = this.currentStatus && this.currentStatus.robot ? this.currentStatus.robot : {};
+    const routeState = String(robot.state || "").toUpperCase();
+    const routeActive = Boolean(robot.targetLm || robot.routeId || routeState === "EXECUTING_ROUTE" || routeState === "PAUSED");
+    const paused = this.robotNavigationPaused(robot);
     const idleText = this.navigateButtonIdleText();
     this.navigateRobotButton.classList.toggle("primary", !navigateArmed);
     this.navigateRobotButton.classList.toggle("danger", navigateArmed);
+    this.navigateRobotButton.disabled = relocateArmed;
     this.navigateRobotButton.textContent = navigateArmed
       ? (this.pendingFleetRobotName ? `Select LM: ${this.pendingFleetRobotName}` : "Cancel Navigate")
       : idleText;
+    if (this.relocateRobotButton) {
+      this.relocateRobotButton.classList.toggle("primary", !relocateArmed);
+      this.relocateRobotButton.classList.toggle("danger", relocateArmed);
+      this.relocateRobotButton.textContent = relocateArmed ? "Cancel Relocate" : "Relocate";
+    }
+    if (this.pauseRouteButton) {
+      this.pauseRouteButton.disabled = !routeActive || paused;
+    }
+    if (this.resumeRouteButton) {
+      this.resumeRouteButton.disabled = !paused;
+    }
+    if (this.confirmLocalizationButton) {
+      this.confirmLocalizationButton.disabled = !robot.localizationOk;
+    }
+    if (!relocateArmed) {
+      this.relocationDrag = null;
+      this.clearRelocationPreview();
+    }
     if (this.fleetQueueGoalButton) {
       this.fleetQueueGoalButton.classList.toggle("primary", queueArmed);
       this.fleetQueueGoalButton.classList.toggle("danger", queueArmed);
@@ -5372,6 +6092,7 @@ class OperatorApp {
       return;
     }
     this.navigateMode = false;
+    this.relocateMode = false;
     this.syncModeButtons();
     this.releaseManualControl();
     const robot = this.currentStatus && this.currentStatus.robot ? this.currentStatus.robot : {};
@@ -5403,6 +6124,7 @@ class OperatorApp {
       return;
     }
     this.navigateMode = false;
+    this.relocateMode = false;
     this.syncModeButtons();
     this.releaseManualControl();
     const robot = this.currentStatus && this.currentStatus.robot ? this.currentStatus.robot : {};
@@ -5424,6 +6146,104 @@ class OperatorApp {
     }
   }
 
+  async acquireRobotControl(force = false) {
+    if (!this.selectedRobot() || this.isFleetManager()) {
+      return;
+    }
+    try {
+      const result = await this.postJson(this.robotApiPath("/api/robot/control/acquire"), { force });
+      this.currentStatus = result.status || await this.getJson(this.robotApiPath("/api/robot/status"));
+      this.robotMessageText.textContent = "Control acquired.";
+      this.renderSelectedRobot();
+    } catch (error) {
+      this.robotMessageText.textContent = `Take control failed: ${error.message || error}`;
+    }
+  }
+
+  async releaseRobotControl(force = false) {
+    if (!this.selectedRobot() || this.isFleetManager()) {
+      return;
+    }
+    try {
+      const result = await this.postJson(this.robotApiPath("/api/robot/control/release"), { force });
+      this.currentStatus = result.status || await this.getJson(this.robotApiPath("/api/robot/status"));
+      this.robotMessageText.textContent = "Control released.";
+      this.renderSelectedRobot();
+    } catch (error) {
+      this.robotMessageText.textContent = `Release control failed: ${error.message || error}`;
+    }
+  }
+
+  async startRelocation(world) {
+    if (!this.selectedRobot() || this.isFleetManager()) {
+      return;
+    }
+    this.relocateMode = false;
+    this.relocationDrag = null;
+    this.clearRelocationPreview();
+    this.syncModeButtons();
+    this.drawLandmarks();
+    const robot = this.currentStatus && this.currentStatus.robot ? this.currentStatus.robot : {};
+    const requestedYaw = Number(world?.yaw);
+    const currentYaw = Number(robot.pose?.yaw || 0);
+    const yaw = Number.isFinite(requestedYaw) ? requestedYaw : currentYaw;
+    const pose = {
+      x: Number(world.x || 0),
+      y: Number(world.y || 0),
+      yaw: Number.isFinite(yaw) ? yaw : 0,
+    };
+    try {
+      const result = await this.postJson(this.robotApiPath("/api/robot/relocate"), { pose });
+      this.currentStatus = result.status || await this.getJson(this.robotApiPath("/api/robot/status"));
+      this.robotMessageText.textContent = `Relocation pose sent: x ${pose.x.toFixed(3)}, y ${pose.y.toFixed(3)}, yaw ${pose.yaw.toFixed(3)}.`;
+      this.renderSelectedRobot();
+    } catch (error) {
+      this.robotMessageText.textContent = `Relocate failed: ${error.message || error}`;
+    }
+  }
+
+  async confirmRobotLocalization() {
+    if (!this.selectedRobot() || this.isFleetManager()) {
+      return;
+    }
+    try {
+      const result = await this.postJson(this.robotApiPath("/api/robot/localization/confirm"), { accepted: true });
+      this.currentStatus = result.status || await this.getJson(this.robotApiPath("/api/robot/status"));
+      this.robotMessageText.textContent = "Localization confirmed.";
+      this.renderSelectedRobot();
+    } catch (error) {
+      this.robotMessageText.textContent = `Confirm localization failed: ${error.message || error}`;
+    }
+  }
+
+  async pauseRobotRoute() {
+    if (!this.selectedRobot() || this.isFleetManager()) {
+      return;
+    }
+    try {
+      const result = await this.postJson(this.robotApiPath("/api/robot/route/pause"), {});
+      this.currentStatus = result.status || await this.getJson(this.robotApiPath("/api/robot/status"));
+      this.robotMessageText.textContent = "Route paused.";
+      this.renderSelectedRobot();
+    } catch (error) {
+      this.robotMessageText.textContent = `Pause route failed: ${error.message || error}`;
+    }
+  }
+
+  async resumeRobotRoute() {
+    if (!this.selectedRobot() || this.isFleetManager()) {
+      return;
+    }
+    try {
+      const result = await this.postJson(this.robotApiPath("/api/robot/route/resume"), {});
+      this.currentStatus = result.status || await this.getJson(this.robotApiPath("/api/robot/status"));
+      this.robotMessageText.textContent = "Route resumed.";
+      this.renderSelectedRobot();
+    } catch (error) {
+      this.robotMessageText.textContent = `Resume route failed: ${error.message || error}`;
+    }
+  }
+
   async startFleetNavigation(goalLm) {
     const robot = this.targetFleetRobot();
     if (!robot) {
@@ -5431,6 +6251,7 @@ class OperatorApp {
       return;
     }
     this.navigateMode = false;
+    this.relocateMode = false;
     this.pendingFleetAction = "";
     this.pendingFleetRobotName = "";
     this.syncModeButtons();
@@ -6080,6 +6901,7 @@ class OperatorApp {
 
   async cancelRoute() {
     this.navigateMode = false;
+    this.relocateMode = false;
     this.pendingFleetAction = "";
     this.pendingFleetRobotName = "";
     this.syncModeButtons();
@@ -6098,6 +6920,7 @@ class OperatorApp {
 
   async stopRobot() {
     this.navigateMode = false;
+    this.relocateMode = false;
     this.pendingFleetAction = "";
     this.pendingFleetRobotName = "";
     this.releaseManualControl();
@@ -6439,6 +7262,7 @@ class OperatorApp {
       const result = await this.postJson("/api/robots", payload);
       this.addRobotDialog.close();
       this.closeScanStream();
+      this.closeSlamStream();
       this.closeTeleopSocket(true);
       this.selectedRobotId = result.robot.id;
       window.localStorage.setItem("operator:selectedRobotId", this.selectedRobotId);
@@ -6471,6 +7295,7 @@ class OperatorApp {
         this.selectedRobotId = "";
         window.localStorage.removeItem("operator:selectedRobotId");
         this.closeScanStream();
+        this.closeSlamStream();
         this.closeTeleopSocket(true);
       }
       await this.refreshRobots({ quiet: true });
@@ -6541,7 +7366,7 @@ class OperatorApp {
   }
 
   async runMapTransfer(kind, callback) {
-    const title = kind === "push" ? "Push Map" : "Pull Map";
+    const title = kind === "push" ? "Push Map" : (kind === "slam" ? "Finish SLAM" : "Pull Map");
     this.openMapTransfer(title);
     try {
       await this.setMapTransferProgress(5, "Preparing map transfer...", 100);

@@ -9,7 +9,7 @@ from geometry_msgs.msg import Twist
 from rclpy.node import Node
 
 from robot_msgs.msg import ExecutorState, RobotStatus
-from robot_msgs.srv import CancelRoute, ExecuteRoute, LoadRobotMap, PlanRoute
+from robot_msgs.srv import CancelRoute, ExecuteRoute, LoadRobotMap, PlanRoute, SetRoutePaused
 
 from .executor import RouteExecutor
 from .route_planner import RobotTrajectoryPlanner
@@ -28,6 +28,7 @@ class RobotRouteNode(Node):
         plan_service_name: str,
         execute_service_name: str,
         cancel_service_name: str,
+        pause_service_name: str,
         load_map_service_name: str,
     ) -> None:
         super().__init__("robot_route")
@@ -42,6 +43,7 @@ class RobotRouteNode(Node):
         self.create_service(PlanRoute, plan_service_name, self._handle_plan_route)
         self.create_service(ExecuteRoute, execute_service_name, self._handle_execute_route)
         self.create_service(CancelRoute, cancel_service_name, self._handle_cancel_route)
+        self.create_service(SetRoutePaused, pause_service_name, self._handle_set_route_paused)
         self.create_service(LoadRobotMap, load_map_service_name, self._handle_load_map)
         self.create_timer(0.05, self._control_step)
 
@@ -175,6 +177,24 @@ class RobotRouteNode(Node):
             response.error = str(exc)
         return response
 
+    def _handle_set_route_paused(self, request, response):
+        try:
+            paused = bool(request.paused)
+            message = str(request.message or "").strip()
+            self.runtime.set_route_paused(paused, message)
+            if paused:
+                self._publish_cmd_vel(0.0, 0.0)
+                self.runtime.add_event("warn", "route paused")
+            else:
+                self.runtime.add_event("info", "route resumed")
+            response.ok = True
+            response.error = ""
+            self._publish_executor_state()
+        except Exception as exc:  # pragma: no cover - ROS service boundary
+            response.ok = False
+            response.error = str(exc)
+        return response
+
     def _handle_load_map(self, request, response):
         try:
             map_dir = Path(str(request.map_dir or "")).resolve()
@@ -219,6 +239,7 @@ class RobotRouteNode(Node):
         message.robot_id = self.runtime.robot_id
         message.map_id = self.runtime.map_id
         message.route_active = route is not None
+        message.route_paused = bool(snapshot.get("routePaused"))
         message.state = str(snapshot.get("state") or "IDLE")
         message.message = str(snapshot.get("message") or "")
         message.target_lm = str(snapshot.get("targetLm") or "")
@@ -257,6 +278,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--plan-service", default="/route/plan")
     parser.add_argument("--execute-service", default="/route/execute")
     parser.add_argument("--cancel-service", default="/route/cancel")
+    parser.add_argument("--pause-service", default="/route/pause")
     parser.add_argument("--load-map-service", default="/route/load_map")
     args, _unknown = parser.parse_known_args()
     return args
@@ -279,6 +301,7 @@ def main() -> None:
         plan_service_name=args.plan_service,
         execute_service_name=args.execute_service,
         cancel_service_name=args.cancel_service,
+        pause_service_name=args.pause_service,
         load_map_service_name=args.load_map_service,
     )
     try:

@@ -102,6 +102,7 @@ class RobotStatusNode(Node):
     def _on_executor_state(self, message: ExecutorState) -> None:
         self._executor_state = {
             "routeActive": bool(message.route_active),
+            "routePaused": bool(message.route_paused),
             "state": str(message.state or ""),
             "message": str(message.message or ""),
             "targetLm": str(message.target_lm or ""),
@@ -126,6 +127,7 @@ class RobotStatusNode(Node):
 
         executor_state = self._executor_state
         route_active = bool(executor_state.get("routeActive"))
+        route_paused = bool(executor_state.get("routePaused"))
         manual_active = self._manual_active() and not route_active
         state = str(executor_state.get("state") or "IDLE")
         message = str(executor_state.get("message") or "")
@@ -161,6 +163,11 @@ class RobotStatusNode(Node):
             else:
                 state = "IDLE"
                 message = "Localized from map->base_link TF. Waiting for AMCL correction."
+        elif route_active and route_paused:
+            state = "PAUSED"
+            if not message:
+                target_lm = str(executor_state.get("targetLm") or "").strip()
+                message = f"Route to {target_lm} paused." if target_lm else "Route paused."
         elif manual_active:
             state = "MANUAL"
             message = "Manual control active."
@@ -215,6 +222,7 @@ class RobotStatusNode(Node):
     def _default_executor_state(self) -> dict[str, object]:
         return {
             "routeActive": False,
+            "routePaused": False,
             "state": "LOCALIZING",
             "message": "Waiting for amcl pose.",
             "targetLm": "",

@@ -67,6 +67,8 @@ class RobotApiService:
                 payload.setdefault("startLm", str(request.start_lm))
             if request.command_id:
                 payload.setdefault("commandId", str(request.command_id))
+            if request.owner_id:
+                payload.setdefault("ownerId", str(request.owner_id))
             order = json_loads_object(request.order_json) if request.order_json else {}
             if order:
                 payload.setdefault("order", order)
@@ -78,7 +80,7 @@ class RobotApiService:
     def CancelRoute(self, request, context) -> robot_api_pb2.CommandResponse:
         del context
         try:
-            result = self.runtime.cancel_route()
+            result = self.runtime.cancel_route(owner_id=str(request.owner_id or ""))
             return self._command_response(result, command_id=request.command_id)
         except Exception as exc:
             return robot_api_pb2.CommandResponse(ok=False, error=str(exc), command_id=str(request.command_id or ""))
@@ -90,6 +92,7 @@ class RobotApiService:
                 linear=float(request.linear),
                 angular=float(request.angular),
                 timeout_ms=max(80, int(request.timeout_ms or 350)),
+                owner_id=str(request.owner_id or ""),
             )
             return self._command_response(result)
         except Exception as exc:
@@ -104,7 +107,81 @@ class RobotApiService:
     def Stop(self, request, context) -> robot_api_pb2.CommandResponse:
         del context
         try:
-            result = self.runtime.stop()
+            result = self.runtime.stop(owner_id=str(request.owner_id or ""))
+            return self._command_response(result, command_id=request.command_id)
+        except Exception as exc:
+            return robot_api_pb2.CommandResponse(ok=False, error=str(exc), command_id=str(request.command_id or ""))
+
+    def AcquireControl(self, request, context) -> robot_api_pb2.CommandResponse:
+        del context
+        try:
+            result = self.runtime.acquire_control(
+                owner_id=str(request.owner_id or ""),
+                owner_name=str(request.owner_name or ""),
+                force=bool(request.force),
+                lease_ms=int(request.lease_ms or 0),
+            )
+            return self._command_response(result, command_id=request.command_id)
+        except Exception as exc:
+            return robot_api_pb2.CommandResponse(ok=False, error=str(exc), command_id=str(request.command_id or ""))
+
+    def ReleaseControl(self, request, context) -> robot_api_pb2.CommandResponse:
+        del context
+        try:
+            result = self.runtime.release_control(
+                owner_id=str(request.owner_id or ""),
+                force=bool(request.force),
+            )
+            return self._command_response(result, command_id=request.command_id)
+        except Exception as exc:
+            return robot_api_pb2.CommandResponse(ok=False, error=str(exc), command_id=str(request.command_id or ""))
+
+    def Relocate(self, request, context) -> robot_api_pb2.CommandResponse:
+        del context
+        try:
+            result = self.runtime.relocate(
+                x=float(request.x),
+                y=float(request.y),
+                yaw=float(request.yaw),
+                frame_id=str(request.frame_id or "map"),
+                covariance_json=str(request.covariance_json or ""),
+                confirm=bool(request.confirm),
+                owner_id=str(request.owner_id or ""),
+            )
+            return self._command_response(result, command_id=request.command_id)
+        except Exception as exc:
+            return robot_api_pb2.CommandResponse(ok=False, error=str(exc), command_id=str(request.command_id or ""))
+
+    def ConfirmLocalization(self, request, context) -> robot_api_pb2.CommandResponse:
+        del context
+        try:
+            result = self.runtime.confirm_localization(
+                accepted=bool(request.accepted),
+                message=str(request.message or ""),
+                owner_id=str(request.owner_id or ""),
+            )
+            return self._command_response(result, command_id=request.command_id)
+        except Exception as exc:
+            return robot_api_pb2.CommandResponse(ok=False, error=str(exc), command_id=str(request.command_id or ""))
+
+    def PauseRoute(self, request, context) -> robot_api_pb2.CommandResponse:
+        del context
+        try:
+            result = self.runtime.pause_route(
+                owner_id=str(request.owner_id or ""),
+                message=str(request.message or ""),
+            )
+            return self._command_response(result, command_id=request.command_id)
+        except Exception as exc:
+            return robot_api_pb2.CommandResponse(ok=False, error=str(exc), command_id=str(request.command_id or ""))
+
+    def ResumeRoute(self, request, context) -> robot_api_pb2.CommandResponse:
+        del context
+        try:
+            result = self.runtime.resume_route(
+                owner_id=str(request.owner_id or ""),
+                message=str(request.message or ""),
+            )
             return self._command_response(result, command_id=request.command_id)
         except Exception as exc:
             return robot_api_pb2.CommandResponse(ok=False, error=str(exc), command_id=str(request.command_id or ""))
@@ -129,6 +206,79 @@ class RobotApiService:
                     topic=topic,
                 )
             time.sleep(interval_sec)
+
+    def GetSlamDefaults(self, request, context) -> robot_api_pb2.SlamDefaultsResponse:
+        del request, context
+        try:
+            payload = self.runtime.slam_defaults_payload()
+            return robot_api_pb2.SlamDefaultsResponse(
+                ok=bool(payload.get("ok", True)),
+                error=str(payload.get("error") or ""),
+                params_json=json.dumps(payload.get("params") if isinstance(payload.get("params"), dict) else {}, ensure_ascii=False),
+                params_path=str(payload.get("paramsPath") or payload.get("path") or ""),
+            )
+        except Exception as exc:
+            return robot_api_pb2.SlamDefaultsResponse(ok=False, error=str(exc))
+
+    def StartSlam(self, request, context) -> robot_api_pb2.SlamStateResponse:
+        del context
+        try:
+            params = json_loads_object(request.params_json) if request.params_json else {}
+            payload = self.runtime.start_slam(
+                params,
+                use_sim_time=bool(request.use_sim_time),
+                command_id=str(request.command_id or ""),
+            )
+            return self._slam_state_response(payload)
+        except Exception as exc:
+            return robot_api_pb2.SlamStateResponse(ok=False, error=str(exc), state=self._slam_state_message({}))
+
+    def GetSlamState(self, request, context) -> robot_api_pb2.SlamStateResponse:
+        del request, context
+        try:
+            return self._slam_state_response(self.runtime.slam_state_payload())
+        except Exception as exc:
+            return robot_api_pb2.SlamStateResponse(ok=False, error=str(exc), state=self._slam_state_message({}))
+
+    def WatchSlamMap(self, request, context):
+        hz = max(0.2, min(5.0, float(request.hz or 1.0)))
+        interval_sec = 1.0 / hz
+        include_cells = bool(request.include_cells)
+        while context.is_active():
+            try:
+                payload = self.runtime.slam_map_frame_payload(include_cells=include_cells)
+                yield self._slam_map_frame_response(payload)
+            except Exception as exc:
+                yield robot_api_pb2.SlamMapFrame(
+                    ok=False,
+                    error=str(exc),
+                    robot_id=str(getattr(self.runtime, "robot_id", "") or ""),
+                    state=self._slam_state_message({}),
+                )
+            time.sleep(interval_sec)
+
+    def FinishSlam(self, request, context) -> robot_api_pb2.SlamFinishResponse:
+        del context
+        try:
+            payload = self.runtime.finish_slam(
+                map_name=str(request.map_name or ""),
+                activate=bool(request.activate),
+                command_id=str(request.command_id or ""),
+            )
+            return self._slam_finish_response(payload)
+        except Exception as exc:
+            return robot_api_pb2.SlamFinishResponse(ok=False, error=str(exc), state=self._slam_state_message({}))
+
+    def CancelSlam(self, request, context) -> robot_api_pb2.SlamStateResponse:
+        del context
+        try:
+            payload = self.runtime.cancel_slam(
+                reason=str(request.reason or ""),
+                command_id=str(request.command_id or ""),
+            )
+            return self._slam_state_response(payload)
+        except Exception as exc:
+            return robot_api_pb2.SlamStateResponse(ok=False, error=str(exc), state=self._slam_state_message({}))
 
     def ListMaps(self, request, context) -> robot_api_pb2.ListMapsResponse:
         del request, context
@@ -282,6 +432,75 @@ class RobotApiService:
             ranges=float_list(result.get("ranges")),
             intensities=float_list(result.get("intensities")),
         )
+
+    def _slam_state_response(self, result: dict[str, Any]) -> robot_api_pb2.SlamStateResponse:
+        return robot_api_pb2.SlamStateResponse(
+            ok=bool(result.get("ok", True)),
+            error=str(result.get("error") or ""),
+            state=self._slam_state_message(result.get("state") if isinstance(result.get("state"), dict) else result),
+        )
+
+    def _slam_finish_response(self, result: dict[str, Any]) -> robot_api_pb2.SlamFinishResponse:
+        return robot_api_pb2.SlamFinishResponse(
+            ok=bool(result.get("ok", True)),
+            error=str(result.get("error") or ""),
+            state=self._slam_state_message(result.get("state") if isinstance(result.get("state"), dict) else result),
+            map_name=str(result.get("mapName") or ""),
+            map_dir=str(result.get("mapDir") or ""),
+            map_id=str(result.get("mapId") or ""),
+            signature=str(result.get("signature") or ""),
+            bundle_json=str(result.get("bundleJson") or ""),
+        )
+
+    def _slam_state_message(self, state: dict[str, Any] | None) -> robot_api_pb2.SlamState:
+        source = state if isinstance(state, dict) else {}
+        return robot_api_pb2.SlamState(
+            active=bool(source.get("active")),
+            state=str(source.get("state") or "idle"),
+            message=str(source.get("message") or ""),
+            session_id=str(source.get("sessionId") or source.get("session_id") or ""),
+            started_at_sec=float(source.get("startedAtSec") or source.get("started_at_sec") or 0.0),
+            progress=int(source.get("progress") or 0),
+            saved_map_name=str(source.get("savedMapName") or source.get("saved_map_name") or ""),
+            map_dir=str(source.get("mapDir") or source.get("map_dir") or ""),
+            map_width=int(source.get("mapWidth") or source.get("map_width") or 0),
+            map_height=int(source.get("mapHeight") or source.get("map_height") or 0),
+            resolution=float(source.get("resolution") or 0.0),
+            frame_id=str(source.get("frameId") or source.get("frame_id") or ""),
+            trail_points=int(source.get("trailPoints") or source.get("trail_points") or 0),
+        )
+
+    def _pose2d_message(self, pose: dict[str, Any] | None) -> robot_api_pb2.Pose2D:
+        source = pose if isinstance(pose, dict) else {}
+        return robot_api_pb2.Pose2D(
+            x=float(source.get("x") or 0.0),
+            y=float(source.get("y") or 0.0),
+            yaw=float(source.get("yaw") or source.get("theta") or 0.0),
+            stamp_sec=float(source.get("stampSec") or source.get("stamp_sec") or 0.0),
+        )
+
+    def _slam_map_frame_response(self, result: dict[str, Any]) -> robot_api_pb2.SlamMapFrame:
+        frame = robot_api_pb2.SlamMapFrame(
+            ok=bool(result.get("ok", True)),
+            error=str(result.get("error") or ""),
+            robot_id=str(result.get("robotId") or getattr(self.runtime, "robot_id", "") or ""),
+            session_id=str(result.get("sessionId") or ""),
+            frame_id=str(result.get("frameId") or ""),
+            stamp_sec=float(result.get("stampSec") or 0.0),
+            width=int(result.get("width") or 0),
+            height=int(result.get("height") or 0),
+            resolution=float(result.get("resolution") or 0.0),
+            origin_x=float(result.get("originX") or 0.0),
+            origin_y=float(result.get("originY") or 0.0),
+            origin_yaw=float(result.get("originYaw") or 0.0),
+            cells=bytes(result.get("cells") or b""),
+            pose=self._pose2d_message(result.get("pose") if isinstance(result.get("pose"), dict) else {}),
+            state=self._slam_state_message(result.get("state") if isinstance(result.get("state"), dict) else {}),
+        )
+        for pose in result.get("trail", []) if isinstance(result.get("trail"), list) else []:
+            if isinstance(pose, dict):
+                frame.trail.append(self._pose2d_message(pose))
+        return frame
 
 
 def serve_robot_api(runtime: Any, *, host: str = "0.0.0.0", port: int = 50051, max_workers: int = 8):

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import json
 import math
 from typing import Any
@@ -110,27 +111,44 @@ class GrpcRobotClient:
             goal_lm=str(payload.get("goalLm") or payload.get("goal_lm") or route_goal_lm or ""),
             start_lm=str(payload.get("startLm") or payload.get("start_lm") or route_start_lm or ""),
             order_json=json_dumps(payload.get("order") if isinstance(payload.get("order"), dict) else {}),
+            owner_id=str(payload.get("ownerId") or payload.get("owner_id") or ""),
         )
         response = stub.ExecuteRoute(request, timeout=max(self.timeout, 5.0))
         return self._command_response(response)
 
-    def cancel_route(self, endpoint: str) -> dict[str, Any]:
+    def cancel_route(self, endpoint: str, *, owner_id: str = "") -> dict[str, Any]:
         stub = self._stub(endpoint)
-        response = stub.CancelRoute(robot_api_pb2.CancelRouteRequest(message="Route canceled."), timeout=self.timeout)
-        return self._command_response(response)
-
-    def teleop(self, endpoint: str, *, linear: float, angular: float, timeout_ms: int = 350) -> dict[str, Any]:
-        stub = self._stub(endpoint)
-        response = stub.Teleop(
-            robot_api_pb2.TeleopRequest(linear=float(linear), angular=float(angular), timeout_ms=max(80, int(timeout_ms))),
+        response = stub.CancelRoute(
+            robot_api_pb2.CancelRouteRequest(message="Route canceled.", owner_id=str(owner_id or "")),
             timeout=self.timeout,
         )
         return self._command_response(response)
 
-    def teleop_stop(self, endpoint: str) -> dict[str, Any]:
-        return self.teleop(endpoint, linear=0.0, angular=0.0, timeout_ms=80)
+    def teleop(
+        self,
+        endpoint: str,
+        *,
+        linear: float,
+        angular: float,
+        timeout_ms: int = 350,
+        owner_id: str = "",
+    ) -> dict[str, Any]:
+        stub = self._stub(endpoint)
+        response = stub.Teleop(
+            robot_api_pb2.TeleopRequest(
+                linear=float(linear),
+                angular=float(angular),
+                timeout_ms=max(80, int(timeout_ms)),
+                owner_id=str(owner_id or ""),
+            ),
+            timeout=self.timeout,
+        )
+        return self._command_response(response)
 
-    def teleop_stream(self, endpoint: str, commands) -> Any:
+    def teleop_stop(self, endpoint: str, *, owner_id: str = "") -> dict[str, Any]:
+        return self.teleop(endpoint, linear=0.0, angular=0.0, timeout_ms=80, owner_id=owner_id)
+
+    def teleop_stream(self, endpoint: str, commands, *, owner_id: str = "") -> Any:
         stub = self._stub(endpoint)
 
         def _requests():
@@ -141,6 +159,7 @@ class GrpcRobotClient:
                     linear=float(command.get("linear", 0.0) or 0.0),
                     angular=float(command.get("angular", 0.0) or 0.0),
                     timeout_ms=max(80, int(command.get("timeoutMs", command.get("timeout_ms", 350)) or 350)),
+                    owner_id=str(command.get("ownerId") or command.get("owner_id") or owner_id or ""),
                 )
 
         call = stub.TeleopStream(_requests())
@@ -175,9 +194,155 @@ class GrpcRobotClient:
             if callable(cancel):
                 cancel()
 
-    def stop(self, endpoint: str) -> dict[str, Any]:
+    def get_slam_defaults(self, endpoint: str) -> dict[str, Any]:
         stub = self._stub(endpoint)
-        response = stub.Stop(robot_api_pb2.StopRequest(), timeout=self.timeout)
+        response = stub.GetSlamDefaults(robot_api_pb2.SlamDefaultsRequest(), timeout=max(self.timeout, 5.0))
+        if not bool(response.ok):
+            raise GrpcRobotError(str(response.error or "SLAM defaults failed"))
+        params = json_loads_object(response.params_json) if response.params_json else {}
+        return {"ok": True, "params": params, "paramsPath": str(response.params_path or "")}
+
+    def start_slam(self, endpoint: str, params_payload: dict[str, Any], *, use_sim_time: bool = True) -> dict[str, Any]:
+        stub = self._stub(endpoint)
+        response = stub.StartSlam(
+            robot_api_pb2.StartSlamRequest(
+                params_json=json_dumps(params_payload if isinstance(params_payload, dict) else {}),
+                use_sim_time=bool(use_sim_time),
+            ),
+            timeout=max(self.timeout, 10.0),
+        )
+        return self._slam_state_response(response)
+
+    def get_slam_state(self, endpoint: str) -> dict[str, Any]:
+        stub = self._stub(endpoint)
+        response = stub.GetSlamState(robot_api_pb2.SlamStateRequest(), timeout=max(self.timeout, 5.0))
+        return self._slam_state_response(response)
+
+    def watch_slam_map(self, endpoint: str, *, hz: float = 1.0, include_cells: bool = True) -> Any:
+        stub = self._stub(endpoint)
+        request = robot_api_pb2.WatchSlamMapRequest(
+            hz=max(0.2, min(5.0, float(hz or 1.0))),
+            include_cells=bool(include_cells),
+        )
+        call = stub.WatchSlamMap(request)
+        try:
+            for response in call:
+                yield self._slam_map_frame(response)
+        finally:
+            cancel = getattr(call, "cancel", None)
+            if callable(cancel):
+                cancel()
+
+    def finish_slam(self, endpoint: str, *, map_name: str, activate: bool = True) -> dict[str, Any]:
+        stub = self._stub(endpoint)
+        response = stub.FinishSlam(
+            robot_api_pb2.FinishSlamRequest(map_name=str(map_name or ""), activate=bool(activate)),
+            timeout=max(self.timeout, 60.0),
+        )
+        return self._slam_finish_response(response)
+
+    def cancel_slam(self, endpoint: str, *, reason: str = "") -> dict[str, Any]:
+        stub = self._stub(endpoint)
+        response = stub.CancelSlam(
+            robot_api_pb2.CancelSlamRequest(reason=str(reason or "")),
+            timeout=max(self.timeout, 10.0),
+        )
+        return self._slam_state_response(response)
+
+    def stop(self, endpoint: str, *, owner_id: str = "") -> dict[str, Any]:
+        stub = self._stub(endpoint)
+        response = stub.Stop(robot_api_pb2.StopRequest(owner_id=str(owner_id or "")), timeout=self.timeout)
+        return self._command_response(response)
+
+    def acquire_control(
+        self,
+        endpoint: str,
+        *,
+        owner_id: str,
+        owner_name: str = "",
+        force: bool = False,
+        lease_ms: int = 0,
+    ) -> dict[str, Any]:
+        stub = self._stub(endpoint)
+        response = stub.AcquireControl(
+            robot_api_pb2.ControlRequest(
+                owner_id=str(owner_id or ""),
+                owner_name=str(owner_name or ""),
+                force=bool(force),
+                lease_ms=max(0, int(lease_ms or 0)),
+            ),
+            timeout=self.timeout,
+        )
+        return self._command_response(response)
+
+    def release_control(self, endpoint: str, *, owner_id: str, force: bool = False) -> dict[str, Any]:
+        stub = self._stub(endpoint)
+        response = stub.ReleaseControl(
+            robot_api_pb2.ControlRequest(owner_id=str(owner_id or ""), force=bool(force)),
+            timeout=self.timeout,
+        )
+        return self._command_response(response)
+
+    def relocate(
+        self,
+        endpoint: str,
+        *,
+        x: float,
+        y: float,
+        yaw: float,
+        owner_id: str,
+        frame_id: str = "map",
+        covariance: list[float] | None = None,
+        confirm: bool = False,
+    ) -> dict[str, Any]:
+        stub = self._stub(endpoint)
+        response = stub.Relocate(
+            robot_api_pb2.RelocateRequest(
+                owner_id=str(owner_id or ""),
+                x=float(x),
+                y=float(y),
+                yaw=float(yaw),
+                frame_id=str(frame_id or "map"),
+                covariance_json=json.dumps(covariance or [], ensure_ascii=False),
+                confirm=bool(confirm),
+            ),
+            timeout=max(self.timeout, 5.0),
+        )
+        return self._command_response(response)
+
+    def confirm_localization(
+        self,
+        endpoint: str,
+        *,
+        owner_id: str,
+        accepted: bool = True,
+        message: str = "",
+    ) -> dict[str, Any]:
+        stub = self._stub(endpoint)
+        response = stub.ConfirmLocalization(
+            robot_api_pb2.ConfirmLocalizationRequest(
+                owner_id=str(owner_id or ""),
+                accepted=bool(accepted),
+                message=str(message or ""),
+            ),
+            timeout=self.timeout,
+        )
+        return self._command_response(response)
+
+    def pause_route(self, endpoint: str, *, owner_id: str, message: str = "") -> dict[str, Any]:
+        stub = self._stub(endpoint)
+        response = stub.PauseRoute(
+            robot_api_pb2.PauseRouteRequest(owner_id=str(owner_id or ""), message=str(message or "")),
+            timeout=self.timeout,
+        )
+        return self._command_response(response)
+
+    def resume_route(self, endpoint: str, *, owner_id: str, message: str = "") -> dict[str, Any]:
+        stub = self._stub(endpoint)
+        response = stub.ResumeRoute(
+            robot_api_pb2.ResumeRouteRequest(owner_id=str(owner_id or ""), message=str(message or "")),
+            timeout=self.timeout,
+        )
         return self._command_response(response)
 
     def list_maps(self, endpoint: str) -> dict[str, Any]:
@@ -372,6 +537,83 @@ class GrpcRobotClient:
             "intensities": [_finite_or_none(item) for item in response.intensities],
         }
 
+    def _slam_state_payload(self, state: Any) -> dict[str, Any]:
+        return {
+            "active": bool(getattr(state, "active", False)),
+            "state": str(getattr(state, "state", "") or "idle"),
+            "message": str(getattr(state, "message", "") or ""),
+            "sessionId": str(getattr(state, "session_id", "") or ""),
+            "startedAtSec": _finite_or_default(getattr(state, "started_at_sec", 0.0)),
+            "progress": int(getattr(state, "progress", 0) or 0),
+            "savedMapName": str(getattr(state, "saved_map_name", "") or ""),
+            "mapDir": str(getattr(state, "map_dir", "") or ""),
+            "mapWidth": int(getattr(state, "map_width", 0) or 0),
+            "mapHeight": int(getattr(state, "map_height", 0) or 0),
+            "resolution": _finite_or_default(getattr(state, "resolution", 0.0)),
+            "frameId": str(getattr(state, "frame_id", "") or ""),
+            "trailPoints": int(getattr(state, "trail_points", 0) or 0),
+        }
+
+    def _slam_state_response(self, response: Any) -> dict[str, Any]:
+        payload = {
+            "ok": bool(getattr(response, "ok", False)),
+            "error": str(getattr(response, "error", "") or ""),
+            "state": self._slam_state_payload(getattr(response, "state", None)),
+        }
+        if not payload["ok"]:
+            raise GrpcRobotError(payload["error"] or "SLAM request failed")
+        return payload
+
+    def _pose2d_payload(self, pose: Any) -> dict[str, Any]:
+        return {
+            "x": _finite_or_default(getattr(pose, "x", 0.0)),
+            "y": _finite_or_default(getattr(pose, "y", 0.0)),
+            "yaw": _finite_or_default(getattr(pose, "yaw", 0.0)),
+            "stampSec": _finite_or_default(getattr(pose, "stamp_sec", 0.0)),
+        }
+
+    def _slam_map_frame(self, response: Any) -> dict[str, Any]:
+        return {
+            "ok": bool(getattr(response, "ok", False)),
+            "error": str(getattr(response, "error", "") or ""),
+            "robotId": str(getattr(response, "robot_id", "") or ""),
+            "sessionId": str(getattr(response, "session_id", "") or ""),
+            "frameId": str(getattr(response, "frame_id", "") or ""),
+            "stampSec": _finite_or_default(getattr(response, "stamp_sec", 0.0)),
+            "width": int(getattr(response, "width", 0) or 0),
+            "height": int(getattr(response, "height", 0) or 0),
+            "resolution": _finite_or_default(getattr(response, "resolution", 0.0)),
+            "originX": _finite_or_default(getattr(response, "origin_x", 0.0)),
+            "originY": _finite_or_default(getattr(response, "origin_y", 0.0)),
+            "originYaw": _finite_or_default(getattr(response, "origin_yaw", 0.0)),
+            "cellsBase64": base64.b64encode(bytes(getattr(response, "cells", b"") or b"")).decode("ascii"),
+            "pose": self._pose2d_payload(getattr(response, "pose", None)),
+            "trail": [self._pose2d_payload(item) for item in getattr(response, "trail", [])],
+            "state": self._slam_state_payload(getattr(response, "state", None)),
+        }
+
+    def _slam_finish_response(self, response: Any) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "ok": bool(getattr(response, "ok", False)),
+            "error": str(getattr(response, "error", "") or ""),
+            "state": self._slam_state_payload(getattr(response, "state", None)),
+            "mapName": str(getattr(response, "map_name", "") or ""),
+            "mapDir": str(getattr(response, "map_dir", "") or ""),
+            "mapId": str(getattr(response, "map_id", "") or ""),
+            "signature": str(getattr(response, "signature", "") or ""),
+        }
+        if not payload["ok"]:
+            raise GrpcRobotError(payload["error"] or "SLAM finish failed")
+        bundle_json = str(getattr(response, "bundle_json", "") or "")
+        if bundle_json:
+            try:
+                bundle = json.loads(bundle_json)
+            except json.JSONDecodeError:
+                bundle = {}
+            if isinstance(bundle, dict):
+                payload["bundle"] = bundle
+        return payload
+
     def _route_payload(self, robot: dict[str, Any]) -> dict[str, Any]:
         return {
             "active": str(robot.get("state") or "").upper() in {"EXECUTING_ROUTE", "MOVING", "WAITING"},
@@ -396,17 +638,25 @@ class GrpcRobotAdapter:
     def execute_route(self, endpoint: str, payload: dict[str, Any]) -> dict[str, Any]:
         return self.client.execute_route(endpoint, payload)
 
-    def cancel_route(self, endpoint: str) -> dict[str, Any]:
-        return self.client.cancel_route(endpoint)
+    def cancel_route(self, endpoint: str, *, owner_id: str = "") -> dict[str, Any]:
+        return self.client.cancel_route(endpoint, owner_id=owner_id)
 
-    def teleop(self, endpoint: str, *, linear: float, angular: float, timeout_ms: int = 350) -> dict[str, Any]:
-        return self.client.teleop(endpoint, linear=linear, angular=angular, timeout_ms=timeout_ms)
+    def teleop(
+        self,
+        endpoint: str,
+        *,
+        linear: float,
+        angular: float,
+        timeout_ms: int = 350,
+        owner_id: str = "",
+    ) -> dict[str, Any]:
+        return self.client.teleop(endpoint, linear=linear, angular=angular, timeout_ms=timeout_ms, owner_id=owner_id)
 
-    def teleop_stop(self, endpoint: str) -> dict[str, Any]:
-        return self.client.teleop_stop(endpoint)
+    def teleop_stop(self, endpoint: str, *, owner_id: str = "") -> dict[str, Any]:
+        return self.client.teleop_stop(endpoint, owner_id=owner_id)
 
-    def teleop_stream(self, endpoint: str, commands) -> Any:
-        return self.client.teleop_stream(endpoint, commands)
+    def teleop_stream(self, endpoint: str, commands, *, owner_id: str = "") -> Any:
+        return self.client.teleop_stream(endpoint, commands, owner_id=owner_id)
 
     def watch_laser_scan(
         self,
@@ -423,8 +673,85 @@ class GrpcRobotAdapter:
             include_intensities=include_intensities,
         )
 
-    def stop(self, endpoint: str) -> dict[str, Any]:
-        return self.client.stop(endpoint)
+    def get_slam_defaults(self, endpoint: str) -> dict[str, Any]:
+        return self.client.get_slam_defaults(endpoint)
+
+    def start_slam(self, endpoint: str, params_payload: dict[str, Any], *, use_sim_time: bool = True) -> dict[str, Any]:
+        return self.client.start_slam(endpoint, params_payload, use_sim_time=use_sim_time)
+
+    def get_slam_state(self, endpoint: str) -> dict[str, Any]:
+        return self.client.get_slam_state(endpoint)
+
+    def watch_slam_map(self, endpoint: str, *, hz: float = 1.0, include_cells: bool = True) -> Any:
+        return self.client.watch_slam_map(endpoint, hz=hz, include_cells=include_cells)
+
+    def finish_slam(self, endpoint: str, *, map_name: str, activate: bool = True) -> dict[str, Any]:
+        return self.client.finish_slam(endpoint, map_name=map_name, activate=activate)
+
+    def cancel_slam(self, endpoint: str, *, reason: str = "") -> dict[str, Any]:
+        return self.client.cancel_slam(endpoint, reason=reason)
+
+    def stop(self, endpoint: str, *, owner_id: str = "") -> dict[str, Any]:
+        return self.client.stop(endpoint, owner_id=owner_id)
+
+    def acquire_control(
+        self,
+        endpoint: str,
+        *,
+        owner_id: str,
+        owner_name: str = "",
+        force: bool = False,
+        lease_ms: int = 0,
+    ) -> dict[str, Any]:
+        return self.client.acquire_control(
+            endpoint,
+            owner_id=owner_id,
+            owner_name=owner_name,
+            force=force,
+            lease_ms=lease_ms,
+        )
+
+    def release_control(self, endpoint: str, *, owner_id: str, force: bool = False) -> dict[str, Any]:
+        return self.client.release_control(endpoint, owner_id=owner_id, force=force)
+
+    def relocate(
+        self,
+        endpoint: str,
+        *,
+        x: float,
+        y: float,
+        yaw: float,
+        owner_id: str,
+        frame_id: str = "map",
+        covariance: list[float] | None = None,
+        confirm: bool = False,
+    ) -> dict[str, Any]:
+        return self.client.relocate(
+            endpoint,
+            x=x,
+            y=y,
+            yaw=yaw,
+            owner_id=owner_id,
+            frame_id=frame_id,
+            covariance=covariance,
+            confirm=confirm,
+        )
+
+    def confirm_localization(
+        self,
+        endpoint: str,
+        *,
+        owner_id: str,
+        accepted: bool = True,
+        message: str = "",
+    ) -> dict[str, Any]:
+        return self.client.confirm_localization(endpoint, owner_id=owner_id, accepted=accepted, message=message)
+
+    def pause_route(self, endpoint: str, *, owner_id: str, message: str = "") -> dict[str, Any]:
+        return self.client.pause_route(endpoint, owner_id=owner_id, message=message)
+
+    def resume_route(self, endpoint: str, *, owner_id: str, message: str = "") -> dict[str, Any]:
+        return self.client.resume_route(endpoint, owner_id=owner_id, message=message)
 
     def list_maps(self, endpoint: str) -> dict[str, Any]:
         return self.client.list_maps(endpoint)

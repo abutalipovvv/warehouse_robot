@@ -45,6 +45,9 @@ class OperatorRequestHandler(SimpleHTTPRequestHandler):
             if path == "/ws/robot/scan":
                 self._handle_robot_scan_ws(parsed)
                 return
+            if path == "/ws/robot/slam":
+                self._handle_robot_slam_ws(parsed)
+                return
             if path == "/ws/robot/teleop":
                 self._handle_robot_teleop_ws(parsed)
                 return
@@ -68,6 +71,11 @@ class OperatorRequestHandler(SimpleHTTPRequestHandler):
             params_target = self._parse_robot_params_api(parsed)
             if params_target is not None:
                 self._send_json(self._require_state().robot_params_payload(params_target))
+                return
+            slam_target = self._parse_robot_slam_api(parsed)
+            if slam_target is not None:
+                robot_id, action = slam_target
+                self._handle_robot_slam_get(robot_id, action)
                 return
             map_target = self._parse_robot_maps_api(parsed)
             if map_target is not None:
@@ -225,6 +233,51 @@ class OperatorRequestHandler(SimpleHTTPRequestHandler):
                     return
                 payload = dict(frame)
                 payload["type"] = "scan"
+                payload["robotId"] = robot_id
+                payload["sentAt"] = utc_now()
+                self._send_ws_json(payload)
+        except (BrokenPipeError, ConnectionError, OSError):
+            return
+        except Exception as exc:  # pragma: no cover - defensive websocket path
+            try:
+                self._send_ws_json({"ok": False, "type": "error", "error": str(exc)})
+            except (BrokenPipeError, ConnectionError, OSError):
+                return
+
+    def _handle_robot_slam_ws(self, parsed) -> None:
+        robot_id = str(parse_qs(parsed.query).get("robotId", [""])[0] or "").strip()
+        if not robot_id:
+            self._send_error_json(400, "robotId is required")
+            return
+        state = self._require_state()
+        try:
+            robot = state.get_robot(robot_id)
+            if not robot.is_grpc:
+                raise ValueError("unsupported robot transport; use grpc")
+        except Exception as exc:
+            self._send_error_json(404, str(exc))
+            return
+        if not self._accept_websocket():
+            return
+
+        query = parse_qs(parsed.query)
+        try:
+            hz = float(query.get("hz", ["1"])[0] or 1.0)
+        except (TypeError, ValueError):
+            hz = 1.0
+        include_cells = str(query.get("includeCells", ["1"])[0] or "1").strip().lower() in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }
+
+        try:
+            for frame in state.watch_robot_slam_map(robot_id, hz=hz, include_cells=include_cells):
+                if self._ws_client_closed():
+                    return
+                payload = dict(frame)
+                payload["type"] = "slamMap"
                 payload["robotId"] = robot_id
                 payload["sentAt"] = utc_now()
                 self._send_ws_json(payload)
@@ -487,6 +540,11 @@ class OperatorRequestHandler(SimpleHTTPRequestHandler):
             if params_target is not None:
                 self._handle_robot_params_post(params_target)
                 return
+            slam_target = self._parse_robot_slam_api(parsed)
+            if slam_target is not None:
+                robot_id, action = slam_target
+                self._handle_robot_slam_post(robot_id, action)
+                return
             map_target = self._parse_robot_maps_api(parsed)
             if map_target is not None:
                 robot_id, action, arg = map_target
@@ -709,6 +767,25 @@ class OperatorRequestHandler(SimpleHTTPRequestHandler):
             return None
         return robot_id
 
+    def _parse_robot_slam_api(self, parsed) -> tuple[str, str] | None:
+        path = parsed.path
+        if not path.startswith("/api/robots/"):
+            return None
+        remainder = path.removeprefix("/api/robots/")
+        robot_part, sep, tail = remainder.partition("/")
+        if not sep:
+            return None
+        robot_id = unquote(robot_part).strip()
+        if not robot_id:
+            return None
+        parts = [item for item in tail.split("/") if item]
+        if len(parts) != 2 or parts[0] != "slam":
+            return None
+        action = parts[1]
+        if action in {"defaults", "state", "start", "finish", "cancel"}:
+            return robot_id, action
+        return None
+
     def _handle_robot_params_post(self, robot_id: str) -> None:
         payload = self._read_json_payload()
         if payload is None:
@@ -718,6 +795,52 @@ class OperatorRequestHandler(SimpleHTTPRequestHandler):
             return
         try:
             self._send_json(self._require_state().save_robot_params_payload(robot_id, payload))
+        except ValueError as exc:
+            self._send_error_json(400, str(exc))
+        except RobotProbeError as exc:
+            self._send_error_json(502, str(exc))
+        except Exception as exc:  # pragma: no cover - defensive server path
+            self._send_error_json(500, str(exc))
+
+    def _handle_robot_slam_get(self, robot_id: str, action: str) -> None:
+        try:
+            state = self._require_state()
+            if action == "defaults":
+                self._send_json(state.robot_slam_defaults_payload(robot_id))
+                return
+            if action == "state":
+                self._send_json(state.robot_slam_state_payload(robot_id))
+                return
+            self._send_error_json(404, "not found")
+        except ValueError as exc:
+            self._send_error_json(400, str(exc))
+        except RobotProbeError as exc:
+            self._send_error_json(502, str(exc))
+        except Exception as exc:  # pragma: no cover - defensive server path
+            self._send_error_json(500, str(exc))
+
+    def _handle_robot_slam_post(self, robot_id: str, action: str) -> None:
+        if action not in {"start", "finish", "cancel"}:
+            self._send_error_json(404, "not found")
+            return
+        payload = self._read_json_payload()
+        if payload is None:
+            return
+        if not isinstance(payload, dict):
+            self._send_error_json(400, "expected object payload")
+            return
+        try:
+            state = self._require_state()
+            if action == "start":
+                self._send_json(state.start_robot_slam_payload(robot_id, payload))
+                return
+            if action == "finish":
+                self._send_json(state.finish_robot_slam_payload(robot_id, payload))
+                return
+            if action == "cancel":
+                self._send_json(state.cancel_robot_slam_payload(robot_id, payload))
+                return
+            self._send_error_json(404, "not found")
         except ValueError as exc:
             self._send_error_json(400, str(exc))
         except RobotProbeError as exc:
