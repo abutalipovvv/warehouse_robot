@@ -1,0 +1,14 @@
+- from: LM1
+  to: LM2
+  length: 1.79326
+  kind: line
+  type: FeatureLine
+  properties:
+    direction: 2
+- from: LM2
+  to: LM3
+  length: 4.415
+  kind: line
+  type: FeatureLine
+  properties:
+    direction: 2

@@ -15,7 +15,7 @@ from ..services.fleet_manager import FLEET_MANAGER_ID, OperatorFleetManager
 from .map_cache import MapCache, default_maps_cache_root
 from .models import KnownRobot
 from .registry import RobotRegistry
-from ..robot_grpc_api.client import GrpcRobotAdapter
+from ..robot_grpc_api.client import GrpcRobotAdapter, GrpcRobotError
 from ..robot_grpc_api.contracts import DEFAULT_GRPC_PORT
 from .workspace import OperatorWorkspace
 
@@ -1151,6 +1151,8 @@ class OperatorAppState:
             if method == "POST" and route == "/api/robot/route/execute":
                 payload.setdefault("ownerId", OPERATOR_CONTROL_OWNER_ID)
                 return self._json_response_tuple(self.grpc_adapter.execute_route(endpoint, payload))
+        except GrpcRobotError as exc:
+            return self._json_response_tuple({"ok": False, "error": str(exc)}, status=400)
         except Exception as exc:
             return self._json_response_tuple({"ok": False, "error": str(exc)}, status=500)
         return self._json_response_tuple({"ok": False, "error": f"unsupported gRPC robot path: {method} {route}"}, status=404)

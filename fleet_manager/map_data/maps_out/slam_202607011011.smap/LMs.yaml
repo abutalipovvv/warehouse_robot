@@ -1,0 +1,17 @@
+mapName: slam_202607011011
+LMs:
+- name: LM1
+  x: 2.403
+  y: -0.218
+  ignoreDir: ''
+  properties: {}
+- name: LM2
+  x: 4.187
+  y: -0.4
+  ignoreDir: ''
+  properties: {}
+- name: LM3
+  x: 8.602
+  y: -0.4
+  ignoreDir: ''
+  properties: {}

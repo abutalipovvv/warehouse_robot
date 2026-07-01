@@ -194,8 +194,11 @@ class RobotStatusNode(Node):
 
         nearest_name = ""
         if pose is not None:
-            nearest, _ = self.route_planner.planner.nearest_landmark(pose["x"], pose["y"])
-            nearest_name = nearest.name
+            try:
+                nearest, _ = self.route_planner.planner.nearest_landmark(pose["x"], pose["y"])
+                nearest_name = nearest.name
+            except ValueError:
+                nearest_name = ""
 
         status = RobotStatus()
         status.stamp = self.get_clock().now().to_msg()

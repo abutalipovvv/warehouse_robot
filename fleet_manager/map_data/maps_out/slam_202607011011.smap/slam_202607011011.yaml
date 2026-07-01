@@ -1,0 +1,7 @@
+image: slam_202607011011.pgm
+mode: trinary
+resolution: 0.050
+origin: [-17.865, -6.009, 0]
+negate: 0
+occupied_thresh: 0.65
+free_thresh: 0.196

@@ -935,6 +935,8 @@ class OperatorApp {
     this.robotStatusStreamAttemptedAt = 0;
     this.robotStatusStreamFallback = false;
     this.robotStreamIntervalMs = 180;
+    this.robotStatusReceivedAt = 0;
+    this.robotStatusFreshTimeoutMs = 2200;
     this.robotStatusRobotId = "";
     this.scanSocket = null;
     this.scanRobotId = "";
@@ -1197,6 +1199,9 @@ class OperatorApp {
     window.setInterval(() => {
       this.fetchSelectedRobotStatus(true).catch(() => {});
     }, 800);
+    window.setInterval(() => {
+      this.expireRobotStatusIfStale();
+    }, 500);
     window.setInterval(() => {
       this.tickFleetIfSelected().catch(() => {});
     }, 80);
@@ -1865,6 +1870,58 @@ class OperatorApp {
       && performance.now() - this.robotStatusStreamAttemptedAt < 1200;
   }
 
+  markRobotStatusReceived() {
+    this.robotStatusReceivedAt = performance.now();
+  }
+
+  robotStatusIsStale() {
+    if (this.isFleetManager() || !this.robotStatusReceivedAt) {
+      return false;
+    }
+    return performance.now() - this.robotStatusReceivedAt > this.robotStatusFreshTimeoutMs;
+  }
+
+  robotStatusStaleMessage() {
+    if (!this.robotStatusReceivedAt) {
+      return "Waiting for robot status.";
+    }
+    const ageSec = Math.max(0, (performance.now() - this.robotStatusReceivedAt) / 1000);
+    return `Robot status is stale (${ageSec.toFixed(1)}s). Waiting for update.`;
+  }
+
+  statusForRobotDisplay(robot) {
+    const source = robot && typeof robot === "object" ? robot : {};
+    if (!this.robotStatusIsStale()) {
+      return source;
+    }
+    return {
+      ...source,
+      connected: false,
+      localizationOk: false,
+      state: "DISCONNECTED",
+      message: this.robotStatusStaleMessage(),
+      pose: null,
+    };
+  }
+
+  expireRobotStatusIfStale() {
+    if (this.isGlobalHomePage() || this.isFleetManager()) {
+      return;
+    }
+    if (!this.currentStatus?.robot || !this.robotStatusIsStale()) {
+      return;
+    }
+    const robot = this.currentStatus.robot;
+    if (robot.connected === false && robot.localizationOk === false && !robot.pose) {
+      return;
+    }
+    this.currentStatus = {
+      ...this.currentStatus,
+      robot: this.statusForRobotDisplay(robot),
+    };
+    this.renderRobotRuntimeTick();
+  }
+
   openRobotStatusStream() {
     const robot = this.selectedRobot();
     if (!robot || this.isFleetManager(robot)) {
@@ -1956,12 +2013,14 @@ class OperatorApp {
     if (!this.robotStatusSocket) {
       this.robotStatusRobotId = "";
       this.robotStatusStreamAttemptedAt = 0;
+      this.robotStatusReceivedAt = 0;
       return;
     }
     const socket = this.robotStatusSocket;
     this.robotStatusSocket = null;
     this.robotStatusRobotId = "";
     this.robotStatusStreamAttemptedAt = 0;
+    this.robotStatusReceivedAt = 0;
     try {
       socket.close(1000, "operator target changed");
     } catch (_) {
@@ -2153,9 +2212,7 @@ class OperatorApp {
       });
       this.slamState = result.state || null;
       this.slamActive = Boolean(result.state?.active ?? true);
-      this.slamMapPayload = null;
-      this.slamMapFrame = null;
-      this.resetMapView(true);
+      this.beginRobotMapTransition("2D SLAM started. Waiting for live map...");
       this.slamDialog.close();
       this.openSlamStream();
       this.syncSlamUi("mapping");
@@ -2378,6 +2435,7 @@ class OperatorApp {
       });
       this.slamActive = false;
       this.slamState = result.state || null;
+      this.beginRobotMapTransition(`Loading saved SLAM map ${result.mapName || mapName}...`);
       this.closeSlamStream();
       await this.refreshRobotMapState({ quiet: true });
       await this.refreshRobots({ quiet: true });
@@ -2403,7 +2461,10 @@ class OperatorApp {
       });
       this.slamActive = false;
       this.slamState = result.state || null;
+      this.beginRobotMapTransition("Restoring navigation map after SLAM cancel...");
       this.closeSlamStream();
+      await this.refreshRobotMapState({ quiet: true });
+      await this.fetchSelectedRobotStatus(true);
       this.syncSlamUi("canceled");
       this.robotMessageText.textContent = "SLAM canceled.";
     } catch (error) {
@@ -2437,6 +2498,52 @@ class OperatorApp {
     }
   }
 
+  beginRobotMapTransition(message = "Map is changing...") {
+    this.navigateMode = false;
+    this.relocateMode = false;
+    this.pendingFleetAction = "";
+    this.pendingFleetRobotName = "";
+    this.currentRoute = null;
+    if (!this.isFleetManager() && this.currentStatus?.robot) {
+      this.currentStatus = {
+        ...this.currentStatus,
+        robot: {
+          ...this.currentStatus.robot,
+          connected: false,
+          localizationOk: false,
+          state: "LOCALIZING",
+          message,
+          pose: null,
+        },
+      };
+      this.robotStatusReceivedAt = 0;
+    }
+    this.latestScanFrame = null;
+    this.fleetManualLookahead = null;
+    this.operatorMapPayload = null;
+    this.operatorMapSignature = "";
+    this.slamMapPayload = null;
+    this.slamMapFrame = null;
+    this.clearScanOverlay();
+    this.clearRelocationPreview();
+    this.resetMapView(true);
+    this.syncModeButtons();
+    const mapActionsDisabled = !this.isFleetManager() && this.slamActive;
+    if (this.controlLoadMapButton) {
+      this.controlLoadMapButton.disabled = mapActionsDisabled;
+    }
+    if (this.controlPullMapButton) {
+      this.controlPullMapButton.disabled = mapActionsDisabled;
+    }
+    if (this.controlPushMapButton) {
+      this.controlPushMapButton.disabled = mapActionsDisabled;
+    }
+    this.renderOperatorMap();
+    if (this.robotMessageText && message) {
+      this.robotMessageText.textContent = message;
+    }
+  }
+
   drawScanOverlay(frame = this.latestScanFrame) {
     if (!this.operatorScanLayer) {
       return;
@@ -2449,9 +2556,9 @@ class OperatorApp {
     if (!payload || !payload.map) {
       return;
     }
-    const robot = this.currentStatus && this.currentStatus.robot ? this.currentStatus.robot : null;
+    const robot = this.statusForRobotDisplay(this.currentStatus && this.currentStatus.robot ? this.currentStatus.robot : null);
     const pose = robot && robot.pose ? robot.pose : null;
-    if (!pose) {
+    if (!pose || !robot.connected || !robot.localizationOk) {
       return;
     }
     const ranges = Array.isArray(frame.ranges) ? frame.ranges : [];
@@ -2652,6 +2759,7 @@ class OperatorApp {
     }
     const response = payload.response || {};
     if (response.status && typeof response.status === "object") {
+      this.markRobotStatusReceived();
       this.currentStatus = response.status;
       this.renderSelectedRobot();
     }
@@ -2690,6 +2798,7 @@ class OperatorApp {
     if (!state || state.ok === false) {
       return;
     }
+    this.markRobotStatusReceived();
     this.currentStatus = state;
     if (state.route) {
       this.currentRoute = state.route;
@@ -3055,6 +3164,8 @@ class OperatorApp {
         : await this.getJson(this.robotApiPath("/api/robot/status"));
       if (this.isFleetManager(robot)) {
         this.fleetStatusReceivedAt = performance.now();
+      } else {
+        this.markRobotStatusReceived();
       }
       this.currentStatus = result;
       if (result && result.route) {
@@ -3588,8 +3699,12 @@ class OperatorApp {
     }
     this.syncScanUi();
     this.syncSlamUi();
+    const mapActionsDisabled = !isFleet && this.slamActive;
     this.controlPullMapButton.classList.toggle("hidden", false);
     this.controlPushMapButton.classList.toggle("hidden", false);
+    this.controlLoadMapButton.disabled = mapActionsDisabled;
+    this.controlPullMapButton.disabled = mapActionsDisabled;
+    this.controlPushMapButton.disabled = mapActionsDisabled;
     this.cancelRouteButton.textContent = isFleet ? "Stop Active" : "Cancel Route";
     this.stopRobotButton.textContent = isFleet ? "Stop Fleet" : "Stop";
     this.syncModeButtons();
@@ -3629,7 +3744,7 @@ class OperatorApp {
     }
     const selected = this.selectedRobot();
     const status = this.currentStatus || {};
-    const robot = status.robot || {};
+    const robot = this.statusForRobotDisplay(status.robot || {});
     const route = status.route || this.currentRoute || null;
     const pose = robot.pose || null;
     const connected = Boolean(robot.connected);
@@ -3642,7 +3757,7 @@ class OperatorApp {
     this.nearestLmText.textContent = robot.nearestLm || "-";
     this.renderInspectorDetails({
       robot: robot.robotId || selected?.name || selected?.id || "-",
-      mode: "robot",
+      mode: this.slamActive ? "mapping" : "robot",
       connection: this.robotStatusStreamOpen() ? "robot websocket" : (connected ? "online" : "offline"),
       map: robot.mapId || selected?.identity?.mapId || this.robotMapState.robotActiveMapName || "-",
       currentLm: robot.nearestLm || "-",
@@ -3661,7 +3776,9 @@ class OperatorApp {
         : (selected?.baseUrl || "-"),
       reason: this.robotLifecycleReason(robot),
     });
-    this.robotMessageText.textContent = robot.message || (this.operatorMapPayload ? "Robot status ready." : "Pull the active robot map to display Map & Control.");
+    this.robotMessageText.textContent = this.slamActive
+      ? (this.slamMapPayload ? "2D SLAM running." : "Waiting for live SLAM map.")
+      : (robot.message || (this.operatorMapPayload ? "Robot status ready." : "Pull the active robot map to display Map & Control."));
     this.routeNodesText.textContent = route && Array.isArray(route.nodes) && route.nodes.length
       ? route.nodes.join(" -> ")
       : "No route planned.";
@@ -3677,7 +3794,7 @@ class OperatorApp {
     }
     const selected = this.selectedRobot();
     const status = this.currentStatus || {};
-    const robot = status.robot || {};
+    const robot = this.statusForRobotDisplay(status.robot || {});
     const route = status.route || this.currentRoute || null;
     const pose = robot.pose || null;
     const connected = Boolean(robot.connected);
@@ -3690,7 +3807,7 @@ class OperatorApp {
     this.nearestLmText.textContent = robot.nearestLm || "-";
     this.renderInspectorDetails({
       robot: robot.robotId || selected?.name || selected?.id || "-",
-      mode: "robot",
+      mode: this.slamActive ? "mapping" : "robot",
       connection: this.robotStatusStreamOpen() ? "robot websocket" : (connected ? "online" : "offline"),
       map: robot.mapId || selected?.identity?.mapId || this.robotMapState.robotActiveMapName || "-",
       currentLm: robot.nearestLm || "-",
@@ -3709,7 +3826,9 @@ class OperatorApp {
         : (selected?.baseUrl || "-"),
       reason: this.robotLifecycleReason(robot),
     });
-    this.robotMessageText.textContent = robot.message || (this.operatorMapPayload ? "Robot status ready." : "Pull the active robot map to display Map & Control.");
+    this.robotMessageText.textContent = this.slamActive
+      ? (this.slamMapPayload ? "2D SLAM running." : "Waiting for live SLAM map.")
+      : (robot.message || (this.operatorMapPayload ? "Robot status ready." : "Pull the active robot map to display Map & Control."));
     this.routeNodesText.textContent = route && Array.isArray(route.nodes) && route.nodes.length
       ? route.nodes.join(" -> ")
       : "No route planned.";
@@ -4496,8 +4615,8 @@ class OperatorApp {
     if (this.isFleetManager() && this.fleetMapEditorActive && this.fleetMapDraft) {
       return this.fleetMapDraft;
     }
-    if (!this.isFleetManager() && this.slamActive && this.slamMapPayload) {
-      return this.slamMapPayload;
+    if (!this.isFleetManager() && this.slamActive) {
+      return this.slamMapPayload || null;
     }
     return this.operatorMapPayload;
   }
@@ -4560,6 +4679,9 @@ class OperatorApp {
       return;
     }
     this.drawSlamTrail();
+    if (this.slamActive) {
+      return;
+    }
     const route = (this.currentStatus && this.currentStatus.route) || this.currentRoute;
     if (!route || !Array.isArray(route.trajectory) || route.trajectory.length < 2) {
       return;
@@ -4835,9 +4957,9 @@ class OperatorApp {
       }
       return;
     }
-    const robot = this.currentStatus && this.currentStatus.robot ? this.currentStatus.robot : null;
+    const robot = this.statusForRobotDisplay(this.currentStatus && this.currentStatus.robot ? this.currentStatus.robot : null);
     const pose = robot && robot.pose ? robot.pose : null;
-    if (!pose) {
+    if (!pose || !robot.connected || !robot.localizationOk) {
       return;
     }
     const center = this.worldToPixel(pose);
@@ -5951,6 +6073,10 @@ class OperatorApp {
   }
 
   toggleNavigateMode() {
+    if (!this.isFleetManager() && this.slamActive) {
+      this.robotMessageText.textContent = "Navigation is disabled while 2D SLAM is active.";
+      return;
+    }
     if (!this.operatorMapPayload || !this.operatorMapPayload.map) {
       this.robotMessageText.textContent = `Pull or load the robot map before ${this.navigateButtonIdleText()}.`;
       return;
@@ -5987,6 +6113,10 @@ class OperatorApp {
 
   toggleRelocateMode() {
     if (this.isFleetManager()) {
+      return;
+    }
+    if (this.slamActive) {
+      this.robotMessageText.textContent = "Relocate is disabled while 2D SLAM is active.";
       return;
     }
     if (!this.operatorMapPayload || !this.operatorMapPayload.map) {
@@ -6045,23 +6175,25 @@ class OperatorApp {
     const routeState = String(robot.state || "").toUpperCase();
     const routeActive = Boolean(robot.targetLm || robot.routeId || routeState === "EXECUTING_ROUTE" || routeState === "PAUSED");
     const paused = this.robotNavigationPaused(robot);
+    const mappingActive = !isFleet && this.slamActive;
     const idleText = this.navigateButtonIdleText();
     this.navigateRobotButton.classList.toggle("primary", !navigateArmed);
     this.navigateRobotButton.classList.toggle("danger", navigateArmed);
-    this.navigateRobotButton.disabled = relocateArmed;
+    this.navigateRobotButton.disabled = relocateArmed || mappingActive;
     this.navigateRobotButton.textContent = navigateArmed
       ? (this.pendingFleetRobotName ? `Select LM: ${this.pendingFleetRobotName}` : "Cancel Navigate")
       : idleText;
     if (this.relocateRobotButton) {
       this.relocateRobotButton.classList.toggle("primary", !relocateArmed);
       this.relocateRobotButton.classList.toggle("danger", relocateArmed);
+      this.relocateRobotButton.disabled = mappingActive;
       this.relocateRobotButton.textContent = relocateArmed ? "Cancel Relocate" : "Relocate";
     }
     if (this.pauseRouteButton) {
-      this.pauseRouteButton.disabled = !routeActive || paused;
+      this.pauseRouteButton.disabled = mappingActive || !routeActive || paused;
     }
     if (this.resumeRouteButton) {
-      this.resumeRouteButton.disabled = !paused;
+      this.resumeRouteButton.disabled = mappingActive || !paused;
     }
     if (this.confirmLocalizationButton) {
       this.confirmLocalizationButton.disabled = !robot.localizationOk;
@@ -6085,6 +6217,10 @@ class OperatorApp {
 
   async startNavigation(goalLm) {
     if (!this.selectedRobot()) {
+      return;
+    }
+    if (!this.isFleetManager() && this.slamActive) {
+      this.robotMessageText.textContent = "Navigation is disabled while 2D SLAM is active.";
       return;
     }
     if (this.isFleetManager()) {
@@ -6121,6 +6257,10 @@ class OperatorApp {
 
   async startPoseNavigation(world) {
     if (!this.selectedRobot() || this.isFleetManager()) {
+      return;
+    }
+    if (this.slamActive) {
+      this.robotMessageText.textContent = "Navigation is disabled while 2D SLAM is active.";
       return;
     }
     this.navigateMode = false;
@@ -6813,6 +6953,8 @@ class OperatorApp {
       await this.fetchSelectedRobotStatus(true);
       this.renderSelectedRobot();
     } catch (error) {
+      await this.refreshRobotMapState({ quiet: true }).catch(() => {});
+      this.renderSelectedRobot();
       window.alert(error.message || String(error));
     }
   }
@@ -6854,6 +6996,8 @@ class OperatorApp {
       await this.refreshRobots({ quiet: true });
       this.renderSelectedRobot();
     } catch (error) {
+      await this.refreshRobotMapState({ quiet: true }).catch(() => {});
+      this.renderSelectedRobot();
       window.alert(error.message || String(error));
     }
   }
@@ -7425,6 +7569,10 @@ class OperatorApp {
     if (!robot) {
       return;
     }
+    if (!this.isFleetManager(robot) && this.slamActive) {
+      this.robotMessageText.textContent = "Pull Map is disabled while 2D SLAM is active.";
+      return;
+    }
     const target = this.isFleetManager(robot) ? "Fleet Manager" : "robot";
     if (!options.skipConfirm) {
       const confirmed = window.confirm(`Pull active ${target} map into the operator cache? Local draft changes may be replaced.`);
@@ -7435,6 +7583,7 @@ class OperatorApp {
     try {
       const result = await this.runMapTransfer("pull", async (progress) => {
         await progress(18, `Requesting active map from ${target}...`, 120);
+        this.beginRobotMapTransition(`Pulling active ${target} map...`);
         const payload = this.isFleetManager(robot)
           ? await this.postJson("/api/fleet-manager/maps/pull-sync", {})
           : await this.postJson(`/api/robots/${encodeURIComponent(robot.id)}/maps/pull-sync`, {});
@@ -7457,6 +7606,10 @@ class OperatorApp {
     if (!robot) {
       return;
     }
+    if (!this.isFleetManager(robot) && this.slamActive) {
+      this.robotMessageText.textContent = "Push Map is disabled while 2D SLAM is active.";
+      return;
+    }
     const target = this.isFleetManager(robot) ? "Fleet Manager" : "robot";
     if (!options.skipConfirm) {
       const confirmed = window.confirm(`Push local operator map to ${target}? This overwrites the active map used by ${target}.`);
@@ -7467,6 +7620,7 @@ class OperatorApp {
     try {
       const result = await this.runMapTransfer("push", async (progress) => {
         await progress(16, "Preparing local map package...", 120);
+        this.beginRobotMapTransition(`Pushing local map to ${target}...`);
         const payload = this.isFleetManager(robot)
           ? await this.postJson("/api/fleet-manager/maps/push-sync", {})
           : await this.postJson(`/api/robots/${encodeURIComponent(robot.id)}/maps/push-sync`, {});
@@ -7523,6 +7677,10 @@ class OperatorApp {
     if (!robot) {
       return;
     }
+    if (!this.isFleetManager(robot) && this.slamActive) {
+      this.robotMessageText.textContent = "Load Map is disabled while 2D SLAM is active.";
+      return;
+    }
     try {
       const robotMaps = this.isFleetManager(robot)
         ? await this.getJson("/api/fleet-manager/maps/list")
@@ -7565,6 +7723,7 @@ class OperatorApp {
     }
     try {
       let result = null;
+      this.beginRobotMapTransition(`Loading map ${mapName}...`);
       if (this.isFleetManager(robot)) {
         result = await this.postJson("/api/fleet-manager/maps/load", { mapName });
       } else {
@@ -7576,6 +7735,8 @@ class OperatorApp {
       await this.fetchSelectedRobotStatus(true);
       window.alert(`${this.isFleetManager(robot) ? "Fleet Manager" : "Robot"} active map changed to ${result.mapName || mapName}.`);
     } catch (error) {
+      await this.refreshRobotMapState({ quiet: true }).catch(() => {});
+      this.renderSelectedRobot();
       this.loadMapHint.className = "probe-result error";
       this.loadMapHint.textContent = error.message || String(error);
     }

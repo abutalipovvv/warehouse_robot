@@ -1,0 +1,54 @@
+mapName: slam_202607011029
+primitives:
+- kind: line
+  line_type: FeatureLine
+  start:
+    x: 1.286
+    y: 0.015
+  end:
+    x: 2.553
+    y: 0.039
+  start_name: LM1
+  end_name: LM2
+  properties:
+    direction: 2
+  length_m: 1.267227
+- kind: line
+  line_type: FeatureLine
+  start:
+    x: 2.553
+    y: 0.039
+  end:
+    x: 3.748
+    y: 0.063
+  start_name: LM2
+  end_name: LM3
+  properties:
+    direction: 2
+  length_m: 1.195241
+- kind: line
+  line_type: FeatureLine
+  start:
+    x: 3.748
+    y: 0.063
+  end:
+    x: 5.158
+    y: 0.087
+  start_name: LM3
+  end_name: LM4
+  properties:
+    direction: 2
+  length_m: 1.410204
+- kind: line
+  line_type: FeatureLine
+  start:
+    x: 5.158
+    y: 0.087
+  end:
+    x: 6.52
+    y: -0.009
+  start_name: LM4
+  end_name: LM5
+  properties:
+    direction: 2
+  length_m: 1.365379

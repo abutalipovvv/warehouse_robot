@@ -30,6 +30,8 @@ class LmRoutePlanner:
         }
 
     def nearest_landmark(self, x: float, y: float) -> tuple[Landmark, float]:
+        if not self.landmarks:
+            raise ValueError("map contains no landmarks")
         nearest = min(
             self.landmarks.values(),
             key=lambda landmark: math.hypot(landmark.x - x, landmark.y - y),

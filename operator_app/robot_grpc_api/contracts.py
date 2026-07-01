@@ -161,12 +161,19 @@ def robot_status_to_json(status: robot_api_pb2.RobotStatus | None) -> dict[str, 
                 raw = decoded
         except json.JSONDecodeError:
             raw = {}
+    connected = bool(status.connected)
+    localization_ok = bool(status.localization_ok)
+    pose = {
+        "x": float(status.pose_x),
+        "y": float(status.pose_y),
+        "yaw": float(status.pose_yaw),
+    } if connected and localization_ok else None
     payload: dict[str, Any] = {
         **raw,
         "robotId": status.robot_id,
         "mapId": status.map_id,
-        "connected": bool(status.connected),
-        "localizationOk": bool(status.localization_ok),
+        "connected": connected,
+        "localizationOk": localization_ok,
         "localizationAgeSec": float(status.localization_age_sec),
         "state": status.state,
         "message": status.message,
@@ -175,11 +182,7 @@ def robot_status_to_json(status: robot_api_pb2.RobotStatus | None) -> dict[str, 
         "currentEdgeId": status.current_edge_id,
         "routeId": status.route_id,
         "routeProgress": float(status.route_progress),
-        "pose": {
-            "x": float(status.pose_x),
-            "y": float(status.pose_y),
-            "yaw": float(status.pose_yaw),
-        },
+        "pose": pose,
         "velocity": {
             "linear": float(status.linear_velocity),
             "angular": float(status.angular_velocity),

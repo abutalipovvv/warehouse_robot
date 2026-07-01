@@ -45,6 +45,40 @@ NAV2_RUNTIME_PARAMETERS: tuple[tuple[str, str, str], ...] = (
     ),
 )
 
+STATUS_STALE_TIMEOUT_SEC = 3.0
+
+NAV2_LIFECYCLE_MANAGER_SERVICES: tuple[tuple[str, str], ...] = (
+    ("/lifecycle_manager_navigation/manage_nodes", "navigation"),
+    ("/lifecycle_manager_localization/manage_nodes", "localization"),
+    ("/lifecycle_manager_map_server/manage_nodes", "map_server"),
+)
+
+NAV2_LIFECYCLE_MANAGER_RESUME_SERVICES: tuple[tuple[str, str], ...] = (
+    ("/lifecycle_manager_map_server/manage_nodes", "map_server"),
+    ("/lifecycle_manager_localization/manage_nodes", "localization"),
+    ("/lifecycle_manager_navigation/manage_nodes", "navigation"),
+)
+
+NAV2_LIFECYCLE_NODES: tuple[str, ...] = (
+    "map_server",
+    "amcl",
+    "controller_server",
+    "planner_server",
+    "behavior_server",
+    "smoother_server",
+    "bt_navigator",
+)
+
+NAV2_LIFECYCLE_RESUME_NODES: tuple[str, ...] = (
+    "map_server",
+    "amcl",
+    "controller_server",
+    "planner_server",
+    "behavior_server",
+    "smoother_server",
+    "bt_navigator",
+)
+
 
 def _clean_node_suffix(value: str) -> str:
     clean = re.sub(r"[^A-Za-z0-9_]", "_", value.strip())
@@ -137,6 +171,9 @@ class RosRobotRuntime:
         self._string_type = None
         self._set_parameters_type = None
         self._list_parameters_type = None
+        self._manage_lifecycle_nodes_type = None
+        self._change_state_type = None
+        self._transition_type = None
         self._parameter_type = None
         self._parameter_value_type = None
         self._parameter_type_enum = None
@@ -157,10 +194,14 @@ class RosRobotRuntime:
         self._map_get_bundle_client = None
         self._map_put_bundle_client = None
         self._slam_save_map_client = None
+        self._nav2_lifecycle_clients: dict[str, Any] = {}
+        self._nav2_change_state_clients: dict[str, Any] = {}
         self._save_map_type = None
         self._occupancy_grid_type = None
         self._slam_process: subprocess.Popen | None = None
         self._slam_temp_dir: Path | None = None
+        self._nav2_paused_for_slam = False
+        self._slam_ignore_maps_until = 0.0
         self._slam_state: dict[str, Any] = {
             "active": False,
             "state": "idle",
@@ -303,6 +344,7 @@ class RosRobotRuntime:
 
     def teleop(self, *, linear: float, angular: float, timeout_ms: int = 350, owner_id: str = "") -> dict[str, Any]:
         del timeout_ms
+        self._ensure_manual_control_allowed("manual control")
         self._ensure_control_owner(owner_id, action="manual control")
         self._publish_twist(linear, angular)
         return {"ok": True, "linear": float(linear), "angular": float(angular)}
@@ -369,6 +411,7 @@ class RosRobotRuntime:
         return {"ok": True}
 
     def execute_route(self, payload: dict[str, Any]) -> dict[str, Any]:
+        self._ensure_navigation_mode("execute route")
         self._ensure_control_owner(str(payload.get("ownerId") or payload.get("owner_id") or ""), action="execute route")
         goal_pose = self._goal_pose_payload(payload)
         if goal_pose is not None:
@@ -453,6 +496,7 @@ class RosRobotRuntime:
         covariance_json: str = "",
         confirm: bool = False,
     ) -> dict[str, Any]:
+        self._ensure_navigation_mode("relocate")
         self._ensure_control_owner(owner_id, action="relocate")
         if self._initial_pose_pub is None or self._pose_with_covariance_type is None:
             raise ValueError(self._error or "initial pose publisher is not available")
@@ -499,6 +543,7 @@ class RosRobotRuntime:
         return {"ok": True, "navigationPaused": True}
 
     def resume_route(self, *, owner_id: str = "", message: str = "") -> dict[str, Any]:
+        self._ensure_navigation_mode("resume route")
         self._ensure_control_owner(owner_id, action="resume route")
         self._set_route_paused(False, message or "Route resumed by operator.")
         return {"ok": True, "navigationPaused": False}
@@ -574,6 +619,9 @@ class RosRobotRuntime:
         map_name: str = "",
         activate: bool = False,
     ) -> dict[str, Any]:
+        if activate:
+            self._ensure_navigation_mode("push active map")
+            self._stop_navigation_before_map_change()
         if self._map_put_bundle_client is None:
             raise ValueError("map bundle push service is not configured")
         request = self._map_put_bundle_client.srv_type.Request()
@@ -591,7 +639,10 @@ class RosRobotRuntime:
             "signature": str(response.signature or ""),
         }
 
-    def load_map(self, map_name: str) -> dict[str, Any]:
+    def load_map(self, map_name: str, *, allow_during_transition: bool = False) -> dict[str, Any]:
+        if not allow_during_transition:
+            self._ensure_navigation_mode("load map")
+        self._stop_navigation_before_map_change()
         if self._map_load_client is None:
             raise ValueError("map load service is not configured")
         request = self._map_load_client.srv_type.Request()
@@ -606,6 +657,43 @@ class RosRobotRuntime:
             "mapDir": str(response.map_dir or ""),
             "mapId": str(response.map_id or ""),
         }
+
+    def _ensure_navigation_mode(self, action: str) -> None:
+        with self._lock:
+            active = bool(self._slam_state.get("active"))
+            state = str(self._slam_state.get("state") or "idle")
+        if active or state in {"starting", "mapping", "saving", "canceling", "resuming"}:
+            raise ValueError(f"Cannot {action} while robot is in {state} mode")
+
+    def _ensure_manual_control_allowed(self, action: str) -> None:
+        with self._lock:
+            active = bool(self._slam_state.get("active"))
+            state = str(self._slam_state.get("state") or "idle")
+        if state in {"starting", "saving", "canceling", "resuming"}:
+            raise ValueError(f"Cannot {action} while robot is switching modes ({state})")
+        if active and state != "mapping":
+            raise ValueError(f"Cannot {action} while robot is in {state} mode")
+
+    def _stop_navigation_before_map_change(self) -> None:
+        errors: list[str] = []
+        try:
+            self._publish_twist(0.0, 0.0)
+        except Exception as exc:
+            errors.append(f"stop failed: {exc}")
+        try:
+            if self._cancel_route_client is not None and self._service_available(self._cancel_route_client, 0.1):
+                request = self._cancel_route_client.srv_type.Request()
+                request.message = "Route canceled before map change."
+                response = self._call_service(self._cancel_route_client, request, "route cancel", timeout_sec=1.5)
+                if not bool(response.ok):
+                    errors.append(str(response.error or "route cancel failed"))
+            else:
+                self._publish_go_to_lm("cancel")
+        except Exception as exc:
+            errors.append(f"route cancel failed: {exc}")
+        self._navigation_paused = False
+        if errors:
+            self._append_runtime_event("warn", "map change pre-stop warning: " + "; ".join(errors))
 
     def slam_defaults_payload(self) -> dict[str, Any]:
         try:
@@ -629,12 +717,49 @@ class RosRobotRuntime:
         with self._lock:
             if bool(self._slam_state.get("active")):
                 raise ValueError("SLAM is already running")
+            state = str(self._slam_state.get("state") or "idle")
+            if state in {"starting", "saving", "canceling", "resuming"}:
+                raise ValueError(f"SLAM mode switch is already in progress: {state}")
+            session_id = f"slam-{self.robot_id}-{int(time.time())}"
+            self._latest_map = None
+            self._latest_map_at = None
+            self._slam_trail = []
+            self._slam_ignore_maps_until = monotonic() + 1.0
+            self._slam_state = {
+                "active": True,
+                "state": "starting",
+                "message": "Switching from navigation to 2D SLAM.",
+                "sessionId": session_id,
+                "startedAtSec": time.time(),
+                "progress": 0,
+                "savedMapName": "",
+                "mapDir": "",
+                "nav2Paused": False,
+            }
 
         if not self.slam_launch_file.is_file():
+            with self._lock:
+                self._slam_state.update({"active": False, "state": "error", "message": "SLAM launch file is missing."})
             raise ValueError(f"SLAM launch file does not exist: {self.slam_launch_file}")
 
-        params = params_payload if isinstance(params_payload, dict) and params_payload else self.slam_defaults_payload()["params"]
-        session_id = f"slam-{self.robot_id}-{int(time.time())}"
+        try:
+            default_params = self.slam_defaults_payload()["params"]
+            params = params_payload if isinstance(params_payload, dict) and params_payload else default_params
+            params = self._coerce_slam_params(params, default_params)
+            params = self._normalize_slam_params(params, default_params)
+        except Exception as exc:
+            with self._lock:
+                self._slam_state.update({"active": False, "state": "error", "message": f"Invalid SLAM parameters: {exc}"})
+            raise
+        try:
+            nav2_control = self._pause_nav2_for_slam()
+        except Exception as exc:
+            with self._lock:
+                self._slam_state.update({"active": False, "state": "error", "message": f"Failed to pause Nav2: {exc}"})
+            raise
+        with self._lock:
+            self._nav2_paused_for_slam = bool(nav2_control.get("changed"))
+            self._slam_state["nav2Paused"] = bool(nav2_control.get("changed"))
         temp_dir = Path(tempfile.mkdtemp(prefix=f"{_clean_node_suffix(self.robot_id)}-slam-"))
         params_file = temp_dir / "mapper_params_online_async.yaml"
         params_file.write_text(yaml.safe_dump(params, sort_keys=False, allow_unicode=True), encoding="utf-8")
@@ -647,31 +772,40 @@ class RosRobotRuntime:
             f"use_sim_time:={'true' if use_sim_time else 'false'}",
         ]
         try:
-            process = subprocess.Popen(
-                cmd,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                start_new_session=True,
-            )
+            print(f"[robot_api_server] Starting 2D SLAM launch: {' '.join(cmd)}", flush=True)
+            process = subprocess.Popen(cmd, start_new_session=True)
+            sleep(0.5)
+            if process.poll() is not None:
+                raise ValueError(f"SLAM launch exited immediately with code {process.returncode}")
         except FileNotFoundError as exc:
             shutil.rmtree(temp_dir, ignore_errors=True)
+            if bool(nav2_control.get("changed")):
+                self._resume_nav2_after_slam()
+            with self._lock:
+                self._slam_state.update({"active": False, "state": "error", "message": "ros2 command is not available."})
             raise ValueError("ros2 command is not available; source the ROS environment before starting SLAM") from exc
+        except Exception:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+            if bool(nav2_control.get("changed")):
+                self._resume_nav2_after_slam()
+            with self._lock:
+                self._slam_state.update({"active": False, "state": "error", "message": "Failed to start 2D SLAM."})
+            raise
 
         with self._lock:
-            self._latest_map = None
-            self._latest_map_at = None
-            self._slam_trail = []
             self._slam_process = process
             self._slam_temp_dir = temp_dir
+            self._nav2_paused_for_slam = bool(nav2_control.get("changed"))
             self._slam_state = {
                 "active": True,
                 "state": "mapping",
-                "message": "2D SLAM is running. Manual WASD teleop is available.",
+                "message": "2D SLAM is running. Nav2 is paused and manual WASD teleop is available.",
                 "sessionId": session_id,
                 "startedAtSec": time.time(),
                 "progress": 0,
                 "savedMapName": "",
                 "mapDir": "",
+                "nav2Paused": bool(nav2_control.get("changed")),
             }
             state = dict(self._slam_state)
         return {"ok": True, "state": state}
@@ -776,10 +910,13 @@ class RosRobotRuntime:
             self._set_slam_progress(55, "Creating editable smap files.")
             self._write_empty_smap_sidecars(target, safe_name)
             self._stop_slam_process()
+            with self._lock:
+                self._slam_state.update({"state": "resuming", "message": "Restoring Nav2 after SLAM.", "progress": 64})
+            self._resume_nav2_after_slam()
             loaded = {"ok": True, "mapName": safe_name, "mapDir": str(target), "mapId": safe_name}
             if activate:
                 self._set_slam_progress(72, "Loading new map on robot.")
-                loaded = self.load_map(safe_name)
+                loaded = self.load_map(safe_name, allow_during_transition=True)
             self._set_slam_progress(86, "Building map bundle for operator pull.")
             bundle = self.pull_map_bundle_payload(safe_name)
             with self._lock:
@@ -806,12 +943,24 @@ class RosRobotRuntime:
         except Exception:
             shutil.rmtree(target, ignore_errors=True)
             with self._lock:
-                self._slam_state.update({"state": "error", "progress": max(1, int(self._slam_state.get("progress") or 1))})
+                running = self._slam_process is not None and self._slam_process.poll() is None
+                self._slam_state.update(
+                    {
+                        "active": running,
+                        "state": "error",
+                        "progress": max(1, int(self._slam_state.get("progress") or 1)),
+                    }
+                )
             raise
 
     def cancel_slam(self, *, reason: str = "", command_id: str = "") -> dict[str, Any]:
         del command_id
+        with self._lock:
+            self._slam_state.update({"state": "canceling", "message": reason or "Canceling SLAM.", "progress": 0})
         self._stop_slam_process()
+        with self._lock:
+            self._slam_state.update({"state": "resuming", "message": "Restoring Nav2 after SLAM cancel."})
+        self._resume_nav2_after_slam()
         with self._lock:
             self._slam_state.update(
                 {
@@ -1057,6 +1206,29 @@ class RosRobotRuntime:
         return reloaded
 
     def _execute_pose_route(self, pose: dict[str, float], payload: dict[str, Any]) -> dict[str, Any]:
+        if self._execute_route_client is not None and self._service_available(self._execute_route_client, 0.05):
+            status = self.status_robot_payload()
+            start_pose = payload.get("startPose") if isinstance(payload.get("startPose"), dict) else None
+            if isinstance(start_pose, dict):
+                current = {
+                    "x": float(start_pose.get("x", 0.0) or 0.0),
+                    "y": float(start_pose.get("y", 0.0) or 0.0),
+                    "yaw": float(start_pose.get("yaw", 0.0) or 0.0),
+                }
+            else:
+                current = status.get("pose") if isinstance(status.get("pose"), dict) else None
+            if not isinstance(current, dict):
+                raise ValueError("robot pose is not available yet")
+
+            route_payload = self._straight_pose_route_payload(current, pose)
+            request = self._execute_route_client.srv_type.Request()
+            request.route_json = json.dumps(route_payload, ensure_ascii=False)
+            response = self._call_service(self._execute_route_client, request, "route execute")
+            if not bool(response.ok):
+                raise ValueError(str(response.error or "route execute failed"))
+            self._navigation_paused = False
+            return {"ok": True, "route": route_payload}
+
         script_args: dict[str, Any] = {
             "x": pose["x"],
             "y": pose["y"],
@@ -1083,6 +1255,42 @@ class RosRobotRuntime:
             "trajectory": [],
         }
         return {"ok": True, "route": route}
+
+    def _straight_pose_route_payload(self, start: dict[str, Any], goal: dict[str, float]) -> dict[str, Any]:
+        start_x = float(start.get("x", 0.0) or 0.0)
+        start_y = float(start.get("y", 0.0) or 0.0)
+        start_yaw = float(start.get("yaw", 0.0) or 0.0)
+        goal_x = float(goal.get("x", 0.0) or 0.0)
+        goal_y = float(goal.get("y", 0.0) or 0.0)
+        goal_yaw = float(goal.get("yaw", start_yaw) or 0.0)
+        distance = math.hypot(goal_x - start_x, goal_y - start_y)
+        travel_yaw = math.atan2(goal_y - start_y, goal_x - start_x) if distance > 1e-6 else goal_yaw
+        sample_distance = 0.05
+        steps = max(1, math.ceil(distance / sample_distance))
+        trajectory: list[dict[str, Any]] = []
+        for step in range(steps + 1):
+            ratio = step / steps
+            yaw = travel_yaw if step < steps else goal_yaw
+            trajectory.append(
+                {
+                    "x": start_x + ((goal_x - start_x) * ratio),
+                    "y": start_y + ((goal_y - start_y) * ratio),
+                    "yaw": yaw,
+                    "edgeId": "CURRENT_POSE->GOAL_POSE",
+                    "motionDirection": "forward",
+                }
+            )
+        label = f"pose({goal_x:.3f},{goal_y:.3f})"
+        return {
+            "routeId": f"pose-{self.robot_id}-{int(time.time() * 1000)}",
+            "protocol": "pose_route",
+            "startLm": "CURRENT_POSE",
+            "goalLm": label,
+            "goalPose": {"x": goal_x, "y": goal_y, "yaw": goal_yaw},
+            "nodes": ["CURRENT_POSE", label],
+            "length": distance,
+            "trajectory": trajectory,
+        }
 
     def _route_payload_from_request(self, payload: dict[str, Any]) -> dict[str, Any]:
         route_payload = payload.get("route")
@@ -1190,6 +1398,43 @@ class RosRobotRuntime:
         if safe.endswith(".smap"):
             safe = safe[:-5]
         return safe
+
+    def _coerce_slam_params(self, value: Any, template: Any) -> Any:
+        if isinstance(value, dict):
+            template_dict = template if isinstance(template, dict) else {}
+            return {key: self._coerce_slam_params(item, template_dict.get(key)) for key, item in value.items()}
+        if isinstance(value, list):
+            template_list = template if isinstance(template, list) else []
+            if not template_list:
+                return list(value)
+            return [
+                self._coerce_slam_params(item, template_list[min(index, len(template_list) - 1)])
+                for index, item in enumerate(value)
+            ]
+        if isinstance(template, bool) or isinstance(value, bool):
+            return value
+        if isinstance(template, float) and isinstance(value, int):
+            return float(value)
+        if isinstance(template, int) and isinstance(value, float) and value.is_integer():
+            return int(value)
+        return value
+
+    def _normalize_slam_params(self, value: Any, template: Any) -> Any:
+        if not isinstance(value, dict):
+            return value
+        params = value.get("slam_toolbox")
+        template_params = template.get("slam_toolbox") if isinstance(template, dict) else None
+        if not isinstance(params, dict) or not isinstance(template_params, dict):
+            return value
+        ros_params = params.get("ros__parameters")
+        template_ros_params = template_params.get("ros__parameters")
+        if not isinstance(ros_params, dict) or not isinstance(template_ros_params, dict):
+            return value
+
+        default_base_frame = str(template_ros_params.get("base_frame") or "").strip()
+        if default_base_frame and str(ros_params.get("base_frame") or "").strip() == "base_footprint":
+            ros_params["base_frame"] = default_base_frame
+        return value
 
     def _slam_maps_root(self) -> Path:
         try:
@@ -1360,6 +1605,167 @@ class RosRobotRuntime:
             raise ValueError(f"invalid PGM: {path}")
         return int(tokens[1]), int(tokens[2])
 
+    def _pause_nav2_for_slam(self) -> dict[str, Any]:
+        details: dict[str, Any] = {"changed": False, "managers": [], "nodes": [], "errors": []}
+        self._stop_robot_motion_for_slam(details)
+
+        paused_labels: set[str] = set()
+        manager_type = self._manage_lifecycle_nodes_type
+        if manager_type is not None:
+            pause_command = int(manager_type.Request.PAUSE)
+            for service_name, label in NAV2_LIFECYCLE_MANAGER_SERVICES:
+                if self._call_nav2_lifecycle_manager(service_name, label, pause_command, "pause", details):
+                    paused_labels.add(label)
+                    details["changed"] = True
+
+        covered_nodes: set[str] = set()
+        if "navigation" in paused_labels:
+            covered_nodes.update({"controller_server", "planner_server", "behavior_server", "smoother_server", "bt_navigator"})
+        if "localization" in paused_labels:
+            covered_nodes.add("amcl")
+        if "map_server" in paused_labels:
+            covered_nodes.add("map_server")
+
+        transition_type = self._transition_type
+        if transition_type is not None:
+            for node_name in NAV2_LIFECYCLE_NODES:
+                if node_name in covered_nodes:
+                    continue
+                if self._call_nav2_node_transition(
+                    node_name,
+                    int(transition_type.TRANSITION_DEACTIVATE),
+                    "deactivate",
+                    details,
+                ):
+                    details["changed"] = True
+
+        if bool(details.get("changed")):
+            print(
+                "[robot_api_server] Nav2 paused for 2D SLAM: "
+                f"managers={details.get('managers') or []}, nodes={details.get('nodes') or []}",
+                flush=True,
+            )
+        else:
+            print("[robot_api_server] Nav2 lifecycle pause did not find active Nav2 services before 2D SLAM.", flush=True)
+        return details
+
+    def _resume_nav2_after_slam(self) -> dict[str, Any]:
+        with self._lock:
+            should_resume = bool(self._nav2_paused_for_slam)
+            self._nav2_paused_for_slam = False
+        details: dict[str, Any] = {"changed": False, "managers": [], "nodes": [], "errors": []}
+        if not should_resume:
+            return details
+
+        resumed_labels: set[str] = set()
+        manager_type = self._manage_lifecycle_nodes_type
+        if manager_type is not None:
+            resume_command = int(manager_type.Request.RESUME)
+            for service_name, label in NAV2_LIFECYCLE_MANAGER_RESUME_SERVICES:
+                if self._call_nav2_lifecycle_manager(service_name, label, resume_command, "resume", details):
+                    resumed_labels.add(label)
+                    details["changed"] = True
+
+        covered_nodes: set[str] = set()
+        if "map_server" in resumed_labels:
+            covered_nodes.add("map_server")
+        if "localization" in resumed_labels:
+            covered_nodes.add("amcl")
+        if "navigation" in resumed_labels:
+            covered_nodes.update({"controller_server", "planner_server", "behavior_server", "smoother_server", "bt_navigator"})
+
+        transition_type = self._transition_type
+        if transition_type is not None:
+            for node_name in NAV2_LIFECYCLE_RESUME_NODES:
+                if node_name in covered_nodes:
+                    continue
+                if self._call_nav2_node_transition(
+                    node_name,
+                    int(transition_type.TRANSITION_ACTIVATE),
+                    "activate",
+                    details,
+                ):
+                    details["changed"] = True
+
+        print(
+            "[robot_api_server] Nav2 resume after 2D SLAM: "
+            f"managers={details.get('managers') or []}, nodes={details.get('nodes') or []}",
+            flush=True,
+        )
+        return details
+
+    def _stop_robot_motion_for_slam(self, details: dict[str, Any]) -> None:
+        try:
+            self._publish_twist(0.0, 0.0)
+        except Exception as exc:
+            details["errors"].append(f"cmd_vel stop failed: {exc}")
+
+        try:
+            if self._cancel_route_client is not None and self._service_available(self._cancel_route_client, 0.05):
+                request = self._cancel_route_client.srv_type.Request()
+                request.message = "Route canceled before 2D SLAM."
+                response = self._call_service(self._cancel_route_client, request, "route cancel", timeout_sec=1.5)
+                if not bool(response.ok):
+                    details["errors"].append(str(response.error or "route cancel failed"))
+            else:
+                self._publish_go_to_lm("cancel")
+        except Exception as exc:
+            details["errors"].append(f"route cancel failed: {exc}")
+
+    def _call_nav2_lifecycle_manager(
+        self,
+        service_name: str,
+        label: str,
+        command: int,
+        action: str,
+        details: dict[str, Any],
+    ) -> bool:
+        manager_type = self._manage_lifecycle_nodes_type
+        if manager_type is None:
+            return False
+        client = self._nav2_lifecycle_clients.get(self._topic(service_name))
+        if client is None or not self._service_available(client, 0.2):
+            return False
+        request = manager_type.Request()
+        request.command = int(command)
+        try:
+            response = self._call_service(client, request, f"Nav2 {label} lifecycle {action}", timeout_sec=5.0)
+        except Exception as exc:
+            details["errors"].append(f"Nav2 {label} lifecycle {action} failed: {exc}")
+            return False
+        if not bool(getattr(response, "success", False)):
+            details["errors"].append(f"Nav2 {label} lifecycle {action} returned success=false")
+            return False
+        details["managers"].append(label)
+        return True
+
+    def _call_nav2_node_transition(
+        self,
+        node_name: str,
+        transition_id: int,
+        transition_label: str,
+        details: dict[str, Any],
+    ) -> bool:
+        if self._change_state_type is None:
+            return False
+        service_name = self._topic(f"/{node_name}/change_state")
+        client = self._nav2_change_state_clients.get(service_name)
+        if client is None or not self._service_available(client, 0.2):
+            return False
+        request = self._change_state_type.Request()
+        request.transition.id = int(transition_id)
+        request.transition.label = str(transition_label)
+        try:
+            response = self._call_service(client, request, f"Nav2 {node_name} {transition_label}", timeout_sec=3.0)
+        except Exception as exc:
+            details["errors"].append(f"Nav2 {node_name} {transition_label} failed: {exc}")
+            return False
+        if not bool(getattr(response, "success", False)):
+            details["errors"].append(f"Nav2 {node_name} {transition_label} returned success=false")
+            return False
+        details["nodes"].append(node_name)
+        return True
+
     def _stop_slam_process(self) -> None:
         process = self._slam_process
         self._slam_process = None
@@ -1397,7 +1803,10 @@ class RosRobotRuntime:
             import rclpy
             from rclpy.context import Context
             from geometry_msgs.msg import PoseWithCovarianceStamped, Twist
+            from lifecycle_msgs.msg import Transition
+            from lifecycle_msgs.srv import ChangeState
             from nav_msgs.msg import OccupancyGrid
+            from nav2_msgs.srv import ManageLifecycleNodes
             from rclpy.executors import SingleThreadedExecutor
             from rclpy.node import Node
             from rcl_interfaces.msg import Parameter, ParameterType, ParameterValue
@@ -1448,6 +1857,14 @@ class RosRobotRuntime:
             self._map_put_bundle_client = node.create_client(PutRobotMapBundle, self.map_put_bundle_service_name)
             if SaveMap is not None:
                 self._slam_save_map_client = node.create_client(SaveMap, self.slam_save_map_service_name)
+            self._nav2_lifecycle_clients = {
+                self._topic(service_name): node.create_client(ManageLifecycleNodes, self._topic(service_name))
+                for service_name, _label in NAV2_LIFECYCLE_MANAGER_SERVICES
+            }
+            self._nav2_change_state_clients = {
+                self._topic(f"/{node_name}/change_state"): node.create_client(ChangeState, self._topic(f"/{node_name}/change_state"))
+                for node_name in NAV2_LIFECYCLE_NODES
+            }
             node.create_subscription(RobotStatus, self.status_topic, self._on_status, 10)
             node.create_subscription(LaserScan, self.scan_topic, self._on_scan, 10)
             node.create_subscription(OccupancyGrid, self.map_topic, self._on_map, 1)
@@ -1474,6 +1891,9 @@ class RosRobotRuntime:
         self._string_type = String
         self._set_parameters_type = SetParameters
         self._list_parameters_type = ListParameters
+        self._manage_lifecycle_nodes_type = ManageLifecycleNodes
+        self._change_state_type = ChangeState
+        self._transition_type = Transition
         self._parameter_type = Parameter
         self._parameter_value_type = ParameterValue
         self._parameter_type_enum = ParameterType
@@ -1514,11 +1934,18 @@ class RosRobotRuntime:
 
     def _on_map(self, message: Any) -> None:
         with self._lock:
+            state = str(self._slam_state.get("state") or "idle")
+            if not bool(self._slam_state.get("active")) or state not in {"starting", "mapping", "saving"}:
+                return
+            if monotonic() < self._slam_ignore_maps_until:
+                return
             self._latest_map = message
             self._latest_map_at = monotonic()
 
     def _append_slam_trail_locked(self, message: Any) -> None:
-        if not bool(self._slam_state.get("active")):
+        if not bool(self._slam_state.get("active")) or str(self._slam_state.get("state") or "") != "mapping":
+            return
+        if not bool(getattr(message, "localization_ok", False)):
             return
         try:
             pose = {
@@ -1531,7 +1958,11 @@ class RosRobotRuntime:
             return
         if self._slam_trail:
             previous = self._slam_trail[-1]
-            if math.hypot(pose["x"] - previous["x"], pose["y"] - previous["y"]) < 0.03:
+            distance = math.hypot(pose["x"] - previous["x"], pose["y"] - previous["y"])
+            if distance < 0.03:
+                return
+            if distance > 1.0:
+                self._slam_trail = [pose]
                 return
         self._slam_trail.append(pose)
         if len(self._slam_trail) > 5000:
@@ -1539,7 +1970,20 @@ class RosRobotRuntime:
 
     def _latest_message(self) -> Any | None:
         with self._lock:
-            return self._latest_status
+            message = self._latest_status
+            received_at = self._latest_status_at
+        if message is None or received_at is None:
+            return None
+        if monotonic() - received_at > STATUS_STALE_TIMEOUT_SEC:
+            return None
+        return message
+
+    def _status_age_sec(self) -> float | None:
+        with self._lock:
+            received_at = self._latest_status_at
+        if received_at is None:
+            return None
+        return max(0.0, monotonic() - received_at)
 
     def _publish_twist(self, linear: float, angular: float) -> None:
         if self._cmd_vel_pub is None or self._twist_type is None:
@@ -1580,14 +2024,20 @@ class RosRobotRuntime:
 
     def _message_to_robot_payload(self, message: Any | None) -> dict[str, Any]:
         if message is None:
+            status_age = self._status_age_sec()
+            if status_age is None:
+                detail = f"Waiting for {self.status_topic}."
+            else:
+                detail = f"Robot status is stale ({status_age:.1f}s). Waiting for {self.status_topic}."
             return {
                 "robotId": self.robot_name,
                 "mapId": "",
                 "connected": False,
                 "localizationOk": False,
                 "localizationAgeSec": 9999.0,
+                "statusAgeSec": 9999.0 if status_age is None else status_age,
                 "state": "DISCONNECTED",
-            "message": self._error or f"Waiting for {self.status_topic}.",
+                "message": self._error or detail,
                 "targetLm": "",
                 "nearestLm": "",
                 "currentEdgeId": "",
@@ -1611,6 +2061,7 @@ class RosRobotRuntime:
             "connected": connected,
             "localizationOk": localization_ok,
             "localizationAgeSec": float(getattr(message, "localization_age_sec", 9999.0)),
+            "statusAgeSec": float(self._status_age_sec() or 0.0),
             "state": str(getattr(message, "state", "") or "UNKNOWN"),
             "message": str(getattr(message, "message", "") or ""),
             "targetLm": str(getattr(message, "target_lm", "") or ""),
@@ -1745,3 +2196,8 @@ class RosRobotRuntime:
         level = "error" if state == "ERROR" else ("warn" if state in {"DISCONNECTED", "LOCALIZING"} else "info")
         self._events.append({"stamp": monotonic(), "level": level, "message": message or state})
         self._events = self._events[-120:]
+
+    def _append_runtime_event(self, level: str, message: str) -> None:
+        with self._lock:
+            self._events.append({"stamp": monotonic(), "level": str(level or "info"), "message": str(message or "")})
+            self._events = self._events[-120:]

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+from threading import RLock
 from pathlib import Path
 from time import monotonic, sleep
 
@@ -59,6 +60,7 @@ class RobotMapManagerNode(Node):
         self.state_file = Path(state_file).resolve()
         self._active_map_dir = Path(map_dir).resolve()
         self._active_map_id = self._map_id_for_dir(self._active_map_dir)
+        self._state_lock = RLock()
         self._callback_group = ReentrantCallbackGroup()
         self._map_server_client = self.create_client(
             Nav2LoadMap,
@@ -108,25 +110,27 @@ class RobotMapManagerNode(Node):
         self._persist_state()
 
     def _handle_get_state(self, _request, response):
-        response.ok = True
-        response.error = ""
-        response.map_name = self._active_map_name()
-        response.map_dir = str(self._active_map_dir)
-        response.map_id = self._active_map_id
-        return response
-
-    def _handle_load_map(self, request, response):
-        try:
-            target = self._resolve_target_map(
-                map_name=str(request.map_name or "").strip(),
-                map_dir=str(request.map_dir or "").strip(),
-            )
-            self._load_target_map(target)
+        with self._state_lock:
             response.ok = True
             response.error = ""
             response.map_name = self._active_map_name()
             response.map_dir = str(self._active_map_dir)
             response.map_id = self._active_map_id
+        return response
+
+    def _handle_load_map(self, request, response):
+        try:
+            with self._state_lock:
+                target = self._resolve_target_map(
+                    map_name=str(request.map_name or "").strip(),
+                    map_dir=str(request.map_dir or "").strip(),
+                )
+                self._load_target_map(target)
+                response.ok = True
+                response.error = ""
+                response.map_name = self._active_map_name()
+                response.map_dir = str(self._active_map_dir)
+                response.map_id = self._active_map_id
         except Exception as exc:  # pragma: no cover - ROS service boundary
             response.ok = False
             response.error = str(exc)
@@ -137,26 +141,27 @@ class RobotMapManagerNode(Node):
 
     def _handle_list_maps(self, _request, response):
         try:
-            names: list[str] = []
-            dirs: list[str] = []
-            ids: list[str] = []
-            for item in sorted(self.maps_root.glob("*.smap")):
-                if not item.is_dir() or not (item / "LMs.yaml").exists():
-                    continue
-                names.append(item.stem.replace(".smap", ""))
-                dirs.append(str(item.resolve()))
-                try:
-                    ids.append(self._map_id_for_dir(item))
-                except Exception:
-                    ids.append("")
-            response.ok = True
-            response.error = ""
-            response.active_map_name = self._active_map_name()
-            response.active_map_dir = str(self._active_map_dir)
-            response.active_map_id = self._active_map_id
-            response.map_names = names
-            response.map_dirs = dirs
-            response.map_ids = ids
+            with self._state_lock:
+                names: list[str] = []
+                dirs: list[str] = []
+                ids: list[str] = []
+                for item in sorted(self.maps_root.glob("*.smap")):
+                    if not item.is_dir() or not (item / "LMs.yaml").exists():
+                        continue
+                    names.append(item.stem.replace(".smap", ""))
+                    dirs.append(str(item.resolve()))
+                    try:
+                        ids.append(self._map_id_for_dir(item))
+                    except Exception:
+                        ids.append("")
+                response.ok = True
+                response.error = ""
+                response.active_map_name = self._active_map_name()
+                response.active_map_dir = str(self._active_map_dir)
+                response.active_map_id = self._active_map_id
+                response.map_names = names
+                response.map_dirs = dirs
+                response.map_ids = ids
         except Exception as exc:  # pragma: no cover - ROS service boundary
             response.ok = False
             response.error = str(exc)
@@ -170,18 +175,19 @@ class RobotMapManagerNode(Node):
 
     def _handle_get_bundle(self, request, response):
         try:
-            target = self._resolve_target_map(
-                map_name=str(request.map_name or "").strip() or self._active_map_name(),
-                map_dir="",
-            )
-            payload = build_editable_map_bundle_payload(target)
-            response.ok = True
-            response.error = ""
-            response.map_name = str(payload.get("mapName") or target.stem.replace(".smap", ""))
-            response.map_dir = str(target)
-            response.map_id = self._map_id_for_dir(target)
-            response.signature = str(payload.get("signature") or editable_map_signature(payload))
-            response.bundle_json = json.dumps(payload, ensure_ascii=False)
+            with self._state_lock:
+                target = self._resolve_target_map(
+                    map_name=str(request.map_name or "").strip() or self._active_map_name(),
+                    map_dir="",
+                )
+                payload = build_editable_map_bundle_payload(target)
+                response.ok = True
+                response.error = ""
+                response.map_name = str(payload.get("mapName") or target.stem.replace(".smap", ""))
+                response.map_dir = str(target)
+                response.map_id = self._map_id_for_dir(target)
+                response.signature = str(payload.get("signature") or editable_map_signature(payload))
+                response.bundle_json = json.dumps(payload, ensure_ascii=False)
         except Exception as exc:  # pragma: no cover - ROS service boundary
             response.ok = False
             response.error = str(exc)
@@ -194,20 +200,21 @@ class RobotMapManagerNode(Node):
 
     def _handle_put_bundle(self, request, response):
         try:
-            payload = json.loads(str(request.bundle_json or "{}"))
-            if not isinstance(payload, dict):
-                raise ValueError("bundle_json must contain an object")
-            map_name = str(request.map_name or payload.get("mapName") or "").strip()
-            target = self._resolve_put_target_map(map_name)
-            restore_editable_map_bundle(target, payload)
-            if bool(request.activate):
-                self._load_target_map(target)
-            response.ok = True
-            response.error = ""
-            response.map_name = target.stem.replace(".smap", "")
-            response.map_dir = str(target)
-            response.map_id = self._map_id_for_dir(target)
-            response.signature = str(payload.get("signature") or editable_map_signature(payload))
+            with self._state_lock:
+                payload = json.loads(str(request.bundle_json or "{}"))
+                if not isinstance(payload, dict):
+                    raise ValueError("bundle_json must contain an object")
+                map_name = str(request.map_name or payload.get("mapName") or "").strip()
+                target = self._resolve_put_target_map(map_name)
+                restore_editable_map_bundle(target, payload)
+                if bool(request.activate):
+                    self._load_target_map(target)
+                response.ok = True
+                response.error = ""
+                response.map_name = target.stem.replace(".smap", "")
+                response.map_dir = str(target)
+                response.map_id = self._map_id_for_dir(target)
+                response.signature = str(payload.get("signature") or editable_map_signature(payload))
         except Exception as exc:  # pragma: no cover - ROS service boundary
             response.ok = False
             response.error = str(exc)
