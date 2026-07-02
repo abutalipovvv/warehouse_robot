@@ -33,9 +33,7 @@ class OperatorWorkspace:
 
     def robot_dir(self, robot: KnownRobot | str) -> Path:
         if isinstance(robot, KnownRobot):
-            identity_name = robot.last_identity.get("robotId") if isinstance(robot.last_identity, dict) else ""
-            name = robot.name or identity_name or robot.id
-            return self.root / self._safe_name(name or robot.id)
+            return self.root / self._safe_name(robot.id)
         return self.root / self._safe_name(robot)
 
     def maps_dir(self, robot: KnownRobot | str) -> Path:
@@ -57,8 +55,10 @@ class OperatorWorkspace:
         if legacy_maps_dir and legacy_maps_dir.is_dir() and not any(maps_dir.iterdir()):
             self._copy_legacy_maps(legacy_maps_dir, maps_dir)
         meta = {
+            "operatorRobotId": robot.id,
             "robotId": robot.id,
             "name": robot.name,
+            "identityRobotId": robot.last_identity.get("robotId") if isinstance(robot.last_identity, dict) else "",
             "host": robot.host,
             "port": robot.port,
             "type": robot.type,

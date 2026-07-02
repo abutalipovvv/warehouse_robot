@@ -209,7 +209,7 @@ class GrpcRobotClient:
                 params_json=json_dumps(params_payload if isinstance(params_payload, dict) else {}),
                 use_sim_time=bool(use_sim_time),
             ),
-            timeout=max(self.timeout, 10.0),
+            timeout=max(self.timeout, 60.0),
         )
         return self._slam_state_response(response)
 

@@ -1706,6 +1706,33 @@ class OperatorApp {
     return Boolean(robot && ["grpc", "aivison_grpc", "real_grpc"].includes(type));
   }
 
+  robotBaseName(robot) {
+    const identity = robot?.identity || robot?.lastIdentity || {};
+    return String(robot?.name || identity.robotId || robot?.id || "-");
+  }
+
+  robotEndpointLabel(robot) {
+    if (!robot || this.isFleetManager(robot)) {
+      return "";
+    }
+    if (this.isRos2Robot(robot) && String(robot.type || "").toLowerCase().includes("grpc")) {
+      return `${robot.host || "-"}:${robot.port || 50051}`;
+    }
+    return robot.host ? `${robot.host}:${robot.port || ""}`.replace(/:$/, "") : "";
+  }
+
+  robotDisplayName(robot) {
+    const baseName = this.robotBaseName(robot);
+    if (!robot || this.isFleetManager(robot)) {
+      return baseName;
+    }
+    const duplicateCount = this.robots.filter((item) => {
+      return !this.isFleetManager(item) && this.robotBaseName(item) === baseName;
+    }).length;
+    const endpoint = this.robotEndpointLabel(robot);
+    return duplicateCount > 1 && endpoint ? `${baseName} (${endpoint})` : baseName;
+  }
+
   fleetRuntimeMode(status = this.currentStatus) {
     return String(status?.mode || this.fleetModeSelect?.value || "simulation");
   }
@@ -3371,7 +3398,7 @@ class OperatorApp {
       button.innerHTML = `
         <div class="robot-card-header">
           <div>
-            <strong>${this.escapeHtml(robot.name || identity.robotId || robot.id)}</strong>
+            <strong>${this.escapeHtml(this.robotDisplayName(robot))}</strong>
             <p>${connectionLabel}</p>
           </div>
           <div class="robot-card-actions">
@@ -3432,8 +3459,7 @@ class OperatorApp {
     this.emptyState.classList.add("hidden");
     this.robotView.classList.remove("hidden");
     if (this.robotWorkspaceTitle) {
-      const identity = robot.identity || robot.lastIdentity || {};
-      this.robotWorkspaceTitle.textContent = robot.name || identity.robotId || robot.id || "-";
+      this.robotWorkspaceTitle.textContent = this.robotDisplayName(robot);
     }
     this.robotActiveMapText.textContent = this.robotMapState.robotActiveMapName || "-";
     this.operatorActiveMapText.textContent = this.robotMapState.operatorActiveMapName || "-";
@@ -7434,7 +7460,7 @@ class OperatorApp {
     if (!robot) {
       return;
     }
-    const confirmed = window.confirm(`Remove ${robot.name || robot.id} from the operator app?`);
+    const confirmed = window.confirm(`Remove ${this.robotDisplayName(robot)} from the operator app?`);
     if (!confirmed) {
       return;
     }
@@ -7462,7 +7488,7 @@ class OperatorApp {
       this.navigateFleetPage("map");
       return;
     }
-    const robotName = robot.name || robot.identity?.robotId || robot.id;
+    const robotName = this.robotDisplayName(robot);
     const url = `/map-editor.html?robot_id=${encodeURIComponent(robot.id)}&robot_name=${encodeURIComponent(robotName)}`;
     window.location.assign(url);
   }

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ipaddress
 import json
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from threading import Lock, RLock
@@ -172,9 +173,9 @@ class OperatorAppState:
                 or status.get("robotId")
                 or f"robot@{host}"
             ).strip()
-            robot_id = str(payload.get("robotId") or payload.get("robot_id") or identity.get("robotId") or "").strip()
-            if not robot_id:
-                robot_id = f"grpc:{host}:{port}"
+            with self._lock:
+                existing = self._registered_robot_for_endpoint(host, port)
+            robot_id = existing.id if existing else self._grpc_robot_key(host, port)
             robot = KnownRobot(
                 id=robot_id,
                 name=robot_name,
@@ -193,6 +194,17 @@ class OperatorAppState:
                 "cache": cache,
             }
         raise ValueError("robot transport must be grpc")
+
+    def _registered_robot_for_endpoint(self, host: str, port: int) -> KnownRobot | None:
+        for robot in self.registry.load():
+            if robot.is_grpc and robot.host == host and int(robot.port) == int(port):
+                return robot
+        return None
+
+    @staticmethod
+    def _grpc_robot_key(host: str, port: int) -> str:
+        safe_host = re.sub(r"[^A-Za-z0-9_.-]+", "_", host.strip().lower()).strip("._") or "robot"
+        return f"grpc_{safe_host}_{int(port)}"
 
     def delete_robot_payload(self, robot_id: str) -> dict[str, Any]:
         if robot_id == FLEET_MANAGER_ID:
