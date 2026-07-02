@@ -24,11 +24,21 @@ def _reset_odom_before_slam(context, *args, **kwargs):
 
     import rclpy
     from rclpy.context import Context
+    from rclpy.executors import SingleThreadedExecutor
     from std_srvs.srv import Empty
 
     reset_context = Context()
-    rclpy.init(args=None, context=reset_context)
-    node = rclpy.create_node('slam_toolbox_reset_odom', context=reset_context)
+    rclpy.init(args=[], context=reset_context)
+    node = rclpy.create_node(
+        'slam_toolbox_reset_odom',
+        context=reset_context,
+        cli_args=[],
+        use_global_arguments=False,
+        enable_rosout=False,
+        start_parameter_services=False,
+    )
+    executor = SingleThreadedExecutor(context=reset_context)
+    executor.add_node(node)
     try:
         client = node.create_client(Empty, service_name)
         if not client.wait_for_service(timeout_sec=timeout_sec):
@@ -36,12 +46,14 @@ def _reset_odom_before_slam(context, *args, **kwargs):
         future = client.call_async(Empty.Request())
         deadline = time.monotonic() + timeout_sec
         while rclpy.ok(context=reset_context) and not future.done() and time.monotonic() < deadline:
-            rclpy.spin_once(node, timeout_sec=0.05)
+            executor.spin_once(timeout_sec=0.05)
         if not future.done():
             raise RuntimeError(f'{service_name} service timed out')
         if future.exception() is not None:
             raise RuntimeError(f'{service_name} service failed: {future.exception()}')
     finally:
+        executor.remove_node(node)
+        executor.shutdown()
         node.destroy_node()
         reset_context.try_shutdown()
     return [LogInfo(msg=f'[LifecycleLaunch] Odometry reset via {service_name}.')]
