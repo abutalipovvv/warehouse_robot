@@ -1461,6 +1461,7 @@ class OperatorApp {
     }
     await this.refreshRobotMapState({ quiet: true });
     await this.fetchSelectedRobotStatus(true);
+    await this.refreshSelectedSlamState({ quiet: true });
     this.renderSelectedRobot();
   }
 
@@ -2296,6 +2297,48 @@ class OperatorApp {
     });
   }
 
+  async refreshSelectedSlamState(options = {}) {
+    const robot = this.selectedRobot();
+    if (!robot || this.isFleetManager(robot)) {
+      this.slamActive = false;
+      this.slamState = null;
+      this.syncSlamUi("off");
+      return;
+    }
+    const robotId = robot.id;
+    try {
+      const result = await this.getJson(`/api/robots/${encodeURIComponent(robotId)}/slam/state`);
+      if (this.selectedRobotId !== robotId) {
+        return;
+      }
+      const state = result.state || null;
+      const active = Boolean(state?.active);
+      this.slamState = state;
+      this.slamActive = active;
+      if (active) {
+        if (!this.slamStreamOpen() && !this.slamStreamConnecting()) {
+          this.openSlamStream();
+        }
+        this.syncSlamUi(state?.state || "mapping");
+      } else {
+        if (this.slamRobotId === robotId) {
+          this.closeSlamStream();
+        } else {
+          this.slamMapPayload = null;
+          this.slamMapFrame = null;
+          this.syncSlamUi("off");
+        }
+      }
+    } catch (error) {
+      if (!options.quiet && this.robotMessageText) {
+        this.robotMessageText.textContent = `SLAM state failed: ${error.message || error}`;
+      }
+      if (this.selectedRobotId === robotId) {
+        this.syncSlamUi(this.slamActive ? "state unavailable" : "off");
+      }
+    }
+  }
+
   slamWsUrl(robot) {
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
     return `${protocol}//${window.location.host}/ws/robot/slam?robotId=${encodeURIComponent(robot.id)}&hz=1&includeCells=1`;
@@ -3039,6 +3082,7 @@ class OperatorApp {
     }
     await this.refreshRobotMapState({ quiet: true });
     await this.fetchSelectedRobotStatus(true);
+    await this.refreshSelectedSlamState({ quiet: true });
     if (this.isRobotModelPage()) {
       await this.ensureRobotParamsLoaded();
     }
@@ -3366,6 +3410,7 @@ class OperatorApp {
         }
         await this.refreshRobotMapState({ quiet: true });
         await this.fetchSelectedRobotStatus(true);
+        await this.refreshSelectedSlamState({ quiet: true });
         if (this.isRobotModelPage() && !this.isFleetManager(robot)) {
           await this.ensureRobotParamsLoaded(true);
         }

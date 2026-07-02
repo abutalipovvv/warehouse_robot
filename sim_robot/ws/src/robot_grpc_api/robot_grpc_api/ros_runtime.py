@@ -195,7 +195,6 @@ class RosRobotRuntime:
         self._map_get_bundle_client = None
         self._map_put_bundle_client = None
         self._slam_save_map_client = None
-        self._slam_change_state_client = None
         self._nav2_lifecycle_clients: dict[str, Any] = {}
         self._nav2_change_state_clients: dict[str, Any] = {}
         self._save_map_type = None
@@ -786,7 +785,6 @@ class RosRobotRuntime:
             str(self.slam_launch_file),
             f"slam_params_file:={params_file}",
             f"use_sim_time:={'true' if use_sim_time else 'false'}",
-            "autostart:=false",
         ]
         try:
             print(f"[robot_api_server] Starting 2D SLAM launch: {' '.join(cmd)}", flush=True)
@@ -797,7 +795,6 @@ class RosRobotRuntime:
             sleep(0.5)
             if process.poll() is not None:
                 raise ValueError(f"SLAM launch exited immediately with code {process.returncode}")
-            self._configure_and_activate_slam_toolbox(process)
         except FileNotFoundError as exc:
             shutil.rmtree(temp_dir, ignore_errors=True)
             if bool(nav2_control.get("changed")):
@@ -1816,59 +1813,6 @@ class RosRobotRuntime:
         self._slam_temp_dir = None
         if temp_dir is not None:
             shutil.rmtree(temp_dir, ignore_errors=True)
-
-    def _configure_and_activate_slam_toolbox(self, process: subprocess.Popen) -> None:
-        node = self._node
-        change_state_type = self._change_state_type
-        transition_type = self._transition_type
-        if node is None or change_state_type is None or transition_type is None:
-            raise ValueError("ROS2 lifecycle client is not available")
-
-        service_name = self._topic("/slam_toolbox/change_state")
-        if self._slam_change_state_client is None:
-            self._slam_change_state_client = node.create_client(change_state_type, service_name)
-        client = self._slam_change_state_client
-        self._wait_for_process_service(client, process, "slam_toolbox/change_state", timeout_sec=12.0)
-        self._call_lifecycle_transition(
-            client,
-            int(transition_type.TRANSITION_CONFIGURE),
-            "configure",
-            "slam_toolbox",
-            timeout_sec=45.0,
-        )
-        self._call_lifecycle_transition(
-            client,
-            int(transition_type.TRANSITION_ACTIVATE),
-            "activate",
-            "slam_toolbox",
-            timeout_sec=20.0,
-        )
-
-    def _wait_for_process_service(self, client: Any, process: subprocess.Popen, service_label: str, *, timeout_sec: float) -> None:
-        deadline = monotonic() + max(0.2, float(timeout_sec))
-        while monotonic() < deadline:
-            if process.poll() is not None:
-                raise ValueError(f"{service_label} process exited with code {process.returncode}")
-            if self._service_available(client, 0.2):
-                return
-            sleep(0.05)
-        raise ValueError(f"{service_label} service is not available")
-
-    def _call_lifecycle_transition(
-        self,
-        client: Any,
-        transition_id: int,
-        transition_label: str,
-        node_label: str,
-        *,
-        timeout_sec: float,
-    ) -> None:
-        request = self._change_state_type.Request()
-        request.transition.id = int(transition_id)
-        request.transition.label = str(transition_label)
-        response = self._call_service(client, request, f"{node_label} {transition_label}", timeout_sec=timeout_sec)
-        if not bool(getattr(response, "success", False)):
-            raise ValueError(f"{node_label} {transition_label} returned success=false")
 
     def _yaw_from_quaternion(self, orientation: Any) -> float:
         if orientation is None:
