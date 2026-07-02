@@ -2629,8 +2629,14 @@ class OperatorApp {
       return;
     }
     const robot = this.statusForRobotDisplay(this.currentStatus && this.currentStatus.robot ? this.currentStatus.robot : null);
-    const pose = robot && robot.pose ? robot.pose : null;
-    if (!pose || !robot.connected || !robot.localizationOk) {
+    const rawPose = this.slamActive && this.slamMapFrame?.pose
+      ? this.slamMapFrame.pose
+      : (robot && robot.pose ? robot.pose : null);
+    const pose = rawPose ? this.displayPoseForActiveMap(rawPose) : null;
+    const canDraw = this.slamActive
+      ? Boolean(pose && this.slamMapPayload)
+      : Boolean(pose && robot.connected && robot.localizationOk);
+    if (!canDraw) {
       return;
     }
     const ranges = Array.isArray(frame.ranges) ? frame.ranges : [];
@@ -4773,7 +4779,7 @@ class OperatorApp {
     if (!this.slamActive || trail.length < 2) {
       return;
     }
-    this.appendRoutePolyline(trail, "slam-trail");
+    this.appendRoutePolyline(trail.map((point) => this.displayPointForActiveMap(point)), "slam-trail");
   }
 
   drawFleetRoute(robot) {
@@ -5031,8 +5037,14 @@ class OperatorApp {
       return;
     }
     const robot = this.statusForRobotDisplay(this.currentStatus && this.currentStatus.robot ? this.currentStatus.robot : null);
-    const pose = robot && robot.pose ? robot.pose : null;
-    if (!pose || !robot.connected || !robot.localizationOk) {
+    const rawPose = this.slamActive && this.slamMapFrame?.pose
+      ? this.slamMapFrame.pose
+      : (robot && robot.pose ? robot.pose : null);
+    const pose = rawPose ? this.displayPoseForActiveMap(rawPose) : null;
+    const canDraw = this.slamActive
+      ? Boolean(pose && this.slamMapPayload)
+      : Boolean(pose && robot.connected && robot.localizationOk);
+    if (!canDraw) {
       return;
     }
     const center = this.worldToPixel(pose);
@@ -5100,6 +5112,58 @@ class OperatorApp {
 
   landmarkIndex() {
     return new Map((this.activeOperatorMapPayload()?.lms || []).map((lm) => [lm.name, lm]));
+  }
+
+  displayPoseForActiveMap(pose) {
+    const source = pose && typeof pose === "object" ? pose : {};
+    const point = this.displayPointForActiveMap(pose);
+    if (!this.shouldTransformLiveSlamPoint()) {
+      return {
+        ...source,
+        x: point.x,
+        y: point.y,
+        yaw: Number(source.yaw || 0),
+      };
+    }
+    return {
+      ...source,
+      x: point.x,
+      y: point.y,
+      yaw: this.normalizeAngle(-Number(source.yaw || 0)),
+    };
+  }
+
+  displayPointForActiveMap(point) {
+    const source = point && typeof point === "object" ? point : {};
+    if (!this.shouldTransformLiveSlamPoint()) {
+      return {
+        ...source,
+        x: Number(source.x || 0),
+        y: Number(source.y || 0),
+      };
+    }
+    const map = this.slamMapPayload?.map || {};
+    const resolution = Number(map.resolution || 0);
+    const height = Number(map.height || 0);
+    const rosOrigin = Array.isArray(map.rosOrigin) ? map.rosOrigin : [0, 0, 0];
+    const originX = Number(rosOrigin[0] || 0);
+    const originY = Number(rosOrigin[1] || 0);
+    return {
+      ...source,
+      x: Number(source.x || 0) - originX,
+      y: (height * resolution) - (Number(source.y || 0) - originY),
+    };
+  }
+
+  shouldTransformLiveSlamPoint() {
+    const map = this.slamMapPayload?.map || null;
+    return Boolean(
+      this.slamActive
+      && map
+      && Array.isArray(map.rosOrigin)
+      && Number(map.resolution || 0) > 0
+      && Number(map.height || 0) > 0
+    );
   }
 
   worldToPixel(point) {
