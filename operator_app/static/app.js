@@ -2354,7 +2354,9 @@ class OperatorApp {
         width,
         height,
         resolution,
-        origin: [originX, originY, originYaw],
+        origin: [0, 0, 0],
+        rosOrigin: [originX, originY, originYaw],
+        coordinateFrame: "map_top_left",
         viewPadding: padding,
         viewWidth: width + (padding * 2),
         viewHeight: height + (padding * 2),
@@ -2583,7 +2585,7 @@ class OperatorApp {
       if (!Number.isFinite(range) || range <= rangeMin || range > rangeMax) {
         continue;
       }
-      const angle = yaw + angleMin + (index * angleIncrement);
+      const angle = yaw - (angleMin + (index * angleIncrement));
       const point = this.worldToPixel({
         x: originX + (Math.cos(angle) * range),
         y: originY + (Math.sin(angle) * range),
@@ -2613,9 +2615,9 @@ class OperatorApp {
     const cos = Math.cos(yaw);
     const sin = Math.sin(yaw);
     return {
-      x: baseX + (offsetX * cos) - (offsetY * sin),
-      y: baseY + (offsetX * sin) + (offsetY * cos),
-      yaw: yaw + offsetYaw,
+      x: baseX + (offsetX * cos) + (offsetY * sin),
+      y: baseY + (offsetX * sin) - (offsetY * cos),
+      yaw: yaw - offsetYaw,
     };
   }
 
@@ -4946,7 +4948,7 @@ class OperatorApp {
         heading.setAttribute("x1", String(center.x));
         heading.setAttribute("y1", String(center.y));
         heading.setAttribute("x2", String(center.x + Math.cos(Number(pose.yaw || 0)) * 18));
-        heading.setAttribute("y2", String(center.y - Math.sin(Number(pose.yaw || 0)) * 18));
+        heading.setAttribute("y2", String(center.y + Math.sin(Number(pose.yaw || 0)) * 18));
         group.append(heading);
         const label = document.createElementNS("http://www.w3.org/2000/svg", "text");
         label.setAttribute("x", String(center.x));
@@ -4967,24 +4969,31 @@ class OperatorApp {
       this.focusMapOn(center);
     }
     const group = document.createElementNS("http://www.w3.org/2000/svg", "g");
-    const body = document.createElementNS("http://www.w3.org/2000/svg", "circle");
-    body.setAttribute("class", "robot-body");
-    body.setAttribute("cx", String(center.x));
-    body.setAttribute("cy", String(center.y));
-    body.setAttribute("r", "12");
-    group.append(body);
+    const footprint = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
+    footprint.setAttribute("class", "robot-footprint");
+    footprint.setAttribute("points", this.robotFootprintPoints(pose));
+    group.append(footprint);
+    const centerDot = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+    centerDot.setAttribute("class", "robot-center-dot");
+    centerDot.setAttribute("cx", String(center.x));
+    centerDot.setAttribute("cy", String(center.y));
+    centerDot.setAttribute("r", "4");
+    group.append(centerDot);
     const heading = document.createElementNS("http://www.w3.org/2000/svg", "line");
     heading.setAttribute("class", "robot-heading");
     heading.setAttribute("x1", String(center.x));
     heading.setAttribute("y1", String(center.y));
     heading.setAttribute("x2", String(center.x + Math.cos(Number(pose.yaw || 0)) * 20));
-    heading.setAttribute("y2", String(center.y - Math.sin(Number(pose.yaw || 0)) * 20));
+    heading.setAttribute("y2", String(center.y + Math.sin(Number(pose.yaw || 0)) * 20));
     group.append(heading);
     this.operatorRobotLayer.append(group);
   }
 
   robotFootprintPoints(pose) {
-    const model = this.fleetParams?.robot_model || this.fleetModelEditor?.getModel() || {};
+    const model = (!this.isFleetManager() ? this.robotParams?.robot_model : null)
+      || this.fleetParams?.robot_model
+      || this.fleetModelEditor?.getModel()
+      || {};
     const footprint = Array.isArray(model.footprint) && model.footprint.length >= 3
       ? model.footprint
       : [
@@ -5010,8 +5019,8 @@ class OperatorApp {
     const sin = Math.sin(yaw);
     return footprint.map((point) => {
       const world = {
-        x: Number(pose.x || 0) + (Number(point.x || 0) * cos) - (Number(point.y || 0) * sin),
-        y: Number(pose.y || 0) + (Number(point.x || 0) * sin) + (Number(point.y || 0) * cos),
+        x: Number(pose.x || 0) + (Number(point.x || 0) * cos) + (Number(point.y || 0) * sin),
+        y: Number(pose.y || 0) + (Number(point.x || 0) * sin) - (Number(point.y || 0) * cos),
       };
       const pixel = this.worldToPixel(world);
       return `${pixel.x},${pixel.y}`;
@@ -5024,25 +5033,21 @@ class OperatorApp {
 
   worldToPixel(point) {
     const map = this.activeOperatorMapPayload()?.map || {};
-    const origin = Array.isArray(map.origin) ? map.origin : [0, 0, 0];
     const resolution = Number(map.resolution || 1);
     const padding = Number(map.viewPadding || 0);
-    const height = Number(map.height || 0);
     return {
-      x: padding + ((Number(point.x || 0) - Number(origin[0] || 0)) / resolution),
-      y: padding + (height - 1) - ((Number(point.y || 0) - Number(origin[1] || 0)) / resolution),
+      x: padding + (Number(point.x || 0) / resolution),
+      y: padding + (Number(point.y || 0) / resolution),
     };
   }
 
   pixelToWorld(point) {
     const map = this.activeOperatorMapPayload()?.map || {};
-    const origin = Array.isArray(map.origin) ? map.origin : [0, 0, 0];
     const resolution = Number(map.resolution || 1);
     const padding = Number(map.viewPadding || 0);
-    const height = Number(map.height || 0);
     return {
-      x: ((point.x - padding) * resolution) + Number(origin[0] || 0),
-      y: ((height - 1) - (point.y - padding)) * resolution + Number(origin[1] || 0),
+      x: (point.x - padding) * resolution,
+      y: (point.y - padding) * resolution,
     };
   }
 
@@ -5232,7 +5237,7 @@ class OperatorApp {
       start,
       end: {
         x: start.x + (Math.cos(yaw) * previewLength),
-        y: start.y - (Math.sin(yaw) * previewLength),
+        y: start.y + (Math.sin(yaw) * previewLength),
       },
       hasDirection: false,
     };
@@ -5310,7 +5315,7 @@ class OperatorApp {
     return {
       x: Number(world.x || 0),
       y: Number(world.y || 0),
-      yaw: Math.atan2(-dy, dx),
+      yaw: Math.atan2(dy, dx),
     };
   }
 

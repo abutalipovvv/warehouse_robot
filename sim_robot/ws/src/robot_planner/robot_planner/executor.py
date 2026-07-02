@@ -179,7 +179,7 @@ class RouteExecutor:
             linear = drive_sign * min(abs(linear), rejoin_speed_limit)
         if hard_rejoin:
             linear = drive_sign * min(abs(linear), hard_rejoin_speed_limit)
-        self._publish_cmd_vel(linear, angular)
+        self._publish_cmd_vel(linear, self.route_planner.map_angular_to_ros(angular))
 
     def _path_distances(self, points: list[RoutePoint]) -> list[float]:
         distances = [0.0]

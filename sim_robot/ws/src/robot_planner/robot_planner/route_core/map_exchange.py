@@ -33,6 +33,7 @@ def build_editable_map_payload(
     payload = {
         "ok": True,
         "mapName": loaded_map.map_dir.stem.replace(".smap", ""),
+        "coordinateFrame": "map_top_left",
         "mapDir": str(loaded_map.map_dir),
         "map": loaded_map.map_metadata.to_dict(),
         "lms": [item.to_dict() for item in landmarks],

@@ -739,7 +739,7 @@
     obsExpansion: 0
 - from: LM320
   to: LM295
-  length: 1.763002
+  length: 2.483
   kind: curve
   type: DegenerateBezier
   properties:
@@ -799,7 +799,7 @@
     obsExpansion: 0
 - from: LM310
   to: LM311
-  length: 0.487466
+  length: 0.450001
   kind: curve
   type: DegenerateBezier
   properties:
@@ -808,7 +808,7 @@
     obsExpansion: 0
 - from: LM311
   to: LM312
-  length: 0.413587
+  length: 0.450001
   kind: curve
   type: DegenerateBezier
   properties:
@@ -913,7 +913,7 @@
     obsExpansion: 0
 - from: LM295
   to: LM296
-  length: 1.16
+  length: 0.440001
   kind: curve
   type: DegenerateBezier
   properties:

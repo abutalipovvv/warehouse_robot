@@ -28,17 +28,17 @@ class WarehouseMapLoader:
         png_bytes = self._build_grayscale_png(width, height, pixels)
         image_png_base64 = base64.b64encode(png_bytes).decode("ascii")
 
-        landmarks = self._load_landmarks(self.map_dir / "LMs.yaml")
-        edges = self._load_edges(self.map_dir / "graph_edges_lengths.yaml", landmarks)
         map_name = str(ros_map.get("image", image_path.stem)).replace(".pgm", "")
         map_metadata = MapMetadata(
             map_name=map_name,
             width=width,
             height=height,
             resolution=float(ros_map["resolution"]),
-            origin=ros_map["origin"],
+            ros_origin=ros_map["origin"],
             image_data_url=f"data:image/png;base64,{image_png_base64}",
         )
+        landmarks = self._load_landmarks(self.map_dir / "LMs.yaml", map_metadata)
+        edges = self._load_edges(self.map_dir / "graph_edges_lengths.yaml", landmarks, map_metadata)
         return LoadedMapData(
             map_dir=self.map_dir,
             map_metadata=map_metadata,
@@ -131,17 +131,42 @@ class WarehouseMapLoader:
         png.extend(chunk(b"IEND", b""))
         return bytes(png)
 
-    def _load_landmarks(self, path: Path) -> dict[str, Landmark]:
+    def _coordinate_frame_is_map_top_left(self, payload: object) -> bool:
+        return (
+            isinstance(payload, dict)
+            and str(payload.get("coordinateFrame") or payload.get("coordinate_frame") or "").strip() == "map_top_left"
+        )
+
+    def _map_point_from_payload(
+        self,
+        point: object,
+        map_metadata: MapMetadata,
+        *,
+        already_map_frame: bool,
+    ) -> WorldPoint | None:
+        if not isinstance(point, dict):
+            return None
+        try:
+            raw = WorldPoint(x=float(point["x"]), y=float(point["y"]))
+        except (KeyError, TypeError, ValueError):
+            return None
+        return raw if already_map_frame else map_metadata.ros_to_map_point(raw)
+
+    def _load_landmarks(self, path: Path, map_metadata: MapMetadata) -> dict[str, Landmark]:
         payload = self._read_yaml(path)
         if not isinstance(payload, dict) or "LMs" not in payload:
             raise ValueError(f"Unexpected LM file format: {path}")
+        already_map_frame = self._coordinate_frame_is_map_top_left(payload)
 
         landmarks: dict[str, Landmark] = {}
         for item in payload["LMs"]:
+            point = self._map_point_from_payload(item, map_metadata, already_map_frame=already_map_frame)
+            if point is None:
+                continue
             landmark = Landmark(
                 name=str(item["name"]),
-                x=float(item["x"]),
-                y=float(item["y"]),
+                x=point.x,
+                y=point.y,
                 properties=dict(item.get("properties") or {}),
                 ignore_dir=item.get("ignoreDir"),
             )
@@ -152,6 +177,7 @@ class WarehouseMapLoader:
         self,
         path: Path,
         landmarks: dict[str, Landmark],
+        map_metadata: MapMetadata,
     ) -> list[GraphEdge]:
         payload = self._read_yaml(path)
         if not isinstance(payload, list):
@@ -160,6 +186,7 @@ class WarehouseMapLoader:
         geometries, primitive_edges, primitive_properties = self._load_graph_geometries(
             path.parent / "graphs.yaml",
             landmarks,
+            map_metadata,
         )
         edges: list[GraphEdge] = []
         for item in payload:
@@ -192,6 +219,7 @@ class WarehouseMapLoader:
         self,
         path: Path,
         landmarks: dict[str, Landmark],
+        map_metadata: MapMetadata,
     ) -> tuple[
         dict[tuple[str, str], EdgeGeometry],
         set[tuple[str, str]],
@@ -203,6 +231,7 @@ class WarehouseMapLoader:
         payload = self._read_yaml(path)
         if not isinstance(payload, dict):
             return {}, set(), {}
+        already_map_frame = self._coordinate_frame_is_map_top_left(payload)
 
         primitives = payload.get("primitives", [])
         if not isinstance(primitives, list):
@@ -222,8 +251,16 @@ class WarehouseMapLoader:
 
             start_name = endpoint_payload.get("start_name")
             end_name = endpoint_payload.get("end_name")
-            start_point = endpoint_payload.get("start")
-            end_point = endpoint_payload.get("end")
+            start_point = self._map_point_from_payload(
+                endpoint_payload.get("start"),
+                map_metadata,
+                already_map_frame=already_map_frame,
+            )
+            end_point = self._map_point_from_payload(
+                endpoint_payload.get("end"),
+                map_metadata,
+                already_map_frame=already_map_frame,
+            )
             key = self._primitive_edge_key(
                 start_name=start_name,
                 end_name=end_name,
@@ -242,13 +279,16 @@ class WarehouseMapLoader:
             point_keys = ("start", "control1", "control2", "end")
             try:
                 control_points = tuple(
-                    WorldPoint(
-                        x=float(endpoint_payload[key]["x"]),
-                        y=float(endpoint_payload[key]["y"]),
+                    self._map_point_from_payload(
+                        endpoint_payload[key],
+                        map_metadata,
+                        already_map_frame=already_map_frame,
                     )
                     for key in point_keys
                 )
-            except (KeyError, TypeError, ValueError):
+            except KeyError:
+                continue
+            if any(point is None for point in control_points):
                 continue
 
             geometry = EdgeGeometry(
@@ -264,8 +304,8 @@ class WarehouseMapLoader:
         self,
         start_name: object,
         end_name: object,
-        start_point: object,
-        end_point: object,
+        start_point: WorldPoint | None,
+        end_point: WorldPoint | None,
         landmarks: dict[str, Landmark],
     ) -> tuple[str, str] | None:
         start_key = str(start_name) if start_name is not None else ""
@@ -282,23 +322,18 @@ class WarehouseMapLoader:
 
     def _nearest_landmark_name(
         self,
-        point: object,
+        point: WorldPoint | None,
         landmarks: dict[str, Landmark],
         max_radius_m: float = 0.75,
     ) -> str:
-        if not isinstance(point, dict):
-            return ""
-        try:
-            x = float(point["x"])
-            y = float(point["y"])
-        except (KeyError, TypeError, ValueError):
+        if point is None:
             return ""
         best = min(
             landmarks.values(),
-            key=lambda landmark: ((landmark.x - x) ** 2) + ((landmark.y - y) ** 2),
+            key=lambda landmark: ((landmark.x - point.x) ** 2) + ((landmark.y - point.y) ** 2),
             default=None,
         )
         if best is None:
             return ""
-        distance = ((best.x - x) ** 2 + (best.y - y) ** 2) ** 0.5
+        distance = ((best.x - point.x) ** 2 + (best.y - point.y) ** 2) ** 0.5
         return best.name if distance <= max_radius_m else ""

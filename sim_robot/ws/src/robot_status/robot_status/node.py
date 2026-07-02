@@ -13,7 +13,7 @@ from tf2_ros import Buffer, TransformException, TransformListener
 
 from robot_msgs.msg import ExecutorState, RobotStatus
 from robot_msgs.srv import LoadRobotMap
-from robot_planner import RobotTrajectoryPlanner
+from robot_planner import Pose2D, RobotTrajectoryPlanner
 
 AMCL_QOS = QoSProfile(
     history=HistoryPolicy.KEEP_LAST,
@@ -260,10 +260,11 @@ class RobotStatusNode(Node):
         return response
 
     def _set_pose(self, x: float, y: float, yaw: float) -> None:
+        pose = self.route_planner.ros_pose_to_map(Pose2D(x=float(x), y=float(y), yaw=float(yaw)))
         self._pose = {
-            "x": float(x),
-            "y": float(y),
-            "yaw": float(yaw),
+            "x": float(pose.x),
+            "y": float(pose.y),
+            "yaw": float(pose.yaw),
         }
         self._pose_updated_at = monotonic()
 

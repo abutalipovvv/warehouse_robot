@@ -1504,8 +1504,8 @@ primitives:
       x: -4.903
       y: 5.309
     end:
-      x: -3.14
-      y: 5.311
+      x: -2.42
+      y: 5.31
     control1:
       x: -4.075
       y: 5.309
@@ -1518,7 +1518,7 @@ primitives:
     direction: 1
     movestyle: 0
     obsExpansion: 0
-  length_m: 1.763002
+  length_m: 2.483
 - kind: curve
   curve_type: DegenerateBezier
   curve:
@@ -1642,8 +1642,8 @@ primitives:
       x: 4.472
       y: 5.327
     end:
-      x: 4.959
-      y: 5.344
+      x: 4.922
+      y: 5.328
     control1:
       x: 4.622
       y: 5.327
@@ -1656,13 +1656,13 @@ primitives:
     direction: 1
     movestyle: 0
     obsExpansion: 0
-  length_m: 0.487466
+  length_m: 0.450001
 - kind: curve
   curve_type: DegenerateBezier
   curve:
     start:
-      x: 4.959
-      y: 5.344
+      x: 4.922
+      y: 5.328
     end:
       x: 5.372
       y: 5.329
@@ -1678,7 +1678,7 @@ primitives:
     direction: 1
     movestyle: 0
     obsExpansion: 0
-  length_m: 0.413587
+  length_m: 0.450001
 - kind: curve
   curve_type: DegenerateBezier
   curve:
@@ -1935,8 +1935,8 @@ primitives:
   curve_type: DegenerateBezier
   curve:
     start:
-      x: -3.14
-      y: 5.311
+      x: -2.42
+      y: 5.31
     end:
       x: -1.98
       y: 5.311
@@ -1951,7 +1951,7 @@ primitives:
   properties:
     direction: 1
     obsExpansion: 0
-  length_m: 1.16
+  length_m: 0.440001
 - kind: curve
   curve_type: DegenerateBezier
   curve:

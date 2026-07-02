@@ -1303,25 +1303,21 @@ class RobotMapEditorApp {
 
   worldToSvg(point) {
     const mapMeta = this.currentMap?.map || {};
-    const origin = Array.isArray(mapMeta.origin) ? mapMeta.origin : [0, 0, 0];
     const resolution = Number(mapMeta.resolution || 1);
     const padding = Number(mapMeta.viewPadding || 0);
-    const height = Number(mapMeta.height || 0);
     return {
-      x: padding + ((Number(point.x) - Number(origin[0] || 0)) / resolution),
-      y: padding + height - ((Number(point.y) - Number(origin[1] || 0)) / resolution),
+      x: padding + (Number(point.x) / resolution),
+      y: padding + (Number(point.y) / resolution),
     };
   }
 
   svgToWorld(point) {
     const mapMeta = this.currentMap?.map || {};
-    const origin = Array.isArray(mapMeta.origin) ? mapMeta.origin : [0, 0, 0];
     const resolution = Number(mapMeta.resolution || 1);
     const padding = Number(mapMeta.viewPadding || 0);
-    const height = Number(mapMeta.height || 0);
     return {
-      x: this.round(Number(origin[0] || 0) + ((point.x - padding) * resolution)),
-      y: this.round(Number(origin[1] || 0) + ((height - (point.y - padding)) * resolution)),
+      x: this.round((point.x - padding) * resolution),
+      y: this.round((point.y - padding) * resolution),
     };
   }
 

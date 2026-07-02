@@ -3409,11 +3409,10 @@ class FleetCollisionChecker:
 
     def world_to_image(self, point: dict[str, float]) -> dict[str, int]:
         assert self.map_metadata is not None
-        origin = self.map_metadata.origin
         resolution = self.map_metadata.resolution
         return {
-            "x": round((point["x"] - float(origin[0])) / resolution),
-            "y": round((self.map_metadata.height - 1) - ((point["y"] - float(origin[1])) / resolution)),
+            "x": round(point["x"] / resolution),
+            "y": round(point["y"] / resolution),
         }
 
     def polygons_overlap(

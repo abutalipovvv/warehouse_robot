@@ -295,8 +295,8 @@ LMs:
   properties:
     spin: false
 - name: LM295
-  x: -3.14
-  y: 5.311
+  x: -2.42
+  y: 5.31
   ignoreDir: null
   properties:
     spin: false
@@ -391,8 +391,8 @@ LMs:
   properties:
     spin: false
 - name: LM311
-  x: 4.959
-  y: 5.344
+  x: 4.922
+  y: 5.328
   ignoreDir: null
   properties:
     spin: false

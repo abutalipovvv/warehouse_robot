@@ -4,7 +4,7 @@ import math
 from pathlib import Path
 from typing import Any
 
-from .route_core import LmRoutePlanner, PlannedRoute, WarehouseMapLoader, load_route_params
+from .route_core import LmRoutePlanner, PlannedRoute, WarehouseMapLoader, WorldPoint, load_route_params
 
 from .runtime import PlannedRobotRoute, Pose2D, RoutePoint
 
@@ -38,6 +38,25 @@ class RobotTrajectoryPlanner:
     @property
     def map_id(self) -> str:
         return self.loaded_map.map_metadata.map_name
+
+    def ros_pose_to_map(self, pose: Pose2D) -> Pose2D:
+        point = self.loaded_map.map_metadata.ros_to_map_point(WorldPoint(x=pose.x, y=pose.y))
+        return Pose2D(
+            x=point.x,
+            y=point.y,
+            yaw=self.loaded_map.map_metadata.ros_yaw_to_map(pose.yaw),
+        )
+
+    def map_pose_to_ros(self, pose: Pose2D) -> Pose2D:
+        point = self.loaded_map.map_metadata.map_to_ros_point(WorldPoint(x=pose.x, y=pose.y))
+        return Pose2D(
+            x=point.x,
+            y=point.y,
+            yaw=self.loaded_map.map_metadata.map_yaw_to_ros(pose.yaw),
+        )
+
+    def map_angular_to_ros(self, angular: float) -> float:
+        return -float(angular)
 
     def update_params(self, params: dict[str, Any]) -> None:
         self.params = params

@@ -15,6 +15,7 @@ from time import monotonic, sleep
 from typing import Any
 
 import yaml
+from fleet_manager.route_core import WarehouseMapLoader, WorldPoint
 
 NAV2_RUNTIME_PARAMETERS: tuple[tuple[str, str, str], ...] = (
     ("nav2.amcl.update_min_d", "/amcl/set_parameters", "update_min_d"),
@@ -456,15 +457,16 @@ class RosRobotRuntime:
         self._ensure_control_owner(owner_id, action="relocate")
         if self._initial_pose_pub is None or self._pose_with_covariance_type is None:
             raise ValueError(self._error or "initial pose publisher is not available")
+        ros_x, ros_y, ros_yaw = self._map_pose_to_ros_pose(float(x), float(y), float(yaw))
         message = self._pose_with_covariance_type()
         message.header.frame_id = str(frame_id or "map")
         if self._node is not None:
             message.header.stamp = self._node.get_clock().now().to_msg()
-        message.pose.pose.position.x = float(x)
-        message.pose.pose.position.y = float(y)
+        message.pose.pose.position.x = ros_x
+        message.pose.pose.position.y = ros_y
         message.pose.pose.position.z = 0.0
-        qz = math.sin(float(yaw) * 0.5)
-        qw = math.cos(float(yaw) * 0.5)
+        qz = math.sin(ros_yaw * 0.5)
+        qw = math.cos(ros_yaw * 0.5)
         message.pose.pose.orientation.z = qz
         message.pose.pose.orientation.w = qw
         covariance = self._covariance_from_json(covariance_json)
@@ -480,6 +482,19 @@ class RosRobotRuntime:
             self._localization_confirmed = bool(confirm)
             self._relocation_requested_at = monotonic()
         return {"ok": True, "relocate": {"x": float(x), "y": float(y), "yaw": float(yaw), "frameId": message.header.frame_id}}
+
+    def _map_pose_to_ros_pose(self, x: float, y: float, yaw: float) -> tuple[float, float, float]:
+        active = self.active_map_payload()
+        map_dir = Path(str(active.get("mapDir") or "")).resolve()
+        if not map_dir.is_dir():
+            raise ValueError(f"active map directory is not available: {map_dir}")
+        loaded_map = WarehouseMapLoader(map_dir).load()
+        point = loaded_map.map_metadata.map_to_ros_point(WorldPoint(x=float(x), y=float(y)))
+        return (
+            float(point.x),
+            float(point.y),
+            float(loaded_map.map_metadata.map_yaw_to_ros(float(yaw))),
+        )
 
     def confirm_localization(self, *, accepted: bool = True, message: str = "", owner_id: str = "") -> dict[str, Any]:
         self._ensure_control_owner(owner_id, action="confirm localization")
@@ -1273,23 +1288,30 @@ class RosRobotRuntime:
 
     def _write_empty_smap_sidecars(self, target: Path, safe_name: str) -> None:
         ros_yaml = yaml.safe_load((target / f"{safe_name}.yaml").read_text(encoding="utf-8"))
-        origin = ros_yaml.get("origin") if isinstance(ros_yaml, dict) else [0.0, 0.0, 0.0]
         resolution = float(ros_yaml.get("resolution", 0.05) if isinstance(ros_yaml, dict) else 0.05)
         width = height = 0
         try:
             width, height = self._pgm_size(target / f"{safe_name}.pgm")
         except Exception:
             pass
-        min_x = float(origin[0] if isinstance(origin, list) and origin else 0.0)
-        min_y = float(origin[1] if isinstance(origin, list) and len(origin) > 1 else 0.0)
+        min_x = 0.0
+        min_y = 0.0
         max_x = min_x + (width * resolution)
         max_y = min_y + (height * resolution)
         (target / "LMs.yaml").write_text(
-            yaml.safe_dump({"mapName": safe_name, "LMs": []}, sort_keys=False, allow_unicode=True),
+            yaml.safe_dump(
+                {"mapName": safe_name, "coordinateFrame": "map_top_left", "LMs": []},
+                sort_keys=False,
+                allow_unicode=True,
+            ),
             encoding="utf-8",
         )
         (target / "graphs.yaml").write_text(
-            yaml.safe_dump({"mapName": safe_name, "primitives": []}, sort_keys=False, allow_unicode=True),
+            yaml.safe_dump(
+                {"mapName": safe_name, "coordinateFrame": "map_top_left", "primitives": []},
+                sort_keys=False,
+                allow_unicode=True,
+            ),
             encoding="utf-8",
         )
         (target / "graph_edges_lengths.yaml").write_text(

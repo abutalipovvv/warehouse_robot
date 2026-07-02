@@ -32,6 +32,7 @@ def save_editable_map(
         target_dir / "LMs.yaml",
         {
             "mapName": map_name,
+            "coordinateFrame": "map_top_left",
             "LMs": landmarks,
         },
     )
@@ -39,6 +40,7 @@ def save_editable_map(
         target_dir / "graphs.yaml",
         {
             "mapName": map_name,
+            "coordinateFrame": "map_top_left",
             "primitives": [_edge_to_primitive(edge, landmarks) for edge in edges],
         },
     )
