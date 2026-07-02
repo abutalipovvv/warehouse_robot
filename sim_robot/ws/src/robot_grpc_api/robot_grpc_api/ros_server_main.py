@@ -18,8 +18,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--namespace", default="")
     parser.add_argument("--status-topic", default="/robot_status")
     parser.add_argument("--cmd-vel-topic", default="/cmd_vel")
+    parser.add_argument("--odom-topic", default="/odom")
     parser.add_argument("--initial-pose-topic", default="/initialpose")
     parser.add_argument("--scan-topic", default="/scan")
+    parser.add_argument("--map-frame", default="map")
+    parser.add_argument("--base-frame", default="base_link")
     parser.add_argument("--go-to-lm-topic", default="/go_to_lm")
     parser.add_argument("--plan-service", default="/route/plan")
     parser.add_argument("--execute-service", default="/route/execute")
@@ -34,6 +37,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--map-put-bundle-service", default="/robot/maps/put_bundle")
     parser.add_argument("--map-topic", default="/map")
     parser.add_argument("--slam-save-map-service", default="/slam_toolbox/save_map")
+    parser.add_argument("--reset-odom-service", default="/reset_odom")
     parser.add_argument("--slam-params-file", default="")
     parser.add_argument("--slam-launch-file", default="")
     parser.add_argument("--params", default="")
@@ -49,8 +53,11 @@ def main() -> None:
         namespace=args.namespace,
         status_topic=args.status_topic,
         cmd_vel_topic=args.cmd_vel_topic,
+        odom_topic=args.odom_topic,
         initial_pose_topic=args.initial_pose_topic,
         scan_topic=args.scan_topic,
+        map_frame=args.map_frame,
+        base_frame=args.base_frame,
         go_to_lm_topic=args.go_to_lm_topic,
         plan_service_name=args.plan_service,
         execute_service_name=args.execute_service,
@@ -65,6 +72,7 @@ def main() -> None:
         map_put_bundle_service_name=args.map_put_bundle_service,
         map_topic=args.map_topic,
         slam_save_map_service_name=args.slam_save_map_service,
+        reset_odom_service_name=args.reset_odom_service,
         slam_params_file=args.slam_params_file or None,
         slam_launch_file=args.slam_launch_file or None,
         params_path=args.params,

@@ -136,13 +136,16 @@ private:
     bool imu_initialized_;
     double imu_yaw_bias_;
     double imu_angular_velocity_bias_;
+    double odom_yaw_offset_;
 
     double sample_noise(double stddev);
+    void ensure_imu_initialized();
 
 public:
     Vehicle(size_t id, const Stg::Pose & pose, const std::string & name, StageNode * node);
 
     void soft_reset();
+    void reset_odom();
     size_t id() const;
     const std::string & name() const;
     const std::string & name_space() const;
@@ -196,6 +199,7 @@ public:
 
   // Service to listening on soft reset signals
   rclcpp::Service<std_srvs::srv::Empty>::SharedPtr srv_reset_;
+  rclcpp::Service<std_srvs::srv::Empty>::SharedPtr srv_reset_odom_;
 
   // publisher for the simulated clock
   rclcpp::Publisher<rosgraph_msgs::msg::Clock>::SharedPtr clock_pub_;
@@ -234,6 +238,9 @@ public:
 
   // Service callback for soft reset
   bool cb_reset_srv(const std_srvs::srv::Empty::Request::SharedPtr,
+    std_srvs::srv::Empty::Response::SharedPtr);
+
+  bool cb_reset_odom_srv(const std_srvs::srv::Empty::Request::SharedPtr,
     std_srvs::srv::Empty::Response::SharedPtr);
 
   // The main simulator object

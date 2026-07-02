@@ -100,8 +100,11 @@ class RosRobotRuntime:
         namespace: str = "",
         status_topic: str = "/robot_status",
         cmd_vel_topic: str = "/cmd_vel",
+        odom_topic: str = "/odom",
         initial_pose_topic: str = "/initialpose",
         scan_topic: str = "/scan",
+        map_frame: str = "map",
+        base_frame: str = "base_link",
         go_to_lm_topic: str = "/go_to_lm",
         plan_service_name: str = "/route/plan",
         execute_service_name: str = "/route/execute",
@@ -116,6 +119,7 @@ class RosRobotRuntime:
         map_put_bundle_service_name: str = "/robot/maps/put_bundle",
         map_topic: str = "/map",
         slam_save_map_service_name: str = "/slam_toolbox/save_map",
+        reset_odom_service_name: str = "/reset_odom",
         slam_params_file: str | None = None,
         slam_launch_file: str | None = None,
         params_path: str | None = None,
@@ -127,8 +131,11 @@ class RosRobotRuntime:
         self.namespace = namespace.strip().strip("/")
         self.status_topic = self._topic(status_topic)
         self.cmd_vel_topic = self._topic(cmd_vel_topic)
+        self.odom_topic = self._topic(odom_topic)
         self.initial_pose_topic = self._topic(initial_pose_topic)
         self.scan_topic = self._topic(scan_topic)
+        self.map_frame = str(map_frame or "map").strip() or "map"
+        self.base_frame = str(base_frame or "base_link").strip() or "base_link"
         self.go_to_lm_topic = self._topic(go_to_lm_topic)
         self.plan_service_name = self._topic(plan_service_name)
         self.execute_service_name = self._topic(execute_service_name)
@@ -143,6 +150,7 @@ class RosRobotRuntime:
         self.map_put_bundle_service_name = self._topic(map_put_bundle_service_name)
         self.map_topic = self._topic(map_topic)
         self.slam_save_map_service_name = self._topic(slam_save_map_service_name)
+        self.reset_odom_service_name = self._topic(reset_odom_service_name) if str(reset_odom_service_name or "").strip() else ""
         self.slam_params_file = Path(slam_params_file).expanduser().resolve() if slam_params_file else self._default_slam_params_file()
         self.slam_launch_file = Path(slam_launch_file).expanduser().resolve() if slam_launch_file else self._default_slam_launch_file()
         self.params_path = Path(params_path).expanduser().resolve() if params_path else None
@@ -151,6 +159,10 @@ class RosRobotRuntime:
         self._latest_status_at: float | None = None
         self._latest_scan: Any | None = None
         self._latest_scan_at: float | None = None
+        self._latest_odom_pose: dict[str, float] | None = None
+        self._latest_odom_at: float | None = None
+        self._latest_slam_pose: dict[str, float] | None = None
+        self._latest_slam_pose_at: float | None = None
         self._latest_map: Any | None = None
         self._latest_map_at: float | None = None
         self._control_owner_id = ""
@@ -166,7 +178,11 @@ class RosRobotRuntime:
         self._node = None
         self._rclpy = None
         self._context = None
+        self._time_type = None
+        self._tf_buffer = None
+        self._tf_listener = None
         self._twist_type = None
+        self._odom_type = None
         self._pose_with_covariance_type = None
         self._laser_scan_type = None
         self._string_type = None
@@ -195,9 +211,11 @@ class RosRobotRuntime:
         self._map_get_bundle_client = None
         self._map_put_bundle_client = None
         self._slam_save_map_client = None
+        self._reset_odom_client = None
         self._nav2_lifecycle_clients: dict[str, Any] = {}
         self._nav2_change_state_clients: dict[str, Any] = {}
         self._save_map_type = None
+        self._std_empty_type = None
         self._occupancy_grid_type = None
         self._slam_process: subprocess.Popen | None = None
         self._slam_temp_dir: Path | None = None
@@ -284,8 +302,11 @@ class RosRobotRuntime:
             "namespace": self.namespace,
             "statusTopic": self.status_topic,
             "cmdVelTopic": self.cmd_vel_topic,
+            "odomTopic": self.odom_topic,
             "initialPoseTopic": self.initial_pose_topic,
             "scanTopic": self.scan_topic,
+            "mapFrame": self.map_frame,
+            "baseFrame": self.base_frame,
             "goToLmTopic": self.go_to_lm_topic,
             "planService": self.plan_service_name,
             "executeService": self.execute_service_name,
@@ -300,6 +321,7 @@ class RosRobotRuntime:
             "mapPutBundleService": self.map_put_bundle_service_name,
             "mapTopic": self.map_topic,
             "slamSaveMapService": self.slam_save_map_service_name,
+            "resetOdomService": self.reset_odom_service_name,
             "slamParamsFile": str(self.slam_params_file),
             "slamLaunchFile": str(self.slam_launch_file),
             "paramsPath": str(self.params_path or ""),
@@ -775,6 +797,16 @@ class RosRobotRuntime:
         with self._lock:
             self._nav2_paused_for_slam = bool(nav2_control.get("changed"))
             self._slam_state["nav2Paused"] = bool(nav2_control.get("changed"))
+        try:
+            with self._lock:
+                self._slam_state["message"] = "Resetting odometry before 2D SLAM."
+            self._reset_odom_for_slam()
+        except Exception as exc:
+            if bool(nav2_control.get("changed")):
+                self._resume_nav2_after_slam()
+            with self._lock:
+                self._slam_state.update({"active": False, "state": "error", "message": f"Failed to reset odom: {exc}"})
+            raise
         temp_dir = Path(tempfile.mkdtemp(prefix=f"{_clean_node_suffix(self.robot_id)}-slam-"))
         params_file = temp_dir / "mapper_params_online_async.yaml"
         params_file.write_text(yaml.safe_dump(params, sort_keys=False, allow_unicode=True), encoding="utf-8")
@@ -785,6 +817,7 @@ class RosRobotRuntime:
             str(self.slam_launch_file),
             f"slam_params_file:={params_file}",
             f"use_sim_time:={'true' if use_sim_time else 'false'}",
+            f"reset_odom_service:={self.reset_odom_service_name}",
         ]
         try:
             print(f"[robot_api_server] Starting 2D SLAM launch: {' '.join(cmd)}", flush=True)
@@ -861,7 +894,7 @@ class RosRobotRuntime:
                 "sessionId": str(state.get("sessionId") or ""),
                 "state": state,
                 "trail": trail,
-                "pose": self._current_pose_payload(),
+                "pose": self._current_slam_pose_payload(),
             }
 
         header = getattr(message, "header", None)
@@ -899,7 +932,7 @@ class RosRobotRuntime:
             "originY": float(getattr(origin_position, "y", 0.0) or 0.0),
             "originYaw": self._yaw_from_quaternion(origin_orientation),
             "cells": cells,
-            "pose": self._current_pose_payload(),
+            "pose": self._current_slam_pose_payload(),
             "trail": trail,
             "state": state,
         }
@@ -1391,6 +1424,21 @@ class RosRobotRuntime:
             "stampSec": time.time(),
         }
 
+    def _current_slam_pose_payload(self) -> dict[str, float]:
+        with self._lock:
+            pose = dict(self._latest_slam_pose) if isinstance(self._latest_slam_pose, dict) else None
+            received_at = self._latest_slam_pose_at
+        if pose is not None and received_at is not None and monotonic() - received_at <= STATUS_STALE_TIMEOUT_SEC:
+            pose["stampSec"] = time.time()
+            return pose
+        with self._lock:
+            pose = dict(self._latest_odom_pose) if isinstance(self._latest_odom_pose, dict) else None
+            received_at = self._latest_odom_at
+        if pose is not None and received_at is not None and monotonic() - received_at <= STATUS_STALE_TIMEOUT_SEC:
+            pose["stampSec"] = time.time()
+            return pose
+        return self._current_pose_payload()
+
     def _set_slam_progress(self, progress: int, message: str) -> None:
         with self._lock:
             self._slam_state.update(
@@ -1630,6 +1678,51 @@ class RosRobotRuntime:
             raise ValueError(f"invalid PGM: {path}")
         return int(tokens[1]), int(tokens[2])
 
+    def _reset_odom_for_slam(self) -> None:
+        if not self.reset_odom_service_name:
+            print("[robot_api_server] Odom reset before 2D SLAM is disabled.", flush=True)
+            return
+        if self._reset_odom_client is None:
+            raise ValueError(f"{self.reset_odom_service_name} client is not configured")
+
+        reset_started_at = monotonic()
+        with self._lock:
+            self._latest_odom_pose = None
+            self._latest_odom_at = None
+            self._latest_slam_pose = None
+            self._latest_slam_pose_at = None
+            self._slam_trail = []
+
+        request = self._reset_odom_client.srv_type.Request()
+        self._call_service(self._reset_odom_client, request, "reset odom", timeout_sec=3.0)
+        self._wait_for_zero_odom_after_reset(reset_started_at)
+        print(f"[robot_api_server] Odom reset for 2D SLAM via {self.reset_odom_service_name}", flush=True)
+
+    def _wait_for_zero_odom_after_reset(self, reset_started_at: float) -> None:
+        deadline = monotonic() + 2.5
+        last_pose: dict[str, float] | None = None
+        while monotonic() < deadline:
+            with self._lock:
+                pose = dict(self._latest_odom_pose) if isinstance(self._latest_odom_pose, dict) else None
+                received_at = self._latest_odom_at
+            if pose is not None:
+                last_pose = pose
+            if pose is not None and received_at is not None and received_at >= reset_started_at:
+                x = float(pose.get("x", 0.0) or 0.0)
+                y = float(pose.get("y", 0.0) or 0.0)
+                yaw = self._normalize_angle(float(pose.get("yaw", 0.0) or 0.0))
+                if abs(x) <= 0.08 and abs(y) <= 0.08 and abs(yaw) <= 0.15:
+                    return
+            sleep(0.02)
+        if last_pose is None:
+            raise ValueError(f"no fresh odom received on {self.odom_topic} after reset")
+        raise ValueError(
+            "odom did not settle near zero after reset: "
+            f"x={float(last_pose.get('x', 0.0) or 0.0):.3f}, "
+            f"y={float(last_pose.get('y', 0.0) or 0.0):.3f}, "
+            f"yaw={self._normalize_angle(float(last_pose.get('yaw', 0.0) or 0.0)):.3f}"
+        )
+
     def _pause_nav2_for_slam(self) -> dict[str, Any]:
         details: dict[str, Any] = {"changed": False, "managers": [], "nodes": [], "errors": []}
         self._stop_robot_motion_for_slam(details)
@@ -1823,6 +1916,17 @@ class RosRobotRuntime:
         w = float(getattr(orientation, "w", 1.0) or 1.0)
         return math.atan2(2.0 * ((w * z) + (x * y)), 1.0 - (2.0 * ((y * y) + (z * z))))
 
+    def _stamp_sec(self, stamp: Any) -> float:
+        if stamp is None:
+            return 0.0
+        try:
+            return float(getattr(stamp, "sec", 0.0) or 0.0) + float(getattr(stamp, "nanosec", 0.0) or 0.0) / 1e9
+        except (TypeError, ValueError):
+            return 0.0
+
+    def _normalize_angle(self, angle: float) -> float:
+        return math.atan2(math.sin(float(angle)), math.cos(float(angle)))
+
     def _start(self) -> None:
         try:
             import rclpy
@@ -1830,10 +1934,11 @@ class RosRobotRuntime:
             from geometry_msgs.msg import PoseWithCovarianceStamped, Twist
             from lifecycle_msgs.msg import Transition
             from lifecycle_msgs.srv import ChangeState
-            from nav_msgs.msg import OccupancyGrid
+            from nav_msgs.msg import OccupancyGrid, Odometry
             from nav2_msgs.srv import ManageLifecycleNodes
             from rclpy.executors import SingleThreadedExecutor
             from rclpy.node import Node
+            from rclpy.time import Time
             from rcl_interfaces.msg import Parameter, ParameterType, ParameterValue
             from rcl_interfaces.srv import ListParameters, SetParameters
             from robot_msgs.msg import RobotStatus
@@ -1850,6 +1955,8 @@ class RosRobotRuntime:
             )
             from sensor_msgs.msg import LaserScan
             from std_msgs.msg import String
+            from std_srvs.srv import Empty
+            from tf2_ros import Buffer, TransformListener
             try:
                 from slam_toolbox.srv import SaveMap
             except Exception:
@@ -1866,6 +1973,8 @@ class RosRobotRuntime:
             rclpy.init(**init_kwargs)
             node_name = f"robot_api_ros_runtime_{_clean_node_suffix(self.robot_id)}"
             node = Node(node_name, context=context)
+            tf_buffer = Buffer()
+            tf_listener = TransformListener(tf_buffer, node, spin_thread=False)
             self._cmd_vel_pub = node.create_publisher(Twist, self.cmd_vel_topic, 10)
             self._initial_pose_pub = node.create_publisher(PoseWithCovarianceStamped, self.initial_pose_topic, 10)
             self._go_to_lm_pub = node.create_publisher(String, self.go_to_lm_topic, 10)
@@ -1882,6 +1991,8 @@ class RosRobotRuntime:
             self._map_put_bundle_client = node.create_client(PutRobotMapBundle, self.map_put_bundle_service_name)
             if SaveMap is not None:
                 self._slam_save_map_client = node.create_client(SaveMap, self.slam_save_map_service_name)
+            if self.reset_odom_service_name:
+                self._reset_odom_client = node.create_client(Empty, self.reset_odom_service_name)
             self._nav2_lifecycle_clients = {
                 self._topic(service_name): node.create_client(ManageLifecycleNodes, self._topic(service_name))
                 for service_name, _label in NAV2_LIFECYCLE_MANAGER_SERVICES
@@ -1891,6 +2002,7 @@ class RosRobotRuntime:
                 for node_name in NAV2_LIFECYCLE_NODES
             }
             node.create_subscription(RobotStatus, self.status_topic, self._on_status, 10)
+            node.create_subscription(Odometry, self.odom_topic, self._on_odom, 20)
             node.create_subscription(LaserScan, self.scan_topic, self._on_scan, 10)
             node.create_subscription(OccupancyGrid, self.map_topic, self._on_map, 1)
             executor = SingleThreadedExecutor(context=context)
@@ -1908,11 +2020,16 @@ class RosRobotRuntime:
 
         self._rclpy = rclpy
         self._context = context
+        self._time_type = Time
+        self._tf_buffer = tf_buffer
+        self._tf_listener = tf_listener
         self._twist_type = Twist
+        self._odom_type = Odometry
         self._pose_with_covariance_type = PoseWithCovarianceStamped
         self._laser_scan_type = LaserScan
         self._occupancy_grid_type = OccupancyGrid
         self._save_map_type = SaveMap
+        self._std_empty_type = Empty
         self._string_type = String
         self._set_parameters_type = SetParameters
         self._list_parameters_type = ListParameters
@@ -1949,8 +2066,19 @@ class RosRobotRuntime:
             previous = self._latest_status
             self._latest_status = message
             self._latest_status_at = monotonic()
-            self._append_slam_trail_locked(message)
         self._persist_event(previous, message)
+
+    def _on_odom(self, message: Any) -> None:
+        odom_pose = self._odom_pose_payload(message)
+        if odom_pose is None:
+            return
+        slam_pose = self._slam_tf_pose_payload() or odom_pose
+        with self._lock:
+            self._latest_odom_pose = odom_pose
+            self._latest_odom_at = monotonic()
+            self._latest_slam_pose = slam_pose
+            self._latest_slam_pose_at = monotonic()
+            self._append_slam_trail_pose_locked(slam_pose)
 
     def _on_scan(self, message: Any) -> None:
         with self._lock:
@@ -1967,20 +2095,54 @@ class RosRobotRuntime:
             self._latest_map = message
             self._latest_map_at = monotonic()
 
-    def _append_slam_trail_locked(self, message: Any) -> None:
-        if not bool(self._slam_state.get("active")) or str(self._slam_state.get("state") or "") != "mapping":
-            return
-        if not bool(getattr(message, "localization_ok", False)):
-            return
+    def _odom_pose_payload(self, message: Any) -> dict[str, float] | None:
         try:
-            pose = {
-                "x": float(getattr(message, "pose_x", 0.0)),
-                "y": float(getattr(message, "pose_y", 0.0)),
-                "yaw": float(getattr(message, "pose_yaw", 0.0)),
-                "stampSec": time.time(),
+            header = getattr(message, "header", None)
+            pose_msg = getattr(getattr(message, "pose", None), "pose", None)
+            position = getattr(pose_msg, "position", None)
+            orientation = getattr(pose_msg, "orientation", None)
+            return {
+                "x": float(getattr(position, "x", 0.0) or 0.0),
+                "y": float(getattr(position, "y", 0.0) or 0.0),
+                "yaw": self._yaw_from_quaternion(orientation),
+                "stampSec": self._stamp_sec(getattr(header, "stamp", None)) or time.time(),
             }
         except (TypeError, ValueError):
+            return None
+
+    def _slam_tf_pose_payload(self) -> dict[str, float] | None:
+        tf_buffer = self._tf_buffer
+        time_type = self._time_type
+        if tf_buffer is None or time_type is None:
+            return None
+        try:
+            transform = tf_buffer.lookup_transform(self.map_frame, self.base_frame, time_type())
+            transform_stamp_sec = self._stamp_sec(getattr(getattr(transform, "header", None), "stamp", None))
+            with self._lock:
+                odom_pose = self._latest_odom_pose if isinstance(self._latest_odom_pose, dict) else None
+            odom_stamp_sec = float(odom_pose.get("stampSec", 0.0) or 0.0) if odom_pose is not None else 0.0
+            if transform_stamp_sec > 0.0 and odom_stamp_sec > 0.0 and transform_stamp_sec + 0.5 < odom_stamp_sec:
+                return None
+            translation = transform.transform.translation
+            rotation = transform.transform.rotation
+            return {
+                "x": float(getattr(translation, "x", 0.0) or 0.0),
+                "y": float(getattr(translation, "y", 0.0) or 0.0),
+                "yaw": self._yaw_from_quaternion(rotation),
+                "stampSec": transform_stamp_sec or time.time(),
+            }
+        except Exception:
+            return None
+
+    def _append_slam_trail_pose_locked(self, pose: dict[str, float]) -> None:
+        if not bool(self._slam_state.get("active")) or str(self._slam_state.get("state") or "") != "mapping":
             return
+        pose = {
+            "x": float(pose.get("x", 0.0) or 0.0),
+            "y": float(pose.get("y", 0.0) or 0.0),
+            "yaw": float(pose.get("yaw", 0.0) or 0.0),
+            "stampSec": float(pose.get("stampSec", time.time()) or time.time()),
+        }
         if self._slam_trail:
             previous = self._slam_trail[-1]
             distance = math.hypot(pose["x"] - previous["x"], pose["y"] - previous["y"])

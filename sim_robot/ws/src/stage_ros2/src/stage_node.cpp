@@ -277,6 +277,18 @@ bool StageNode::cb_reset_srv(
   return true;
 }
 
+bool StageNode::cb_reset_odom_srv(
+  const std_srvs::srv::Empty::Request::SharedPtr,
+  std_srvs::srv::Empty::Response::SharedPtr)
+{
+  std::scoped_lock lock(this->msg_lock);
+  RCLCPP_INFO(this->get_logger(), "Resetting odometry to zero!");
+  for (auto vehicle: this->vehicles_) {
+    vehicle->reset_odom();
+  }
+  return true;
+}
+
 void StageNode::init(int argc, char ** argv)
 {
 
@@ -321,6 +333,12 @@ int StageNode::SubscribeModels()
     [this](const std_srvs::srv::Empty::Request::SharedPtr request,
     std_srvs::srv::Empty::Response::SharedPtr response)
     {this->cb_reset_srv(request, response);});
+
+  srv_reset_odom_ = this->create_service<std_srvs::srv::Empty>(
+    "reset_odom",
+    [this](const std_srvs::srv::Empty::Request::SharedPtr request,
+    std_srvs::srv::Empty::Response::SharedPtr response)
+    {this->cb_reset_odom_srv(request, response);});
 
   return 0;
 }

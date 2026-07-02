@@ -24,7 +24,8 @@ StageNode::Vehicle::Vehicle(
       rng_(static_cast<std::mt19937::result_type>(0x6d2b79f5u + (id * 2654435761u))),
       imu_initialized_(false),
       imu_yaw_bias_(0.0),
-      imu_angular_velocity_bias_(0.0)
+      imu_angular_velocity_bias_(0.0),
+      odom_yaw_offset_(0.0)
 {
 }
 
@@ -37,6 +38,16 @@ double StageNode::Vehicle::sample_noise(double stddev)
   return distribution(rng_);
 }
 
+void StageNode::Vehicle::ensure_imu_initialized()
+{
+  if (imu_initialized_) {
+    return;
+  }
+  imu_yaw_bias_ = sample_noise(node_->imu_yaw_noise_stddev_);
+  imu_angular_velocity_bias_ = sample_noise(node_->imu_angular_velocity_noise_stddev_ * 0.2);
+  imu_initialized_ = true;
+}
+
 size_t StageNode::Vehicle::id() const
 {
   return id_;
@@ -45,6 +56,24 @@ void StageNode::Vehicle::soft_reset()
 {
   positionmodel->SetPose(this->initial_pose_);
   positionmodel->SetStall(false);
+}
+
+void StageNode::Vehicle::reset_odom()
+{
+  positionmodel->SetSpeed(0.0, 0.0, 0.0);
+  positionmodel->SetOdom(Stg::Pose(0.0, 0.0, 0.0, 0.0));
+  positionmodel->SetStall(false);
+  ensure_imu_initialized();
+
+  const Stg::Pose gpose = positionmodel->GetGlobalPose();
+  odom_yaw_offset_ = Stg::normalize(gpose.a + imu_yaw_bias_);
+  time_last_pose_update_ = rclcpp::Time(0, 0);
+  time_last_cmd_received_ = node_->sim_time_;
+  timeout_cmd_ = rclcpp::Time(0, 0);
+  global_pose_.reset();
+  body_velocity_.reset();
+  msg_odom_ = nav_msgs::msg::Odometry();
+  msg_imu_ = sensor_msgs::msg::Imu();
 }
 
 const std::string &StageNode::Vehicle::name() const
@@ -151,11 +180,7 @@ void StageNode::Vehicle::publish_msg()
     global_pose_ = std::make_shared<Stg::Pose>(gpose);
   }
 
-  if (!imu_initialized_) {
-    imu_yaw_bias_ = sample_noise(node_->imu_yaw_noise_stddev_);
-    imu_angular_velocity_bias_ = sample_noise(node_->imu_angular_velocity_noise_stddev_ * 0.2);
-    imu_initialized_ = true;
-  }
+  ensure_imu_initialized();
 
   double linear_acceleration_x = 0.0;
   double linear_acceleration_y = 0.0;
@@ -170,6 +195,9 @@ void StageNode::Vehicle::publish_msg()
   }
 
   const double imu_yaw = Stg::normalize(gpose.a + imu_yaw_bias_);
+  const double odom_yaw = node_->use_imu_for_odom_yaw_
+    ? Stg::normalize(imu_yaw - odom_yaw_offset_)
+    : positionmodel->est_pose.a;
   const double imu_angular_velocity_z =
     v.a + imu_angular_velocity_bias_ + sample_noise(node_->imu_angular_velocity_noise_stddev_);
 
@@ -208,8 +236,7 @@ void StageNode::Vehicle::publish_msg()
   // Get latest odometry data and stabilize yaw with the simulated IMU when requested.
   msg_odom_.pose.pose.position.x = positionmodel->est_pose.x;
   msg_odom_.pose.pose.position.y = positionmodel->est_pose.y;
-  msg_odom_.pose.pose.orientation = createQuaternionMsgFromYaw(
-      node_->use_imu_for_odom_yaw_ ? imu_yaw : positionmodel->est_pose.a);
+  msg_odom_.pose.pose.orientation = createQuaternionMsgFromYaw(odom_yaw);
   msg_odom_.twist.twist.linear.x = v.x;
   msg_odom_.twist.twist.linear.y = v.y;
   msg_odom_.twist.twist.angular.z = node_->use_imu_for_odom_yaw_ ? imu_angular_velocity_z : v.a;
