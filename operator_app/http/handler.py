@@ -54,6 +54,9 @@ class OperatorRequestHandler(SimpleHTTPRequestHandler):
             if path == "/health":
                 self._send_json({"ok": True})
                 return
+            if path == "/api/robots/ping":
+                self._send_json(self._require_state().robot_pings_payload())
+                return
             if path == "/api/robots":
                 self._send_json(self._require_state().list_robots_payload(probe_robots=self._should_probe_robots(parsed)))
                 return

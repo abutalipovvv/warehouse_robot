@@ -310,25 +310,6 @@ class GrpcRobotClient:
         )
         return self._command_response(response)
 
-    def confirm_localization(
-        self,
-        endpoint: str,
-        *,
-        owner_id: str,
-        accepted: bool = True,
-        message: str = "",
-    ) -> dict[str, Any]:
-        stub = self._stub(endpoint)
-        response = stub.ConfirmLocalization(
-            robot_api_pb2.ConfirmLocalizationRequest(
-                owner_id=str(owner_id or ""),
-                accepted=bool(accepted),
-                message=str(message or ""),
-            ),
-            timeout=self.timeout,
-        )
-        return self._command_response(response)
-
     def pause_route(self, endpoint: str, *, owner_id: str, message: str = "") -> dict[str, Any]:
         stub = self._stub(endpoint)
         response = stub.PauseRoute(
@@ -736,16 +717,6 @@ class GrpcRobotAdapter:
             covariance=covariance,
             confirm=confirm,
         )
-
-    def confirm_localization(
-        self,
-        endpoint: str,
-        *,
-        owner_id: str,
-        accepted: bool = True,
-        message: str = "",
-    ) -> dict[str, Any]:
-        return self.client.confirm_localization(endpoint, owner_id=owner_id, accepted=accepted, message=message)
 
     def pause_route(self, endpoint: str, *, owner_id: str, message: str = "") -> dict[str, Any]:
         return self.client.pause_route(endpoint, owner_id=owner_id, message=message)

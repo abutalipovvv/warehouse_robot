@@ -906,6 +906,7 @@ class OperatorApp {
     this.currentStatus = null;
     this.currentRoute = null;
     this.statusRequestPending = false;
+    this.robotPingRefreshPending = false;
     this.navigateMode = false;
     this.relocateMode = false;
     this.pendingFleetAction = "";
@@ -1024,12 +1025,10 @@ class OperatorApp {
     this.takeControlButton = document.getElementById("takeControlButton");
     this.releaseControlButton = document.getElementById("releaseControlButton");
     this.relocateRobotButton = document.getElementById("relocateRobotButton");
-    this.confirmLocalizationButton = document.getElementById("confirmLocalizationButton");
     this.pauseRouteButton = document.getElementById("pauseRouteButton");
     this.resumeRouteButton = document.getElementById("resumeRouteButton");
     this.cancelRouteButton = document.getElementById("cancelRouteButton");
     this.stopRobotButton = document.getElementById("stopRobotButton");
-    this.refreshRobotStatusButton = document.getElementById("refreshRobotStatusButton");
     this.scanToggleButton = document.getElementById("scanToggleButton");
     this.controlPullMapButton = document.getElementById("controlPullMapButton");
     this.controlPushMapButton = document.getElementById("controlPushMapButton");
@@ -1194,8 +1193,11 @@ class OperatorApp {
     this.applyDeferredUiActions();
     this.syncFleetStatusStream();
     window.setInterval(() => {
-      this.refreshRobots({ quiet: true, lightweight: true }).catch(() => {});
+      this.refreshRobots({ quiet: true, lightweight: true, probe: false }).catch(() => {});
     }, 12000);
+    window.setInterval(() => {
+      this.refreshRobotPings().catch(() => {});
+    }, 2000);
     window.setInterval(() => {
       this.fetchSelectedRobotStatus(true).catch(() => {});
     }, 800);
@@ -1227,12 +1229,10 @@ class OperatorApp {
     this.takeControlButton?.addEventListener("click", () => this.acquireRobotControl());
     this.releaseControlButton?.addEventListener("click", () => this.releaseRobotControl());
     this.relocateRobotButton?.addEventListener("click", () => this.toggleRelocateMode());
-    this.confirmLocalizationButton?.addEventListener("click", () => this.confirmRobotLocalization());
     this.pauseRouteButton?.addEventListener("click", () => this.pauseRobotRoute());
     this.resumeRouteButton?.addEventListener("click", () => this.resumeRobotRoute());
     this.cancelRouteButton.addEventListener("click", () => this.cancelRoute());
     this.stopRobotButton.addEventListener("click", () => this.stopRobot());
-    this.refreshRobotStatusButton.addEventListener("click", () => this.fetchSelectedRobotStatus(false));
     this.scanToggleButton?.addEventListener("click", () => {
       this.toggleScanStream().catch((error) => {
         if (this.robotMessageText) {
@@ -1732,6 +1732,24 @@ class OperatorApp {
     }).length;
     const endpoint = this.robotEndpointLabel(robot);
     return duplicateCount > 1 && endpoint ? `${baseName} (${endpoint})` : baseName;
+  }
+
+  robotPingLabel(robot) {
+    if (!robot || this.isFleetManager(robot)) {
+      return "-";
+    }
+    const pingMs = Number(robot.pingMs);
+    if (Number.isFinite(pingMs) && pingMs >= 0) {
+      return `${Math.max(1, Math.round(pingMs))} ms`;
+    }
+    if (robot.probed && !robot.pingOk) {
+      const pingError = String(robot.pingError || "").toLowerCase();
+      if (pingError.includes("operation not permitted") || pingError.includes("not installed")) {
+        return "unavailable";
+      }
+      return "timeout";
+    }
+    return "-";
   }
 
   fleetRuntimeMode(status = this.currentStatus) {
@@ -2555,10 +2573,12 @@ class OperatorApp {
       this.startSlamButton.title = statusText ? `SLAM: ${statusText}` : "Start 2D SLAM";
     }
     if (this.doneSlamButton) {
+      this.doneSlamButton.classList.toggle("hidden", !this.slamActive);
       this.doneSlamButton.disabled = !this.slamActive;
       this.doneSlamButton.title = "Save the live SLAM map as a new smap.";
     }
     if (this.cancelSlamButton) {
+      this.cancelSlamButton.classList.toggle("hidden", !this.slamActive);
       this.cancelSlamButton.disabled = !this.slamActive;
       this.cancelSlamButton.title = "Cancel SLAM without saving.";
     }
@@ -3049,7 +3069,8 @@ class OperatorApp {
   }
 
   async refreshRobots(options = {}) {
-    const result = await this.getJson(options.quiet ? "/api/robots?probe=0" : "/api/robots");
+    const shouldProbe = options.probe ?? !options.quiet;
+    const result = await this.getJson(shouldProbe ? "/api/robots" : "/api/robots?probe=0");
     const nextRobots = Array.isArray(result.robots) ? result.robots : [];
     this.robots = options.quiet ? this.mergeQuietRobotPayloads(nextRobots) : nextRobots;
     if (this.selectedRobotId && !this.selectedRobot()) {
@@ -3125,8 +3146,58 @@ class OperatorApp {
         online: previous.online,
         status: previous.status,
         error: previous.error,
+        probed: previous.probed,
+        pingOk: previous.pingOk,
+        pingMs: previous.pingMs,
+        pingError: previous.pingError,
+        pingTransport: previous.pingTransport,
       };
     });
+  }
+
+  async refreshRobotPings() {
+    if (!this.isGlobalHomePage() || this.robotPingRefreshPending) {
+      return;
+    }
+    this.robotPingRefreshPending = true;
+    try {
+      const result = await this.getJson("/api/robots/ping");
+      const updates = new Map();
+      for (const item of Array.isArray(result.robots) ? result.robots : []) {
+        if (item && item.id) {
+          updates.set(String(item.id), item);
+        }
+      }
+      if (!updates.size) {
+        return;
+      }
+      this.robots = this.robots.map((robot) => {
+        const update = updates.get(robot.id);
+        return update ? { ...robot, ...update } : robot;
+      });
+      this.applyRobotPingUpdates(updates);
+    } finally {
+      this.robotPingRefreshPending = false;
+    }
+  }
+
+  applyRobotPingUpdates(updates) {
+    for (const card of document.querySelectorAll(".robot-card[data-robot-id]")) {
+      const update = updates.get(card.dataset.robotId || "");
+      if (!update) {
+        continue;
+      }
+      const robot = this.robots.find((item) => item.id === update.id) || update;
+      const chip = card.querySelector("[data-role='robot-chip']");
+      if (chip) {
+        chip.className = robot.online ? "robot-chip online" : "robot-chip offline";
+        chip.textContent = robot.online ? "online" : "offline";
+      }
+      const ping = card.querySelector("[data-role='robot-ping']");
+      if (ping) {
+        ping.textContent = `Ping: ${this.robotPingLabel(robot)}`;
+      }
+    }
   }
 
   async refreshRobotMapState(options = {}) {
@@ -3365,6 +3436,12 @@ class OperatorApp {
     this.renderRobotCards(this.homeRobotGrid, { openWorkspace: true, home: true });
   }
 
+  syncRobotCardSelection() {
+    for (const card of document.querySelectorAll(".robot-card[data-robot-id]")) {
+      card.classList.toggle("active", card.dataset.robotId === this.selectedRobotId);
+    }
+  }
+
   renderRobotCards(container, options = {}) {
     if (!container) {
       return;
@@ -3385,10 +3462,11 @@ class OperatorApp {
       button.className = options.home ? "robot-card home-robot-card" : "robot-card";
       button.tabIndex = 0;
       button.setAttribute("role", "button");
+      button.dataset.robotId = robot.id;
       if (robot.id === this.selectedRobotId) {
         button.classList.add("active");
       }
-      const selectRobot = async () => {
+      const selectRobot = async ({ enterWorkspace = false } = {}) => {
         if (this.selectedRobotId !== robot.id) {
           this.closeScanStream();
           this.closeSlamStream();
@@ -3402,7 +3480,11 @@ class OperatorApp {
         this.currentRoute = null;
         this.syncFleetStatusStream();
         this.closeSidebar();
-        if (options.openWorkspace) {
+        if (options.home && !enterWorkspace) {
+          this.syncRobotCardSelection();
+          return;
+        }
+        if (enterWorkspace && options.openWorkspace) {
           await this.navigateHomePage();
           return;
         }
@@ -3425,13 +3507,19 @@ class OperatorApp {
         }
         this.render();
       };
-      button.addEventListener("click", selectRobot);
+      button.addEventListener("click", () => selectRobot({ enterWorkspace: false }));
+      button.addEventListener("dblclick", (event) => {
+        event.preventDefault();
+        selectRobot({ enterWorkspace: true }).catch((error) => {
+          this.showProbeResult("error", error.message || String(error));
+        });
+      });
       button.addEventListener("keydown", async (event) => {
         if (event.key !== "Enter" && event.key !== " ") {
           return;
         }
         event.preventDefault();
-        await selectRobot();
+        await selectRobot({ enterWorkspace: options.openWorkspace && robot.id === this.selectedRobotId });
       });
 
       const identity = robot.identity || robot.lastIdentity || {};
@@ -3453,7 +3541,7 @@ class OperatorApp {
             <p>${connectionLabel}</p>
           </div>
           <div class="robot-card-actions">
-            <span class="${chipClass}">${chipText}</span>
+            <span class="${chipClass}" data-role="robot-chip">${chipText}</span>
             ${systemRobot ? "" : '<button class="robot-card-remove" type="button" aria-label="Remove robot">Delete</button>'}
           </div>
         </div>
@@ -3461,6 +3549,7 @@ class OperatorApp {
           <div>Robot ID: ${this.escapeHtml(identity.robotId || "-")}</div>
           <div>Map: ${this.escapeHtml(identity.mapId || "-")}</div>
           <div>State: ${this.escapeHtml(status.state || status.stateText || "-")}</div>
+          ${isFleet ? "" : `<div data-role="robot-ping">Ping: ${this.escapeHtml(this.robotPingLabel(robot))}</div>`}
           ${isFleet ? `<div>Fleet robots: ${this.escapeHtml(String(status.robots || 0))}</div>` : ""}
         </div>
       `;
@@ -3469,6 +3558,9 @@ class OperatorApp {
         removeButton.addEventListener("click", async (event) => {
           event.stopPropagation();
           await this.handleRemoveRobot(robot);
+        });
+        removeButton.addEventListener("dblclick", (event) => {
+          event.stopPropagation();
         });
       }
       container.append(button);
@@ -3590,11 +3682,9 @@ class OperatorApp {
   }
 
   robotLocalizationLabel(robot) {
-    const localized = robot?.localizationOk
+    return robot?.localizationOk
       ? `ok (${Number(robot.localizationAgeSec || 0).toFixed(2)} s)`
       : "waiting";
-    const confirmed = robot?.localizationConfirmed ? "confirmed" : "not confirmed";
-    return `${localized} | ${confirmed}`;
   }
 
   robotLifecycleReason(robot) {
@@ -3770,7 +3860,6 @@ class OperatorApp {
       this.takeControlButton,
       this.releaseControlButton,
       this.relocateRobotButton,
-      this.confirmLocalizationButton,
       this.pauseRouteButton,
       this.resumeRouteButton,
     ]) {
@@ -6335,9 +6424,6 @@ class OperatorApp {
     if (this.resumeRouteButton) {
       this.resumeRouteButton.disabled = mappingActive || !paused;
     }
-    if (this.confirmLocalizationButton) {
-      this.confirmLocalizationButton.disabled = !robot.localizationOk;
-    }
     if (!relocateArmed) {
       this.relocationDrag = null;
       this.clearRelocationPreview();
@@ -6479,20 +6565,6 @@ class OperatorApp {
       this.renderSelectedRobot();
     } catch (error) {
       this.robotMessageText.textContent = `Relocate failed: ${error.message || error}`;
-    }
-  }
-
-  async confirmRobotLocalization() {
-    if (!this.selectedRobot() || this.isFleetManager()) {
-      return;
-    }
-    try {
-      const result = await this.postJson(this.robotApiPath("/api/robot/localization/confirm"), { accepted: true });
-      this.currentStatus = result.status || await this.getJson(this.robotApiPath("/api/robot/status"));
-      this.robotMessageText.textContent = "Localization confirmed.";
-      this.renderSelectedRobot();
-    } catch (error) {
-      this.robotMessageText.textContent = `Confirm localization failed: ${error.message || error}`;
     }
   }
 
@@ -7551,7 +7623,7 @@ class OperatorApp {
       this.selectedRobotId = result.robot.id;
       window.localStorage.setItem("operator:selectedRobotId", this.selectedRobotId);
       this.closeSidebar();
-      await this.refreshRobots({ quiet: true });
+      await this.refreshRobots({ quiet: true, probe: true });
       const warnings = Array.isArray(result.cache?.warnings) ? result.cache.warnings : [];
       const cachedMaps = Array.isArray(result.cache?.cachedMaps) ? result.cache.cachedMaps.length : 0;
       this.showProbeResult(

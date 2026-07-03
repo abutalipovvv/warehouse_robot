@@ -2242,6 +2242,7 @@ class RosRobotRuntime:
             "y": float(getattr(message, "pose_y", 0.0)),
             "yaw": float(getattr(message, "pose_yaw", 0.0)),
         } if connected and localization_ok else None
+        state = self._message_state(message)
         payload = {
             "robotId": str(getattr(message, "robot_id", "") or self.robot_name),
             "mapId": str(getattr(message, "map_id", "") or ""),
@@ -2249,7 +2250,7 @@ class RosRobotRuntime:
             "localizationOk": localization_ok,
             "localizationAgeSec": float(getattr(message, "localization_age_sec", 9999.0)),
             "statusAgeSec": float(self._status_age_sec() or 0.0),
-            "state": str(getattr(message, "state", "") or "UNKNOWN"),
+            "state": state,
             "message": str(getattr(message, "message", "") or ""),
             "targetLm": str(getattr(message, "target_lm", "") or ""),
             "nearestLm": str(getattr(message, "nearest_lm", "") or ""),
@@ -2270,6 +2271,20 @@ class RosRobotRuntime:
             },
         }
         return payload
+
+    def _message_state(self, message: Any) -> str:
+        state = str(getattr(message, "state", "") or "UNKNOWN").upper()
+        if state in {"", "IDLE", "UNKNOWN", "LOCALIZING"}:
+            target_lm = str(getattr(message, "target_lm", "") or "").strip()
+            route_id = str(getattr(message, "route_id", "") or "").strip()
+            edge_id = str(getattr(message, "current_edge_id", "") or "").strip()
+            if target_lm or route_id or edge_id:
+                return "EXECUTING_ROUTE"
+            linear = abs(float(getattr(message, "linear_velocity", 0.0) or 0.0))
+            angular = abs(float(getattr(message, "angular_velocity", 0.0) or 0.0))
+            if linear > 0.03 or angular > 0.05:
+                return "MOVING"
+        return state or "UNKNOWN"
 
     def _set_route_paused(self, paused: bool, message: str) -> None:
         if self._route_pause_client is not None and self._service_available(self._route_pause_client, 0.05):

@@ -152,7 +152,8 @@ class RobotStatusNode(Node):
                 state = "MANUAL"
                 message = "Manual control active. Using map->base_link TF pose."
             elif route_active:
-                state = state or "EXECUTING_ROUTE"
+                if state.upper() in {"", "IDLE", "UNKNOWN", "LOCALIZING"}:
+                    state = "EXECUTING_ROUTE"
                 if not message:
                     target_lm = str(executor_state.get("targetLm") or "").strip()
                     message = (
@@ -172,7 +173,8 @@ class RobotStatusNode(Node):
             state = "MANUAL"
             message = "Manual control active."
         elif route_active:
-            state = state or "EXECUTING_ROUTE"
+            if state.upper() in {"", "IDLE", "UNKNOWN", "LOCALIZING"}:
+                state = "EXECUTING_ROUTE"
             if not message:
                 target_lm = str(executor_state.get("targetLm") or "").strip()
                 message = f"Driving to {target_lm}." if target_lm else "Executing route."
@@ -191,6 +193,11 @@ class RobotStatusNode(Node):
         elif state in {"", "LOCALIZING"}:
             state = "IDLE"
             message = "Localized."
+
+        if state.upper() in {"", "IDLE", "UNKNOWN"} and not stationary:
+            state = "MOVING"
+            if not message or message.startswith("Localized."):
+                message = "Robot is moving."
 
         nearest_name = ""
         if pose is not None:
