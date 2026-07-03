@@ -4170,7 +4170,7 @@ class OperatorApp {
   syncFleetRemoteFields() {
     const isRemoteMode = String(this.fleetModeSelect?.value || "simulation") === "robots";
     if (this.fleetRobotNameLabel) {
-      this.fleetRobotNameLabel.classList.toggle("hidden", isRemoteMode);
+      this.fleetRobotNameLabel.classList.toggle("hidden", false);
     }
     if (this.fleetSpawnLmLabel) {
       this.fleetSpawnLmLabel.classList.toggle("hidden", isRemoteMode);
@@ -4180,6 +4180,9 @@ class OperatorApp {
     }
     if (this.fleetRobotApiInput) {
       this.fleetRobotApiInput.placeholder = isRemoteMode ? "192.168.0.10" : "";
+    }
+    if (this.fleetRobotNameInput) {
+      this.fleetRobotNameInput.placeholder = isRemoteMode ? "robot-3" : "";
     }
     if (this.fleetSpawnLmLabelText) {
       this.fleetSpawnLmLabelText.textContent = "Start LM";
@@ -7190,7 +7193,7 @@ class OperatorApp {
     }
     try {
       const payload = mode === "robots"
-        ? { mode: "remote", host: robotIp }
+        ? { mode: "remote", name: requestedName, host: robotIp }
         : { name: requestedName, spawnLm, mode: "simulated" };
       const result = await this.postJson("/api/fleet-manager/robots", payload);
       const addedName = String(result.robot?.name || requestedName || "").trim();

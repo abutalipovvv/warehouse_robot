@@ -23,6 +23,10 @@ TERMINAL_ORDER_STATUSES = {"COMPLETED", "FAILED", "CANCELED"}
 ORDER_SEQUENCE_KEYS = ("targets", "targetLms", "goals", "orders", "queue", "blocks")
 ORDER_ID_KEYS = ("id", "orderId", "taskId")
 ORDER_TARGET_KEYS = ("targetLm", "goalLm", "location", "target", "LM")
+FLEET_CONTROL_OWNER_ID = "fleet-manager"
+FLEET_CONTROL_OWNER_NAME = "Fleet Manager"
+
+
 @dataclass
 class FleetRobot:
     name: str
@@ -472,7 +476,8 @@ class WebFleetManager:
 
     def add_robot(self, payload: dict[str, Any]) -> dict[str, Any]:
         mode = self._robot_mode_from_payload(payload)
-        name = str(payload.get("name", "")).strip() if mode == "simulated" else ""
+        requested_name = self._robot_name_from_payload(payload)
+        name = requested_name
         base_url = ""
         remote_status: dict[str, Any] | None = None
         remote_identity: dict[str, Any] | None = None
@@ -502,6 +507,7 @@ class WebFleetManager:
                 current_lm = self._nearest_lm_for_pose(remote_pose)
             if not name:
                 name = self._remote_robot_name(remote_identity, status_robot, base_url)
+            name = self._remote_unique_robot_name(name, base_url)
         if not name:
             raise ValueError("robot name is required")
         if not current_lm:
@@ -598,11 +604,13 @@ class WebFleetManager:
         if robot.active_order_id:
             self._cancel_active_order_for_robot(robot, "manual control takeover")
         try:
+            self._ensure_remote_control(robot, "manual control")
             response = self.remote_adapter.teleop(
                 robot.base_url,
                 linear=linear,
                 angular=angular,
                 timeout_ms=timeout_ms,
+                owner_id=FLEET_CONTROL_OWNER_ID,
             )
             robot.remote_online = True
             robot.remote_error = ""
@@ -639,7 +647,8 @@ class WebFleetManager:
         if not robot.is_remote() or not robot.base_url:
             raise ValueError(f"{name} is not a remote robot")
         try:
-            response = self.remote_adapter.teleop_stop(robot.base_url)
+            self._ensure_remote_control(robot, "manual stop")
+            response = self.remote_adapter.teleop_stop(robot.base_url, owner_id=FLEET_CONTROL_OWNER_ID)
             robot.remote_online = True
             robot.remote_error = ""
             status = response.get("status")
@@ -1324,6 +1333,15 @@ class WebFleetManager:
             return "remote"
         return "simulated"
 
+    def _robot_name_from_payload(self, payload: dict[str, Any]) -> str:
+        return str(
+            payload.get("name")
+            or payload.get("robotName")
+            or payload.get("robot_name")
+            or payload.get("alias")
+            or ""
+        ).strip()
+
     def _remote_base_url_from_payload(self, payload: dict[str, Any]) -> str:
         value = str(
             payload.get("baseUrl")
@@ -1386,6 +1404,33 @@ class WebFleetManager:
                 return text
         parsed = urlparse(base_url)
         return str(parsed.hostname or parsed.netloc or "").strip()
+
+    def _remote_unique_robot_name(self, name: str, base_url: str) -> str:
+        clean_name = str(name or "").strip() or self._remote_name_from_endpoint(base_url)
+        for existing in self.robots.values():
+            if existing.is_remote() and existing.base_url == base_url:
+                return existing.name
+        existing = self.robots.get(clean_name)
+        if existing is None or (existing.is_remote() and existing.base_url == base_url):
+            return clean_name
+
+        suffix = self._remote_name_from_endpoint(base_url)
+        candidate = f"{clean_name}-{suffix}" if suffix and suffix != clean_name else f"{clean_name}-remote"
+        index = 2
+        while candidate in self.robots:
+            candidate = f"{clean_name}-{suffix or 'remote'}-{index}"
+            index += 1
+        return candidate
+
+    def _remote_name_from_endpoint(self, base_url: str) -> str:
+        parsed = urlparse(base_url)
+        host = str(parsed.hostname or parsed.netloc or "").strip()
+        if not host:
+            return "remote"
+        parts = [part for part in host.replace(":", ".").split(".") if part]
+        if len(parts) >= 4 and all(part.isdigit() for part in parts[-4:]):
+            return f"robot-{parts[-1]}"
+        return host.replace(".", "-")
 
     def _remote_identity_id(self, identity_payload: dict[str, Any] | None) -> str:
         if not isinstance(identity_payload, dict):
@@ -1629,6 +1674,7 @@ class WebFleetManager:
         payload = {
             "route": route,
             "order": order.to_dict(),
+            "ownerId": FLEET_CONTROL_OWNER_ID,
             "fleet": {
                 "manager": "fleet_manager",
                 "routeProtocol": "lm_route",
@@ -1636,6 +1682,7 @@ class WebFleetManager:
                 "debug": result.get("debug", {}),
             },
         }
+        self._ensure_remote_control(robot, "execute route")
         response = self.remote_adapter.execute_route(robot.base_url, payload)
         robot.remote_online = True
         robot.remote_error = ""
@@ -1760,7 +1807,8 @@ class WebFleetManager:
         if not robot.is_remote() or not robot.base_url:
             return
         try:
-            self.remote_adapter.cancel_route(robot.base_url)
+            self._ensure_remote_control(robot, "cancel route")
+            self.remote_adapter.cancel_route(robot.base_url, owner_id=FLEET_CONTROL_OWNER_ID)
             robot.remote_online = True
             robot.remote_error = ""
         except Exception as exc:
@@ -1773,13 +1821,32 @@ class WebFleetManager:
         if not robot.is_remote() or not robot.base_url:
             return
         try:
-            self.remote_adapter.stop(robot.base_url)
+            self._ensure_remote_control(robot, "stop")
+            self.remote_adapter.stop(robot.base_url, owner_id=FLEET_CONTROL_OWNER_ID)
             robot.remote_online = True
             robot.remote_error = ""
         except Exception as exc:
             robot.remote_online = False
             robot.remote_error = str(exc)
             self._event("warn", f"{robot.name} remote stop failed: {exc}")
+
+    def _ensure_remote_control(self, robot: FleetRobot, action: str) -> None:
+        if not robot.is_remote() or not robot.base_url:
+            return
+        try:
+            self.remote_adapter.acquire_control(
+                robot.base_url,
+                owner_id=FLEET_CONTROL_OWNER_ID,
+                owner_name=FLEET_CONTROL_OWNER_NAME,
+                force=True,
+                lease_ms=0,
+            )
+            robot.remote_online = True
+            robot.remote_error = ""
+        except Exception as exc:
+            robot.remote_online = False
+            robot.remote_error = str(exc)
+            raise ValueError(f"remote control takeover failed before {action}: {exc}") from exc
 
     def _nearest_trajectory_clock(self, trajectory: list[dict[str, Any]], pose: dict[str, float]) -> float:
         best_time = float(trajectory[0].get("t", 0.0) or 0.0) if trajectory else 0.0
