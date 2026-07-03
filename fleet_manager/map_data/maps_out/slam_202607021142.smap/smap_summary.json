@@ -1,0 +1,33 @@
+{
+  "header": {
+    "mapType": "2D-Map",
+    "mapName": "slam_202607021142",
+    "minPos": {
+      "x": 0.0,
+      "y": 0.0
+    },
+    "maxPos": {
+      "x": 10.75,
+      "y": 23.400000000000002
+    },
+    "resolution": 0.05,
+    "version": "slam_toolbox"
+  },
+  "counts": {
+    "LMs_found": 0,
+    "edges_total": 0,
+    "grid": {
+      "width": 215,
+      "height": 468
+    }
+  },
+  "outputs": {
+    "pgm": "slam_202607021142.pgm",
+    "ros_map_yaml": "slam_202607021142.yaml",
+    "LMs_yaml": "LMs.yaml",
+    "graphs_yaml": "graphs.yaml",
+    "graph_edges_lengths_yaml": "graph_edges_lengths.yaml",
+    "primitives_lengths_csv": "primitives_lengths.csv",
+    "summary_json": "smap_summary.json"
+  }
+}
