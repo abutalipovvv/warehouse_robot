@@ -132,13 +132,6 @@
                 <div class="block-title">Fleet Workspace</div>
                 <div id="fleetTabFleet" class="fleet-tab-page active">
                   <div class="fleet-control-row">
-                    <label>
-                      Mode
-                      <select id="fleetModeSelect">
-                        <option value="simulation">Simulation</option>
-                        <option value="robots">Robots</option>
-                      </select>
-                    </label>
                     <label id="fleetRobotNameLabel">
                       Robot Name
                       <input id="fleetRobotNameInput" type="text" value="robot1" />
@@ -152,6 +145,26 @@
                       <input id="fleetRobotApiInput" type="text" placeholder="192.168.0.10" />
                     </label>
                     <button id="fleetAddRobotButton" class="primary" type="button">+</button>
+                    <button id="fleetPlaceRobotButton" type="button">Place</button>
+                  </div>
+                  <div id="fleetSimTools" class="fleet-sim-tools hidden">
+                    <div class="block-title">Sim Maps & Benchmark</div>
+                    <div class="fleet-sim-map-row">
+                      <select id="fleetSimMapSelect"></select>
+                      <button id="fleetSimLoadMapButton" type="button">Use</button>
+                    </div>
+                    <div class="fleet-action-row">
+                      <button data-fleet-benchmark-count="20" type="button">Add 20</button>
+                      <button data-fleet-benchmark-count="50" type="button">Add 50</button>
+                      <button data-fleet-benchmark-count="100" type="button">Add 100</button>
+                    </div>
+                    <div class="fleet-action-row">
+                      <button id="fleetBenchmarkPlanButton" class="primary" type="button">Plan</button>
+                      <button id="fleetBenchmarkClearButton" type="button">Clear Sim</button>
+                      <button id="fleetBenchmarkRefreshMapsButton" type="button">Refresh Maps</button>
+                      <button id="fleetBenchmarkOpenLoadButton" type="button">Map Library</button>
+                    </div>
+                    <div id="fleetBenchmarkStatus" class="probe-result neutral compact">Choose a map or run a benchmark.</div>
                   </div>
                   <div class="fleet-list-block">
                     <div class="block-title">Robots</div>
@@ -181,6 +194,18 @@
                       <label>
                         Route speed
                         <input id="fleetRouteSpeedInput" type="number" value="0.40" min="0.02" max="2.00" step="0.01" />
+                      </label>
+                      <label>
+                        Route accel
+                        <input id="fleetRouteAccelerationInput" type="number" value="0.60" min="0.00" max="3.00" step="0.05" />
+                      </label>
+                      <label class="checkbox-field">
+                        <span>Rotate</span>
+                        <input id="fleetRotateInput" type="checkbox" checked />
+                      </label>
+                      <label>
+                        Turn speed
+                        <input id="fleetTurnSpeedInput" type="number" value="0.90" min="0.05" max="4.00" step="0.05" />
                       </label>
                       <label>
                         Robot clearance
@@ -299,6 +324,8 @@
               </section>
               <section class="operator-map-panel">
                 <div class="map-toolbar">
+                  <button id="operatorMap2dButton" type="button">2D</button>
+                  <button id="operatorMap3dButton" type="button">3D</button>
                   <button id="operatorZoomInButton" type="button">Zoom +</button>
                   <button id="operatorZoomOutButton" type="button">Zoom -</button>
                   <button id="operatorResetViewButton" type="button">Reset View</button>
@@ -317,6 +344,7 @@
                     <g id="operatorRelocateLayer"></g>
                   </g>
                 </svg>
+                <div id="operatorScene3d" class="operator-scene3d hidden"></div>
                 <div id="manualPad" class="manual-pad" aria-label="Manual robot control">
                   <button type="button" class="manual-key up" data-manual-key="w" title="W / forward">&#8593;</button>
                   <button type="button" class="manual-key left" data-manual-key="a" title="A / left">&#8592;</button>

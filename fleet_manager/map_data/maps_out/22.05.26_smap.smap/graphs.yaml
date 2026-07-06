@@ -1,13 +1,14 @@
 mapName: 22.05.26_smap
+coordinateFrame: map_top_left
 primitives:
 - kind: line
   line_type: FeatureLine
   start:
-    x: 0.037
-    y: -0.186
+    x: 22.973
+    y: 8.497
   end:
-    x: 0.917
-    y: -0.188
+    x: 23.853
+    y: 8.499
   start_name: LM64
   end_name: LM66
   properties:
@@ -18,11 +19,11 @@ primitives:
 - kind: line
   line_type: FeatureLine
   start:
-    x: 0.917
-    y: -0.188
+    x: 23.853
+    y: 8.499
   end:
-    x: 6.737
-    y: -0.203
+    x: 29.673
+    y: 8.514
   start_name: LM66
   end_name: LM86
   properties:
@@ -33,11 +34,11 @@ primitives:
 - kind: line
   line_type: FeatureLine
   start:
-    x: -2.871
-    y: -0.177
+    x: 20.065
+    y: 8.488
   end:
-    x: -2.011
-    y: -0.179
+    x: 20.925
+    y: 8.49
   start_name: LM54
   end_name: LM56
   properties:
@@ -48,11 +49,11 @@ primitives:
 - kind: line
   line_type: FeatureLine
   start:
-    x: -2.011
-    y: -0.179
+    x: 20.925
+    y: 8.49
   end:
-    x: -1.283
-    y: -0.182
+    x: 21.653
+    y: 8.493
   start_name: LM56
   end_name: LM61
   properties:
@@ -63,11 +64,11 @@ primitives:
 - kind: line
   line_type: FeatureLine
   start:
-    x: 2.239
-    y: 1.343
+    x: 25.175
+    y: 6.968
   end:
-    x: 3.797
-    y: 1.338
+    x: 26.733
+    y: 6.973
   start_name: LM114
   end_name: LM121
   properties:
@@ -79,17 +80,17 @@ primitives:
   curve_type: DegenerateBezier
   curve:
     start:
-      x: -0.843
-      y: -0.183
+      x: 22.093
+      y: 8.494
     end:
-      x: -1.283
-      y: -0.182
+      x: 21.653
+      y: 8.493
     control1:
-      x: -0.99
-      y: -0.183
+      x: 21.946
+      y: 8.494
     control2:
-      x: -1.136
-      y: -0.182
+      x: 21.8
+      y: 8.493
     start_name: LM62
     end_name: LM61
   properties:
@@ -102,17 +103,17 @@ primitives:
   curve_type: DegenerateBezier
   curve:
     start:
-      x: 0.037
-      y: -0.186
+      x: 22.973
+      y: 8.497
     end:
-      x: -0.403
-      y: -0.184
+      x: 22.533
+      y: 8.495
     control1:
-      x: -0.11
-      y: -0.185
+      x: 22.826
+      y: 8.496
     control2:
-      x: -0.256
-      y: -0.185
+      x: 22.68
+      y: 8.496
     start_name: LM64
     end_name: LM63
   properties:
@@ -125,17 +126,17 @@ primitives:
   curve_type: DegenerateBezier
   curve:
     start:
-      x: -0.403
-      y: -0.184
+      x: 22.533
+      y: 8.495
     end:
-      x: -0.843
-      y: -0.183
+      x: 22.093
+      y: 8.494
     control1:
-      x: -0.55
-      y: -0.184
+      x: 22.386
+      y: 8.495
     control2:
-      x: -0.696
-      y: -0.183
+      x: 22.24
+      y: 8.494
     start_name: LM63
     end_name: LM62
   properties:
@@ -148,17 +149,17 @@ primitives:
   curve_type: DegenerateBezier
   curve:
     start:
-      x: 0.917
-      y: -0.188
+      x: 23.853
+      y: 8.499
     end:
-      x: 0.477
-      y: -0.187
+      x: 23.413
+      y: 8.498
     control1:
-      x: 0.77
-      y: -0.188
+      x: 23.706
+      y: 8.499
     control2:
-      x: 0.624
-      y: -0.187
+      x: 23.56
+      y: 8.498
     start_name: LM66
     end_name: LM65
   properties:
@@ -171,17 +172,17 @@ primitives:
   curve_type: DegenerateBezier
   curve:
     start:
-      x: -1.283
-      y: -0.182
+      x: 21.653
+      y: 8.493
     end:
-      x: -2.011
-      y: -0.179
+      x: 20.925
+      y: 8.49
     control1:
-      x: -1.526
-      y: -0.181
+      x: 21.41
+      y: 8.492
     control2:
-      x: -1.768
-      y: -0.18
+      x: 21.168
+      y: 8.491
     start_name: LM61
     end_name: LM56
   properties:
@@ -194,17 +195,17 @@ primitives:
   curve_type: DegenerateBezier
   curve:
     start:
-      x: -3.751
-      y: -0.175
+      x: 19.185
+      y: 8.486
     end:
-      x: -4.191
-      y: -0.174
+      x: 18.745
+      y: 8.485
     control1:
-      x: -3.898
-      y: -0.175
+      x: 19.038
+      y: 8.486
     control2:
-      x: -4.044
-      y: -0.174
+      x: 18.892
+      y: 8.485
     start_name: LM52
     end_name: LM51
   properties:
@@ -218,17 +219,17 @@ primitives:
   curve_type: DegenerateBezier
   curve:
     start:
-      x: 0.477
-      y: -0.187
+      x: 23.413
+      y: 8.498
     end:
-      x: 0.037
-      y: -0.186
+      x: 22.973
+      y: 8.497
     control1:
-      x: 0.33
-      y: -0.187
+      x: 23.266
+      y: 8.498
     control2:
-      x: 0.184
-      y: -0.186
+      x: 23.12
+      y: 8.497
     start_name: LM65
     end_name: LM64
   properties:
@@ -241,17 +242,17 @@ primitives:
   curve_type: DegenerateBezier
   curve:
     start:
-      x: -2.011
-      y: -0.179
+      x: 20.925
+      y: 8.49
     end:
-      x: -2.431
-      y: -0.178
+      x: 20.505
+      y: 8.489
     control1:
-      x: -2.151
-      y: -0.179
+      x: 20.785
+      y: 8.49
     control2:
-      x: -2.291
-      y: -0.178
+      x: 20.645
+      y: 8.489
     start_name: LM56
     end_name: LM55
   properties:
@@ -264,17 +265,17 @@ primitives:
   curve_type: DegenerateBezier
   curve:
     start:
-      x: -2.871
-      y: -0.177
+      x: 20.065
+      y: 8.488
     end:
-      x: -3.311
-      y: -0.176
+      x: 19.625
+      y: 8.487
     control1:
-      x: -3.018
-      y: -0.177
+      x: 19.918
+      y: 8.488
     control2:
-      x: -3.164
-      y: -0.176
+      x: 19.772
+      y: 8.487
     start_name: LM54
     end_name: LM53
   properties:
@@ -287,17 +288,17 @@ primitives:
   curve_type: DegenerateBezier
   curve:
     start:
-      x: 5.417
-      y: -0.2
+      x: 28.353
+      y: 8.511
     end:
-      x: 4.977
-      y: -0.199
+      x: 27.913
+      y: 8.51
     control1:
-      x: 5.27
-      y: -0.2
+      x: 28.206
+      y: 8.511
     control2:
-      x: 5.124
-      y: -0.199
+      x: 28.06
+      y: 8.51
     start_name: LM83
     end_name: LM82
   properties:
@@ -310,17 +311,17 @@ primitives:
   curve_type: DegenerateBezier
   curve:
     start:
-      x: 5.857
-      y: -0.201
+      x: 28.793
+      y: 8.512
     end:
-      x: 5.417
-      y: -0.2
+      x: 28.353
+      y: 8.511
     control1:
-      x: 5.71
-      y: -0.201
+      x: 28.646
+      y: 8.512
     control2:
-      x: 5.564
-      y: -0.2
+      x: 28.5
+      y: 8.511
     start_name: LM84
     end_name: LM83
   properties:
@@ -333,17 +334,17 @@ primitives:
   curve_type: DegenerateBezier
   curve:
     start:
-      x: 3.379
-      y: -0.194
+      x: 26.315
+      y: 8.505
     end:
-      x: 2.939
-      y: -0.193
+      x: 25.875
+      y: 8.504
     control1:
-      x: 3.232
-      y: -0.194
+      x: 26.168
+      y: 8.505
     control2:
-      x: 3.086
-      y: -0.193
+      x: 26.022
+      y: 8.504
     start_name: LM75
     end_name: LM74
   properties:
@@ -356,17 +357,17 @@ primitives:
   curve_type: DegenerateBezier
   curve:
     start:
-      x: 6.297
-      y: -0.202
+      x: 29.233
+      y: 8.513
     end:
-      x: 5.857
-      y: -0.201
+      x: 28.793
+      y: 8.512
     control1:
-      x: 6.15
-      y: -0.202
+      x: 29.086
+      y: 8.513
     control2:
-      x: 6.004
-      y: -0.201
+      x: 28.94
+      y: 8.512
     start_name: LM85
     end_name: LM84
   properties:
@@ -379,17 +380,17 @@ primitives:
   curve_type: DegenerateBezier
   curve:
     start:
-      x: 2.939
-      y: -0.193
+      x: 25.875
+      y: 8.504
     end:
-      x: 2.539
-      y: -0.192
+      x: 25.475
+      y: 8.503
     control1:
-      x: 2.806
-      y: -0.193
+      x: 25.742
+      y: 8.504
     control2:
-      x: 2.672
-      y: -0.192
+      x: 25.608
+      y: 8.503
     start_name: LM74
     end_name: LM73
   properties:
@@ -402,17 +403,17 @@ primitives:
   curve_type: DegenerateBezier
   curve:
     start:
-      x: 5.996
-      y: 1.332
+      x: 28.932
+      y: 6.979
     end:
-      x: 5.556
-      y: 1.333
+      x: 28.492
+      y: 6.978
     control1:
-      x: 5.849
-      y: 1.332
+      x: 28.785
+      y: 6.979
     control2:
-      x: 5.703
-      y: 1.333
+      x: 28.639
+      y: 6.978
     start_name: LM126
     end_name: LM125
   properties:
@@ -430,17 +431,17 @@ primitives:
   curve_type: DegenerateBezier
   curve:
     start:
-      x: 4.237
-      y: 1.337
+      x: 27.173
+      y: 6.974
     end:
-      x: 3.797
-      y: 1.338
+      x: 26.733
+      y: 6.973
     control1:
-      x: 4.09
-      y: 1.337
+      x: 27.026
+      y: 6.974
     control2:
-      x: 3.944
-      y: 1.338
+      x: 26.88
+      y: 6.973
     start_name: LM122
     end_name: LM121
   properties:
@@ -458,17 +459,17 @@ primitives:
   curve_type: DegenerateBezier
   curve:
     start:
-      x: 5.556
-      y: 1.333
+      x: 28.492
+      y: 6.978
     end:
-      x: 5.116
-      y: 1.334
+      x: 28.052
+      y: 6.977
     control1:
-      x: 5.409
-      y: 1.333
+      x: 28.345
+      y: 6.978
     control2:
-      x: 5.263
-      y: 1.334
+      x: 28.199
+      y: 6.977
     start_name: LM125
     end_name: LM124
   properties:
@@ -486,17 +487,17 @@ primitives:
   curve_type: DegenerateBezier
   curve:
     start:
-      x: 5.116
-      y: 1.334
+      x: 28.052
+      y: 6.977
     end:
-      x: 4.676
-      y: 1.336
+      x: 27.612
+      y: 6.975
     control1:
-      x: 4.969
-      y: 1.335
+      x: 27.905
+      y: 6.976
     control2:
-      x: 4.823
-      y: 1.335
+      x: 27.759
+      y: 6.976
     start_name: LM124
     end_name: LM123
   properties:
@@ -514,17 +515,17 @@ primitives:
   curve_type: DegenerateBezier
   curve:
     start:
-      x: 4.676
-      y: 1.336
+      x: 27.612
+      y: 6.975
     end:
-      x: 4.237
-      y: 1.337
+      x: 27.173
+      y: 6.974
     control1:
-      x: 4.53
-      y: 1.336
+      x: 27.466
+      y: 6.975
     control2:
-      x: 4.383
-      y: 1.337
+      x: 27.319
+      y: 6.974
     start_name: LM123
     end_name: LM122
   properties:
@@ -542,17 +543,17 @@ primitives:
   curve_type: DegenerateBezier
   curve:
     start:
-      x: 1.359
-      y: 1.345
+      x: 24.295
+      y: 6.966
     end:
-      x: 0.919
-      y: 1.346
+      x: 23.855
+      y: 6.965
     control1:
-      x: 1.212
-      y: 1.345
+      x: 24.148
+      y: 6.966
     control2:
-      x: 1.066
-      y: 1.346
+      x: 24.002
+      y: 6.965
     start_name: LM112
     end_name: LM111
   properties:
@@ -570,17 +571,17 @@ primitives:
   curve_type: DegenerateBezier
   curve:
     start:
-      x: 2.239
-      y: 1.343
+      x: 25.175
+      y: 6.968
     end:
-      x: 1.799
-      y: 1.344
+      x: 24.735
+      y: 6.967
     control1:
-      x: 2.092
-      y: 1.343
+      x: 25.028
+      y: 6.968
     control2:
-      x: 1.946
-      y: 1.344
+      x: 24.882
+      y: 6.967
     start_name: LM114
     end_name: LM113
   properties:
@@ -598,17 +599,17 @@ primitives:
   curve_type: DegenerateBezier
   curve:
     start:
-      x: 2.679
-      y: 1.342
+      x: 25.615
+      y: 6.969
     end:
-      x: 2.239
-      y: 1.343
+      x: 25.175
+      y: 6.968
     control1:
-      x: 2.532
-      y: 1.342
+      x: 25.468
+      y: 6.969
     control2:
-      x: 2.386
-      y: 1.343
+      x: 25.322
+      y: 6.968
     start_name: LM115
     end_name: LM114
   properties:
@@ -626,17 +627,17 @@ primitives:
   curve_type: DegenerateBezier
   curve:
     start:
-      x: 1.799
-      y: 1.344
+      x: 24.735
+      y: 6.967
     end:
-      x: 1.359
-      y: 1.345
+      x: 24.295
+      y: 6.966
     control1:
-      x: 1.652
-      y: 1.344
+      x: 24.588
+      y: 6.967
     control2:
-      x: 1.506
-      y: 1.345
+      x: 24.442
+      y: 6.966
     start_name: LM113
     end_name: LM112
   properties:
@@ -654,17 +655,17 @@ primitives:
   curve_type: DegenerateBezier
   curve:
     start:
-      x: 3.089
-      y: 1.341
+      x: 26.025
+      y: 6.97
     end:
-      x: 2.679
-      y: 1.342
+      x: 25.615
+      y: 6.969
     control1:
-      x: 2.952
-      y: 1.341
+      x: 25.888
+      y: 6.97
     control2:
-      x: 2.816
-      y: 1.342
+      x: 25.752
+      y: 6.969
     start_name: LM116
     end_name: LM115
   properties:
@@ -682,17 +683,17 @@ primitives:
   curve_type: DegenerateBezier
   curve:
     start:
-      x: -1.144
-      y: 1.351
+      x: 21.792
+      y: 6.96
     end:
-      x: -1.584
-      y: 1.352
+      x: 21.352
+      y: 6.959
     control1:
-      x: -1.291
-      y: 1.351
+      x: 21.645
+      y: 6.96
     control2:
-      x: -1.437
-      y: 1.352
+      x: 21.499
+      y: 6.959
     start_name: LM103
     end_name: LM102
   properties:
@@ -710,17 +711,17 @@ primitives:
   curve_type: DegenerateBezier
   curve:
     start:
-      x: -0.704
-      y: 1.35
+      x: 22.232
+      y: 6.961
     end:
-      x: -1.144
-      y: 1.351
+      x: 21.792
+      y: 6.96
     control1:
-      x: -0.851
-      y: 1.35
+      x: 22.085
+      y: 6.961
     control2:
-      x: -0.997
-      y: 1.351
+      x: 21.939
+      y: 6.96
     start_name: LM104
     end_name: LM103
   properties:
@@ -738,17 +739,17 @@ primitives:
   curve_type: DegenerateBezier
   curve:
     start:
-      x: -1.584
-      y: 1.352
+      x: 21.352
+      y: 6.959
     end:
-      x: -2.024
-      y: 1.353
+      x: 20.912
+      y: 6.958
     control1:
-      x: -1.731
-      y: 1.352
+      x: 21.205
+      y: 6.959
     control2:
-      x: -1.877
-      y: 1.353
+      x: 21.059
+      y: 6.958
     start_name: LM102
     end_name: LM101
   properties:
@@ -766,17 +767,17 @@ primitives:
   curve_type: DegenerateBezier
   curve:
     start:
-      x: -4.022
-      y: 1.36
+      x: 18.914
+      y: 6.951
     end:
-      x: -4.462
-      y: 1.361
+      x: 18.474
+      y: 6.95
     control1:
-      x: -4.169
-      y: 1.36
+      x: 18.767
+      y: 6.951
     control2:
-      x: -4.315
-      y: 1.361
+      x: 18.621
+      y: 6.95
     start_name: LM93
     end_name: LM92
   properties:
@@ -794,17 +795,17 @@ primitives:
   curve_type: DegenerateBezier
   curve:
     start:
-      x: -3.582
-      y: 1.359
+      x: 19.354
+      y: 6.952
     end:
-      x: -4.022
-      y: 1.36
+      x: 18.914
+      y: 6.951
     control1:
-      x: -3.729
-      y: 1.359
+      x: 19.207
+      y: 6.952
     control2:
-      x: -3.875
-      y: 1.36
+      x: 19.061
+      y: 6.951
     start_name: LM94
     end_name: LM93
   properties:
@@ -822,17 +823,17 @@ primitives:
   curve_type: DegenerateBezier
   curve:
     start:
-      x: -3.142
-      y: 1.358
+      x: 19.794
+      y: 6.953
     end:
-      x: -3.582
-      y: 1.359
+      x: 19.354
+      y: 6.952
     control1:
-      x: -3.289
-      y: 1.358
+      x: 19.647
+      y: 6.953
     control2:
-      x: -3.435
-      y: 1.359
+      x: 19.501
+      y: 6.952
     start_name: LM95
     end_name: LM94
   properties:
@@ -850,17 +851,17 @@ primitives:
   curve_type: DegenerateBezier
   curve:
     start:
-      x: -2.722
-      y: 1.357
+      x: 20.214
+      y: 6.954
     end:
-      x: -3.142
-      y: 1.358
+      x: 19.794
+      y: 6.953
     control1:
-      x: -2.862
-      y: 1.357
+      x: 20.074
+      y: 6.954
     control2:
-      x: -3.002
-      y: 1.358
+      x: 19.934
+      y: 6.953
     start_name: LM96
     end_name: LM95
   properties:
@@ -878,17 +879,17 @@ primitives:
   curve_type: DegenerateBezier
   curve:
     start:
-      x: 0.919
-      y: 1.346
+      x: 23.855
+      y: 6.965
     end:
-      x: 0.176
-      y: 1.348
+      x: 23.112
+      y: 6.963
     control1:
-      x: 0.671
-      y: 1.347
+      x: 23.607
+      y: 6.964
     control2:
-      x: 0.424
-      y: 1.347
+      x: 23.36
+      y: 6.964
     start_name: LM111
     end_name: LM106
   properties:
@@ -906,17 +907,17 @@ primitives:
   curve_type: DegenerateBezier
   curve:
     start:
-      x: -2.024
-      y: 1.353
+      x: 20.912
+      y: 6.958
     end:
-      x: -2.722
-      y: 1.357
+      x: 20.214
+      y: 6.954
     control1:
-      x: -2.257
-      y: 1.354
+      x: 20.679
+      y: 6.957
     control2:
-      x: -2.489
-      y: 1.356
+      x: 20.447
+      y: 6.955
     start_name: LM101
     end_name: LM96
   properties:
@@ -934,17 +935,17 @@ primitives:
   curve_type: DegenerateBezier
   curve:
     start:
-      x: -4.462
-      y: 1.361
+      x: 18.474
+      y: 6.95
     end:
-      x: -4.902
-      y: 1.362
+      x: 18.034
+      y: 6.949
     control1:
-      x: -4.609
-      y: 1.361
+      x: 18.327
+      y: 6.95
     control2:
-      x: -4.755
-      y: 1.362
+      x: 18.181
+      y: 6.949
     start_name: LM92
     end_name: LM91
   properties:
@@ -962,17 +963,17 @@ primitives:
   curve_type: DegenerateBezier
   curve:
     start:
-      x: -0.264
-      y: 1.349
+      x: 22.672
+      y: 6.962
     end:
-      x: -0.704
-      y: 1.35
+      x: 22.232
+      y: 6.961
     control1:
-      x: -0.411
-      y: 1.349
+      x: 22.525
+      y: 6.962
     control2:
-      x: -0.557
-      y: 1.35
+      x: 22.379
+      y: 6.961
     start_name: LM105
     end_name: LM104
   properties:
@@ -990,17 +991,17 @@ primitives:
   curve_type: DegenerateBezier
   curve:
     start:
-      x: 0.176
-      y: 1.348
+      x: 23.112
+      y: 6.963
     end:
-      x: -0.264
-      y: 1.349
+      x: 22.672
+      y: 6.962
     control1:
-      x: 0.029
-      y: 1.348
+      x: 22.965
+      y: 6.963
     control2:
-      x: -0.117
-      y: 1.349
+      x: 22.819
+      y: 6.962
     start_name: LM106
     end_name: LM105
   properties:
@@ -1018,17 +1019,17 @@ primitives:
   curve_type: DegenerateBezier
   curve:
     start:
-      x: 3.797
-      y: 1.338
+      x: 26.733
+      y: 6.973
     end:
-      x: 3.089
-      y: 1.341
+      x: 26.025
+      y: 6.97
     control1:
-      x: 3.561
-      y: 1.339
+      x: 26.497
+      y: 6.972
     control2:
-      x: 3.325
-      y: 1.34
+      x: 26.261
+      y: 6.971
     start_name: LM121
     end_name: LM116
   properties:
@@ -1046,17 +1047,17 @@ primitives:
   curve_type: DegenerateBezier
   curve:
     start:
-      x: -2.431
-      y: -0.178
+      x: 20.505
+      y: 8.489
     end:
-      x: -2.871
-      y: -0.177
+      x: 20.065
+      y: 8.488
     control1:
-      x: -2.578
-      y: -0.178
+      x: 20.358
+      y: 8.489
     control2:
-      x: -2.724
-      y: -0.177
+      x: 20.212
+      y: 8.488
     start_name: LM55
     end_name: LM54
   properties:
@@ -1069,17 +1070,17 @@ primitives:
   curve_type: DegenerateBezier
   curve:
     start:
-      x: -6.529
-      y: 1.332
+      x: 16.407
+      y: 6.979
     end:
-      x: -6.529
-      y: 2.765
+      x: 16.407
+      y: 5.546
     control1:
-      x: -6.529
-      y: 1.81
+      x: 16.407
+      y: 6.501
     control2:
-      x: -6.529
-      y: 2.287
+      x: 16.407
+      y: 6.024
     start_name: LM281
     end_name: LM280
   properties:
@@ -1092,17 +1093,17 @@ primitives:
   curve_type: DegenerateBezier
   curve:
     start:
-      x: -6.529
-      y: -0.193
+      x: 16.407
+      y: 8.504
     end:
-      x: -6.529
-      y: 1.332
+      x: 16.407
+      y: 6.979
     control1:
-      x: -6.529
-      y: 0.315
+      x: 16.407
+      y: 7.996
     control2:
-      x: -6.529
-      y: 0.824
+      x: 16.407
+      y: 7.487
     start_name: LM282
     end_name: LM281
   properties:
@@ -1115,17 +1116,17 @@ primitives:
   curve_type: DegenerateBezier
   curve:
     start:
-      x: -4.191
-      y: -0.174
+      x: 18.745
+      y: 8.485
     end:
-      x: -6.529
-      y: -0.193
+      x: 16.407
+      y: 8.504
     control1:
-      x: -4.97
-      y: -0.18
+      x: 17.966
+      y: 8.491
     control2:
-      x: -5.75
-      y: -0.187
+      x: 17.186
+      y: 8.498
     start_name: LM51
     end_name: LM282
   properties:
@@ -1139,17 +1140,17 @@ primitives:
   curve_type: DegenerateBezier
   curve:
     start:
-      x: -4.902
-      y: 1.362
+      x: 18.034
+      y: 6.949
     end:
-      x: -6.529
-      y: 1.332
+      x: 16.407
+      y: 6.979
     control1:
-      x: -5.444
-      y: 1.352
+      x: 17.492
+      y: 6.959
     control2:
-      x: -5.987
-      y: 1.342
+      x: 16.949
+      y: 6.969
     start_name: LM91
     end_name: LM281
   properties:
@@ -1162,17 +1163,17 @@ primitives:
   curve_type: DegenerateBezier
   curve:
     start:
-      x: 9.157
-      y: 2.85
+      x: 32.093
+      y: 5.461
     end:
-      x: 9.157
-      y: 1.332
+      x: 32.093
+      y: 6.979
     control1:
-      x: 9.157
-      y: 2.344
+      x: 32.093
+      y: 5.967
     control2:
-      x: 9.157
-      y: 1.838
+      x: 32.093
+      y: 6.473
     start_name: LM286
     end_name: LM287
   properties:
@@ -1185,17 +1186,17 @@ primitives:
   curve_type: DegenerateBezier
   curve:
     start:
-      x: 9.157
-      y: 1.332
+      x: 32.093
+      y: 6.979
     end:
-      x: 5.996
-      y: 1.332
+      x: 28.932
+      y: 6.979
     control1:
-      x: 8.103
-      y: 1.332
+      x: 31.039
+      y: 6.979
     control2:
-      x: 7.05
-      y: 1.332
+      x: 29.986
+      y: 6.979
     start_name: LM287
     end_name: LM126
   properties:
@@ -1208,17 +1209,17 @@ primitives:
   curve_type: DegenerateBezier
   curve:
     start:
-      x: 6.737
-      y: -0.203
+      x: 29.673
+      y: 8.514
     end:
-      x: 6.297
-      y: -0.202
+      x: 29.233
+      y: 8.513
     control1:
-      x: 6.59
-      y: -0.203
+      x: 29.526
+      y: 8.514
     control2:
-      x: 6.444
-      y: -0.202
+      x: 29.38
+      y: 8.513
     start_name: LM86
     end_name: LM85
   properties:
@@ -1231,17 +1232,17 @@ primitives:
   curve_type: DegenerateBezier
   curve:
     start:
-      x: 4.977
-      y: -0.199
+      x: 27.913
+      y: 8.51
     end:
-      x: 4.537
-      y: -0.198
+      x: 27.473
+      y: 8.509
     control1:
-      x: 4.83
-      y: -0.199
+      x: 27.766
+      y: 8.51
     control2:
-      x: 4.684
-      y: -0.198
+      x: 27.62
+      y: 8.509
     start_name: LM82
     end_name: LM81
   properties:
@@ -1254,17 +1255,17 @@ primitives:
   curve_type: DegenerateBezier
   curve:
     start:
-      x: 4.537
-      y: -0.198
+      x: 27.473
+      y: 8.509
     end:
-      x: 3.819
-      y: -0.195
+      x: 26.755
+      y: 8.506
     control1:
-      x: 4.298
-      y: -0.197
+      x: 27.234
+      y: 8.508
     control2:
-      x: 4.058
-      y: -0.196
+      x: 26.994
+      y: 8.507
     start_name: LM81
     end_name: LM76
   properties:
@@ -1277,17 +1278,17 @@ primitives:
   curve_type: DegenerateBezier
   curve:
     start:
-      x: 3.819
-      y: -0.195
+      x: 26.755
+      y: 8.506
     end:
-      x: 3.379
-      y: -0.194
+      x: 26.315
+      y: 8.505
     control1:
-      x: 3.672
-      y: -0.195
+      x: 26.608
+      y: 8.506
     control2:
-      x: 3.526
-      y: -0.194
+      x: 26.462
+      y: 8.505
     start_name: LM76
     end_name: LM75
   properties:
@@ -1300,17 +1301,17 @@ primitives:
   curve_type: DegenerateBezier
   curve:
     start:
-      x: 2.539
-      y: -0.192
+      x: 25.475
+      y: 8.503
     end:
-      x: 2.099
-      y: -0.191
+      x: 25.035
+      y: 8.502
     control1:
-      x: 2.392
-      y: -0.192
+      x: 25.328
+      y: 8.503
     control2:
-      x: 2.246
-      y: -0.191
+      x: 25.182
+      y: 8.502
     start_name: LM73
     end_name: LM72
   properties:
@@ -1323,17 +1324,17 @@ primitives:
   curve_type: DegenerateBezier
   curve:
     start:
-      x: 2.099
-      y: -0.191
+      x: 25.035
+      y: 8.502
     end:
-      x: 1.659
-      y: -0.19
+      x: 24.595
+      y: 8.501
     control1:
-      x: 1.952
-      y: -0.191
+      x: 24.888
+      y: 8.502
     control2:
-      x: 1.806
-      y: -0.19
+      x: 24.742
+      y: 8.501
     start_name: LM72
     end_name: LM71
   properties:
@@ -1346,17 +1347,17 @@ primitives:
   curve_type: DegenerateBezier
   curve:
     start:
-      x: 1.659
-      y: -0.19
+      x: 24.595
+      y: 8.501
     end:
-      x: 0.917
-      y: -0.188
+      x: 23.853
+      y: 8.499
     control1:
-      x: 1.412
-      y: -0.189
+      x: 24.348
+      y: 8.5
     control2:
-      x: 1.164
-      y: -0.189
+      x: 24.1
+      y: 8.5
     start_name: LM71
     end_name: LM66
   properties:
@@ -1369,17 +1370,17 @@ primitives:
   curve_type: DegenerateBezier
   curve:
     start:
-      x: -3.311
-      y: -0.176
+      x: 19.625
+      y: 8.487
     end:
-      x: -3.751
-      y: -0.175
+      x: 19.185
+      y: 8.486
     control1:
-      x: -3.458
-      y: -0.176
+      x: 19.478
+      y: 8.487
     control2:
-      x: -3.604
-      y: -0.175
+      x: 19.332
+      y: 8.486
     start_name: LM53
     end_name: LM52
   properties:
@@ -1393,17 +1394,17 @@ primitives:
   curve_type: DegenerateBezier
   curve:
     start:
-      x: 9.157
-      y: 2.85
+      x: 32.093
+      y: 5.461
     end:
-      x: 5.996
-      y: 1.332
+      x: 28.932
+      y: 6.979
     control1:
-      x: 9.157
-      y: 1.445
+      x: 32.093
+      y: 6.866
     control2:
-      x: 9.037
-      y: 1.332
+      x: 31.973
+      y: 6.979
     start_name: LM286
     end_name: LM126
   properties:
@@ -1420,17 +1421,17 @@ primitives:
   curve_type: DegenerateBezier
   curve:
     start:
-      x: 9.157
-      y: 1.332
+      x: 32.093
+      y: 6.979
     end:
-      x: 6.737
-      y: -0.203
+      x: 29.673
+      y: 8.514
     control1:
-      x: 9.157
-      y: -0.045
+      x: 32.093
+      y: 8.356
     control2:
-      x: 9.152
-      y: -0.203
+      x: 32.088
+      y: 8.514
     start_name: LM287
     end_name: LM86
   properties:
@@ -1447,17 +1448,17 @@ primitives:
   curve_type: DegenerateBezier
   curve:
     start:
-      x: -4.902
-      y: 1.362
+      x: 18.034
+      y: 6.949
     end:
-      x: -6.529
-      y: 2.765
+      x: 16.407
+      y: 5.546
     control1:
-      x: -6.509
-      y: 1.362
+      x: 16.427
+      y: 6.949
     control2:
-      x: -6.529
-      y: 1.663
+      x: 16.407
+      y: 6.648
     start_name: LM91
     end_name: LM280
   properties:
@@ -1474,17 +1475,17 @@ primitives:
   curve_type: DegenerateBezier
   curve:
     start:
-      x: -4.191
-      y: -0.174
+      x: 18.745
+      y: 8.485
     end:
-      x: -6.529
-      y: 1.332
+      x: 16.407
+      y: 6.979
     control1:
-      x: -6.531
-      y: -0.174
+      x: 16.405
+      y: 8.485
     control2:
-      x: -6.529
-      y: 0.077
+      x: 16.407
+      y: 8.234
     start_name: LM51
     end_name: LM281
   properties:
@@ -1501,17 +1502,17 @@ primitives:
   curve_type: DegenerateBezier
   curve:
     start:
-      x: -4.903
-      y: 5.309
+      x: 18.033
+      y: 3.002
     end:
-      x: -2.42
-      y: 5.31
+      x: 20.516
+      y: 3.001
     control1:
-      x: -4.075
-      y: 5.309
+      x: 18.861
+      y: 3.002
     control2:
-      x: -3.248
-      y: 5.31
+      x: 19.688
+      y: 3.001
     start_name: LM320
     end_name: LM295
   properties:
@@ -1523,17 +1524,17 @@ primitives:
   curve_type: DegenerateBezier
   curve:
     start:
-      x: 9.157
-      y: 5.34
+      x: 32.093
+      y: 2.971
     end:
-      x: 9.157
-      y: 2.85
+      x: 32.093
+      y: 5.461
     control1:
-      x: 9.157
-      y: 4.51
+      x: 32.093
+      y: 3.801
     control2:
-      x: 9.157
-      y: 3.68
+      x: 32.093
+      y: 4.631
     start_name: LM319
     end_name: LM286
   properties:
@@ -1545,17 +1546,17 @@ primitives:
   curve_type: DegenerateBezier
   curve:
     start:
-      x: -6.529
-      y: 4.356
+      x: 16.407
+      y: 3.955
     end:
-      x: -4.903
-      y: 5.309
+      x: 18.033
+      y: 3.002
     control1:
-      x: -6.529
-      y: 5.224
+      x: 16.407
+      y: 3.087
     control2:
-      x: -6.534
-      y: 5.308
+      x: 16.402
+      y: 3.003
     start_name: LM321
     end_name: LM320
   properties:
@@ -1573,17 +1574,17 @@ primitives:
   curve_type: DegenerateBezier
   curve:
     start:
-      x: 3.122
-      y: 5.323
+      x: 26.058
+      y: 2.988
     end:
-      x: 3.572
-      y: 5.324
+      x: 26.508
+      y: 2.987
     control1:
-      x: 3.272
-      y: 5.323
+      x: 26.208
+      y: 2.988
     control2:
-      x: 3.422
-      y: 5.324
+      x: 26.358
+      y: 2.987
     start_name: LM307
     end_name: LM308
   properties:
@@ -1595,17 +1596,17 @@ primitives:
   curve_type: DegenerateBezier
   curve:
     start:
-      x: 3.572
-      y: 5.324
+      x: 26.508
+      y: 2.987
     end:
-      x: 4.022
-      y: 5.325
+      x: 26.958
+      y: 2.986
     control1:
-      x: 3.722
-      y: 5.324
+      x: 26.658
+      y: 2.987
     control2:
-      x: 3.872
-      y: 5.325
+      x: 26.808
+      y: 2.986
     start_name: LM308
     end_name: LM309
   properties:
@@ -1617,17 +1618,17 @@ primitives:
   curve_type: DegenerateBezier
   curve:
     start:
-      x: 4.022
-      y: 5.325
+      x: 26.958
+      y: 2.986
     end:
-      x: 4.472
-      y: 5.327
+      x: 27.408
+      y: 2.984
     control1:
-      x: 4.172
-      y: 5.326
+      x: 27.108
+      y: 2.985
     control2:
-      x: 4.322
-      y: 5.326
+      x: 27.258
+      y: 2.985
     start_name: LM309
     end_name: LM310
   properties:
@@ -1639,17 +1640,17 @@ primitives:
   curve_type: DegenerateBezier
   curve:
     start:
-      x: 4.472
-      y: 5.327
+      x: 27.408
+      y: 2.984
     end:
-      x: 4.922
-      y: 5.328
+      x: 27.858
+      y: 2.983
     control1:
-      x: 4.622
-      y: 5.327
+      x: 27.558
+      y: 2.984
     control2:
-      x: 4.772
-      y: 5.328
+      x: 27.708
+      y: 2.983
     start_name: LM310
     end_name: LM311
   properties:
@@ -1661,17 +1662,17 @@ primitives:
   curve_type: DegenerateBezier
   curve:
     start:
-      x: 4.922
-      y: 5.328
+      x: 27.858
+      y: 2.983
     end:
-      x: 5.372
-      y: 5.329
+      x: 28.308
+      y: 2.982
     control1:
-      x: 5.072
-      y: 5.328
+      x: 28.008
+      y: 2.983
     control2:
-      x: 5.222
-      y: 5.329
+      x: 28.158
+      y: 2.982
     start_name: LM311
     end_name: LM312
   properties:
@@ -1683,17 +1684,17 @@ primitives:
   curve_type: DegenerateBezier
   curve:
     start:
-      x: 5.372
-      y: 5.329
+      x: 28.308
+      y: 2.982
     end:
-      x: 5.922
-      y: 5.33
+      x: 28.858
+      y: 2.981
     control1:
-      x: 5.555
-      y: 5.329
+      x: 28.491
+      y: 2.982
     control2:
-      x: 5.739
-      y: 5.33
+      x: 28.675
+      y: 2.981
     start_name: LM312
     end_name: LM313
   properties:
@@ -1704,17 +1705,17 @@ primitives:
   curve_type: DegenerateBezier
   curve:
     start:
-      x: 5.922
-      y: 5.33
+      x: 28.858
+      y: 2.981
     end:
-      x: 6.362
-      y: 5.331
+      x: 29.298
+      y: 2.98
     control1:
-      x: 6.069
-      y: 5.33
+      x: 29.005
+      y: 2.981
     control2:
-      x: 6.215
-      y: 5.331
+      x: 29.151
+      y: 2.98
     start_name: LM313
     end_name: LM314
   properties:
@@ -1725,17 +1726,17 @@ primitives:
   curve_type: DegenerateBezier
   curve:
     start:
-      x: 6.362
-      y: 5.331
+      x: 29.298
+      y: 2.98
     end:
-      x: 6.802
-      y: 5.332
+      x: 29.738
+      y: 2.979
     control1:
-      x: 6.509
-      y: 5.331
+      x: 29.445
+      y: 2.98
     control2:
-      x: 6.655
-      y: 5.332
+      x: 29.591
+      y: 2.979
     start_name: LM314
     end_name: LM315
   properties:
@@ -1746,17 +1747,17 @@ primitives:
   curve_type: DegenerateBezier
   curve:
     start:
-      x: 6.802
-      y: 5.332
+      x: 29.738
+      y: 2.979
     end:
-      x: 7.242
-      y: 5.333
+      x: 30.178
+      y: 2.978
     control1:
-      x: 6.949
-      y: 5.332
+      x: 29.885
+      y: 2.979
     control2:
-      x: 7.095
-      y: 5.333
+      x: 30.031
+      y: 2.978
     start_name: LM315
     end_name: LM316
   properties:
@@ -1767,17 +1768,17 @@ primitives:
   curve_type: DegenerateBezier
   curve:
     start:
-      x: 7.242
-      y: 5.333
+      x: 30.178
+      y: 2.978
     end:
-      x: 7.682
-      y: 5.334
+      x: 30.618
+      y: 2.977
     control1:
-      x: 7.389
-      y: 5.333
+      x: 30.325
+      y: 2.978
     control2:
-      x: 7.535
-      y: 5.334
+      x: 30.471
+      y: 2.977
     start_name: LM316
     end_name: LM317
   properties:
@@ -1788,17 +1789,17 @@ primitives:
   curve_type: DegenerateBezier
   curve:
     start:
-      x: 7.682
-      y: 5.334
+      x: 30.618
+      y: 2.977
     end:
-      x: 8.122
-      y: 5.335
+      x: 31.058
+      y: 2.976
     control1:
-      x: 7.829
-      y: 5.334
+      x: 30.765
+      y: 2.977
     control2:
-      x: 7.975
-      y: 5.335
+      x: 30.911
+      y: 2.976
     start_name: LM317
     end_name: LM318
   properties:
@@ -1809,17 +1810,17 @@ primitives:
   curve_type: DegenerateBezier
   curve:
     start:
-      x: 0.372
-      y: 5.317
+      x: 23.308
+      y: 2.994
     end:
-      x: 0.812
-      y: 5.318
+      x: 23.748
+      y: 2.993
     control1:
-      x: 0.519
-      y: 5.317
+      x: 23.455
+      y: 2.994
     control2:
-      x: 0.665
-      y: 5.318
+      x: 23.601
+      y: 2.993
     start_name: LM301
     end_name: LM302
   properties:
@@ -1830,17 +1831,17 @@ primitives:
   curve_type: DegenerateBezier
   curve:
     start:
-      x: 0.812
-      y: 5.318
+      x: 23.748
+      y: 2.993
     end:
-      x: 1.252
-      y: 5.319
+      x: 24.188
+      y: 2.992
     control1:
-      x: 0.959
-      y: 5.318
+      x: 23.895
+      y: 2.993
     control2:
-      x: 1.105
-      y: 5.319
+      x: 24.041
+      y: 2.992
     start_name: LM302
     end_name: LM303
   properties:
@@ -1851,17 +1852,17 @@ primitives:
   curve_type: DegenerateBezier
   curve:
     start:
-      x: 1.252
-      y: 5.319
+      x: 24.188
+      y: 2.992
     end:
-      x: 1.692
-      y: 5.32
+      x: 24.628
+      y: 2.991
     control1:
-      x: 1.399
-      y: 5.319
+      x: 24.335
+      y: 2.992
     control2:
-      x: 1.545
-      y: 5.32
+      x: 24.481
+      y: 2.991
     start_name: LM303
     end_name: LM304
   properties:
@@ -1872,17 +1873,17 @@ primitives:
   curve_type: DegenerateBezier
   curve:
     start:
-      x: 1.692
-      y: 5.32
+      x: 24.628
+      y: 2.991
     end:
-      x: 2.132
-      y: 5.321
+      x: 25.068
+      y: 2.99
     control1:
-      x: 1.839
-      y: 5.32
+      x: 24.775
+      y: 2.991
     control2:
-      x: 1.985
-      y: 5.321
+      x: 24.921
+      y: 2.99
     start_name: LM304
     end_name: LM305
   properties:
@@ -1893,17 +1894,17 @@ primitives:
   curve_type: DegenerateBezier
   curve:
     start:
-      x: 2.132
-      y: 5.321
+      x: 25.068
+      y: 2.99
     end:
-      x: 2.572
-      y: 5.322
+      x: 25.508
+      y: 2.989
     control1:
-      x: 2.279
-      y: 5.321
+      x: 25.215
+      y: 2.99
     control2:
-      x: 2.425
-      y: 5.322
+      x: 25.361
+      y: 2.989
     start_name: LM305
     end_name: LM306
   properties:
@@ -1914,17 +1915,17 @@ primitives:
   curve_type: DegenerateBezier
   curve:
     start:
-      x: 2.572
-      y: 5.322
+      x: 25.508
+      y: 2.989
     end:
-      x: 3.122
-      y: 5.323
+      x: 26.058
+      y: 2.988
     control1:
-      x: 2.755
-      y: 5.322
+      x: 25.691
+      y: 2.989
     control2:
-      x: 2.939
-      y: 5.323
+      x: 25.875
+      y: 2.988
     start_name: LM306
     end_name: LM307
   properties:
@@ -1935,17 +1936,17 @@ primitives:
   curve_type: DegenerateBezier
   curve:
     start:
-      x: -2.42
-      y: 5.31
+      x: 20.516
+      y: 3.001
     end:
-      x: -1.98
-      y: 5.311
+      x: 20.956
+      y: 3.0
     control1:
-      x: -2.273
-      y: 5.31
+      x: 20.663
+      y: 3.001
     control2:
-      x: -2.127
-      y: 5.311
+      x: 20.809
+      y: 3.0
     start_name: LM295
     end_name: LM296
   properties:
@@ -1956,17 +1957,17 @@ primitives:
   curve_type: DegenerateBezier
   curve:
     start:
-      x: -1.98
-      y: 5.311
+      x: 20.956
+      y: 3.0
     end:
-      x: -1.54
-      y: 5.312
+      x: 21.396
+      y: 2.999
     control1:
-      x: -1.833
-      y: 5.311
+      x: 21.103
+      y: 3.0
     control2:
-      x: -1.687
-      y: 5.312
+      x: 21.249
+      y: 2.999
     start_name: LM296
     end_name: LM297
   properties:
@@ -1977,17 +1978,17 @@ primitives:
   curve_type: DegenerateBezier
   curve:
     start:
-      x: -1.54
-      y: 5.312
+      x: 21.396
+      y: 2.999
     end:
-      x: -1.1
-      y: 5.314
+      x: 21.836
+      y: 2.997
     control1:
-      x: -1.393
-      y: 5.313
+      x: 21.543
+      y: 2.998
     control2:
-      x: -1.247
-      y: 5.313
+      x: 21.689
+      y: 2.998
     start_name: LM297
     end_name: LM298
   properties:
@@ -1998,17 +1999,17 @@ primitives:
   curve_type: DegenerateBezier
   curve:
     start:
-      x: -1.1
-      y: 5.314
+      x: 21.836
+      y: 2.997
     end:
-      x: -0.66
-      y: 5.315
+      x: 22.276
+      y: 2.996
     control1:
-      x: -0.953
-      y: 5.314
+      x: 21.983
+      y: 2.997
     control2:
-      x: -0.807
-      y: 5.315
+      x: 22.129
+      y: 2.996
     start_name: LM298
     end_name: LM299
   properties:
@@ -2019,17 +2020,17 @@ primitives:
   curve_type: DegenerateBezier
   curve:
     start:
-      x: -0.66
-      y: 5.315
+      x: 22.276
+      y: 2.996
     end:
-      x: -0.22
-      y: 5.316
+      x: 22.716
+      y: 2.995
     control1:
-      x: -0.513
-      y: 5.315
+      x: 22.423
+      y: 2.996
     control2:
-      x: -0.367
-      y: 5.316
+      x: 22.569
+      y: 2.995
     start_name: LM299
     end_name: LM300
   properties:
@@ -2040,17 +2041,17 @@ primitives:
   curve_type: DegenerateBezier
   curve:
     start:
-      x: -0.22
-      y: 5.316
+      x: 22.716
+      y: 2.995
     end:
-      x: 0.372
-      y: 5.317
+      x: 23.308
+      y: 2.994
     control1:
-      x: -0.023
-      y: 5.316
+      x: 22.913
+      y: 2.995
     control2:
-      x: 0.175
-      y: 5.317
+      x: 23.111
+      y: 2.994
     start_name: LM300
     end_name: LM301
   properties:
@@ -2061,17 +2062,17 @@ primitives:
   curve_type: DegenerateBezier
   curve:
     start:
-      x: 8.122
-      y: 5.335
+      x: 31.058
+      y: 2.976
     end:
-      x: 9.157
-      y: 5.34
+      x: 32.093
+      y: 2.971
     control1:
-      x: 8.467
-      y: 5.337
+      x: 31.403
+      y: 2.974
     control2:
-      x: 8.812
-      y: 5.338
+      x: 31.748
+      y: 2.973
     start_name: LM318
     end_name: LM319
   properties:
@@ -2083,17 +2084,17 @@ primitives:
   curve_type: DegenerateBezier
   curve:
     start:
-      x: -4.227
-      y: 3.883
+      x: 18.709
+      y: 4.428
     end:
-      x: -3.787
-      y: 3.882
+      x: 19.149
+      y: 4.429
     control1:
-      x: -4.08
-      y: 3.883
+      x: 18.856
+      y: 4.428
     control2:
-      x: -3.934
-      y: 3.882
+      x: 19.002
+      y: 4.429
     start_name: LM131
     end_name: LM132
   properties:
@@ -2105,17 +2106,17 @@ primitives:
   curve_type: DegenerateBezier
   curve:
     start:
-      x: -3.787
-      y: 3.882
+      x: 19.149
+      y: 4.429
     end:
-      x: -3.347
-      y: 3.881
+      x: 19.589
+      y: 4.43
     control1:
-      x: -3.64
-      y: 3.882
+      x: 19.296
+      y: 4.429
     control2:
-      x: -3.494
-      y: 3.881
+      x: 19.442
+      y: 4.43
     start_name: LM132
     end_name: LM133
   properties:
@@ -2127,17 +2128,17 @@ primitives:
   curve_type: DegenerateBezier
   curve:
     start:
-      x: -3.347
-      y: 3.881
+      x: 19.589
+      y: 4.43
     end:
-      x: -2.907
-      y: 3.88
+      x: 20.029
+      y: 4.431
     control1:
-      x: -3.2
-      y: 3.881
+      x: 19.736
+      y: 4.43
     control2:
-      x: -3.054
-      y: 3.88
+      x: 19.882
+      y: 4.431
     start_name: LM133
     end_name: LM134
   properties:
@@ -2149,17 +2150,17 @@ primitives:
   curve_type: DegenerateBezier
   curve:
     start:
-      x: -2.907
-      y: 3.88
+      x: 20.029
+      y: 4.431
     end:
-      x: -2.467
-      y: 3.879
+      x: 20.469
+      y: 4.432
     control1:
-      x: -2.76
-      y: 3.88
+      x: 20.176
+      y: 4.431
     control2:
-      x: -2.614
-      y: 3.879
+      x: 20.322
+      y: 4.432
     start_name: LM134
     end_name: LM135
   properties:
@@ -2171,17 +2172,17 @@ primitives:
   curve_type: DegenerateBezier
   curve:
     start:
-      x: -2.467
-      y: 3.879
+      x: 20.469
+      y: 4.432
     end:
-      x: -2.067
-      y: 3.878
+      x: 20.869
+      y: 4.433
     control1:
-      x: -2.334
-      y: 3.879
+      x: 20.602
+      y: 4.432
     control2:
-      x: -2.2
-      y: 3.878
+      x: 20.736
+      y: 4.433
     start_name: LM135
     end_name: LM136
   properties:
@@ -2193,17 +2194,17 @@ primitives:
   curve_type: DegenerateBezier
   curve:
     start:
-      x: -2.067
-      y: 3.878
+      x: 20.869
+      y: 4.433
     end:
-      x: -1.349
-      y: 3.875
+      x: 21.587
+      y: 4.436
     control1:
-      x: -1.828
-      y: 3.877
+      x: 21.108
+      y: 4.434
     control2:
-      x: -1.588
-      y: 3.876
+      x: 21.348
+      y: 4.435
     start_name: LM136
     end_name: LM141
   properties:
@@ -2215,17 +2216,17 @@ primitives:
   curve_type: DegenerateBezier
   curve:
     start:
-      x: -1.349
-      y: 3.875
+      x: 21.587
+      y: 4.436
     end:
-      x: -0.909
-      y: 3.874
+      x: 22.027
+      y: 4.437
     control1:
-      x: -1.202
-      y: 3.875
+      x: 21.734
+      y: 4.436
     control2:
-      x: -1.056
-      y: 3.874
+      x: 21.88
+      y: 4.437
     start_name: LM141
     end_name: LM142
   properties:
@@ -2237,17 +2238,17 @@ primitives:
   curve_type: DegenerateBezier
   curve:
     start:
-      x: -0.909
-      y: 3.874
+      x: 22.027
+      y: 4.437
     end:
-      x: -0.469
-      y: 3.873
+      x: 22.467
+      y: 4.438
     control1:
-      x: -0.762
-      y: 3.874
+      x: 22.174
+      y: 4.437
     control2:
-      x: -0.616
-      y: 3.873
+      x: 22.32
+      y: 4.438
     start_name: LM142
     end_name: LM143
   properties:
@@ -2259,17 +2260,17 @@ primitives:
   curve_type: DegenerateBezier
   curve:
     start:
-      x: -0.469
-      y: 3.873
+      x: 22.467
+      y: 4.438
     end:
-      x: -0.029
-      y: 3.871
+      x: 22.907
+      y: 4.44
     control1:
-      x: -0.322
-      y: 3.872
+      x: 22.614
+      y: 4.439
     control2:
-      x: -0.176
-      y: 3.872
+      x: 22.76
+      y: 4.439
     start_name: LM143
     end_name: LM144
   properties:
@@ -2281,17 +2282,17 @@ primitives:
   curve_type: DegenerateBezier
   curve:
     start:
-      x: -0.029
-      y: 3.871
+      x: 22.907
+      y: 4.44
     end:
-      x: 0.411
-      y: 3.87
+      x: 23.347
+      y: 4.441
     control1:
-      x: 0.118
-      y: 3.871
+      x: 23.054
+      y: 4.44
     control2:
-      x: 0.264
-      y: 3.87
+      x: 23.2
+      y: 4.441
     start_name: LM144
     end_name: LM145
   properties:
@@ -2303,17 +2304,17 @@ primitives:
   curve_type: DegenerateBezier
   curve:
     start:
-      x: 0.411
-      y: 3.87
+      x: 23.347
+      y: 4.441
     end:
-      x: 0.851
-      y: 3.869
+      x: 23.787
+      y: 4.442
     control1:
-      x: 0.558
-      y: 3.87
+      x: 23.494
+      y: 4.441
     control2:
-      x: 0.704
-      y: 3.869
+      x: 23.64
+      y: 4.442
     start_name: LM145
     end_name: LM146
   properties:
@@ -2325,17 +2326,17 @@ primitives:
   curve_type: DegenerateBezier
   curve:
     start:
-      x: 0.851
-      y: 3.869
+      x: 23.787
+      y: 4.442
     end:
-      x: 1.593
-      y: 3.867
+      x: 24.529
+      y: 4.444
     control1:
-      x: 1.098
-      y: 3.868
+      x: 24.034
+      y: 4.443
     control2:
-      x: 1.346
-      y: 3.868
+      x: 24.282
+      y: 4.443
     start_name: LM146
     end_name: LM151
   properties:
@@ -2347,17 +2348,17 @@ primitives:
   curve_type: DegenerateBezier
   curve:
     start:
-      x: 1.593
-      y: 3.867
+      x: 24.529
+      y: 4.444
     end:
-      x: 2.033
-      y: 3.866
+      x: 24.969
+      y: 4.445
     control1:
-      x: 1.74
-      y: 3.867
+      x: 24.676
+      y: 4.444
     control2:
-      x: 1.886
-      y: 3.866
+      x: 24.822
+      y: 4.445
     start_name: LM151
     end_name: LM152
   properties:
@@ -2369,17 +2370,17 @@ primitives:
   curve_type: DegenerateBezier
   curve:
     start:
-      x: 2.033
-      y: 3.866
+      x: 24.969
+      y: 4.445
     end:
-      x: 2.473
-      y: 3.865
+      x: 25.409
+      y: 4.446
     control1:
-      x: 2.18
-      y: 3.866
+      x: 25.116
+      y: 4.445
     control2:
-      x: 2.326
-      y: 3.865
+      x: 25.262
+      y: 4.446
     start_name: LM152
     end_name: LM153
   properties:
@@ -2391,17 +2392,17 @@ primitives:
   curve_type: DegenerateBezier
   curve:
     start:
-      x: 2.473
-      y: 3.865
+      x: 25.409
+      y: 4.446
     end:
-      x: 2.913
-      y: 3.864
+      x: 25.849
+      y: 4.447
     control1:
-      x: 2.62
-      y: 3.865
+      x: 25.556
+      y: 4.446
     control2:
-      x: 2.766
-      y: 3.864
+      x: 25.702
+      y: 4.447
     start_name: LM153
     end_name: LM154
   properties:
@@ -2413,17 +2414,17 @@ primitives:
   curve_type: DegenerateBezier
   curve:
     start:
-      x: 2.913
-      y: 3.864
+      x: 25.849
+      y: 4.447
     end:
-      x: 3.353
-      y: 3.863
+      x: 26.289
+      y: 4.448
     control1:
-      x: 3.06
-      y: 3.864
+      x: 25.996
+      y: 4.447
     control2:
-      x: 3.206
-      y: 3.863
+      x: 26.142
+      y: 4.448
     start_name: LM154
     end_name: LM155
   properties:
@@ -2435,17 +2436,17 @@ primitives:
   curve_type: DegenerateBezier
   curve:
     start:
-      x: 3.353
-      y: 3.863
+      x: 26.289
+      y: 4.448
     end:
-      x: 3.793
-      y: 3.862
+      x: 26.729
+      y: 4.449
     control1:
-      x: 3.5
-      y: 3.863
+      x: 26.436
+      y: 4.448
     control2:
-      x: 3.646
-      y: 3.862
+      x: 26.582
+      y: 4.449
     start_name: LM155
     end_name: LM156
   properties:
@@ -2457,17 +2458,17 @@ primitives:
   curve_type: DegenerateBezier
   curve:
     start:
-      x: 3.793
-      y: 3.862
+      x: 26.729
+      y: 4.449
     end:
-      x: 4.471
-      y: 3.859
+      x: 27.407
+      y: 4.452
     control1:
-      x: 4.019
-      y: 3.861
+      x: 26.955
+      y: 4.45
     control2:
-      x: 4.245
-      y: 3.86
+      x: 27.181
+      y: 4.451
     start_name: LM156
     end_name: LM161
   properties:
@@ -2479,17 +2480,17 @@ primitives:
   curve_type: DegenerateBezier
   curve:
     start:
-      x: 4.471
-      y: 3.859
+      x: 27.407
+      y: 4.452
     end:
-      x: 4.911
-      y: 3.858
+      x: 27.847
+      y: 4.453
     control1:
-      x: 4.618
-      y: 3.859
+      x: 27.554
+      y: 4.452
     control2:
-      x: 4.764
-      y: 3.858
+      x: 27.7
+      y: 4.453
     start_name: LM161
     end_name: LM162
   properties:
@@ -2501,17 +2502,17 @@ primitives:
   curve_type: DegenerateBezier
   curve:
     start:
-      x: 4.911
-      y: 3.858
+      x: 27.847
+      y: 4.453
     end:
-      x: 5.351
-      y: 3.857
+      x: 28.287
+      y: 4.454
     control1:
-      x: 5.058
-      y: 3.858
+      x: 27.994
+      y: 4.453
     control2:
-      x: 5.204
-      y: 3.857
+      x: 28.14
+      y: 4.454
     start_name: LM162
     end_name: LM163
   properties:
@@ -2523,17 +2524,17 @@ primitives:
   curve_type: DegenerateBezier
   curve:
     start:
-      x: 5.351
-      y: 3.857
+      x: 28.287
+      y: 4.454
     end:
-      x: 5.791
-      y: 3.856
+      x: 28.727
+      y: 4.455
     control1:
-      x: 5.498
-      y: 3.857
+      x: 28.434
+      y: 4.454
     control2:
-      x: 5.644
-      y: 3.856
+      x: 28.58
+      y: 4.455
     start_name: LM163
     end_name: LM164
   properties:
@@ -2545,17 +2546,17 @@ primitives:
   curve_type: DegenerateBezier
   curve:
     start:
-      x: 5.791
-      y: 3.856
+      x: 28.727
+      y: 4.455
     end:
-      x: 6.231
-      y: 3.855
+      x: 29.167
+      y: 4.456
     control1:
-      x: 5.938
-      y: 3.856
+      x: 28.874
+      y: 4.455
     control2:
-      x: 6.084
-      y: 3.855
+      x: 29.02
+      y: 4.456
     start_name: LM164
     end_name: LM165
   properties:
@@ -2567,17 +2568,17 @@ primitives:
   curve_type: DegenerateBezier
   curve:
     start:
-      x: 6.231
-      y: 3.855
+      x: 29.167
+      y: 4.456
     end:
-      x: 6.671
-      y: 3.854
+      x: 29.607
+      y: 4.457
     control1:
-      x: 6.378
-      y: 3.855
+      x: 29.314
+      y: 4.456
     control2:
-      x: 6.524
-      y: 3.854
+      x: 29.46
+      y: 4.457
     start_name: LM165
     end_name: LM166
   properties:
@@ -2589,17 +2590,17 @@ primitives:
   curve_type: DegenerateBezier
   curve:
     start:
-      x: -6.529
-      y: 2.765
+      x: 16.407
+      y: 5.546
     end:
-      x: -4.227
-      y: 3.883
+      x: 18.709
+      y: 4.428
     control1:
-      x: -6.529
-      y: 3.803
+      x: 16.407
+      y: 4.508
     control2:
-      x: -6.53
-      y: 3.888
+      x: 16.406
+      y: 4.423
     start_name: LM280
     end_name: LM131
   properties:
@@ -2615,17 +2616,17 @@ primitives:
   curve_type: DegenerateBezier
   curve:
     start:
-      x: 6.671
-      y: 3.854
+      x: 29.607
+      y: 4.457
     end:
-      x: 9.157
-      y: 2.85
+      x: 32.093
+      y: 5.461
     control1:
-      x: 9.02
-      y: 3.848
+      x: 31.956
+      y: 4.463
     control2:
-      x: 9.157
-      y: 3.789
+      x: 32.093
+      y: 4.522
     start_name: LM166
     end_name: LM286
   properties:
@@ -2641,17 +2642,17 @@ primitives:
   curve_type: DegenerateBezier
   curve:
     start:
-      x: -8.115
-      y: 1.332
+      x: 14.821
+      y: 6.979
     end:
-      x: -6.529
-      y: 1.332
+      x: 16.407
+      y: 6.979
     control1:
-      x: -7.586
-      y: 1.332
+      x: 15.35
+      y: 6.979
     control2:
-      x: -7.058
-      y: 1.332
+      x: 15.878
+      y: 6.979
     start_name: LM292
     end_name: LM281
   properties:
@@ -2662,17 +2663,17 @@ primitives:
   curve_type: DegenerateBezier
   curve:
     start:
-      x: -6.529
-      y: 1.332
+      x: 16.407
+      y: 6.979
     end:
-      x: -8.115
-      y: 1.332
+      x: 14.821
+      y: 6.979
     control1:
-      x: -7.058
-      y: 1.332
+      x: 15.878
+      y: 6.979
     control2:
-      x: -7.586
-      y: 1.332
+      x: 15.35
+      y: 6.979
     start_name: LM281
     end_name: LM292
   properties:
@@ -2683,17 +2684,17 @@ primitives:
   curve_type: DegenerateBezier
   curve:
     start:
-      x: -8.115
-      y: -0.203
+      x: 14.821
+      y: 8.514
     end:
-      x: -6.529
-      y: -0.193
+      x: 16.407
+      y: 8.504
     control1:
-      x: -7.586
-      y: -0.2
+      x: 15.35
+      y: 8.511
     control2:
-      x: -7.058
-      y: -0.196
+      x: 15.878
+      y: 8.507
     start_name: LM293
     end_name: LM282
   properties:
@@ -2704,17 +2705,17 @@ primitives:
   curve_type: DegenerateBezier
   curve:
     start:
-      x: -6.529
-      y: -0.193
+      x: 16.407
+      y: 8.504
     end:
-      x: -8.115
-      y: -0.203
+      x: 14.821
+      y: 8.514
     control1:
-      x: -7.058
-      y: -0.196
+      x: 15.878
+      y: 8.507
     control2:
-      x: -7.586
-      y: -0.2
+      x: 15.35
+      y: 8.511
     start_name: LM282
     end_name: LM293
   properties:
@@ -2725,17 +2726,17 @@ primitives:
   curve_type: DegenerateBezier
   curve:
     start:
-      x: -6.529
-      y: 2.765
+      x: 16.407
+      y: 5.546
     end:
-      x: -6.529
-      y: 4.257
+      x: 16.407
+      y: 4.054
     control1:
-      x: -6.529
-      y: 3.262
+      x: 16.407
+      y: 5.049
     control2:
-      x: -6.529
-      y: 3.76
+      x: 16.407
+      y: 4.551
     start_name: LM280
     end_name: LM322
   properties:
@@ -2747,17 +2748,17 @@ primitives:
   curve_type: DegenerateBezier
   curve:
     start:
-      x: -6.529
-      y: 4.257
+      x: 16.407
+      y: 4.054
     end:
-      x: -6.529
-      y: 4.356
+      x: 16.407
+      y: 3.955
     control1:
-      x: -6.529
-      y: 4.29
+      x: 16.407
+      y: 4.021
     control2:
-      x: -6.529
-      y: 4.323
+      x: 16.407
+      y: 3.988
     start_name: LM322
     end_name: LM321
   properties:
@@ -2769,17 +2770,17 @@ primitives:
   curve_type: DegenerateBezier
   curve:
     start:
-      x: -8.115
-      y: 4.257
+      x: 14.821
+      y: 4.054
     end:
-      x: -6.529
-      y: 4.257
+      x: 16.407
+      y: 4.054
     control1:
-      x: -7.586
-      y: 4.257
+      x: 15.35
+      y: 4.054
     control2:
-      x: -7.058
-      y: 4.257
+      x: 15.878
+      y: 4.054
     start_name: LM323
     end_name: LM322
   properties:
@@ -2790,17 +2791,17 @@ primitives:
   curve_type: DegenerateBezier
   curve:
     start:
-      x: -6.529
-      y: 4.257
+      x: 16.407
+      y: 4.054
     end:
-      x: -8.115
-      y: 4.257
+      x: 14.821
+      y: 4.054
     control1:
-      x: -7.058
-      y: 4.257
+      x: 15.878
+      y: 4.054
     control2:
-      x: -7.586
-      y: 4.257
+      x: 15.35
+      y: 4.054
     start_name: LM322
     end_name: LM323
   properties:

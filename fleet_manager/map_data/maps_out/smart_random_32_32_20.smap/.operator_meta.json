@@ -1,0 +1,15 @@
+{
+  "cellSizeM": 1.0,
+  "cols": 32,
+  "directedEdges": 2540,
+  "imageHeightPx": 320,
+  "imageWidthPx": 320,
+  "kind": "smart_layout_benchmark",
+  "landmarks": 819,
+  "mapName": "smart_random_32_32_20",
+  "resolutionM": 0.1,
+  "rows": 32,
+  "schemaVersion": 1,
+  "source": "lifelong-smart/maps/random-32-32-20.json",
+  "sourceName": "random-32-32-20.map"
+}

@@ -1,0 +1,15 @@
+{
+  "cols": 36,
+  "coordinateFrame": "map_top_left",
+  "directedEdges": 4614,
+  "kind": "fleet_sim_benchmark",
+  "landmarks": 1188,
+  "mapName": "benchmark_open_kiva",
+  "marginM": 1.0,
+  "resolutionM": 0.1,
+  "rows": 33,
+  "schemaVersion": 1,
+  "source": "lifelong-smart/maps/kiva_large_w_mode.json",
+  "spacingM": 1.2,
+  "walls": false
+}

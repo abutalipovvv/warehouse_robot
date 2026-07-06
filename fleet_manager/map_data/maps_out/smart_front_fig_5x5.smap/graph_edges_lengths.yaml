@@ -1,0 +1,504 @@
+- from: S001001
+  to: S002001
+  length: 1.0
+  kind: line
+  type: FeatureLine
+  properties:
+    direction: 2
+    capacity: 1
+    smart: true
+- from: S002001
+  to: S001001
+  length: 1.0
+  kind: line
+  type: FeatureLine
+  properties:
+    direction: 2
+    capacity: 1
+    smart: true
+- from: S002001
+  to: S002002
+  length: 1.0
+  kind: line
+  type: FeatureLine
+  properties:
+    direction: 2
+    capacity: 1
+    smart: true
+- from: S002002
+  to: S002001
+  length: 1.0
+  kind: line
+  type: FeatureLine
+  properties:
+    direction: 2
+    capacity: 1
+    smart: true
+- from: S002001
+  to: S003001
+  length: 1.0
+  kind: line
+  type: FeatureLine
+  properties:
+    direction: 2
+    capacity: 1
+    smart: true
+- from: S003001
+  to: S002001
+  length: 1.0
+  kind: line
+  type: FeatureLine
+  properties:
+    direction: 2
+    capacity: 1
+    smart: true
+- from: S002002
+  to: S002003
+  length: 1.0
+  kind: line
+  type: FeatureLine
+  properties:
+    direction: 2
+    capacity: 1
+    smart: true
+- from: S002003
+  to: S002002
+  length: 1.0
+  kind: line
+  type: FeatureLine
+  properties:
+    direction: 2
+    capacity: 1
+    smart: true
+- from: S002002
+  to: S003002
+  length: 1.0
+  kind: line
+  type: FeatureLine
+  properties:
+    direction: 2
+    capacity: 1
+    smart: true
+- from: S003002
+  to: S002002
+  length: 1.0
+  kind: line
+  type: FeatureLine
+  properties:
+    direction: 2
+    capacity: 1
+    smart: true
+- from: S002003
+  to: S002004
+  length: 1.0
+  kind: line
+  type: FeatureLine
+  properties:
+    direction: 2
+    capacity: 1
+    smart: true
+- from: S002004
+  to: S002003
+  length: 1.0
+  kind: line
+  type: FeatureLine
+  properties:
+    direction: 2
+    capacity: 1
+    smart: true
+- from: S002003
+  to: S003003
+  length: 1.0
+  kind: line
+  type: FeatureLine
+  properties:
+    direction: 2
+    capacity: 1
+    smart: true
+- from: S003003
+  to: S002003
+  length: 1.0
+  kind: line
+  type: FeatureLine
+  properties:
+    direction: 2
+    capacity: 1
+    smart: true
+- from: S002004
+  to: S003004
+  length: 1.0
+  kind: line
+  type: FeatureLine
+  properties:
+    direction: 2
+    capacity: 1
+    smart: true
+- from: S003004
+  to: S002004
+  length: 1.0
+  kind: line
+  type: FeatureLine
+  properties:
+    direction: 2
+    capacity: 1
+    smart: true
+- from: S003001
+  to: S003002
+  length: 1.0
+  kind: line
+  type: FeatureLine
+  properties:
+    direction: 2
+    capacity: 1
+    smart: true
+- from: S003002
+  to: S003001
+  length: 1.0
+  kind: line
+  type: FeatureLine
+  properties:
+    direction: 2
+    capacity: 1
+    smart: true
+- from: S003001
+  to: S004001
+  length: 1.0
+  kind: line
+  type: FeatureLine
+  properties:
+    direction: 2
+    capacity: 1
+    smart: true
+- from: S004001
+  to: S003001
+  length: 1.0
+  kind: line
+  type: FeatureLine
+  properties:
+    direction: 2
+    capacity: 1
+    smart: true
+- from: S003002
+  to: S003003
+  length: 1.0
+  kind: line
+  type: FeatureLine
+  properties:
+    direction: 2
+    capacity: 1
+    smart: true
+- from: S003003
+  to: S003002
+  length: 1.0
+  kind: line
+  type: FeatureLine
+  properties:
+    direction: 2
+    capacity: 1
+    smart: true
+- from: S003002
+  to: S004002
+  length: 1.0
+  kind: line
+  type: FeatureLine
+  properties:
+    direction: 2
+    capacity: 1
+    smart: true
+- from: S004002
+  to: S003002
+  length: 1.0
+  kind: line
+  type: FeatureLine
+  properties:
+    direction: 2
+    capacity: 1
+    smart: true
+- from: S003003
+  to: S003004
+  length: 1.0
+  kind: line
+  type: FeatureLine
+  properties:
+    direction: 2
+    capacity: 1
+    smart: true
+- from: S003004
+  to: S003003
+  length: 1.0
+  kind: line
+  type: FeatureLine
+  properties:
+    direction: 2
+    capacity: 1
+    smart: true
+- from: S003003
+  to: S004003
+  length: 1.0
+  kind: line
+  type: FeatureLine
+  properties:
+    direction: 2
+    capacity: 1
+    smart: true
+- from: S004003
+  to: S003003
+  length: 1.0
+  kind: line
+  type: FeatureLine
+  properties:
+    direction: 2
+    capacity: 1
+    smart: true
+- from: S003004
+  to: S004004
+  length: 1.0
+  kind: line
+  type: FeatureLine
+  properties:
+    direction: 2
+    capacity: 1
+    smart: true
+- from: S004004
+  to: S003004
+  length: 1.0
+  kind: line
+  type: FeatureLine
+  properties:
+    direction: 2
+    capacity: 1
+    smart: true
+- from: S004001
+  to: S004002
+  length: 1.0
+  kind: line
+  type: FeatureLine
+  properties:
+    direction: 2
+    capacity: 1
+    smart: true
+- from: S004002
+  to: S004001
+  length: 1.0
+  kind: line
+  type: FeatureLine
+  properties:
+    direction: 2
+    capacity: 1
+    smart: true
+- from: S004001
+  to: S005001
+  length: 1.0
+  kind: line
+  type: FeatureLine
+  properties:
+    direction: 2
+    capacity: 1
+    smart: true
+- from: S005001
+  to: S004001
+  length: 1.0
+  kind: line
+  type: FeatureLine
+  properties:
+    direction: 2
+    capacity: 1
+    smart: true
+- from: S004002
+  to: S004003
+  length: 1.0
+  kind: line
+  type: FeatureLine
+  properties:
+    direction: 2
+    capacity: 1
+    smart: true
+- from: S004003
+  to: S004002
+  length: 1.0
+  kind: line
+  type: FeatureLine
+  properties:
+    direction: 2
+    capacity: 1
+    smart: true
+- from: S004002
+  to: S005002
+  length: 1.0
+  kind: line
+  type: FeatureLine
+  properties:
+    direction: 2
+    capacity: 1
+    smart: true
+- from: S005002
+  to: S004002
+  length: 1.0
+  kind: line
+  type: FeatureLine
+  properties:
+    direction: 2
+    capacity: 1
+    smart: true
+- from: S004003
+  to: S004004
+  length: 1.0
+  kind: line
+  type: FeatureLine
+  properties:
+    direction: 2
+    capacity: 1
+    smart: true
+- from: S004004
+  to: S004003
+  length: 1.0
+  kind: line
+  type: FeatureLine
+  properties:
+    direction: 2
+    capacity: 1
+    smart: true
+- from: S004003
+  to: S005003
+  length: 1.0
+  kind: line
+  type: FeatureLine
+  properties:
+    direction: 2
+    capacity: 1
+    smart: true
+- from: S005003
+  to: S004003
+  length: 1.0
+  kind: line
+  type: FeatureLine
+  properties:
+    direction: 2
+    capacity: 1
+    smart: true
+- from: S004004
+  to: S004005
+  length: 1.0
+  kind: line
+  type: FeatureLine
+  properties:
+    direction: 2
+    capacity: 1
+    smart: true
+- from: S004005
+  to: S004004
+  length: 1.0
+  kind: line
+  type: FeatureLine
+  properties:
+    direction: 2
+    capacity: 1
+    smart: true
+- from: S004004
+  to: S005004
+  length: 1.0
+  kind: line
+  type: FeatureLine
+  properties:
+    direction: 2
+    capacity: 1
+    smart: true
+- from: S005004
+  to: S004004
+  length: 1.0
+  kind: line
+  type: FeatureLine
+  properties:
+    direction: 2
+    capacity: 1
+    smart: true
+- from: S004005
+  to: S005005
+  length: 1.0
+  kind: line
+  type: FeatureLine
+  properties:
+    direction: 2
+    capacity: 1
+    smart: true
+- from: S005005
+  to: S004005
+  length: 1.0
+  kind: line
+  type: FeatureLine
+  properties:
+    direction: 2
+    capacity: 1
+    smart: true
+- from: S005001
+  to: S005002
+  length: 1.0
+  kind: line
+  type: FeatureLine
+  properties:
+    direction: 2
+    capacity: 1
+    smart: true
+- from: S005002
+  to: S005001
+  length: 1.0
+  kind: line
+  type: FeatureLine
+  properties:
+    direction: 2
+    capacity: 1
+    smart: true
+- from: S005002
+  to: S005003
+  length: 1.0
+  kind: line
+  type: FeatureLine
+  properties:
+    direction: 2
+    capacity: 1
+    smart: true
+- from: S005003
+  to: S005002
+  length: 1.0
+  kind: line
+  type: FeatureLine
+  properties:
+    direction: 2
+    capacity: 1
+    smart: true
+- from: S005003
+  to: S005004
+  length: 1.0
+  kind: line
+  type: FeatureLine
+  properties:
+    direction: 2
+    capacity: 1
+    smart: true
+- from: S005004
+  to: S005003
+  length: 1.0
+  kind: line
+  type: FeatureLine
+  properties:
+    direction: 2
+    capacity: 1
+    smart: true
+- from: S005004
+  to: S005005
+  length: 1.0
+  kind: line
+  type: FeatureLine
+  properties:
+    direction: 2
+    capacity: 1
+    smart: true
+- from: S005005
+  to: S005004
+  length: 1.0
+  kind: line
+  type: FeatureLine
+  properties:
+    direction: 2
+    capacity: 1
+    smart: true

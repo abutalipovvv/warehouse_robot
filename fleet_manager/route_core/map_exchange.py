@@ -10,6 +10,9 @@ from .map_loader import WarehouseMapLoader
 from .planner import LmRoutePlanner
 
 
+DEFAULT_ROUTE_CATALOG_MAX_PAIRS = 20000
+
+
 def find_ros_map_yaml(map_dir: Path) -> Path:
     directory = Path(map_dir).resolve()
     candidates = sorted(
@@ -28,8 +31,12 @@ def build_editable_map_payload(
     params: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     loaded_map = WarehouseMapLoader(map_dir).load()
-    planner = LmRoutePlanner(loaded_map.landmarks, loaded_map.edges, params=params)
     landmarks = [loaded_map.landmarks[name] for name in sorted(loaded_map.landmarks)]
+    routes, routes_meta = _build_route_catalog_if_reasonable(
+        loaded_map.landmarks,
+        loaded_map.edges,
+        params=params,
+    )
     payload = {
         "ok": True,
         "mapName": loaded_map.map_dir.stem.replace(".smap", ""),
@@ -38,11 +45,42 @@ def build_editable_map_payload(
         "map": loaded_map.map_metadata.to_dict(),
         "lms": [item.to_dict() for item in landmarks],
         "edges": [edge.to_dict() for edge in loaded_map.edges],
-        "routes": planner.build_route_catalog(),
+        "routes": routes,
+        "routesMeta": routes_meta,
         "defaultGoal": landmarks[-1].name if landmarks else "",
     }
     payload["signature"] = editable_map_signature(payload)
     return payload
+
+
+def _build_route_catalog_if_reasonable(
+    landmarks: dict[str, Any],
+    edges: list[Any],
+    *,
+    params: dict[str, Any] | None = None,
+) -> tuple[dict[str, dict[str, object]], dict[str, Any]]:
+    landmark_count = len(landmarks)
+    route_pair_count = max(0, landmark_count * (landmark_count - 1))
+    planner_params = params.get("planner", {}) if isinstance(params, dict) else {}
+    if not isinstance(planner_params, dict):
+        planner_params = {}
+    max_pairs = int(planner_params.get("route_catalog_max_pairs", DEFAULT_ROUTE_CATALOG_MAX_PAIRS))
+    if route_pair_count > max_pairs:
+        return {}, {
+            "skipped": True,
+            "reason": "too_many_landmark_pairs",
+            "landmarks": landmark_count,
+            "pairs": route_pair_count,
+            "maxPairs": max_pairs,
+        }
+
+    planner = LmRoutePlanner(landmarks, edges, params=params)
+    return planner.build_route_catalog(), {
+        "skipped": False,
+        "landmarks": landmark_count,
+        "pairs": route_pair_count,
+        "maxPairs": max_pairs,
+    }
 
 
 def build_editable_map_bundle_payload(

@@ -15,7 +15,13 @@ from urllib.parse import urlparse
 from fleet_manager.route_core import build_editable_map_bundle_payload
 
 from ..config import GRPC_ROBOT_TYPES
-from ..services.fleet_manager import FLEET_MANAGER_ID, OperatorFleetManager
+from ..services.fleet_manager import (
+    DEFAULT_FLEET_SIM_MAP_DIR,
+    FLEET_MANAGER_ID,
+    FLEET_MANAGER_IDS,
+    FLEET_MANAGER_SIM_ID,
+    OperatorFleetManager,
+)
 from .map_cache import MapCache, default_maps_cache_root
 from .models import KnownRobot
 from .registry import RobotRegistry
@@ -48,6 +54,18 @@ class OperatorAppState:
             fleet_map_dir,
             self.fleet_params_path,
             remote_adapter=self.grpc_adapter,
+            manager_id=FLEET_MANAGER_ID,
+            display_name="Fleet Manager",
+            mode="robots",
+        )
+        sim_map_dir = DEFAULT_FLEET_SIM_MAP_DIR if DEFAULT_FLEET_SIM_MAP_DIR.exists() else fleet_map_dir
+        self.fleet_manager_sim = OperatorFleetManager(
+            sim_map_dir,
+            self.fleet_params_path,
+            remote_adapter=None,
+            manager_id=FLEET_MANAGER_SIM_ID,
+            display_name="Fleet Manager Sim",
+            mode="simulation",
         )
         self._lock = Lock()
         self._fleet_lock = RLock()
@@ -55,6 +73,10 @@ class OperatorAppState:
     def _maps_dir_for_robot_id(self, robot_id: str) -> Path:
         if robot_id == FLEET_MANAGER_ID:
             directory = self.workspace.maps_dir("fleet_manager")
+            directory.mkdir(parents=True, exist_ok=True)
+            return directory
+        if robot_id == FLEET_MANAGER_SIM_ID:
+            directory = self.workspace.maps_dir("fleet_manager_sim")
             directory.mkdir(parents=True, exist_ok=True)
             return directory
         with self._lock:
@@ -76,6 +98,19 @@ class OperatorAppState:
             robot,
             legacy_maps_dir=self._legacy_maps_dir_for_robot_id(robot.id),
         )
+
+    def _fleet_manager_for_id(self, manager_id: str = FLEET_MANAGER_ID) -> OperatorFleetManager:
+        if manager_id == FLEET_MANAGER_SIM_ID:
+            return self.fleet_manager_sim
+        if manager_id == FLEET_MANAGER_ID:
+            return self.fleet_manager
+        raise ValueError(f"unknown fleet manager: {manager_id}")
+
+    def _fleet_sidebar_payloads(self, include_runtime: bool = True) -> list[dict[str, Any]]:
+        return [
+            self.fleet_manager.sidebar_payload(include_runtime=include_runtime),
+            self.fleet_manager_sim.sidebar_payload(include_runtime=include_runtime),
+        ]
 
     def _cache_robot_params(self, robot: KnownRobot, params: dict[str, Any], *, source: str = "robot") -> dict[str, Any]:
         return self.workspace.save_params(robot, params, source=source)
@@ -140,16 +175,16 @@ class OperatorAppState:
             robots = self.registry.load()
         if probe_robots:
             with self._fleet_lock:
-                fleet_payload = self.fleet_manager.sidebar_payload()
+                fleet_payloads = self._fleet_sidebar_payloads()
         elif self._fleet_lock.acquire(blocking=False):
             try:
-                fleet_payload = self.fleet_manager.sidebar_payload()
+                fleet_payloads = self._fleet_sidebar_payloads()
             finally:
                 self._fleet_lock.release()
         else:
-            fleet_payload = self.fleet_manager.sidebar_payload(include_runtime=False)
+            fleet_payloads = self._fleet_sidebar_payloads(include_runtime=False)
         items = [self._robot_payload(robot, allow_probe=probe_robots) for robot in robots]
-        items.append(fleet_payload)
+        items.extend(fleet_payloads)
         return {"ok": True, "robots": items}
 
     def robot_pings_payload(self) -> dict[str, Any]:
@@ -260,7 +295,7 @@ class OperatorAppState:
         return f"grpc_{safe_host}_{int(port)}"
 
     def delete_robot_payload(self, robot_id: str) -> dict[str, Any]:
-        if robot_id == FLEET_MANAGER_ID:
+        if robot_id in FLEET_MANAGER_IDS:
             raise ValueError("system robot entries cannot be removed")
         with self._lock:
             deleted = self.registry.remove(robot_id)
@@ -523,104 +558,125 @@ class OperatorAppState:
         with self._fleet_lock:
             return self.fleet_manager.save_params_payload(payload)
 
-    def fleet_manager_get_payload(self, action: str, arg: str = "") -> dict[str, Any]:
+    def fleet_manager_get_payload(
+        self,
+        action: str,
+        arg: str = "",
+        manager_id: str = FLEET_MANAGER_ID,
+    ) -> dict[str, Any]:
         with self._fleet_lock:
+            manager = self._fleet_manager_for_id(manager_id)
             if action == "identity":
-                return self.fleet_manager.sidebar_payload()
+                return manager.sidebar_payload()
             if action == "status":
-                return self.fleet_manager.state_payload()
+                return manager.state_payload()
             if action == "state":
-                return self.fleet_manager.state_payload()
+                return manager.state_payload()
             if action == "mode":
-                return self.fleet_manager.mode_payload()
+                return manager.mode_payload()
             if action == "map":
-                return self.fleet_manager.map_payload()
+                return manager.map_payload()
+            if action == "scene3d":
+                return manager.scene3d_payload()
             if action == "maps_list":
-                return self.fleet_manager.maps_list_payload()
+                return manager.maps_list_payload()
             if action == "maps_active":
-                return self.fleet_manager.maps_active_payload()
+                return manager.maps_active_payload()
             if action == "maps_pull":
-                return self.fleet_pull_map_payload({"mapName": arg})
+                return self.fleet_pull_map_payload({"mapName": arg}, manager_id=manager_id)
             if action == "maps_local_list":
-                return self.fleet_local_maps_payload()
+                return self.fleet_local_maps_payload(manager_id=manager_id)
             if action == "maps_local_active":
-                return self.fleet_local_active_map_payload()
+                return self.fleet_local_active_map_payload(manager_id=manager_id)
             if action == "maps_local_get":
-                return self.fleet_local_map_payload(arg)
+                return self.fleet_local_map_payload(arg, manager_id=manager_id)
             if action == "params":
-                return self.fleet_manager.params_payload()
+                return manager.params_payload()
             if action == "orders":
-                return self.fleet_manager.orders_payload()
+                return manager.orders_payload()
             raise ValueError(f"unknown fleet manager action: {action}")
 
-    def fleet_manager_post_payload(self, action: str, payload: dict[str, Any]) -> dict[str, Any]:
+    def fleet_manager_post_payload(
+        self,
+        action: str,
+        payload: dict[str, Any],
+        manager_id: str = FLEET_MANAGER_ID,
+    ) -> dict[str, Any]:
         with self._fleet_lock:
+            manager = self._fleet_manager_for_id(manager_id)
             if action == "mode":
-                return self.fleet_manager.set_mode_payload(payload)
+                return manager.set_mode_payload(payload)
             if action == "params":
-                return self.fleet_manager.save_params_payload(payload)
+                return manager.save_params_payload(payload)
             if action == "plan":
-                return self.fleet_manager.plan_payload(payload)
+                return manager.plan_payload(payload)
+            if action == "benchmark":
+                return manager.benchmark_payload(payload)
             if action == "set_order":
-                return self.fleet_manager.set_order_payload(payload)
+                return manager.set_order_payload(payload)
             if action == "orders_dispatch":
-                return self.fleet_manager.dispatch_orders_payload(payload)
+                return manager.dispatch_orders_payload(payload)
             if action == "orders_cancel":
-                return self.fleet_manager.cancel_order_payload(payload)
+                return manager.cancel_order_payload(payload)
             if action == "orders_pause":
-                return self.fleet_manager.pause_order_payload(payload)
+                return manager.pause_order_payload(payload)
             if action == "orders_resume":
-                return self.fleet_manager.resume_order_payload(payload)
+                return manager.resume_order_payload(payload)
             if action == "orders_clear":
-                return self.fleet_manager.clear_orders_payload(payload)
+                return manager.clear_orders_payload(payload)
             if action == "tick":
-                return self.fleet_manager.tick_payload(payload)
+                return manager.tick_payload(payload)
             if action == "world":
-                return self.fleet_manager.world_payload(payload)
+                return manager.world_payload(payload)
             if action == "check":
-                return self.fleet_manager.check_payload(payload)
+                return manager.check_payload(payload)
             if action == "manual_step":
-                return self.fleet_manager.manual_step_payload(payload)
+                return manager.manual_step_payload(payload)
             if action == "manual_stop":
-                return self.fleet_manager.manual_stop_payload(payload)
+                return manager.manual_stop_payload(payload)
             if action == "maps_load":
-                return self.fleet_manager.load_map_payload(payload)
+                return manager.load_map_payload(payload)
             if action == "maps_save":
-                return self.fleet_manager.save_map_payload(payload)
+                return manager.save_map_payload(payload)
             if action == "maps_local_save":
-                return self.fleet_save_local_map_payload(payload)
+                return self.fleet_save_local_map_payload(payload, manager_id=manager_id)
             if action == "maps_local_activate":
-                return self.fleet_activate_local_map_payload(payload)
+                return self.fleet_activate_local_map_payload(payload, manager_id=manager_id)
             if action == "maps_pull":
-                return self.fleet_pull_map_payload(payload)
+                return self.fleet_pull_map_payload(payload, manager_id=manager_id)
             if action == "maps_pull_sync":
-                return self.fleet_pull_sync_payload()
+                return self.fleet_pull_sync_payload(manager_id=manager_id)
             if action == "maps_push":
-                return self.fleet_push_map_payload(payload)
+                return self.fleet_push_map_payload(payload, manager_id=manager_id)
             if action == "maps_push_sync":
-                return self.fleet_push_sync_payload()
+                return self.fleet_push_sync_payload(manager_id=manager_id)
             if action == "robots_add":
-                return self.fleet_manager.add_robot_payload(payload)
+                return manager.add_robot_payload(payload)
             if action == "robots_remove":
-                return self.fleet_manager.remove_robot_payload(payload)
+                return manager.remove_robot_payload(payload)
             if action == "robots_update":
-                return self.fleet_manager.update_robot_payload(payload)
+                return manager.update_robot_payload(payload)
             if action == "robots_stop":
-                return self.fleet_manager.stop_robot_payload(payload)
+                return manager.stop_robot_payload(payload)
             if action == "robots_reset":
-                return self.fleet_manager.reset_robot_payload(payload)
+                return manager.reset_robot_payload(payload)
             raise ValueError(f"unknown fleet manager action: {action}")
 
-    def fleet_manager_stream_payload(self, initial: bool = False) -> dict[str, Any] | None:
+    def fleet_manager_stream_payload(
+        self,
+        initial: bool = False,
+        manager_id: str = FLEET_MANAGER_ID,
+    ) -> dict[str, Any] | None:
         if initial:
             self._fleet_lock.acquire()
         elif not self._fleet_lock.acquire(blocking=False):
             return None
         try:
+            manager = self._fleet_manager_for_id(manager_id)
             state = (
-                self.fleet_manager.state_payload(include_trajectories=True)
+                manager.state_payload(include_trajectories=True)
                 if initial
-                else self.fleet_manager.tick_payload({})
+                else manager.tick_payload({})
             )
             return {
                 "ok": True,
@@ -631,17 +687,18 @@ class OperatorAppState:
         finally:
             self._fleet_lock.release()
 
-    def fleet_local_maps_payload(self) -> dict[str, Any]:
+    def fleet_local_maps_payload(self, manager_id: str = FLEET_MANAGER_ID) -> dict[str, Any]:
         return {
             "ok": True,
-            "activeMapName": self.map_cache.active_map_name(FLEET_MANAGER_ID),
-            "maps": self.map_cache.list_maps(FLEET_MANAGER_ID),
+            "activeMapName": self.map_cache.active_map_name(manager_id),
+            "maps": self.map_cache.list_maps(manager_id),
         }
 
-    def fleet_local_active_map_payload(self) -> dict[str, Any]:
-        active_name = self.map_cache.active_map_name(FLEET_MANAGER_ID)
-        active_payload = self.map_cache.load_active_map(FLEET_MANAGER_ID)
-        robot_active = self.fleet_manager.maps_active_payload()
+    def fleet_local_active_map_payload(self, manager_id: str = FLEET_MANAGER_ID) -> dict[str, Any]:
+        manager = self._fleet_manager_for_id(manager_id)
+        active_name = self.map_cache.active_map_name(manager_id)
+        active_payload = self.map_cache.load_active_map(manager_id)
+        robot_active = manager.maps_active_payload()
         robot_active_name = str(robot_active.get("mapName") or "").strip()
         robot_signature = str(robot_active.get("signature") or "").strip()
         if isinstance(active_payload, dict):
@@ -663,11 +720,15 @@ class OperatorAppState:
             "hasLocalChanges": bool(active_payload.get("hasLocalChanges")) if isinstance(active_payload, dict) else False,
         }
 
-    def fleet_local_map_payload(self, map_name: str) -> dict[str, Any]:
-        payload = self.map_cache.load_map(FLEET_MANAGER_ID, map_name)
+    def fleet_local_map_payload(self, map_name: str, manager_id: str = FLEET_MANAGER_ID) -> dict[str, Any]:
+        payload = self.map_cache.load_map(manager_id, map_name)
         return {"ok": True, **payload}
 
-    def fleet_save_local_map_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
+    def fleet_save_local_map_payload(
+        self,
+        payload: dict[str, Any],
+        manager_id: str = FLEET_MANAGER_ID,
+    ) -> dict[str, Any]:
         map_name = str(payload.get("mapName") or "").strip()
         editable_map = payload.get("map")
         if not map_name:
@@ -675,7 +736,7 @@ class OperatorAppState:
         if not isinstance(editable_map, dict):
             raise ValueError("map payload is required")
         saved = self.map_cache.save_map(
-            FLEET_MANAGER_ID,
+            manager_id,
             map_name,
             editable_map,
             source_map_name=str(payload.get("sourceMapName") or map_name),
@@ -683,19 +744,28 @@ class OperatorAppState:
         )
         return {"ok": True, "local": saved}
 
-    def fleet_activate_local_map_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
+    def fleet_activate_local_map_payload(
+        self,
+        payload: dict[str, Any],
+        manager_id: str = FLEET_MANAGER_ID,
+    ) -> dict[str, Any]:
         map_name = str(payload.get("mapName") or "").strip()
         if not map_name:
             raise ValueError("mapName is required")
-        self.map_cache.load_map(FLEET_MANAGER_ID, map_name)
-        self.map_cache.set_active_map(FLEET_MANAGER_ID, map_name)
+        self.map_cache.load_map(manager_id, map_name)
+        self.map_cache.set_active_map(manager_id, map_name)
         return {"ok": True, "activeMapName": map_name}
 
-    def fleet_pull_map_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
+    def fleet_pull_map_payload(
+        self,
+        payload: dict[str, Any],
+        manager_id: str = FLEET_MANAGER_ID,
+    ) -> dict[str, Any]:
+        manager = self._fleet_manager_for_id(manager_id)
         map_name = str(payload.get("mapName") or "").strip()
-        result = self.fleet_manager.pull_map_payload(map_name)
+        result = manager.pull_map_payload(map_name)
         local_name = str(result.get("mapName") or map_name or "active").strip() or "active"
-        cached = self.map_cache.save_pulled_map(FLEET_MANAGER_ID, result, activate=True)
+        cached = self.map_cache.save_pulled_map(manager_id, result, activate=True)
         return {
             "ok": True,
             "pulled": result,
@@ -705,11 +775,16 @@ class OperatorAppState:
             },
         }
 
-    def fleet_push_map_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
+    def fleet_push_map_payload(
+        self,
+        payload: dict[str, Any],
+        manager_id: str = FLEET_MANAGER_ID,
+    ) -> dict[str, Any]:
+        manager = self._fleet_manager_for_id(manager_id)
         editable_map = payload.get("map")
         if not isinstance(editable_map, dict):
             local_name = str(payload.get("localMapName") or payload.get("mapName") or "").strip()
-            cached = self.map_cache.load_map(FLEET_MANAGER_ID, local_name)
+            cached = self.map_cache.load_map(manager_id, local_name)
             editable_map = cached.get("map")
             payload = {
                 **payload,
@@ -722,7 +797,7 @@ class OperatorAppState:
         output_name = str(payload.get("outputName") or "").strip()
         if not output_name and target_map_name and source_map_name and target_map_name != source_map_name:
             output_name = target_map_name
-        result = self.fleet_manager.push_map_payload(
+        result = manager.push_map_payload(
             {
                 "map": editable_map,
                 "mapName": target_map_name,
@@ -733,18 +808,19 @@ class OperatorAppState:
         )
         local_name = str(result.get("mapName") or output_name or target_map_name or "map").strip()
         cached = self.map_cache.save_map(
-            FLEET_MANAGER_ID,
+            manager_id,
             local_name,
             result,
             source_map_name=str(result.get("mapName") or local_name),
         )
         return {"ok": True, "pushed": result, "local": cached}
 
-    def fleet_pull_sync_payload(self) -> dict[str, Any]:
-        robot_active = self.fleet_manager.maps_active_payload()
+    def fleet_pull_sync_payload(self, manager_id: str = FLEET_MANAGER_ID) -> dict[str, Any]:
+        manager = self._fleet_manager_for_id(manager_id)
+        robot_active = manager.maps_active_payload()
         robot_active_name = str(robot_active.get("mapName") or "").strip()
-        local_active = self.map_cache.load_active_map(FLEET_MANAGER_ID)
-        robot_current = self.fleet_manager.pull_map_payload(robot_active_name)
+        local_active = self.map_cache.load_active_map(manager_id)
+        robot_current = manager.pull_map_payload(robot_active_name)
         local_signature = ""
         if isinstance(local_active, dict):
             local_map = local_active.get("map")
@@ -760,7 +836,7 @@ class OperatorAppState:
                 "robotActiveMapName": robot_active_name,
                 "localActiveMapName": local_active_name,
             }
-        cached = self.map_cache.save_pulled_map(FLEET_MANAGER_ID, robot_current, activate=True)
+        cached = self.map_cache.save_pulled_map(manager_id, robot_current, activate=True)
         pulled = {
             "ok": True,
             "pulled": robot_current,
@@ -778,10 +854,11 @@ class OperatorAppState:
             **pulled,
         }
 
-    def fleet_push_sync_payload(self) -> dict[str, Any]:
-        robot_active = self.fleet_manager.maps_active_payload()
+    def fleet_push_sync_payload(self, manager_id: str = FLEET_MANAGER_ID) -> dict[str, Any]:
+        manager = self._fleet_manager_for_id(manager_id)
+        robot_active = manager.maps_active_payload()
         robot_active_name = str(robot_active.get("mapName") or "").strip()
-        local_active = self.map_cache.load_active_map(FLEET_MANAGER_ID)
+        local_active = self.map_cache.load_active_map(manager_id)
         if not isinstance(local_active, dict):
             raise ValueError("operator has no active local map")
         local_map_name = str(local_active.get("mapName") or "").strip()
@@ -790,7 +867,7 @@ class OperatorAppState:
         local_map_payload = local_active.get("map")
         local_signature = str(local_map_payload.get("signature") or "").strip() if isinstance(local_map_payload, dict) else ""
         has_local_changes = bool(local_active.get("hasLocalChanges"))
-        robot_current = self.fleet_manager.pull_map_payload(robot_active_name)
+        robot_current = manager.pull_map_payload(robot_active_name)
         robot_signature = str(robot_current.get("signature") or "").strip()
         if (not has_local_changes) and local_map_name == robot_active_name and local_signature and local_signature == robot_signature:
             return {
@@ -807,11 +884,12 @@ class OperatorAppState:
                 "sourceMapName": str(local_active.get("sourceMapName") or local_map_name),
                 "outputName": local_map_name if local_map_name != str(local_active.get("sourceMapName") or local_map_name) else "",
             },
+            manager_id=manager_id,
         )
-        loaded = self.fleet_manager.load_map_payload({"mapName": local_map_name})
+        loaded = manager.load_map_payload({"mapName": local_map_name})
         local_signature_after_push = str((pushed.get("pushed") or {}).get("signature") or local_signature).strip()
         synced_local = self.map_cache.mark_synced(
-            FLEET_MANAGER_ID,
+            manager_id,
             local_map_name,
             robot_signature=local_signature_after_push,
             robot_map_name=str(loaded.get("mapName") or local_map_name),

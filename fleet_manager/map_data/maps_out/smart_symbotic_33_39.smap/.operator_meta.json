@@ -1,0 +1,15 @@
+{
+  "cellSizeM": 1.0,
+  "cols": 39,
+  "directedEdges": 1660,
+  "imageHeightPx": 330,
+  "imageWidthPx": 390,
+  "kind": "smart_layout_benchmark",
+  "landmarks": 679,
+  "mapName": "smart_symbotic_33_39",
+  "resolutionM": 0.1,
+  "rows": 33,
+  "schemaVersion": 1,
+  "source": "lifelong-smart/maps/symbotic_33-39.json",
+  "sourceName": "symbotic_33-39"
+}

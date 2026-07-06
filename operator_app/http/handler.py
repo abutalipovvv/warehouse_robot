@@ -19,6 +19,7 @@ from ..config import (
     WEBSOCKET_GUID,
 )
 from ..core.state import OperatorAppState, RobotProbeError, utc_now
+from ..services.fleet_manager import FLEET_MANAGER_ID, FLEET_MANAGER_SIM_ID
 
 
 class OperatorRequestHandler(SimpleHTTPRequestHandler):
@@ -37,7 +38,10 @@ class OperatorRequestHandler(SimpleHTTPRequestHandler):
             parsed = urlparse(self.path)
             path = parsed.path
             if path == "/ws/fleet-manager":
-                self._handle_fleet_manager_ws(parsed)
+                self._handle_fleet_manager_ws(parsed, FLEET_MANAGER_ID)
+                return
+            if path == "/ws/fleet-manager-sim":
+                self._handle_fleet_manager_ws(parsed, FLEET_MANAGER_SIM_ID)
                 return
             if path == "/ws/robot/status":
                 self._handle_robot_status_ws(parsed)
@@ -68,8 +72,8 @@ class OperatorRequestHandler(SimpleHTTPRequestHandler):
                 return
             fleet_target = self._parse_fleet_manager_api(parsed)
             if fleet_target is not None:
-                action, arg = fleet_target
-                self._handle_fleet_manager_get(action, arg)
+                manager_id, action, arg = fleet_target
+                self._handle_fleet_manager_get(action, arg, manager_id)
                 return
             params_target = self._parse_robot_params_api(parsed)
             if params_target is not None:
@@ -101,7 +105,7 @@ class OperatorRequestHandler(SimpleHTTPRequestHandler):
         raw = str(parse_qs(parsed.query).get("probe", ["1"])[0] or "1").strip().lower()
         return raw not in {"0", "false", "no", "off"}
 
-    def _handle_fleet_manager_ws(self, parsed) -> None:
+    def _handle_fleet_manager_ws(self, parsed, manager_id: str = FLEET_MANAGER_ID) -> None:
         if not self._is_websocket_upgrade():
             self._send_error_json(400, "expected websocket upgrade")
             return
@@ -123,7 +127,7 @@ class OperatorRequestHandler(SimpleHTTPRequestHandler):
         state = self._require_state()
         interval_sec = self._fleet_ws_interval_sec(parsed)
         try:
-            initial_payload = state.fleet_manager_stream_payload(initial=True)
+            initial_payload = state.fleet_manager_stream_payload(initial=True, manager_id=manager_id)
             if initial_payload is not None:
                 self._send_ws_json(initial_payload)
             while True:
@@ -132,7 +136,7 @@ class OperatorRequestHandler(SimpleHTTPRequestHandler):
                 time.sleep(interval_sec)
                 if self._ws_client_closed():
                     return
-                payload = state.fleet_manager_stream_payload(initial=False)
+                payload = state.fleet_manager_stream_payload(initial=False, manager_id=manager_id)
                 if payload is not None:
                     self._send_ws_json(payload)
         except (BrokenPipeError, ConnectionError, OSError):
@@ -535,9 +539,9 @@ class OperatorRequestHandler(SimpleHTTPRequestHandler):
                 return
             fleet_target = self._parse_fleet_manager_api(parsed)
             if fleet_target is not None:
-                action, arg = fleet_target
+                manager_id, action, arg = fleet_target
                 del arg
-                self._handle_fleet_manager_post(action)
+                self._handle_fleet_manager_post(action, manager_id)
                 return
             params_target = self._parse_robot_params_api(parsed)
             if params_target is not None:
@@ -577,100 +581,116 @@ class OperatorRequestHandler(SimpleHTTPRequestHandler):
             return
         self._send_error_json(404, "not found")
 
-    def _parse_fleet_manager_api(self, parsed) -> tuple[str, str] | None:
+    def _parse_fleet_manager_api(self, parsed) -> tuple[str, str, str] | None:
         path = parsed.path
-        if not path.startswith("/api/fleet-manager"):
+        base = ""
+        manager_id = FLEET_MANAGER_ID
+        if path == "/api/fleet-manager-sim" or path.startswith("/api/fleet-manager-sim/"):
+            base = "/api/fleet-manager-sim"
+            manager_id = FLEET_MANAGER_SIM_ID
+        elif path == "/api/fleet-manager" or path.startswith("/api/fleet-manager/"):
+            base = "/api/fleet-manager"
+        else:
             return None
-        tail = path.removeprefix("/api/fleet-manager").strip("/")
+        tail = path.removeprefix(base).strip("/")
         parts = [item for item in tail.split("/") if item]
         if not parts:
-            return "identity", ""
+            return manager_id, "identity", ""
         if parts == ["identity"]:
-            return "identity", ""
+            return manager_id, "identity", ""
         if parts == ["status"]:
-            return "status", ""
+            return manager_id, "status", ""
         if parts == ["state"]:
-            return "state", ""
+            return manager_id, "state", ""
         if parts == ["mode"]:
-            return "mode", ""
+            return manager_id, "mode", ""
         if parts == ["map"]:
-            return "map", ""
+            return manager_id, "map", ""
+        if parts == ["scene3d"]:
+            return manager_id, "scene3d", ""
         if parts == ["params"]:
-            return "params", ""
+            return manager_id, "params", ""
         if parts == ["orders"]:
-            return "orders", ""
+            return manager_id, "orders", ""
         if parts == ["setOrder"] or parts == ["orders", "set"]:
-            return "set_order", ""
+            return manager_id, "set_order", ""
         if parts == ["orders", "dispatch"]:
-            return "orders_dispatch", ""
+            return manager_id, "orders_dispatch", ""
         if parts == ["orders", "cancel"]:
-            return "orders_cancel", ""
+            return manager_id, "orders_cancel", ""
         if parts == ["orders", "pause"]:
-            return "orders_pause", ""
+            return manager_id, "orders_pause", ""
         if parts == ["orders", "resume"]:
-            return "orders_resume", ""
+            return manager_id, "orders_resume", ""
         if parts == ["orders", "clear"]:
-            return "orders_clear", ""
+            return manager_id, "orders_clear", ""
         if parts == ["plan"]:
-            return "plan", ""
+            return manager_id, "plan", ""
+        if parts == ["benchmark"]:
+            return manager_id, "benchmark", ""
         if parts == ["tick"]:
-            return "tick", ""
+            return manager_id, "tick", ""
         if parts == ["world"]:
-            return "world", ""
+            return manager_id, "world", ""
         if parts == ["check"]:
-            return "check", ""
+            return manager_id, "check", ""
         if parts == ["manual-step"]:
-            return "manual_step", ""
+            return manager_id, "manual_step", ""
         if parts == ["manual-stop"]:
-            return "manual_stop", ""
+            return manager_id, "manual_stop", ""
         if parts == ["maps", "list"]:
-            return "maps_list", ""
+            return manager_id, "maps_list", ""
         if parts == ["maps", "active"]:
-            return "maps_active", ""
+            return manager_id, "maps_active", ""
         if parts == ["maps", "pull"]:
             map_name = str(parse_qs(parsed.query).get("name", [""])[0] or "").strip()
-            return "maps_pull", map_name
+            return manager_id, "maps_pull", map_name
         if parts == ["maps", "local"]:
-            return "maps_local_list", ""
+            return manager_id, "maps_local_list", ""
         if parts == ["maps", "local", "active"]:
-            return "maps_local_active", ""
+            return manager_id, "maps_local_active", ""
         if parts == ["maps", "local", "save"]:
-            return "maps_local_save", ""
+            return manager_id, "maps_local_save", ""
         if parts == ["maps", "local", "activate"]:
-            return "maps_local_activate", ""
+            return manager_id, "maps_local_activate", ""
         if len(parts) == 3 and parts[1] == "local":
-            return "maps_local_get", unquote(parts[2]).strip()
+            return manager_id, "maps_local_get", unquote(parts[2]).strip()
         if parts == ["maps", "pull-sync"]:
-            return "maps_pull_sync", ""
+            return manager_id, "maps_pull_sync", ""
         if parts == ["maps", "push"]:
-            return "maps_push", ""
+            return manager_id, "maps_push", ""
         if parts == ["maps", "push-sync"]:
-            return "maps_push_sync", ""
+            return manager_id, "maps_push_sync", ""
         if parts == ["maps", "load"]:
-            return "maps_load", ""
+            return manager_id, "maps_load", ""
         if parts == ["maps", "save"]:
-            return "maps_save", ""
+            return manager_id, "maps_save", ""
         if parts == ["robots"]:
-            return "robots_add", ""
+            return manager_id, "robots_add", ""
         if parts == ["robots", "remove"]:
-            return "robots_remove", ""
+            return manager_id, "robots_remove", ""
         if parts == ["robots", "update"]:
-            return "robots_update", ""
+            return manager_id, "robots_update", ""
         if parts == ["robots", "stop"]:
-            return "robots_stop", ""
+            return manager_id, "robots_stop", ""
         if parts == ["robots", "reset"]:
-            return "robots_reset", ""
+            return manager_id, "robots_reset", ""
         return None
 
-    def _handle_fleet_manager_get(self, action: str, arg: str) -> None:
+    def _handle_fleet_manager_get(
+        self,
+        action: str,
+        arg: str,
+        manager_id: str = FLEET_MANAGER_ID,
+    ) -> None:
         try:
-            self._send_json(self._require_state().fleet_manager_get_payload(action, arg))
+            self._send_json(self._require_state().fleet_manager_get_payload(action, arg, manager_id=manager_id))
         except ValueError as exc:
             self._send_error_json(400, str(exc))
         except Exception as exc:  # pragma: no cover - defensive server path
             self._send_error_json(500, str(exc))
 
-    def _handle_fleet_manager_post(self, action: str) -> None:
+    def _handle_fleet_manager_post(self, action: str, manager_id: str = FLEET_MANAGER_ID) -> None:
         payload = self._read_json_payload()
         if payload is None:
             return
@@ -678,7 +698,7 @@ class OperatorRequestHandler(SimpleHTTPRequestHandler):
             self._send_error_json(400, "expected object payload")
             return
         try:
-            self._send_json(self._require_state().fleet_manager_post_payload(action, payload))
+            self._send_json(self._require_state().fleet_manager_post_payload(action, payload, manager_id=manager_id))
         except ValueError as exc:
             self._send_error_json(400, str(exc))
         except Exception as exc:  # pragma: no cover - defensive server path

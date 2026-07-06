@@ -575,10 +575,25 @@ body[data-fleet-page="fleet"] .robot-control-actions {
   padding: 0.46rem 0.56rem;
 }
 
+.fleet-sim-tools,
 .fleet-list-block {
   display: grid;
   gap: 0.38rem;
   min-height: 0;
+}
+
+.fleet-sim-map-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.32rem;
+}
+
+.fleet-sim-map-row select,
+.fleet-sim-map-row button {
+  min-height: 2rem;
+  padding: 0.38rem 0.44rem;
+  border-radius: 8px;
+  font-size: 0.74rem;
 }
 
 .fleet-list {
@@ -650,6 +665,10 @@ body[data-fleet-page="fleet"] .robot-control-actions {
 
 #fleetTabFleet .fleet-control-row {
   grid-column: 1 / -1;
+}
+
+#fleetTabFleet .fleet-sim-tools {
+  grid-column: 1;
 }
 
 #fleetTabFleet .fleet-list-block {
@@ -823,6 +842,13 @@ body[data-fleet-page="fleet"] .robot-control-actions {
 .fleet-param-grid input {
   padding: 0.5rem 0.58rem;
   border-radius: 11px;
+}
+
+.fleet-param-grid .checkbox-field input {
+  justify-self: start;
+  width: 1.1rem;
+  height: 1.1rem;
+  padding: 0;
 }
 
 .params-json-input {
@@ -1313,6 +1339,17 @@ body[data-fleet-page="fleet"] .robot-control-actions {
   padding: 0.34rem 0.42rem;
 }
 
+.operator-console.fleet-page-fleet .fleet-sim-tools {
+  gap: 0.34rem;
+}
+
+.operator-console.fleet-page-fleet .fleet-sim-map-row select,
+.operator-console.fleet-page-fleet .fleet-sim-map-row button {
+  min-height: 1.9rem;
+  padding: 0.32rem 0.36rem;
+  font-size: 0.68rem;
+}
+
 .operator-console.fleet-page-fleet .block-title {
   margin-bottom: 0.26rem;
   font-size: 0.64rem;
@@ -1546,6 +1583,12 @@ body[data-fleet-page="fleet"] .robot-control-actions {
   background: rgba(255, 255, 255, 0.94);
 }
 
+.map-toolbar button.active {
+  border-color: #2563eb;
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
 #operatorMapSvg {
   width: 100%;
   height: 100%;
@@ -1556,6 +1599,27 @@ body[data-fleet-page="fleet"] .robot-control-actions {
   user-select: none;
   -webkit-user-select: none;
   touch-action: none;
+}
+
+.operator-scene3d {
+  width: 100%;
+  height: 100%;
+  min-height: 420px;
+  display: block;
+  background: #f8fbff;
+}
+
+.operator-scene3d canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+  cursor: grab;
+  touch-action: none;
+}
+
+.operator-scene3d.target-armed canvas,
+.operator-scene3d canvas.target-armed {
+  cursor: crosshair;
 }
 
 #operatorMapSvg.dragging {
@@ -1769,7 +1833,14 @@ body[data-fleet-page="fleet"] .robot-control-actions {
 .landmark.nearest:hover circle {
   fill: #ffca4f;
   stroke: #17365f;
-  stroke-width: 2.4;
+  stroke-width: 3.4;
+  r: 8px;
+  filter: drop-shadow(0 0 8px rgba(245, 158, 11, 0.52));
+}
+
+.landmark.armed:hover text {
+  fill: #9a3412;
+  stroke-width: 4px;
 }
 
 .landmark.selected circle {

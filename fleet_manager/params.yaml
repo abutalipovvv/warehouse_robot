@@ -58,6 +58,9 @@ robot_model:
       color: '#2f3a4a'
 navigation:
   route_speed: 1.37
+  route_acceleration: 0.6
+  simulate_rotation: true
+  turn_speed: 0.9
   footprint_lookahead: 0.45
   collision_margin: 0.04
   stop_distance: 0.18
@@ -87,6 +90,7 @@ manual:
   prediction_time: 1
   prediction_step: 0.1
 fleet:
+  planner_backend: rolling_sipp
   reservation_time_step_sec: 1
   reservation_horizon_sec: 8
   reservation_safety_time_sec: 0.35
@@ -106,4 +110,4 @@ fleet:
   reserved_edge_hard_constraints_enabled: true
   batch_collision_horizon_sec: null
   batch_wait_max_iterations: 60
-  stretch_motion_to_reservation_ticks: false
+  stretch_motion_to_reservation_ticks: true

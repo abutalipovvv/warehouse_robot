@@ -1,0 +1,15 @@
+{
+  "cellSizeM": 1.0,
+  "cols": 5,
+  "directedEdges": 56,
+  "imageHeightPx": 50,
+  "imageWidthPx": 50,
+  "kind": "smart_layout_benchmark",
+  "landmarks": 19,
+  "mapName": "smart_front_fig_5x5",
+  "resolutionM": 0.1,
+  "rows": 5,
+  "schemaVersion": 1,
+  "source": "lifelong-smart/maps/front_fig_5x5.json",
+  "sourceName": "front_fig_5x5"
+}

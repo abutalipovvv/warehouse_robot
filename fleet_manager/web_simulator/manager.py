@@ -109,6 +109,11 @@ class FleetOrder:
     external_id: str = ""
     targets: list[str] = field(default_factory=list)
     step_index: int = 0
+    speed: float = 0.0
+    acceleration: float = 0.0
+    rotate: bool = False
+    turn_speed: float = 0.0
+    stretch_motion_to_reservation_ticks: bool = True
 
     def to_dict(self) -> dict[str, Any]:
         targets = self.targets or ([self.target_lm] if self.target_lm else [])
@@ -132,6 +137,11 @@ class FleetOrder:
             "startLm": self.start_lm,
             "routeNodes": self.route_nodes,
             "error": self.error,
+            "speed": self.speed,
+            "acceleration": self.acceleration,
+            "rotate": self.rotate,
+            "turnSpeed": self.turn_speed,
+            "stretchMotionToReservationTicks": self.stretch_motion_to_reservation_ticks,
         }
 
     def _steps_payload(self, targets: list[str], current_step: int) -> list[dict[str, Any]]:
@@ -830,15 +840,25 @@ class WebFleetManager:
             self._apply_planner_result(result, now)
             self._event("info", f"planner accepted {len(planned_names)} order(s)")
         else:
+            deadlock = self._planner_deadlock_result(result)
+            reason = self._planner_failure_reason(result)
             for request in valid_requests:
                 if not isinstance(request, dict):
                     continue
                 robot = self.robots.get(str(request.get("name", "")).strip())
                 if robot is not None:
-                    robot.status = "BLOCKED"
-                    robot.last_reason = result.get("debug", {}).get("reason", "unknown")
+                    robot.status = "WAITING" if deadlock else "BLOCKED"
+                    robot.last_reason = reason
+                    if deadlock:
+                        robot.blocked_since = time()
+                        robot.trajectory = []
+                        robot.plan_nodes = []
+                        robot.trajectory_dirty = True
+                        robot.route_started_at = None
+                        robot.route_clock = 0.0
+                        robot.last_tick_at = None
+                        robot.route_note = "DEADLOCK"
                     robot.updated_at = time()
-            reason = result.get("debug", {}).get("reason", "unknown")
             self._event("error", f"planner rejected: {reason}")
 
         return {
@@ -909,6 +929,15 @@ class WebFleetManager:
         except (TypeError, ValueError):
             priority = 0
         external_id = str(payload.get("externalId") or payload.get("taskId") or "").strip()
+        speed = self._float_payload(payload, ("speed", "routeSpeed"), 0.0)
+        acceleration = self._float_payload(payload, ("acceleration", "routeAcceleration", "route_acceleration"), 0.0)
+        rotate = self._bool_payload(payload, ("rotate", "simulateRotation", "simulate_rotation"), False)
+        turn_speed = self._float_payload(payload, ("turnSpeed", "turn_speed", "rotationSpeed", "rotation_speed"), 0.0)
+        stretch_motion = self._bool_payload(
+            payload,
+            ("stretchMotionToReservationTicks", "stretch_motion_to_reservation_ticks"),
+            True,
+        )
         return FleetOrder(
             order_id=order_id,
             target_lm=targets[0],
@@ -916,7 +945,32 @@ class WebFleetManager:
             priority=priority,
             external_id=external_id,
             targets=targets,
+            speed=speed,
+            acceleration=acceleration,
+            rotate=rotate,
+            turn_speed=turn_speed,
+            stretch_motion_to_reservation_ticks=stretch_motion,
         )
+
+    def _float_payload(self, payload: dict[str, Any], keys: tuple[str, ...], default: float = 0.0) -> float:
+        for key in keys:
+            if key not in payload:
+                continue
+            try:
+                return float(payload.get(key) or default)
+            except (TypeError, ValueError):
+                return default
+        return default
+
+    def _bool_payload(self, payload: dict[str, Any], keys: tuple[str, ...], default: bool = False) -> bool:
+        for key in keys:
+            if key not in payload:
+                continue
+            value = payload.get(key)
+            if isinstance(value, str):
+                return value.strip().lower() in {"1", "true", "yes", "on"}
+            return bool(value)
+        return default
 
     def _target_lms_from_payload(self, payload: dict[str, Any]) -> list[str]:
         targets: list[str] = []
@@ -989,7 +1043,7 @@ class WebFleetManager:
                 request["startPose"] = dict(robot.pose)
 
             self._set_order_status(order, "PLANNING", robot=robot, start_lm=start_lm)
-            result = self._plan_valid_requests([request], {"robots": [request]})
+            result = self._plan_valid_requests([request], self._order_plan_payload(order, request))
             if result.get("ok") and result.get("plans"):
                 now = time()
                 plan = self._plan_for_robot(result, robot.name)
@@ -1023,7 +1077,12 @@ class WebFleetManager:
                     f"order dispatched: {order.order_id} {robot.name} {start_lm}->{order.target_lm}",
                 )
                 return True
-            failed_reason = str(result.get("debug", {}).get("reason") or "planner rejected")
+            failed_reason = self._planner_failure_reason(result)
+            if self._planner_deadlock_result(result):
+                robot.status = "WAITING"
+                robot.last_reason = failed_reason
+                robot.blocked_since = time()
+                robot.updated_at = time()
             if order.vehicle:
                 order.status = "QUEUED"
                 order.assigned_robot = robot.name
@@ -1036,6 +1095,18 @@ class WebFleetManager:
 
         self._set_order_error(order, failed_reason or "dispatch pending")
         return False
+
+    def _order_plan_payload(self, order: FleetOrder, request: dict[str, Any]) -> dict[str, Any]:
+        payload: dict[str, Any] = {"robots": [request]}
+        if order.speed > 0.0:
+            payload["speed"] = order.speed
+        if order.acceleration > 0.0:
+            payload["acceleration"] = order.acceleration
+        payload["rotate"] = bool(order.rotate)
+        payload["stretchMotionToReservationTicks"] = bool(order.stretch_motion_to_reservation_ticks)
+        if order.turn_speed > 0.0:
+            payload["turnSpeed"] = order.turn_speed
+        return payload
 
     def _candidate_robots_for_order(self, order: FleetOrder) -> list[FleetRobot]:
         if order.vehicle:
@@ -2038,6 +2109,26 @@ class WebFleetManager:
             return "DETOUR: reserved edge"
         return "planner accepted"
 
+    def _planner_deadlock_result(self, result: dict[str, Any]) -> bool:
+        debug = result.get("debug", {})
+        if not isinstance(debug, dict):
+            return False
+        if bool(debug.get("deadlock")):
+            return True
+        try:
+            return int(debug.get("continuousUnresolved", 0) or 0) > 0
+        except (TypeError, ValueError):
+            return False
+
+    def _planner_failure_reason(self, result: dict[str, Any]) -> str:
+        debug = result.get("debug", {})
+        if not isinstance(debug, dict):
+            return "planner rejected"
+        if self._planner_deadlock_result(result):
+            detail = str(debug.get("deadlockReason") or "").strip()
+            return f"deadlock: {detail or 'planner could not resolve robot traffic; robots hold position'}"
+        return str(debug.get("reason") or "planner rejected")
+
     def _apply_continuous_reservation_waits(
         self,
         result: dict[str, Any],
@@ -2078,6 +2169,7 @@ class WebFleetManager:
                 total_wait += stats["wait"]
                 total_conflicts += stats["conflicts"]
                 wait_count += stats["waits"]
+            unresolved_count += int(stats.get("unresolved", 0) or 0)
 
         batch_trajectory_stats = self._schedule_batch_trajectories(plans)
         total_wait += batch_trajectory_stats["wait"]
@@ -2098,6 +2190,11 @@ class WebFleetManager:
             debug["reason"] = f"{debug.get('reason', 'success')}:reserved_corridor_wait"
             if unresolved_count > 0:
                 debug["reason"] = f"{debug.get('reason', 'success')}:continuous_conflict_unresolved"
+                debug["deadlock"] = True
+                debug["deadlockReason"] = (
+                    "continuous reservation conflict could not be resolved; robots will hold position"
+                )
+                debug["rejectedPlanCount"] = len(plans)
                 result["ok"] = False
                 result["plans"] = []
         return result
@@ -2147,7 +2244,23 @@ class WebFleetManager:
                     f"wait={wait_duration:.2f}s"
                 ),
             )
-        return trajectory, {"conflicts": conflicts, "waits": waits, "wait": total_wait}
+        remaining_conflict = self._first_continuous_corridor_conflict(
+            robot_name,
+            trajectory,
+            ignore_robot_names=ignored,
+        )
+        if remaining_conflict is not None:
+            self._event(
+                "error",
+                (
+                    f"{robot_name} reservation deadlock: "
+                    f"t={float(remaining_conflict['time']):.2f}s "
+                    f"edge={remaining_conflict['edge']} "
+                    f"other={remaining_conflict['other']}"
+                ),
+            )
+            return trajectory, {"conflicts": conflicts, "waits": waits, "wait": total_wait, "unresolved": 1}
+        return trajectory, {"conflicts": conflicts, "waits": waits, "wait": total_wait, "unresolved": 0}
 
     def _schedule_batch_trajectories(
         self,
@@ -2858,6 +2971,13 @@ class WebFleetManager:
             if robot.is_remote():
                 self._advance_remote_robot_order(robot, now)
                 continue
+            if self._is_deadlock_reason(robot.last_reason) and not robot.trajectory:
+                robot.status = "WAITING"
+                robot.blocked_since = robot.blocked_since or now
+                robot.last_tick_at = now
+                robot.updated_at = now
+                self._update_active_order_from_robot(robot)
+                continue
             if robot.status in {"BLOCKED", "PLANNING"} and robot.target_lm:
                 self._maybe_replan_robot(robot, now, "no active trajectory")
                 self._update_active_order_from_robot(robot)
@@ -2876,9 +2996,20 @@ class WebFleetManager:
             last_tick_at = robot.last_tick_at or now
             dt = min(0.20, max(0.0, now - last_tick_at))
             robot.last_tick_at = now
-            proposed_clock = min(final_time, robot.route_clock + dt)
-            blocked_reason = self._blocked_ahead(robot, proposed_clock)
+            blocked_reason = ""
+            remaining_dt = dt
+            step_dt = self._runtime_motion_step()
+            while remaining_dt > 0.000001 and robot.route_clock < final_time:
+                proposed_clock = min(final_time, robot.route_clock + min(step_dt, remaining_dt))
+                blocked_reason = self._blocked_ahead(robot, proposed_clock)
+                if blocked_reason:
+                    break
+                robot.route_clock = proposed_clock
+                remaining_dt -= step_dt
             if blocked_reason:
+                pose = self._pose_at_trajectory(robot.trajectory, robot.route_clock)
+                if pose is not None:
+                    robot.pose = pose
                 if robot.status != "WAITING" or robot.last_reason != blocked_reason:
                     self._event("warn", f"{robot.name} waiting: {blocked_reason}")
                 robot.status = "WAITING"
@@ -2896,7 +3027,6 @@ class WebFleetManager:
             robot.last_reason = "moving"
             self._update_active_order_from_robot(robot)
             robot.blocked_since = None
-            robot.route_clock = proposed_clock
             pose = self._pose_at_trajectory(robot.trajectory, robot.route_clock)
             if pose is not None:
                 robot.pose = pose
@@ -2917,6 +3047,9 @@ class WebFleetManager:
                 robot.updated_at = now
                 self._event("info", f"{robot.name} arrived at {robot.current_lm}")
         self._dispatch_orders()
+
+    def _runtime_motion_step(self) -> float:
+        return max(0.02, min(0.05, self._continuous_collision_step() / 2.0))
 
     def _maybe_replan_robot(self, robot: FleetRobot, now: float, reason: str) -> bool:
         if not robot.target_lm:
@@ -3125,20 +3258,10 @@ class WebFleetManager:
             return ""
 
         if other.pose is not None and self.collision.robot_footprints_conflict(candidate_pose, other.pose):
-            if (
-                robot.pose is not None
-                and self.collision.robot_footprints_conflict(robot.pose, other.pose)
-                and self._candidate_moves_away(robot.pose, candidate_pose, other.pose)
-            ):
-                return ""
-            if self._has_right_of_way(robot, other):
-                return f"keep clearance from {other.name}"
             if self._is_active_traffic(other):
                 return f"yield to {other.name}"
             return f"keep clearance from {other.name}"
 
-        if self._candidate_moves_away(robot.pose, candidate_pose, other_pose):
-            return ""
         if self._has_right_of_way(robot, other):
             return ""
         if self._is_active_traffic(other):
@@ -3239,7 +3362,13 @@ class WebFleetManager:
             or value.startswith("keep clearance from ")
         )
 
+    def _is_deadlock_reason(self, reason: str) -> bool:
+        value = str(reason or "")
+        return value.startswith("deadlock:") or "continuous_conflict_unresolved" in value
+
     def _should_replan_for_blocked_reason(self, reason: str) -> bool:
+        if self._is_deadlock_reason(reason):
+            return False
         if not self._is_robot_conflict(reason):
             return True
         return self._is_parked_robot_conflict(reason)
