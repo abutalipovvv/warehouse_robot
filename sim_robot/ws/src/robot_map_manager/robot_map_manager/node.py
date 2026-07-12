@@ -150,10 +150,7 @@ class RobotMapManagerNode(Node):
                         continue
                     names.append(item.stem.replace(".smap", ""))
                     dirs.append(str(item.resolve()))
-                    try:
-                        ids.append(self._map_id_for_dir(item))
-                    except Exception:
-                        ids.append("")
+                    ids.append(self._fast_map_id_for_dir(item))
                 response.ok = True
                 response.error = ""
                 response.active_map_name = self._active_map_name()
@@ -272,6 +269,12 @@ class RobotMapManagerNode(Node):
     def _map_id_for_dir(self, map_dir: Path) -> str:
         loaded_map = WarehouseMapLoader(map_dir).load()
         return loaded_map.map_metadata.map_name
+
+    def _fast_map_id_for_dir(self, map_dir: Path) -> str:
+        resolved = Path(map_dir).resolve()
+        if resolved == self._active_map_dir.resolve() and self._active_map_id:
+            return self._active_map_id
+        return resolved.stem.replace(".smap", "")
 
     def _active_map_name(self) -> str:
         return self._active_map_dir.stem.replace(".smap", "")

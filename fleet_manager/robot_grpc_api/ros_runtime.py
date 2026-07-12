@@ -17,6 +17,12 @@ from typing import Any
 import yaml
 from fleet_manager.route_core import WarehouseMapLoader, WorldPoint
 
+from .contracts import (
+    DEFAULT_GRPC_MAP_LOAD_TIMEOUT_SEC,
+    DEFAULT_GRPC_MAP_QUERY_TIMEOUT_SEC,
+    DEFAULT_GRPC_MAP_TRANSFER_TIMEOUT_SEC,
+)
+
 NAV2_RUNTIME_PARAMETERS: tuple[tuple[str, str, str], ...] = (
     ("nav2.amcl.update_min_d", "/amcl/set_parameters", "update_min_d"),
     ("nav2.amcl.update_min_a", "/amcl/set_parameters", "update_min_a"),
@@ -522,7 +528,12 @@ class RosRobotRuntime:
         if self._map_state_client is None:
             raise ValueError("map state service is not configured")
         request = self._map_state_client.srv_type.Request()
-        response = self._call_service(self._map_state_client, request, "map state", timeout_sec=5.0)
+        response = self._call_service(
+            self._map_state_client,
+            request,
+            "map state",
+            timeout_sec=DEFAULT_GRPC_MAP_QUERY_TIMEOUT_SEC,
+        )
         if not bool(response.ok):
             raise ValueError(str(response.error or "map state failed"))
         return {
@@ -539,7 +550,7 @@ class RosRobotRuntime:
             self._map_list_client,
             self._map_list_client.srv_type.Request(),
             "map list",
-            timeout_sec=5.0,
+            timeout_sec=DEFAULT_GRPC_MAP_QUERY_TIMEOUT_SEC,
         )
         if not bool(response.ok):
             raise ValueError(str(response.error or "map list failed"))
@@ -567,7 +578,12 @@ class RosRobotRuntime:
             raise ValueError("map bundle service is not configured")
         request = self._map_get_bundle_client.srv_type.Request()
         request.map_name = str(map_name or "")
-        response = self._call_service(self._map_get_bundle_client, request, "map bundle pull", timeout_sec=20.0)
+        response = self._call_service(
+            self._map_get_bundle_client,
+            request,
+            "map bundle pull",
+            timeout_sec=DEFAULT_GRPC_MAP_TRANSFER_TIMEOUT_SEC,
+        )
         if not bool(response.ok):
             raise ValueError(str(response.error or "map bundle pull failed"))
         try:
@@ -595,7 +611,12 @@ class RosRobotRuntime:
         request.map_name = str(map_name or bundle_payload.get("mapName") or "")
         request.bundle_json = json.dumps(bundle_payload, ensure_ascii=False)
         request.activate = bool(activate)
-        response = self._call_service(self._map_put_bundle_client, request, "map bundle push", timeout_sec=30.0)
+        response = self._call_service(
+            self._map_put_bundle_client,
+            request,
+            "map bundle push",
+            timeout_sec=DEFAULT_GRPC_MAP_TRANSFER_TIMEOUT_SEC,
+        )
         if not bool(response.ok):
             raise ValueError(str(response.error or "map bundle push failed"))
         return {
@@ -612,7 +633,12 @@ class RosRobotRuntime:
         request = self._map_load_client.srv_type.Request()
         request.map_name = str(map_name)
         request.map_dir = ""
-        response = self._call_service(self._map_load_client, request, "map load", timeout_sec=20.0)
+        response = self._call_service(
+            self._map_load_client,
+            request,
+            "map load",
+            timeout_sec=DEFAULT_GRPC_MAP_LOAD_TIMEOUT_SEC,
+        )
         if not bool(response.ok):
             raise ValueError(str(response.error or "map load failed"))
         return {

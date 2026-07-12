@@ -19,6 +19,7 @@ from ..config import (
     WEBSOCKET_GUID,
 )
 from ..core.state import OperatorAppState, RobotProbeError, utc_now
+from ..robot_grpc_api.client import GrpcRobotError
 from ..services.fleet_manager import FLEET_MANAGER_ID, FLEET_MANAGER_SIM_ID
 
 
@@ -820,6 +821,8 @@ class OperatorRequestHandler(SimpleHTTPRequestHandler):
             self._send_json(self._require_state().save_robot_params_payload(robot_id, payload))
         except ValueError as exc:
             self._send_error_json(400, str(exc))
+        except GrpcRobotError as exc:
+            self._send_error_json(502, str(exc))
         except RobotProbeError as exc:
             self._send_error_json(502, str(exc))
         except Exception as exc:  # pragma: no cover - defensive server path
@@ -837,6 +840,8 @@ class OperatorRequestHandler(SimpleHTTPRequestHandler):
             self._send_error_json(404, "not found")
         except ValueError as exc:
             self._send_error_json(400, str(exc))
+        except GrpcRobotError as exc:
+            self._send_error_json(502, str(exc))
         except RobotProbeError as exc:
             self._send_error_json(502, str(exc))
         except Exception as exc:  # pragma: no cover - defensive server path
@@ -866,6 +871,8 @@ class OperatorRequestHandler(SimpleHTTPRequestHandler):
             self._send_error_json(404, "not found")
         except ValueError as exc:
             self._send_error_json(400, str(exc))
+        except GrpcRobotError as exc:
+            self._send_error_json(502, str(exc))
         except RobotProbeError as exc:
             self._send_error_json(502, str(exc))
         except Exception as exc:  # pragma: no cover - defensive server path
@@ -895,6 +902,8 @@ class OperatorRequestHandler(SimpleHTTPRequestHandler):
             self._send_error_json(404, "not found")
         except ValueError as exc:
             self._send_error_json(400, str(exc))
+        except GrpcRobotError as exc:
+            self._send_error_json(502, str(exc))
         except RobotProbeError as exc:
             self._send_error_json(502, str(exc))
         except Exception as exc:  # pragma: no cover - defensive server path
@@ -936,6 +945,8 @@ class OperatorRequestHandler(SimpleHTTPRequestHandler):
             self._send_error_json(404, "not found")
         except ValueError as exc:
             self._send_error_json(400, str(exc))
+        except GrpcRobotError as exc:
+            self._send_error_json(502, str(exc))
         except RobotProbeError as exc:
             self._send_error_json(502, str(exc))
         except Exception as exc:  # pragma: no cover - defensive server path

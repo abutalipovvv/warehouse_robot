@@ -7,6 +7,9 @@ from typing import Any
 
 from .contracts import (
     API_VERSION,
+    DEFAULT_GRPC_MAP_LOAD_TIMEOUT_SEC,
+    DEFAULT_GRPC_MAP_QUERY_TIMEOUT_SEC,
+    DEFAULT_GRPC_MAP_TRANSFER_TIMEOUT_SEC,
     DEFAULT_GRPC_PORT,
     GRPC_CHANNEL_OPTIONS,
     RobotApiError,
@@ -48,6 +51,28 @@ def _load_grpc_modules():
     from .proto import robot_api_pb2_grpc
 
     return grpc, robot_api_pb2_grpc
+
+
+def _grpc_rpc_error_message(exc: Exception, *, operation: str, timeout_sec: float) -> str | None:
+    code_func = getattr(exc, "code", None)
+    if not callable(code_func):
+        return None
+    try:
+        code = code_func()
+    except Exception:
+        return None
+    code_name = str(getattr(code, "name", code) or "UNKNOWN")
+    details = ""
+    details_func = getattr(exc, "details", None)
+    if callable(details_func):
+        try:
+            details = str(details_func() or "")
+        except Exception:
+            details = ""
+    if code_name == "DEADLINE_EXCEEDED":
+        return f"{operation} timed out after {timeout_sec:.0f}s"
+    suffix = f": {details}" if details else ""
+    return f"{operation} failed ({code_name}{suffix})"
 
 
 class GrpcRobotClient:
@@ -347,7 +372,7 @@ class GrpcRobotClient:
 
     def list_maps(self, endpoint: str) -> dict[str, Any]:
         stub = self._stub(endpoint)
-        response = stub.ListMaps(robot_api_pb2.ListMapsRequest(), timeout=max(self.timeout, 5.0))
+        response = stub.ListMaps(robot_api_pb2.ListMapsRequest(), timeout=max(self.timeout, DEFAULT_GRPC_MAP_QUERY_TIMEOUT_SEC))
         if not bool(response.ok):
             raise GrpcRobotError(str(response.error or "robot map list failed"))
         maps = [
@@ -383,10 +408,17 @@ class GrpcRobotClient:
 
     def get_map_bundle(self, endpoint: str, map_name: str = "") -> dict[str, Any]:
         stub = self._stub(endpoint)
-        response = stub.GetMapBundle(
-            robot_api_pb2.GetMapBundleRequest(map_name=str(map_name or "")),
-            timeout=max(self.timeout, 20.0),
-        )
+        timeout_sec = max(self.timeout, DEFAULT_GRPC_MAP_TRANSFER_TIMEOUT_SEC)
+        try:
+            response = stub.GetMapBundle(
+                robot_api_pb2.GetMapBundleRequest(map_name=str(map_name or "")),
+                timeout=timeout_sec,
+            )
+        except Exception as exc:
+            message = _grpc_rpc_error_message(exc, operation="pull map from robot", timeout_sec=timeout_sec)
+            if message:
+                raise GrpcRobotError(message) from exc
+            raise
         return self._map_bundle_response(response, include_bundle=True)
 
     def put_map_bundle(
@@ -398,22 +430,36 @@ class GrpcRobotClient:
         activate: bool = False,
     ) -> dict[str, Any]:
         stub = self._stub(endpoint)
-        response = stub.PutMapBundle(
-            robot_api_pb2.PutMapBundleRequest(
-                map_name=str(map_name or bundle_payload.get("mapName") or ""),
-                bundle_json=json_dumps(bundle_payload),
-                activate=bool(activate),
-            ),
-            timeout=max(self.timeout, 30.0),
-        )
+        timeout_sec = max(self.timeout, DEFAULT_GRPC_MAP_TRANSFER_TIMEOUT_SEC)
+        try:
+            response = stub.PutMapBundle(
+                robot_api_pb2.PutMapBundleRequest(
+                    map_name=str(map_name or bundle_payload.get("mapName") or ""),
+                    bundle_json=json_dumps(bundle_payload),
+                    activate=bool(activate),
+                ),
+                timeout=timeout_sec,
+            )
+        except Exception as exc:
+            message = _grpc_rpc_error_message(exc, operation="push map to robot", timeout_sec=timeout_sec)
+            if message:
+                raise GrpcRobotError(message) from exc
+            raise
         return self._map_bundle_response(response, include_bundle=False)
 
     def load_map(self, endpoint: str, map_name: str) -> dict[str, Any]:
         stub = self._stub(endpoint)
-        response = stub.LoadMap(
-            robot_api_pb2.LoadMapRequest(map_name=str(map_name or "")),
-            timeout=max(self.timeout, 20.0),
-        )
+        timeout_sec = max(self.timeout, DEFAULT_GRPC_MAP_LOAD_TIMEOUT_SEC)
+        try:
+            response = stub.LoadMap(
+                robot_api_pb2.LoadMapRequest(map_name=str(map_name or "")),
+                timeout=timeout_sec,
+            )
+        except Exception as exc:
+            message = _grpc_rpc_error_message(exc, operation="load map on robot", timeout_sec=timeout_sec)
+            if message:
+                raise GrpcRobotError(message) from exc
+            raise
         return self._map_bundle_response(response, include_bundle=False)
 
     def get_params(self, endpoint: str) -> dict[str, Any]:

@@ -1048,10 +1048,16 @@ class OperatorAppState:
         raise ValueError("unsupported robot transport; use grpc")
 
     def pull_sync_payload(self, robot_id: str) -> dict[str, Any]:
-        robot_active = self.robot_maps_active_payload(robot_id)
-        robot_active_name = str(robot_active.get("mapName") or "").strip()
+        active_warning = ""
+        try:
+            robot_active = self.robot_maps_active_payload(robot_id)
+            robot_active_name = str(robot_active.get("mapName") or "").strip()
+        except Exception as exc:
+            active_warning = str(exc)
+            robot_active_name = ""
         local_active = self.map_cache.load_active_map(robot_id)
         robot_current = self._fetch_robot_map_payload(robot_id, robot_active_name)
+        robot_active_name = str(robot_current.get("mapName") or robot_active_name).strip()
         local_signature = ""
         if isinstance(local_active, dict):
             local_map = local_active.get("map")
@@ -1066,6 +1072,7 @@ class OperatorAppState:
                 "message": f"Operator already has active robot map {robot_active_name}.",
                 "robotActiveMapName": robot_active_name,
                 "localActiveMapName": local_active_name,
+                **({"warning": f"Active map lookup failed before pull: {active_warning}"} if active_warning else {}),
             }
         cached = self.map_cache.save_pulled_map(robot_id, robot_current, activate=True)
         robot = self.get_robot(robot_id)
@@ -1087,6 +1094,7 @@ class OperatorAppState:
             "message": f"Pulled active robot map {robot_active_name}.",
             "robotActiveMapName": robot_active_name,
             "localActiveMapName": str(pulled.get("local", {}).get("mapName") or robot_active_name),
+            **({"warning": f"Active map lookup failed before pull: {active_warning}"} if active_warning else {}),
             **pulled,
         }
 
@@ -1097,8 +1105,28 @@ class OperatorAppState:
             if not map_name:
                 raise ValueError("mapName is required")
             loaded = self.grpc_adapter.load_map(self._grpc_endpoint(robot), map_name)
-            self.map_cache.set_active_map(robot_id, map_name)
+            local_payload: dict[str, Any] | None = None
+            local_warning = ""
+            try:
+                self.map_cache.set_active_map(robot_id, map_name)
+                active_payload = self.map_cache.load_active_map(robot_id)
+                if isinstance(active_payload, dict):
+                    local_payload = {
+                        "activeMapName": str(active_payload.get("mapName") or map_name),
+                        "map": active_payload.get("map") if isinstance(active_payload.get("map"), dict) else None,
+                        "sourceMapName": str(active_payload.get("sourceMapName") or ""),
+                        "signature": str(active_payload.get("signature") or ""),
+                        "robotSignature": str(active_payload.get("robotSignature") or loaded.get("signature") or ""),
+                        "robotMapName": str(active_payload.get("robotMapName") or loaded.get("mapName") or map_name),
+                        "hasLocalChanges": bool(active_payload.get("hasLocalChanges")),
+                    }
+            except ValueError as exc:
+                local_warning = str(exc)
             self.workspace.save_active_map_meta(robot, {"ok": True, **loaded})
+            if local_payload is not None:
+                loaded["local"] = local_payload
+            if local_warning:
+                loaded["warning"] = local_warning
             return loaded
         raise ValueError("unsupported robot transport; use grpc")
 

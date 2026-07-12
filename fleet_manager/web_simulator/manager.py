@@ -1461,7 +1461,7 @@ class WebFleetManager:
                 return
             for key in ("robotId", "robot_id", "name", "id", "vehicleId", "vehicle_id", "uuid", "serial"):
                 candidates.append(payload.get(key))
-            for nested_key in ("identity", "robot", "basic_info", "basicInfo", "rbk_report", "rbkReport"):
+            for nested_key in ("identity", "robot", "basic_info", "basicInfo", "robot_report", "robotReport"):
                 nested = payload.get(nested_key)
                 if isinstance(nested, dict):
                     for key in ("robotId", "robot_id", "name", "id", "vehicleId", "vehicle_id", "uuid", "serial"):
@@ -1539,13 +1539,13 @@ class WebFleetManager:
                 }
             except (TypeError, ValueError):
                 return None
-        rbk_report = status_payload.get("rbk_report")
-        if isinstance(rbk_report, dict) and "x" in rbk_report and "y" in rbk_report:
+        robot_report = status_payload.get("robot_report") or status_payload.get("robotReport")
+        if isinstance(robot_report, dict) and "x" in robot_report and "y" in robot_report:
             try:
                 return {
-                    "x": float(rbk_report.get("x", 0.0) or 0.0),
-                    "y": float(rbk_report.get("y", 0.0) or 0.0),
-                    "yaw": float(rbk_report.get("angle", rbk_report.get("yaw", 0.0)) or 0.0),
+                    "x": float(robot_report.get("x", 0.0) or 0.0),
+                    "y": float(robot_report.get("y", 0.0) or 0.0),
+                    "yaw": float(robot_report.get("angle", robot_report.get("yaw", 0.0)) or 0.0),
                 }
             except (TypeError, ValueError):
                 return None

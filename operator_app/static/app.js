@@ -3467,6 +3467,46 @@ class OperatorApp {
     }
   }
 
+  applyLoadedMapResult(result, requestedMapName = "", robot = this.selectedRobot()) {
+    const loadedName = String(result?.mapName || requestedMapName || "").trim();
+    const local = result?.local && typeof result.local === "object" ? result.local : null;
+    const localName = String(local?.activeMapName || this.robotMapState.operatorActiveMapName || "").trim();
+    const nextSignature = String(local?.signature || this.operatorMapSignature || "").trim();
+    if (local?.map && typeof local.map === "object") {
+      if (nextSignature && nextSignature !== this.operatorMapSignature) {
+        this.resetMapView(true);
+      }
+      this.operatorMapPayload = local.map;
+      this.operatorMapSignature = nextSignature;
+    }
+    const robotSignature = String(result?.signature || local?.robotSignature || this.robotMapState.robotSignature || "").trim();
+    this.robotMapState = {
+      ...this.robotMapState,
+      robotActiveMapName: loadedName || this.robotMapState.robotActiveMapName,
+      operatorActiveMapName: localName,
+      robotSignature,
+      operatorSignature: nextSignature || this.robotMapState.operatorSignature,
+      sourceRobotMapName: String(local?.robotMapName || local?.sourceMapName || loadedName || this.robotMapState.sourceRobotMapName || "").trim(),
+      hasLocalChanges: local
+        ? Boolean(local.hasLocalChanges || (localName && loadedName && localName !== loadedName))
+        : this.robotMapState.hasLocalChanges,
+    };
+    if (robot && loadedName) {
+      robot.mapId = loadedName;
+      if (robot.identity && typeof robot.identity === "object") {
+        robot.identity.mapId = loadedName;
+      }
+    }
+  }
+
+  refreshAfterMapLoadInBackground() {
+    this.refreshRobotMapState({ quiet: true })
+      .then(() => this.renderSelectedRobot())
+      .catch(() => {});
+    this.refreshRobots({ quiet: true }).catch(() => {});
+    this.fetchSelectedRobotStatus(true).catch(() => {});
+  }
+
   async fetchSelectedRobotStatus(silent = false) {
     if (silent && this.isGlobalHomePage()) {
       return;
@@ -3893,11 +3933,11 @@ class OperatorApp {
         return payload[key];
       }
     }
-    const rbk = payload.rbk_report;
-    if (rbk && typeof rbk === "object") {
+    const robotReport = payload.robot_report || payload.robotReport;
+    if (robotReport && typeof robotReport === "object") {
       for (const key of keys) {
-        if (rbk[key] !== undefined && rbk[key] !== null && rbk[key] !== "") {
-          return rbk[key];
+        if (robotReport[key] !== undefined && robotReport[key] !== null && robotReport[key] !== "") {
+          return robotReport[key];
         }
       }
     }
@@ -4536,9 +4576,9 @@ class OperatorApp {
       });
       this.scene3dStaticKey = "";
       this.scene3dPayload = null;
-      await this.refreshRobotMapState({ quiet: true });
-      await this.refreshRobots({ quiet: true });
-      await this.fetchSelectedRobotStatus(true);
+      this.applyLoadedMapResult(result, mapName, robot);
+      this.renderSelectedRobot();
+      this.refreshAfterMapLoadInBackground();
       await this.refreshFleetSimMapSelect({ force: true, quiet: true });
       if (this.fleetBenchmarkStatus) {
         this.fleetBenchmarkStatus.className = "probe-result success compact";
@@ -8749,9 +8789,9 @@ class OperatorApp {
         return loaded;
       });
       this.loadMapDialog.close();
-      await this.refreshRobotMapState({ quiet: true });
-      await this.refreshRobots({ quiet: true });
-      await this.fetchSelectedRobotStatus(true);
+      this.applyLoadedMapResult(result, mapName, robot);
+      this.renderSelectedRobot();
+      this.refreshAfterMapLoadInBackground();
       this.robotMessageText.textContent = `${this.isFleetManager(robot) ? "Fleet Manager" : "Robot"} active map changed to ${result.mapName || mapName}.`;
     } catch (error) {
       await this.refreshRobotMapState({ quiet: true }).catch(() => {});
