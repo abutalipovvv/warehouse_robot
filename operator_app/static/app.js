@@ -933,6 +933,7 @@ class OperatorApp {
     this.scene3dPayload = null;
     this.scene3dHoverLmName = "";
     this.scene3dLoadPending = false;
+    this.scene3dRenderQueued = false;
     this.fleetStatusSocket = null;
     this.fleetStatusManagerId = "";
     this.fleetStatusStreamShouldRun = false;
@@ -1140,6 +1141,7 @@ class OperatorApp {
     this.operatorMap3dButton = document.getElementById("operatorMap3dButton");
     this.operatorViewport = document.getElementById("operatorViewport");
     this.operatorMapImage = document.getElementById("operatorMapImage");
+    this.operatorObstacleLayer = document.getElementById("operatorObstacleLayer");
     this.operatorGraphLayer = document.getElementById("operatorGraphLayer");
     this.operatorRouteLayer = document.getElementById("operatorRouteLayer");
     this.operatorLookaheadLayer = document.getElementById("operatorLookaheadLayer");
@@ -3016,7 +3018,7 @@ class OperatorApp {
     this.fleetStatusReceivedAt = performance.now();
     if (payload.type === "state") {
       this.currentStatus = state;
-      this.renderSelectedRobot();
+      this.renderFleetRuntimeTick();
       this.ensureFleetAnimationLoop();
       return;
     }
@@ -3061,7 +3063,7 @@ class OperatorApp {
       return;
     }
     if (this.mapViewMode === "3d") {
-      this.renderOperatorScene3d();
+      this.refreshOperatorScene3d();
       return;
     }
     this.drawRobot();
@@ -3470,7 +3472,7 @@ class OperatorApp {
   applyLoadedMapResult(result, requestedMapName = "", robot = this.selectedRobot()) {
     const loadedName = String(result?.mapName || requestedMapName || "").trim();
     const local = result?.local && typeof result.local === "object" ? result.local : null;
-    const localName = String(local?.activeMapName || this.robotMapState.operatorActiveMapName || "").trim();
+    const localName = String(local?.activeMapName || local?.mapName || this.robotMapState.operatorActiveMapName || "").trim();
     const nextSignature = String(local?.signature || this.operatorMapSignature || "").trim();
     if (local?.map && typeof local.map === "object") {
       if (nextSignature && nextSignature !== this.operatorMapSignature) {
@@ -3496,6 +3498,16 @@ class OperatorApp {
       if (robot.identity && typeof robot.identity === "object") {
         robot.identity.mapId = loadedName;
       }
+    }
+    if (this.isFleetManager(robot) && this.currentStatus && loadedName) {
+      this.currentStatus = {
+        ...this.currentStatus,
+        mapName: loadedName,
+        robots: [],
+        route: null,
+      };
+      this.selectedFleetRobotName = "";
+      this.fleetVisualClocks.clear();
     }
   }
 
@@ -4353,10 +4365,24 @@ class OperatorApp {
     this.renderFleetPlanDebug();
     this.drawRoute();
     this.drawLookahead();
+    this.drawLandmarks();
+    this.drawRobot();
     this.syncMapControls();
     this.syncModeButtons();
     this.syncManualButtons();
     this.ensureFleetAnimationLoop();
+  }
+
+  renderFleetStateImmediately() {
+    if (!this.isFleetManager()) {
+      return;
+    }
+    this.fleetStatusReceivedAt = performance.now();
+    this.fleetStatusObjectRef = this.currentStatus;
+    this.renderSelectedRobot();
+    this.renderFleetRuntimeTick();
+    this.refreshOperatorScene3d();
+    this.syncFleetStatusStream();
   }
 
   selectedFleetRobot(robots = null) {
@@ -4550,6 +4576,7 @@ class OperatorApp {
     if (!this.isFleetManagerSim() || !this.fleetSimMapSelect) {
       return;
     }
+    const robot = this.selectedRobot();
     const mapName = String(this.fleetSimMapSelect.value || "").trim();
     if (!mapName) {
       return;
@@ -4574,17 +4601,16 @@ class OperatorApp {
         await progress(60, "Refreshing map state...", 80);
         return loaded;
       });
-      this.scene3dStaticKey = "";
-      this.scene3dPayload = null;
+      this.invalidateOperatorScene3d();
       this.applyLoadedMapResult(result, mapName, robot);
-      this.renderSelectedRobot();
+      this.currentStatus = await this.getJson(this.fleetApiPath("/state")).catch(() => this.currentStatus);
+      this.renderFleetStateImmediately();
       this.refreshAfterMapLoadInBackground();
-      await this.refreshFleetSimMapSelect({ force: true, quiet: true });
+      this.refreshFleetSimMapSelect({ force: true, quiet: true }).catch(() => {});
       if (this.fleetBenchmarkStatus) {
         this.fleetBenchmarkStatus.className = "probe-result success compact";
         this.fleetBenchmarkStatus.textContent = `Loaded ${result.mapName || mapName}.`;
       }
-      this.renderSelectedRobot();
     } catch (error) {
       if (this.fleetBenchmarkStatus) {
         this.fleetBenchmarkStatus.className = "probe-result error compact";
@@ -4965,7 +4991,7 @@ class OperatorApp {
       this.robotMessageText.textContent = (draftCount || canceled)
         ? `Queue cleared: draft=${draftCount}, backend=${canceled}.`
         : "Queue is empty.";
-      this.renderSelectedRobot();
+      this.renderFleetStateImmediately();
     } catch (error) {
       this.robotMessageText.textContent = `Clear queue failed: ${error.message || error}`;
     }
@@ -4987,7 +5013,7 @@ class OperatorApp {
       this.currentStatus = result.state || await this.getJson(this.fleetApiPath("/state"));
       const dispatched = Number(result.dispatched || 0);
       this.robotMessageText.textContent = dispatched ? `Orders dispatched: ${dispatched}.` : "No dispatchable orders right now.";
-      this.renderSelectedRobot();
+      this.renderFleetStateImmediately();
     } catch (error) {
       this.robotMessageText.textContent = `Dispatch failed: ${error.message || error}`;
     }
@@ -5036,7 +5062,7 @@ class OperatorApp {
       this.pendingFleetRobotName = "";
       this.currentStatus = lastState || await this.getJson(this.fleetApiPath("/state"));
       this.robotMessageText.textContent = `Dispatched draft queue: ${sent} LM goal(s).`;
-      this.renderSelectedRobot();
+      this.renderFleetStateImmediately();
     } catch (error) {
       if (sentRobots.size) {
         this.fleetQueue = this.fleetQueue.filter((entry) => !sentRobots.has(entry.robotName));
@@ -5045,7 +5071,7 @@ class OperatorApp {
         this.currentStatus = lastState;
       }
       this.robotMessageText.textContent = `Dispatch failed: ${error.message || error}`;
-      this.renderSelectedRobot();
+      this.renderFleetStateImmediately();
     }
   }
 
@@ -5057,7 +5083,7 @@ class OperatorApp {
       const result = await this.postJson(this.fleetApiPath("/orders/cancel"), { id: orderId });
       this.currentStatus = result.state || await this.getJson(this.fleetApiPath("/state"));
       this.robotMessageText.textContent = `Order canceled: ${orderId}.`;
-      this.renderSelectedRobot();
+      this.renderFleetStateImmediately();
     } catch (error) {
       this.robotMessageText.textContent = `Cancel order failed: ${error.message || error}`;
     }
@@ -5082,7 +5108,7 @@ class OperatorApp {
       const result = await this.postJson(this.fleetApiPath("/orders/pause"), { id: orderId });
       this.currentStatus = result.state || await this.getJson(this.fleetApiPath("/state"));
       this.robotMessageText.textContent = `Order paused: ${orderId}.`;
-      this.renderSelectedRobot();
+      this.renderFleetStateImmediately();
     } catch (error) {
       this.robotMessageText.textContent = `Pause order failed: ${error.message || error}`;
     }
@@ -5097,7 +5123,7 @@ class OperatorApp {
       const result = await this.postJson(this.fleetApiPath("/orders/resume"), { id: orderId });
       this.currentStatus = result.state || await this.getJson(this.fleetApiPath("/state"));
       this.robotMessageText.textContent = `Order resumed: ${orderId}.`;
-      this.renderSelectedRobot();
+      this.renderFleetStateImmediately();
     } catch (error) {
       this.robotMessageText.textContent = `Resume order failed: ${error.message || error}`;
     }
@@ -5137,6 +5163,9 @@ class OperatorApp {
     if (!payload || !payload.map) {
       this.operatorMapSvg.setAttribute("viewBox", "0 0 100 100");
       this.operatorMapImage.removeAttribute("href");
+      if (this.operatorObstacleLayer) {
+        this.operatorObstacleLayer.innerHTML = "";
+      }
       this.operatorGraphLayer.innerHTML = "";
       this.operatorRouteLayer.innerHTML = "";
       this.operatorLookaheadLayer.innerHTML = "";
@@ -5158,6 +5187,7 @@ class OperatorApp {
     this.operatorMapImage.setAttribute("height", String(Number(map.height || 0)));
     this.operatorMapImage.setAttribute("href", String(map.imageDataUrl || ""));
     this.applyMapTransform();
+    this.drawMapObstacles(payload);
     this.drawGraph();
     this.drawRoute();
     this.drawLookahead();
@@ -5178,10 +5208,143 @@ class OperatorApp {
     return this.operatorMapPayload;
   }
 
+  drawMapObstacles(payload = this.activeOperatorMapPayload()) {
+    if (!this.operatorObstacleLayer) {
+      return;
+    }
+    this.operatorObstacleLayer.innerHTML = "";
+    if (!payload || !payload.map) {
+      return;
+    }
+    const explicit = Array.isArray(payload.obstacles) ? payload.obstacles : [];
+    const obstacles = explicit.length ? explicit : this.syntheticRackObstacles(payload);
+    for (const obstacle of obstacles) {
+      const rect = this.obstacleRectToPixels(obstacle);
+      if (!rect) {
+        continue;
+      }
+      const element = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+      element.setAttribute("class", obstacle.kind === "rack" ? "map-obstacle rack" : "map-obstacle");
+      element.setAttribute("x", String(rect.x));
+      element.setAttribute("y", String(rect.y));
+      element.setAttribute("width", String(rect.width));
+      element.setAttribute("height", String(rect.height));
+      element.setAttribute("rx", String(rect.radius));
+      element.setAttribute("ry", String(rect.radius));
+      this.operatorObstacleLayer.append(element);
+    }
+  }
+
+  obstacleRectToPixels(obstacle) {
+    const map = this.activeOperatorMapPayload()?.map || {};
+    const resolution = Number(map.resolution || 0);
+    if (!resolution) {
+      return null;
+    }
+    const width = Number(obstacle.width || obstacle.w || 0);
+    const height = Number(obstacle.height || obstacle.h || 0);
+    if (width <= 0 || height <= 0) {
+      return null;
+    }
+    const center = this.worldToPixel({
+      x: Number(obstacle.x || 0),
+      y: Number(obstacle.y || 0),
+    });
+    return {
+      x: center.x - (width / resolution / 2),
+      y: center.y - (height / resolution / 2),
+      width: width / resolution,
+      height: height / resolution,
+      radius: Math.max(1.5, Math.min(width, height) / resolution * 0.08),
+    };
+  }
+
+  syntheticRackObstacles(payload) {
+    if (!this.shouldDrawSyntheticRacks(payload)) {
+      return [];
+    }
+    const landmarks = Array.isArray(payload.lms) ? payload.lms : [];
+    const xs = this.uniqueSortedNumbers(landmarks.map((lm) => lm.x));
+    const ys = this.uniqueSortedNumbers(landmarks.map((lm) => lm.y));
+    if (xs.length < 4 || ys.length < 4) {
+      return [];
+    }
+    const stepX = this.medianStep(xs);
+    const stepY = this.medianStep(ys);
+    if (stepX <= 0 || stepY <= 0) {
+      return [];
+    }
+    const rackWidth = stepX * 0.58;
+    const rackHeight = stepY * 0.58;
+    const obstacles = [];
+    for (let row = 0; row < ys.length - 1; row += 1) {
+      for (let col = 0; col < xs.length - 1; col += 1) {
+        if (this.syntheticRackAisleCell(row, col)) {
+          continue;
+        }
+        obstacles.push({
+          kind: "rack",
+          x: (xs[col] + xs[col + 1]) / 2,
+          y: (ys[row] + ys[row + 1]) / 2,
+          width: rackWidth,
+          height: rackHeight,
+        });
+      }
+    }
+    return obstacles.slice(0, 1600);
+  }
+
+  shouldDrawSyntheticRacks(payload) {
+    const mapName = String(payload?.mapName || payload?.map?.mapName || "").toLowerCase();
+    const landmarks = Array.isArray(payload?.lms) ? payload.lms : [];
+    if (landmarks.length < 250) {
+      return false;
+    }
+    if (mapName.includes("benchmark") || mapName.includes("kiva")) {
+      return true;
+    }
+    const benchmarkCount = landmarks.filter((lm) => lm?.properties?.benchmark).length;
+    return benchmarkCount > landmarks.length * 0.75;
+  }
+
+  syntheticRackAisleCell(row, col) {
+    return row % 6 === 5 || col % 6 === 5;
+  }
+
+  uniqueSortedNumbers(values) {
+    return Array.from(new Set(
+      values
+        .map((value) => Number(value))
+        .filter((value) => Number.isFinite(value))
+        .map((value) => Math.round(value * 1000) / 1000)
+    )).sort((a, b) => a - b);
+  }
+
+  medianStep(values) {
+    const steps = [];
+    for (let index = 0; index < values.length - 1; index += 1) {
+      const step = values[index + 1] - values[index];
+      if (step > 0.001) {
+        steps.push(step);
+      }
+    }
+    if (!steps.length) {
+      return 0;
+    }
+    steps.sort((a, b) => a - b);
+    return steps[Math.floor(steps.length / 2)];
+  }
+
   drawGraph() {
     const payload = this.activeOperatorMapPayload();
     const landmarks = this.landmarkIndex();
     this.operatorGraphLayer.innerHTML = "";
+    const profile = this.mapVisualProfile(payload);
+    const strokeWidth = profile.unit(profile.massive ? 0.55 : (profile.dense ? 0.75 : 1.05));
+    if (!this.fleetMapEditorActive && profile.dense) {
+      this.drawGraphBulk(payload, landmarks, strokeWidth);
+      return;
+    }
     for (const edge of payload.edges || []) {
       const element = document.createElementNS("http://www.w3.org/2000/svg", edge.geometry === "bezier" ? "path" : "line");
       const edgeKey = this.edgeKey(edge.from, edge.to);
@@ -5190,6 +5353,7 @@ class OperatorApp {
         this.fleetMapEditorActive ? "editable" : "",
         edgeKey === this.fleetSelectedEdgeKey ? "selected" : "",
       ].filter(Boolean).join(" "));
+      element.style.strokeWidth = String(this.fleetMapEditorActive ? profile.unit(1.8) : strokeWidth);
       element.dataset.edgeKey = edgeKey;
       element.addEventListener("pointerdown", (event) => {
         if (!this.fleetMapEditorActive || event.button !== 0) {
@@ -5216,11 +5380,46 @@ class OperatorApp {
         element.setAttribute("y2", String(goalPx.y));
       }
       this.operatorGraphLayer.append(element);
-      const arrow = this.directionArrow(edge, landmarks);
+      const arrow = profile.edges > 900 ? null : this.directionArrow(edge, landmarks);
       if (arrow) {
         this.operatorGraphLayer.append(arrow);
       }
     }
+  }
+
+  drawGraphBulk(payload, landmarks, strokeWidth) {
+    const edges = Array.isArray(payload?.edges) ? payload.edges : [];
+    const commands = [];
+    const seen = new Set();
+    for (const edge of edges) {
+      const key = [String(edge.from || ""), String(edge.to || "")].sort().join("|");
+      const geometryKey = `${key}:${edge.geometry || "line"}`;
+      if (seen.has(geometryKey)) {
+        continue;
+      }
+      seen.add(geometryKey);
+      if (edge.geometry === "bezier" && Array.isArray(edge.control_points) && edge.control_points.length === 4) {
+        const points = edge.control_points.map((point) => this.worldToPixel(point));
+        commands.push(`M ${points[0].x} ${points[0].y} C ${points[1].x} ${points[1].y}, ${points[2].x} ${points[2].y}, ${points[3].x} ${points[3].y}`);
+        continue;
+      }
+      const start = landmarks.get(edge.from);
+      const goal = landmarks.get(edge.to);
+      if (!start || !goal) {
+        continue;
+      }
+      const startPx = this.worldToPixel(start);
+      const goalPx = this.worldToPixel(goal);
+      commands.push(`M ${startPx.x} ${startPx.y} L ${goalPx.x} ${goalPx.y}`);
+    }
+    if (!commands.length) {
+      return;
+    }
+    const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    path.setAttribute("class", "graph-edge graph-edge-bulk");
+    path.setAttribute("d", commands.join(" "));
+    path.style.strokeWidth = String(strokeWidth);
+    this.operatorGraphLayer.append(path);
   }
 
   drawRoute() {
@@ -5245,6 +5444,7 @@ class OperatorApp {
     }
     const polyline = document.createElementNS("http://www.w3.org/2000/svg", "polyline");
     polyline.setAttribute("class", "planned-route");
+    polyline.style.strokeWidth = String(this.routeStrokeWidth("planned-route"));
     polyline.setAttribute("points", route.trajectory.map((point) => {
       const px = this.worldToPixel(point);
       return `${px.x},${px.y}`;
@@ -5285,6 +5485,7 @@ class OperatorApp {
     }
     const polyline = document.createElementNS("http://www.w3.org/2000/svg", "polyline");
     polyline.setAttribute("class", className);
+    polyline.style.strokeWidth = String(this.routeStrokeWidth(className));
     polyline.setAttribute("points", points.map((point) => {
       const px = this.worldToPixel(point);
       return `${px.x},${px.y}`;
@@ -5371,10 +5572,12 @@ class OperatorApp {
       const footprint = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
       footprint.setAttribute("class", this.fleetManualLookahead.blocked ? "lookahead-footprint blocked" : "lookahead-footprint");
       footprint.setAttribute("points", this.robotFootprintPoints(pose));
+      footprint.style.strokeWidth = String(this.routeStrokeWidth("lookahead-footprint"));
       this.operatorLookaheadLayer.append(footprint);
     });
     const polyline = document.createElementNS("http://www.w3.org/2000/svg", "polyline");
     polyline.setAttribute("class", this.fleetManualLookahead.blocked ? "lookahead-route blocked" : "lookahead-route");
+    polyline.style.strokeWidth = String(this.routeStrokeWidth("lookahead-route"));
     polyline.setAttribute("points", poses.map((point) => {
       const px = this.worldToPixel(point);
       return `${px.x},${px.y}`;
@@ -5385,8 +5588,19 @@ class OperatorApp {
     marker.setAttribute("class", this.fleetManualLookahead.blocked ? "lookahead-marker blocked" : "lookahead-marker");
     marker.setAttribute("cx", String(last.x));
     marker.setAttribute("cy", String(last.y));
-    marker.setAttribute("r", "6");
+    marker.setAttribute("r", String(this.routeStrokeWidth("lookahead-marker") * 1.6));
     this.operatorLookaheadLayer.append(marker);
+  }
+
+  routeStrokeWidth(className = "") {
+    const profile = this.mapVisualProfile();
+    if (String(className).includes("active")) {
+      return profile.unit(profile.massive ? 1.8 : 2.2);
+    }
+    if (String(className).includes("done") || String(className).includes("plan")) {
+      return profile.unit(profile.massive ? 1.1 : 1.5);
+    }
+    return profile.unit(profile.massive ? 1.2 : 1.7);
   }
 
   drawLandmarks() {
@@ -5399,14 +5613,19 @@ class OperatorApp {
     if (!payload || !payload.map) {
       return;
     }
+    const style = this.landmarkRenderStyle(payload);
     for (const landmark of payload.lms || []) {
       const px = this.worldToPixel(landmark);
+      const isNearest = landmark.name === nearest;
+      const isTarget = landmark.name === target;
+      const isSelected = this.fleetMapEditorActive && landmark.name === this.fleetSelectedLmName;
       const group = document.createElementNS("http://www.w3.org/2000/svg", "g");
       group.setAttribute("class", [
         "landmark",
-        landmark.name === nearest ? "nearest" : "",
-        landmark.name === target ? "target" : "",
-        this.fleetMapEditorActive && landmark.name === this.fleetSelectedLmName ? "selected" : "",
+        style.compact ? "compact" : "",
+        isNearest ? "nearest" : "",
+        isTarget ? "target" : "",
+        isSelected ? "selected" : "",
         (this.navigateMode || this.relocateMode) ? "armed" : "",
       ].filter(Boolean).join(" "));
       group.dataset.lmName = landmark.name;
@@ -5440,22 +5659,86 @@ class OperatorApp {
           this.mapClickConsumed = false;
         }, 0);
       });
+      const hit = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+      hit.setAttribute("class", "landmark-hit");
+      hit.setAttribute("cx", String(px.x));
+      hit.setAttribute("cy", String(px.y));
+      hit.setAttribute("r", String(style.hitRadius));
+      group.append(hit);
       const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+      circle.setAttribute("class", "landmark-dot");
       circle.setAttribute("cx", String(px.x));
       circle.setAttribute("cy", String(px.y));
-      circle.setAttribute("r", "5.5");
+      circle.setAttribute("r", String(isNearest || isTarget || isSelected ? style.emphasisRadius : style.radius));
+      circle.style.strokeWidth = String(style.strokeWidth);
       group.append(circle);
       const label = document.createElementNS("http://www.w3.org/2000/svg", "text");
+      label.setAttribute("class", "landmark-label");
       label.setAttribute("x", String(px.x));
-      label.setAttribute("y", String(px.y + 18));
+      label.setAttribute("y", String(px.y + style.labelOffset));
+      label.setAttribute("font-size", String(style.labelFontSize));
+      label.style.strokeWidth = String(style.labelStrokeWidth);
       label.textContent = landmark.name;
       group.append(label);
       this.operatorLandmarkLayer.append(group);
     }
   }
 
+  landmarkRenderStyle(payload) {
+    const count = Array.isArray(payload?.lms) ? payload.lms.length : 0;
+    const profile = this.mapVisualProfile(payload);
+    const zoom = Math.max(1, Number(this.mapView.scale || 1));
+    if (count >= 900) {
+      return {
+        compact: zoom < 2.6,
+        radius: profile.unit(1.55),
+        emphasisRadius: profile.unit(2.6),
+        hitRadius: profile.unit(8),
+        labelOffset: profile.unit(8),
+        labelFontSize: profile.unit(6.8),
+        labelStrokeWidth: profile.unit(1.8),
+        strokeWidth: profile.unit(0.75),
+      };
+    }
+    if (count >= 400) {
+      return {
+        compact: zoom < 2.1,
+        radius: profile.unit(1.9),
+        emphasisRadius: profile.unit(3.0),
+        hitRadius: profile.unit(8.5),
+        labelOffset: profile.unit(9),
+        labelFontSize: profile.unit(7.4),
+        labelStrokeWidth: profile.unit(1.9),
+        strokeWidth: profile.unit(0.8),
+      };
+    }
+    if (count >= 160) {
+      return {
+        compact: zoom < 1.55,
+        radius: profile.unit(2.3),
+        emphasisRadius: profile.unit(3.7),
+        hitRadius: profile.unit(9),
+        labelOffset: profile.unit(10),
+        labelFontSize: profile.unit(8),
+        labelStrokeWidth: profile.unit(2.0),
+        strokeWidth: profile.unit(0.9),
+      };
+    }
+    return {
+      compact: false,
+      radius: profile.unit(3.2),
+      emphasisRadius: profile.unit(4.8),
+      hitRadius: profile.unit(10),
+      labelOffset: profile.unit(12),
+      labelFontSize: profile.unit(8.5),
+      labelStrokeWidth: profile.unit(2.1),
+      strokeWidth: profile.unit(1.0),
+    };
+  }
+
   drawRobot() {
     this.operatorRobotLayer.innerHTML = "";
+    const robotStyle = this.robotRenderStyle();
     if (this.isFleetManager()) {
       const robots = this.fleetRenderRobots();
       let focused = false;
@@ -5495,23 +5778,29 @@ class OperatorApp {
         const footprint = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
         footprint.setAttribute("class", "robot-footprint");
         footprint.setAttribute("points", this.robotFootprintPoints(pose));
+        footprint.style.strokeWidth = String(robotStyle.footprintStrokeWidth);
         group.append(footprint);
         const centerDot = document.createElementNS("http://www.w3.org/2000/svg", "circle");
         centerDot.setAttribute("class", "robot-center-dot");
         centerDot.setAttribute("cx", String(center.x));
         centerDot.setAttribute("cy", String(center.y));
-        centerDot.setAttribute("r", "4");
+        centerDot.setAttribute("r", String(robotStyle.centerRadius));
+        centerDot.style.strokeWidth = String(robotStyle.centerStrokeWidth);
         group.append(centerDot);
         const heading = document.createElementNS("http://www.w3.org/2000/svg", "line");
         heading.setAttribute("class", "robot-heading");
         heading.setAttribute("x1", String(center.x));
         heading.setAttribute("y1", String(center.y));
-        heading.setAttribute("x2", String(center.x + Math.cos(Number(pose.yaw || 0)) * 18));
-        heading.setAttribute("y2", String(center.y + Math.sin(Number(pose.yaw || 0)) * 18));
+        heading.setAttribute("x2", String(center.x + Math.cos(Number(pose.yaw || 0)) * robotStyle.headingLength));
+        heading.setAttribute("y2", String(center.y + Math.sin(Number(pose.yaw || 0)) * robotStyle.headingLength));
+        heading.style.strokeWidth = String(robotStyle.headingStrokeWidth);
         group.append(heading);
         const label = document.createElementNS("http://www.w3.org/2000/svg", "text");
+        label.setAttribute("class", "robot-label");
         label.setAttribute("x", String(center.x));
-        label.setAttribute("y", String(center.y + 25));
+        label.setAttribute("y", String(center.y + robotStyle.labelOffset));
+        label.style.fontSize = String(robotStyle.labelFontSize);
+        label.style.strokeWidth = String(robotStyle.labelStrokeWidth);
         label.textContent = robot.name || "";
         group.append(label);
         this.operatorRobotLayer.append(group);
@@ -5537,21 +5826,38 @@ class OperatorApp {
     const footprint = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
     footprint.setAttribute("class", "robot-footprint");
     footprint.setAttribute("points", this.robotFootprintPoints(pose));
+    footprint.style.strokeWidth = String(robotStyle.footprintStrokeWidth);
     group.append(footprint);
     const centerDot = document.createElementNS("http://www.w3.org/2000/svg", "circle");
     centerDot.setAttribute("class", "robot-center-dot");
     centerDot.setAttribute("cx", String(center.x));
     centerDot.setAttribute("cy", String(center.y));
-    centerDot.setAttribute("r", "4");
+    centerDot.setAttribute("r", String(robotStyle.centerRadius));
+    centerDot.style.strokeWidth = String(robotStyle.centerStrokeWidth);
     group.append(centerDot);
     const heading = document.createElementNS("http://www.w3.org/2000/svg", "line");
     heading.setAttribute("class", "robot-heading");
     heading.setAttribute("x1", String(center.x));
     heading.setAttribute("y1", String(center.y));
-    heading.setAttribute("x2", String(center.x + Math.cos(Number(pose.yaw || 0)) * 20));
-    heading.setAttribute("y2", String(center.y + Math.sin(Number(pose.yaw || 0)) * 20));
+    heading.setAttribute("x2", String(center.x + Math.cos(Number(pose.yaw || 0)) * robotStyle.headingLength));
+    heading.setAttribute("y2", String(center.y + Math.sin(Number(pose.yaw || 0)) * robotStyle.headingLength));
+    heading.style.strokeWidth = String(robotStyle.headingStrokeWidth);
     group.append(heading);
     this.operatorRobotLayer.append(group);
+  }
+
+  robotRenderStyle(payload = this.activeOperatorMapPayload()) {
+    const profile = this.mapVisualProfile(payload);
+    return {
+      centerRadius: profile.unit(profile.massive ? 2.2 : 2.8),
+      centerStrokeWidth: profile.unit(0.9),
+      headingLength: profile.unit(profile.massive ? 9 : 11),
+      headingStrokeWidth: profile.unit(1.2),
+      footprintStrokeWidth: profile.unit(1.0),
+      labelOffset: profile.unit(profile.massive ? 11 : 13),
+      labelFontSize: profile.unit(profile.massive ? 7.2 : 8),
+      labelStrokeWidth: profile.unit(2.0),
+    };
   }
 
   robotFootprintPoints(pose) {
@@ -5668,6 +5974,48 @@ class OperatorApp {
     };
   }
 
+  mapScreenScale(payload = this.activeOperatorMapPayload()) {
+    const map = payload?.map || {};
+    const viewWidth = Number(map.viewWidth || 0);
+    const viewHeight = Number(map.viewHeight || 0);
+    const rect = this.operatorMapSvg?.getBoundingClientRect?.();
+    const baseScale = rect && rect.width > 0 && rect.height > 0 && viewWidth > 0 && viewHeight > 0
+      ? Math.min(rect.width / viewWidth, rect.height / viewHeight)
+      : 1;
+    return Math.max(0.001, baseScale * Math.max(0.1, Number(this.mapView.scale || 1)));
+  }
+
+  screenPxToMapUnits(px, payload = this.activeOperatorMapPayload()) {
+    return Number(px || 0) / this.mapScreenScale(payload);
+  }
+
+  mapVisualProfile(payload = this.activeOperatorMapPayload()) {
+    const lms = Array.isArray(payload?.lms) ? payload.lms.length : 0;
+    const edges = Array.isArray(payload?.edges) ? payload.edges.length : 0;
+    const dense = lms >= 350 || edges >= 900;
+    const massive = lms >= 900 || edges >= 2500;
+    return {
+      lms,
+      edges,
+      dense,
+      massive,
+      unit: (px) => this.screenPxToMapUnits(px, payload),
+    };
+  }
+
+  refreshAdaptiveMapLayers() {
+    if (!this.activeOperatorMapPayload()?.map || this.mapViewMode === "3d") {
+      return;
+    }
+    this.drawGraph();
+    this.drawRoute();
+    this.drawLookahead();
+    this.drawLandmarks();
+    this.drawFleetEditorOverlay();
+    this.drawScanOverlay();
+    this.drawRobot();
+  }
+
   directionArrow(edge, landmarks) {
     let point = null;
     let tangent = null;
@@ -5694,10 +6042,12 @@ class OperatorApp {
     const uy = tangent.y / length;
     const px = -uy;
     const py = ux;
-    const tip = { x: point.x + ux * 8, y: point.y + uy * 8 };
-    const base = { x: point.x - ux * 8, y: point.y - uy * 8 };
-    const left = { x: base.x + px * 5, y: base.y + py * 5 };
-    const right = { x: base.x - px * 5, y: base.y - py * 5 };
+    const arrowLength = this.screenPxToMapUnits(5.5);
+    const arrowWidth = this.screenPxToMapUnits(3.2);
+    const tip = { x: point.x + ux * arrowLength, y: point.y + uy * arrowLength };
+    const base = { x: point.x - ux * arrowLength, y: point.y - uy * arrowLength };
+    const left = { x: base.x + px * arrowWidth, y: base.y + py * arrowWidth };
+    const right = { x: base.x - px * arrowWidth, y: base.y - py * arrowWidth };
     const polygon = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
     polygon.setAttribute("class", "graph-direction");
     polygon.setAttribute("points", `${tip.x},${tip.y} ${left.x},${left.y} ${right.x},${right.y}`);
@@ -6744,6 +7094,7 @@ class OperatorApp {
     this.mapView.ty = pivot.y - ((next / previous) * (pivot.y - this.mapView.ty));
     this.mapView.scale = next;
     this.applyMapTransform();
+    this.refreshAdaptiveMapLayers();
     this.syncMapControls();
   }
 
@@ -6753,6 +7104,7 @@ class OperatorApp {
     this.mapView.ty = 0;
     this.mapView.follow = keepFollow ? this.mapView.follow : false;
     this.applyMapTransform();
+    this.refreshAdaptiveMapLayers();
     this.syncMapControls();
   }
 
@@ -6780,7 +7132,7 @@ class OperatorApp {
     this.operatorMap3dButton?.classList.toggle("active", show3d);
     this.operatorMap3dButton?.classList.toggle("hidden", !canUse3d);
     if (show3d) {
-      this.renderOperatorScene3d();
+      this.refreshOperatorScene3d();
     }
     this.operatorFollowRobotButton.classList.toggle("primary", this.mapView.follow);
     this.operatorFollowRobotButton.textContent = this.mapView.follow ? "Following Robot" : "Follow Robot";
@@ -6833,35 +7185,87 @@ class OperatorApp {
     return `${robot?.id || ""}:${mapName}:${signature}`;
   }
 
-  renderOperatorScene3d() {
-    if (!this.isFleetManager() || this.mapViewMode !== "3d" || !this.operatorScene3d || this.scene3dLoadPending) {
+  normalizeScene3dMapName(mapName) {
+    return String(mapName || "").trim().replace(/\.smap$/i, "");
+  }
+
+  invalidateOperatorScene3d() {
+    this.scene3dStaticKey = "";
+    this.scene3dPayload = null;
+    this.scene3dRenderQueued = true;
+    if (this.mapViewMode === "3d") {
+      this.renderOperatorScene3d();
+    }
+  }
+
+  refreshOperatorScene3d() {
+    if (this.mapViewMode !== "3d") {
       return;
     }
-    const key = this.scene3dKey();
+    if (!this.updateOperatorScene3dRobots()) {
+      this.renderOperatorScene3d();
+    }
+  }
+
+  updateOperatorScene3dRobots(scene = this.scene3d) {
+    if (!this.isFleetManager() || this.mapViewMode !== "3d" || !scene) {
+      return false;
+    }
+    if (this.scene3dStaticKey !== this.scene3dKey()) {
+      return false;
+    }
+    scene.setTargetArmed(this.scene3dTargetArmed());
     const robots = this.fleetRenderRobots();
     const selectedName = this.selectedFleetRobot(robots)?.name || this.selectedFleetRobotName || "";
+    scene.updateRobots(robots, selectedName);
+    return true;
+  }
+
+  renderOperatorScene3d() {
+    if (!this.isFleetManager() || this.mapViewMode !== "3d" || !this.operatorScene3d) {
+      return;
+    }
+    if (this.scene3dLoadPending) {
+      this.scene3dRenderQueued = true;
+      return;
+    }
     this.ensureScene3d()
       .then(async (scene) => {
         scene.setTargetArmed(this.scene3dTargetArmed());
+        const key = this.scene3dKey();
         if (this.scene3dStaticKey !== key) {
           this.scene3dLoadPending = true;
+          this.scene3dRenderQueued = false;
           this.scene3dPayload = null;
           try {
             const payload = await this.getJson(this.fleetApiPath("/scene3d"));
             if (this.mapViewMode !== "3d" || !this.isFleetManager()) {
               return;
             }
-            this.scene3dPayload = payload;
-            scene.setScene(payload);
-            this.scene3dStaticKey = key;
+            const payloadMapName = this.normalizeScene3dMapName(payload?.mapName);
+            const currentMapName = this.normalizeScene3dMapName(this.currentStatus?.mapName || this.robotMapState.robotActiveMapName || this.robotMapState.operatorActiveMapName);
+            if (payloadMapName && currentMapName && payloadMapName !== currentMapName) {
+              this.scene3dRenderQueued = true;
+            } else {
+              this.scene3dPayload = payload;
+              scene.setScene(payload);
+              this.scene3dStaticKey = this.scene3dKey();
+            }
           } finally {
             this.scene3dLoadPending = false;
           }
         }
-        scene.updateRobots(robots, selectedName);
+        const updated = this.updateOperatorScene3dRobots(scene);
+        const needsAnotherPass = this.scene3dRenderQueued || !updated || this.scene3dStaticKey !== this.scene3dKey();
+        this.scene3dRenderQueued = false;
+        if (needsAnotherPass && this.mapViewMode === "3d" && typeof window.requestAnimationFrame === "function") {
+          window.requestAnimationFrame(() => this.renderOperatorScene3d());
+        }
+        this.ensureFleetAnimationLoop();
       })
       .catch((error) => {
         this.scene3dLoadPending = false;
+        this.scene3dRenderQueued = false;
         this.robotMessageText.textContent = `3D view failed: ${error.message || error}`;
       });
   }
@@ -7200,7 +7604,7 @@ class OperatorApp {
       this.selectedFleetRobotName = robot.name;
       window.localStorage.setItem("operator:selectedFleetRobotName", this.selectedFleetRobotName);
       this.robotMessageText.textContent = `Order sent: ${robot.name} -> ${goalLm}.`;
-      this.renderSelectedRobot();
+      this.renderFleetStateImmediately();
     } catch (error) {
       this.robotMessageText.textContent = `Order failed: ${error.message || error}`;
     }
@@ -7864,11 +8268,11 @@ class OperatorApp {
     this.fleetManualLookahead = null;
     this.fleetVisualClocks.clear();
     this.lastFleetPlanDebug = result.benchmark || null;
-    this.scene3dStaticKey = "";
+    this.invalidateOperatorScene3d();
     window.localStorage.removeItem("operator:selectedFleetRobotName");
     await progress(86, "Refreshing empty simulation...", 70);
-    await this.refreshRobots({ quiet: true, lightweight: true, probe: false });
-    this.renderSelectedRobot();
+    this.renderFleetStateImmediately();
+    this.refreshRobots({ quiet: true, lightweight: true, probe: false }).catch(() => {});
     if (this.fleetBenchmarkStatus) {
       this.fleetBenchmarkStatus.className = "probe-result success compact";
       this.fleetBenchmarkStatus.textContent = "Simulation cleared.";
@@ -7926,8 +8330,8 @@ class OperatorApp {
         this.fleetBenchmarkStatus.className = total >= robotCount ? "probe-result success compact" : "probe-result error compact";
         this.fleetBenchmarkStatus.textContent = `Robots ${total}/${robotCount}; added ${added}. Press Plan to route them.`;
       }
-      await this.refreshRobots({ quiet: true, lightweight: true, probe: false });
-      this.renderSelectedRobot();
+      this.renderFleetStateImmediately();
+      this.refreshRobots({ quiet: true, lightweight: true, probe: false }).catch(() => {});
     } catch (error) {
       if (this.fleetBenchmarkStatus) {
         this.fleetBenchmarkStatus.className = "probe-result error compact";
@@ -7990,8 +8394,8 @@ class OperatorApp {
         this.fleetBenchmarkStatus.className = planned >= robotCount ? "probe-result success compact" : "probe-result error compact";
         this.fleetBenchmarkStatus.textContent = this.fleetBenchmarkSummary(result, robotCount);
       }
-      await this.refreshRobots({ quiet: true, lightweight: true, probe: false });
-      this.renderSelectedRobot();
+      this.renderFleetStateImmediately();
+      this.refreshRobots({ quiet: true, lightweight: true, probe: false }).catch(() => {});
     } catch (error) {
       if (this.fleetBenchmarkStatus) {
         this.fleetBenchmarkStatus.className = "probe-result error compact";
@@ -8038,8 +8442,8 @@ class OperatorApp {
       } else {
         this.fleetRobotNameInput.value = this.nextFleetRobotName(Array.isArray(this.currentStatus?.robots) ? this.currentStatus.robots : []);
       }
-      await this.refreshRobots({ quiet: true });
-      this.renderSelectedRobot();
+      this.renderFleetStateImmediately();
+      this.refreshRobots({ quiet: true, lightweight: true, probe: false }).catch(() => {});
     } catch (error) {
       await this.refreshRobotMapState({ quiet: true }).catch(() => {});
       this.renderSelectedRobot();
@@ -8064,8 +8468,8 @@ class OperatorApp {
       window.localStorage.removeItem("operator:selectedFleetRobotName");
       this.currentStatus = result.state || await this.getJson(this.fleetApiPath("/state"));
       this.fleetNameEdited = false;
-      await this.refreshRobots({ quiet: true });
-      this.renderSelectedRobot();
+      this.renderFleetStateImmediately();
+      this.refreshRobots({ quiet: true, lightweight: true, probe: false }).catch(() => {});
     } catch (error) {
       window.alert(error.message || String(error));
     }
@@ -8082,7 +8486,7 @@ class OperatorApp {
       this.fleetManualRobotName = "";
       this.pendingFleetAction = "";
       this.pendingFleetRobotName = "";
-      this.renderSelectedRobot();
+      this.renderFleetStateImmediately();
     } catch (error) {
       window.alert(error.message || String(error));
     }
@@ -8314,7 +8718,7 @@ class OperatorApp {
         this.fleetManualLastAt = 0;
         this.fleetManualLookahead = null;
         this.fleetManualAnimation = null;
-        this.renderSelectedRobot();
+        this.renderFleetStateImmediately();
         return;
       }
       const pose = robot.pose || null;
@@ -8334,7 +8738,7 @@ class OperatorApp {
     this.fleetManualLastAt = 0;
     this.fleetManualLookahead = null;
     this.fleetManualAnimation = null;
-    this.renderSelectedRobot();
+    this.renderFleetStateImmediately();
   }
 
   predictManualTrajectory(pose, linear, angular, horizon, step) {
@@ -8789,8 +9193,16 @@ class OperatorApp {
         return loaded;
       });
       this.loadMapDialog.close();
+      if (this.isFleetManager(robot)) {
+        this.invalidateOperatorScene3d();
+      }
       this.applyLoadedMapResult(result, mapName, robot);
-      this.renderSelectedRobot();
+      if (this.isFleetManager(robot)) {
+        this.currentStatus = await this.getJson(this.fleetApiPath("/state")).catch(() => this.currentStatus);
+        this.renderFleetStateImmediately();
+      } else {
+        this.renderSelectedRobot();
+      }
       this.refreshAfterMapLoadInBackground();
       this.robotMessageText.textContent = `${this.isFleetManager(robot) ? "Fleet Manager" : "Robot"} active map changed to ${result.mapName || mapName}.`;
     } catch (error) {
