@@ -74,6 +74,7 @@ def main() -> None:
     except KeyboardInterrupt:
         pass
     finally:
+        state.close()
         server.server_close()
 
 

@@ -134,6 +134,55 @@ def test_simulated_order_replans_after_rolling_horizon_without_completing() -> N
     assert order.status == "EXECUTING"
 
 
+def test_rolling_prefetch_hands_off_without_idle_frame() -> None:
+    service = OperatorFleetManager(
+        DEFAULT_FLEET_MAP_DIR,
+        DEFAULT_FLEET_MAP_DIR.parents[2] / "params.yaml",
+        manager_id=FLEET_MANAGER_SIM_ID,
+        mode="simulation",
+    )
+    service.benchmark_payload(
+        {"action": "add", "count": 1, "seed": 42, "reset": False}
+    )
+    service.benchmark_payload({
+        "action": "plan",
+        "count": 1,
+        "seed": 42,
+        "reset": False,
+        "horizonSec": 3,
+        "orderIntervalSec": 30,
+        "queueDepth": 1,
+    })
+    _pump_until(
+        service,
+        lambda: bool(service.manager.robots["bench_001"].active_order_id),
+    )
+
+    robot = service.manager.robots["bench_001"]
+    order_id = robot.active_order_id
+    first_revision = robot.route_revision
+    first_chunk = robot.route_chunk_goal_lm
+    robot.route_clock = max(0.0, float(robot.trajectory[-1]["t"]) - 0.5)
+    service.manager._advance_runtime()
+    _pump_until(
+        service,
+        lambda: service.manager.robots["bench_001"].pending_route is not None,
+    )
+
+    robot = service.manager.robots["bench_001"]
+    robot.route_clock = float(robot.trajectory[-1]["t"])
+    service.manager._advance_runtime()
+
+    robot = service.manager.robots["bench_001"]
+    assert robot.active_order_id == order_id
+    assert robot.current_lm == first_chunk
+    assert robot.status == "MOVING"
+    assert robot.trajectory
+    assert robot.route_revision > first_revision
+    assert robot.pending_route is None
+    assert service.manager.orders[order_id].status == "EXECUTING"
+
+
 def test_dynamic_runtime_keeps_robots_collision_free_and_wait_graph_acyclic(
     monkeypatch,
 ) -> None:

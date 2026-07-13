@@ -57,7 +57,10 @@ class OperatorFleetManager:
     def sidebar_payload(self, include_runtime: bool = True) -> dict[str, Any]:
         robots = []
         if include_runtime:
-            state = self.state_payload(include_trajectories=False)
+            state = self.state_payload(
+                include_trajectories=False,
+                advance_runtime=self.mode != "simulation",
+            )
             robots = state.get("robots", [])
         return {
             "id": self.manager_id,
@@ -119,7 +122,11 @@ class OperatorFleetManager:
     def scene3d_payload(self) -> dict[str, Any]:
         self._sync_manager_mode()
         static_scene = self._static_scene3d_payload()
-        state = self.manager.state(include_trajectories=True)
+        state = (
+            self.manager.snapshot(include_trajectories=True)
+            if self.mode == "simulation"
+            else self.manager.state(include_trajectories=True)
+        )
         robots = state.get("robots", []) if isinstance(state, dict) else []
         return {
             **static_scene,
@@ -208,11 +215,26 @@ class OperatorFleetManager:
             "maps": self.maps_list_payload(),
         }
 
-    def state_payload(self, include_trajectories: bool = True) -> dict[str, Any]:
+    def state_payload(
+        self,
+        include_trajectories: bool = True,
+        *,
+        advance_runtime: bool = True,
+    ) -> dict[str, Any]:
+        self._sync_manager_mode()
+        if advance_runtime:
+            self._pump_dynamic_benchmark()
+            state = self.manager.state(include_trajectories=include_trajectories)
+        else:
+            state = self.manager.snapshot(include_trajectories=include_trajectories)
+        return self._state_with_context(state)
+
+    def runtime_step(self) -> None:
+        if self.mode != "simulation":
+            return
         self._sync_manager_mode()
         self._pump_dynamic_benchmark()
-        state = self.manager.state(include_trajectories=include_trajectories)
-        return self._state_with_context(state)
+        self.manager.advance_runtime()
 
     def plan_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
         self._sync_manager_mode()
@@ -425,10 +447,19 @@ class OperatorFleetManager:
         self._sync_manager_mode()
         return self._result_with_context(self.manager.clear_orders(payload or {}))
 
-    def tick_payload(self, payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    def tick_payload(
+        self,
+        payload: dict[str, Any] | None = None,
+        *,
+        advance_runtime: bool = True,
+        route_revisions: dict[str, int] | None = None,
+    ) -> dict[str, Any]:
         self._sync_manager_mode()
-        self._pump_dynamic_benchmark()
-        state = self.manager.tick(payload or {})
+        if advance_runtime:
+            self._pump_dynamic_benchmark()
+            state = self.manager.tick(payload or {})
+        else:
+            state = self.manager.stream_tick(route_revisions=route_revisions)
         return self._state_with_context(state)
 
     def world_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
@@ -515,6 +546,22 @@ class OperatorFleetManager:
             "robot": result.get("robot"),
             "state": self._state_with_context(result.get("state")),
         }
+
+    def note_external_control_takeover(
+        self,
+        endpoint: str,
+        *,
+        owner_id: str,
+        owner_name: str,
+    ) -> bool:
+        if self.mode != "robots":
+            return False
+        self._sync_manager_mode()
+        return self.manager.note_external_control_takeover(
+            endpoint,
+            owner_id=owner_id,
+            owner_name=owner_name,
+        )
 
     def add_robot_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
         self._sync_manager_mode()

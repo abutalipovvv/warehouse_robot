@@ -37,7 +37,12 @@ class LmRoutePlanner:
         distance = math.hypot(nearest.x - x, nearest.y - y)
         return nearest, distance
 
-    def find_route(self, start: str, goal: str) -> PlannedRoute:
+    def find_route(
+        self,
+        start: str,
+        goal: str,
+        blocked_edges: set[tuple[str, str]] | None = None,
+    ) -> PlannedRoute:
         if start not in self.landmarks:
             raise ValueError(f"Unknown start LM: {start}")
         if goal not in self.landmarks:
@@ -45,6 +50,7 @@ class LmRoutePlanner:
         if start == goal:
             return PlannedRoute(nodes=[start], edges=[], length=0.0)
 
+        blocked_edges = blocked_edges or set()
         open_heap: list[tuple[float, str]] = [(0.0, start)]
         came_from: dict[str, tuple[str, GraphEdge]] = {}
         g_score: dict[str, float] = {start: 0.0}
@@ -62,6 +68,8 @@ class LmRoutePlanner:
                 return PlannedRoute(nodes=nodes, edges=ordered_edges, length=g_score[goal])
 
             for edge in self._adjacency.get(current, []):
+                if (edge.from_name, edge.to_name) in blocked_edges:
+                    continue
                 tentative = g_score[current] + edge.length
                 if tentative >= g_score.get(edge.to_name, math.inf):
                     continue

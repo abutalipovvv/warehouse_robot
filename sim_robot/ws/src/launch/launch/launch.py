@@ -12,6 +12,11 @@ from launch_ros.actions import Node
 def _project_root() -> Path:
     share_dir = Path(get_package_share_directory("robot_launch"))
     for parent in share_dir.parents:
+        if (
+            (parent / "sim_robot" / "ws" / "src" / "robot_map_manager").is_dir()
+            and (parent / "sim_robot" / "ws" / "src" / "params.yaml").is_file()
+        ):
+            return parent.resolve()
         if (parent / "src" / "robot_map_manager").is_dir() and (parent / "src" / "params.yaml").is_file():
             return (parent / "src").resolve()
         if (parent / "robot_map_manager").is_dir() and (parent / "params.yaml").is_file():
@@ -20,11 +25,19 @@ def _project_root() -> Path:
             return parent
         if (parent / "fleet_manager").exists() and (parent / "robot").exists():
             return parent
-    return share_dir.parents[4]
+    # Standard isolated colcon layout:
+    # <workspace>/install/<package>/share/<package>.  The previous fixed
+    # parents[4] escaped one level above the workspace and produced paths such
+    # as /home/user/params.yaml.
+    for parent in share_dir.parents:
+        if parent.name == "install":
+            return parent.parent.resolve()
+    return share_dir.parents[3].resolve()
 
 
 def _maps_root(project_root: Path) -> Path:
     candidates = [
+        project_root / "sim_robot" / "ws" / "src" / "robot_map_manager" / "maps_out",
         project_root / "robot_map_manager" / "maps_out",
         project_root / "map_data" / "maps_out",
         project_root / "fleet_manager" / "map_data" / "maps_out",
@@ -71,9 +84,13 @@ def _slam_launch_path(project_root: Path) -> Path:
     return candidates[0].resolve()
 
 
-def _default_active_map_dir(project_root: Path) -> Path:
-    fallback = _maps_root(project_root) / "22.05.26_smap.smap"
-    state_file = project_root / "robot_map_manager" / ".active_map.json"
+def _map_state_file(maps_root: Path) -> Path:
+    return (maps_root.parent / ".active_map.json").resolve()
+
+
+def _default_active_map_dir(maps_root: Path) -> Path:
+    fallback = maps_root / "22.05.26_smap.smap"
+    state_file = _map_state_file(maps_root)
     if not state_file.exists():
         return fallback
     try:
@@ -89,12 +106,12 @@ def _default_active_map_dir(project_root: Path) -> Path:
 def generate_launch_description() -> LaunchDescription:
     project_root = _project_root()
     maps_root = _maps_root(project_root)
-    default_map_dir = str(_default_active_map_dir(project_root))
+    default_map_dir = str(_default_active_map_dir(maps_root))
     default_params = str(_params_path(project_root))
     default_slam_params = str(_slam_params_path(project_root))
     default_slam_launch = str(_slam_launch_path(project_root))
     default_maps_root = str(maps_root)
-    default_state_file = str((project_root / "robot_map_manager" / ".active_map.json").resolve())
+    default_state_file = str(_map_state_file(maps_root))
 
     arguments = [
         DeclareLaunchArgument("map_dir", default_value=default_map_dir),

@@ -100,6 +100,12 @@ fleet:
   rolling_horizon_sec: 10
   # Optional discrete cap; 0 means the time horizon is authoritative.
   rolling_horizon_steps: 0
+  # Start computing the next chunk before the current one ends. The old
+  # committed trajectory remains authoritative until the graph-LM handoff.
+  rolling_prefetch_lead_sec: 3
+  # Simulation advances on the server independently from browser/websocket
+  # clients. A 10 Hz physics clock keeps 50 robots visually smooth.
+  simulation_tick_interval_sec: 0.1
   reservation_safety_time_sec: 0.35
   robot_clearance_m: 0.35
   # null derives center spacing from footprint diameter + collision margins.
@@ -108,10 +114,16 @@ fleet:
   wait_time_sec: 1
   wait_cost: 6
   order_dispatch_retry_sec: 0.5
+  # Repeatedly impossible dense-traffic requests back off instead of pinning
+  # one Python core and starving the simulation clock.
+  order_dispatch_retry_max_sec: 4
   # Runtime MAPF is dispatched in the background. Small joint groups coordinate
   # new orders without a fleet-wide CBS timeout.
   dispatch_plan_budget_per_tick: 2
   dispatch_joint_batch_size: 4
+  # Continuations already coordinate against committed time reservations.
+  # Planning them one at a time avoids a synchronized CBS spike every 10 s.
+  dispatch_rolling_batch_size: 1
   # Dynamic benchmark orders target distant, but still directed-reachable,
   # graph landmarks. The final choice is random inside the configured far tail.
   dynamic_order_min_hops: 30

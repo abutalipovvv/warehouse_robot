@@ -127,19 +127,33 @@ class OperatorRequestHandler(SimpleHTTPRequestHandler):
 
         state = self._require_state()
         interval_sec = self._fleet_ws_interval_sec(parsed)
+        route_revisions: dict[str, int] = {}
         try:
             initial_payload = state.fleet_manager_stream_payload(initial=True, manager_id=manager_id)
             if initial_payload is not None:
                 self._send_ws_json(initial_payload)
+                self._update_stream_route_revisions(route_revisions, initial_payload)
+            next_tick_at = time.monotonic() + interval_sec
             while True:
                 if self._ws_client_closed():
                     return
-                time.sleep(interval_sec)
+                delay = next_tick_at - time.monotonic()
+                if delay > 0.0:
+                    time.sleep(delay)
                 if self._ws_client_closed():
                     return
-                payload = state.fleet_manager_stream_payload(initial=False, manager_id=manager_id)
+                payload = state.fleet_manager_stream_payload(
+                    initial=False,
+                    manager_id=manager_id,
+                    route_revisions=route_revisions,
+                )
                 if payload is not None:
                     self._send_ws_json(payload)
+                    self._update_stream_route_revisions(route_revisions, payload)
+                next_tick_at += interval_sec
+                now = time.monotonic()
+                while next_tick_at <= now:
+                    next_tick_at += interval_sec
         except (BrokenPipeError, ConnectionError, OSError):
             return
         except Exception as exc:  # pragma: no cover - defensive websocket path
@@ -147,6 +161,33 @@ class OperatorRequestHandler(SimpleHTTPRequestHandler):
                 self._send_ws_json({"ok": False, "type": "error", "error": str(exc)})
             except (BrokenPipeError, ConnectionError, OSError):
                 return
+
+    @staticmethod
+    def _update_stream_route_revisions(
+        route_revisions: dict[str, int],
+        payload: dict[str, object],
+    ) -> None:
+        state = payload.get("state")
+        if not isinstance(state, dict):
+            return
+        robots = state.get("robots")
+        if not isinstance(robots, list):
+            return
+        current_names: set[str] = set()
+        for robot in robots:
+            if not isinstance(robot, dict):
+                continue
+            name = str(robot.get("name") or "")
+            if not name:
+                continue
+            current_names.add(name)
+            try:
+                route_revisions[name] = int(robot.get("routeRevision", 0) or 0)
+            except (TypeError, ValueError):
+                route_revisions[name] = 0
+        for name in list(route_revisions):
+            if name not in current_names:
+                route_revisions.pop(name, None)
 
     def _handle_robot_status_ws(self, parsed) -> None:
         if not self._is_websocket_upgrade():

@@ -726,7 +726,10 @@ export class OperatorScene3D {
     if (!name) {
       return;
     }
-    const trajectory = Array.isArray(robot?.trajectory) ? robot.trajectory : [];
+    const routePreview = Array.isArray(robot?.routePreview) ? robot.routePreview : [];
+    const trajectory = active && routePreview.length >= 2
+      ? routePreview
+      : (Array.isArray(robot?.trajectory) ? robot.trajectory : []);
     if (trajectory.length < 2) {
       this.removeRobotRoute(name);
       return;
@@ -752,7 +755,10 @@ export class OperatorScene3D {
   }
 
   robotRouteKey(robot, active) {
-    const trajectory = Array.isArray(robot?.trajectory) ? robot.trajectory : [];
+    const routePreview = Array.isArray(robot?.routePreview) ? robot.routePreview : [];
+    const trajectory = active && routePreview.length >= 2
+      ? routePreview
+      : (Array.isArray(robot?.trajectory) ? robot.trajectory : []);
     const first = trajectory[0] || {};
     const last = trajectory[trajectory.length - 1] || {};
     return [

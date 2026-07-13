@@ -1259,7 +1259,7 @@ class OperatorApp {
     this.homeRefreshButton?.addEventListener("click", () => this.refreshRobots());
     this.homeAddRobotButton?.addEventListener("click", () => this.openAddRobotDialog());
     this.navigateRobotButton.addEventListener("click", () => this.toggleNavigateMode());
-    this.takeControlButton?.addEventListener("click", () => this.acquireRobotControl());
+    this.takeControlButton?.addEventListener("click", () => this.acquireRobotControl(true, true));
     this.releaseControlButton?.addEventListener("click", () => this.releaseRobotControl());
     this.relocateRobotButton?.addEventListener("click", () => this.toggleRelocateMode());
     this.pauseRouteButton?.addEventListener("click", () => this.pauseRobotRoute());
@@ -3614,6 +3614,7 @@ class OperatorApp {
       const prior = previousRobots.get(robot.name) || {};
       const incomingTrajectory = Array.isArray(robot.trajectory) ? robot.trajectory : [];
       const incomingPlanNodes = Array.isArray(robot.planNodes) ? robot.planNodes : [];
+      const incomingRoutePreview = Array.isArray(robot.routePreview) ? robot.routePreview : [];
       const status = String(robot.status || prior.status || "");
       const hasTarget = Boolean(robot.targetLm || prior.targetLm || robot.targetName || prior.targetName);
       const canReuseRoute = hasTarget && ["MOVING", "WAITING", "BLOCKED", "PLANNING"].includes(status);
@@ -3626,6 +3627,9 @@ class OperatorApp {
         planNodes: incomingPlanNodes.length
           ? incomingPlanNodes
           : (canReuseRoute && Array.isArray(prior.planNodes) ? prior.planNodes : []),
+        routePreview: incomingRoutePreview.length
+          ? incomingRoutePreview
+          : (hasTarget && Array.isArray(prior.routePreview) ? prior.routePreview : []),
       };
     });
     return {
@@ -4268,7 +4272,9 @@ class OperatorApp {
 
     this.robotStateText.textContent = selectedFleetRobot ? String(selectedFleetRobot.status || "-") : mode.toUpperCase();
     if (this.robotControlText) {
-      this.robotControlText.textContent = mode;
+      this.robotControlText.textContent = selectedFleetRobot && this.isFleetRemoteRobot(selectedFleetRobot)
+        ? this.robotControlLabel(remoteStatus)
+        : mode;
     }
     this.nearestLmText.textContent = selectedFleetRobot ? (selectedFleetRobot.currentLm || "-") : `${robots.length} robots`;
     this.renderInspectorDetails({
@@ -4337,7 +4343,9 @@ class OperatorApp {
 
     this.robotStateText.textContent = selectedFleetRobot ? String(selectedFleetRobot.status || "-") : mode.toUpperCase();
     if (this.robotControlText) {
-      this.robotControlText.textContent = mode;
+      this.robotControlText.textContent = selectedFleetRobot && this.isFleetRemoteRobot(selectedFleetRobot)
+        ? this.robotControlLabel(remoteStatus)
+        : mode;
     }
     this.nearestLmText.textContent = selectedFleetRobot ? (selectedFleetRobot.currentLm || "-") : `${robots.length} robots`;
     this.renderInspectorDetails({
@@ -5484,6 +5492,10 @@ class OperatorApp {
   drawFleetRoute(robot) {
     const trajectory = robot.trajectory || [];
     const active = robot.name === this.selectedFleetRobotName;
+    const preview = Array.isArray(robot.routePreview) ? robot.routePreview : [];
+    if (active && preview.length >= 2) {
+      this.appendRoutePolyline(preview, "fleet-route-preview");
+    }
     this.appendRoutePolyline(trajectory, active ? "fleet-route-plan active" : "fleet-route-plan");
     if (!active) {
       return;
@@ -6198,6 +6210,10 @@ class OperatorApp {
       this.startPoseNavigation(world);
       return;
     }
+    if (this.fleetNavigateUsesPose()) {
+      this.startFleetPoseNavigation(world);
+      return;
+    }
     const nearest = this.nearestLandmark(world);
     if (!nearest || nearest.distance > 1.2) {
       this.robotMessageText.textContent = `${this.fleetTargetActionLabel()} armed: click closer to a landmark.`;
@@ -6219,6 +6235,10 @@ class OperatorApp {
     }
     if (this.isRos2Robot() && !this.isFleetManager()) {
       this.startPoseNavigation(world);
+      return;
+    }
+    if (this.fleetNavigateUsesPose()) {
+      this.startFleetPoseNavigation(world);
       return;
     }
     const nearest = this.nearestLandmark(world);
@@ -7324,7 +7344,9 @@ class OperatorApp {
     const target = this.pendingFleetRobotName || "";
     const targetHint = this.isRos2Robot() && !this.isFleetManager()
       ? "click a map pose or select an LM."
-      : "select an LM on the map.";
+      : this.fleetNavigateUsesPose()
+        ? "click a map pose or select an LM; Fleet Manager will snap it to the traffic graph."
+        : "select an LM on the map.";
     this.robotMessageText.textContent = this.navigateMode
       ? (target ? `Navigate armed for ${target}: ${targetHint}` : `Navigate armed: ${targetHint}`)
       : "Navigate canceled.";
@@ -7398,12 +7420,16 @@ class OperatorApp {
     const routeActive = Boolean(robot.targetLm || robot.routeId || routeState === "EXECUTING_ROUTE" || routeState === "PAUSED");
     const paused = this.robotNavigationPaused(robot);
     const mappingActive = !isFleet && this.slamActive;
+    const control = this.robotControlPayload(robot);
+    const operatorOwnsControl = control.ownerId === "operator-app";
     const idleText = this.navigateButtonIdleText();
     this.navigateRobotButton.classList.toggle("primary", !navigateArmed);
     this.navigateRobotButton.classList.toggle("danger", navigateArmed);
     this.navigateRobotButton.disabled = relocateArmed || mappingActive;
     this.navigateRobotButton.textContent = navigateArmed
-      ? (this.pendingFleetRobotName ? `Select LM: ${this.pendingFleetRobotName}` : "Cancel Navigate")
+      ? (this.pendingFleetRobotName
+          ? `${this.fleetNavigateUsesPose() ? "Select Pose" : "Select LM"}: ${this.pendingFleetRobotName}`
+          : "Cancel Navigate")
       : idleText;
     if (this.relocateRobotButton) {
       this.relocateRobotButton.classList.toggle("primary", !relocateArmed);
@@ -7416,6 +7442,15 @@ class OperatorApp {
     }
     if (this.resumeRouteButton) {
       this.resumeRouteButton.disabled = mappingActive || !paused;
+    }
+    if (this.takeControlButton) {
+      this.takeControlButton.disabled = mappingActive || operatorOwnsControl;
+      this.takeControlButton.textContent = control.ownerId && !operatorOwnsControl
+        ? `Take Control from ${control.ownerName || control.ownerId}`
+        : "Take Control";
+    }
+    if (this.releaseControlButton) {
+      this.releaseControlButton.disabled = mappingActive || !operatorOwnsControl;
     }
     if (!relocateArmed) {
       this.relocationDrag = null;
@@ -7436,7 +7471,16 @@ class OperatorApp {
   }
 
   navigateButtonIdleText() {
-    return this.isRos2Robot() && !this.isFleetManager() ? "Navigate To Pose" : "Navigate To LM";
+    return (this.isRos2Robot() && !this.isFleetManager()) || this.fleetNavigateUsesPose()
+      ? "Navigate To Pose"
+      : "Navigate To LM";
+  }
+
+  fleetNavigateUsesPose() {
+    if (!this.isFleetManager()) {
+      return false;
+    }
+    return this.isFleetRemoteRobot(this.targetFleetRobot());
   }
 
   async startNavigation(goalLm) {
@@ -7449,6 +7493,9 @@ class OperatorApp {
     }
     if (this.isFleetManager()) {
       await this.startFleetNavigation(goalLm);
+      return;
+    }
+    if (!await this.ensureRobotControlForNavigation()) {
       return;
     }
     this.navigateMode = false;
@@ -7487,6 +7534,9 @@ class OperatorApp {
       this.robotMessageText.textContent = "Navigation is disabled while 2D SLAM is active.";
       return;
     }
+    if (!await this.ensureRobotControlForNavigation()) {
+      return;
+    }
     this.navigateMode = false;
     this.relocateMode = false;
     this.syncModeButtons();
@@ -7510,17 +7560,34 @@ class OperatorApp {
     }
   }
 
-  async acquireRobotControl(force = false) {
+  async ensureRobotControlForNavigation() {
+    const robot = this.currentStatus && this.currentStatus.robot ? this.currentStatus.robot : {};
+    if (this.robotControlPayload(robot).ownerId === "operator-app") {
+      return true;
+    }
+    return this.acquireRobotControl(true, false);
+  }
+
+  async acquireRobotControl(force = true, announce = true) {
     if (!this.selectedRobot() || this.isFleetManager()) {
-      return;
+      return false;
     }
     try {
-      const result = await this.postJson(this.robotApiPath("/api/robot/control/acquire"), { force });
+      const result = await this.postJson(this.robotApiPath("/api/robot/control/acquire"), {
+        force,
+        stopNavigation: force,
+      });
       this.currentStatus = result.status || await this.getJson(this.robotApiPath("/api/robot/status"));
-      this.robotMessageText.textContent = "Control acquired.";
       this.renderSelectedRobot();
+      if (announce) {
+        this.robotMessageText.textContent = result.navigationStopped
+          ? "Control acquired. Previous autonomous route stopped safely."
+          : "Control acquired.";
+      }
+      return true;
     } catch (error) {
       this.robotMessageText.textContent = `Take control failed: ${error.message || error}`;
+      return false;
     }
   }
 
@@ -7531,11 +7598,29 @@ class OperatorApp {
     try {
       const result = await this.postJson(this.robotApiPath("/api/robot/control/release"), { force });
       this.currentStatus = result.status || await this.getJson(this.robotApiPath("/api/robot/status"));
-      this.robotMessageText.textContent = "Control released.";
       this.renderSelectedRobot();
+      this.robotMessageText.textContent = "Control released.";
     } catch (error) {
       this.robotMessageText.textContent = `Release control failed: ${error.message || error}`;
     }
+  }
+
+  async startFleetPoseNavigation(world) {
+    if (!this.fleetNavigateUsesPose()) {
+      return;
+    }
+    const nearest = this.nearestLandmark(world);
+    if (!nearest || !nearest.landmark) {
+      this.robotMessageText.textContent = "Navigate failed: the fleet map has no graph landmark for this pose.";
+      return;
+    }
+    await this.startFleetNavigation(nearest.landmark.name, {
+      requestedPose: {
+        x: Number(world.x || 0),
+        y: Number(world.y || 0),
+      },
+      snapDistance: Number(nearest.distance || 0),
+    });
   }
 
   async startRelocation(world) {
@@ -7594,7 +7679,7 @@ class OperatorApp {
     }
   }
 
-  async startFleetNavigation(goalLm) {
+  async startFleetNavigation(goalLm, options = {}) {
     const robot = this.targetFleetRobot();
     if (!robot) {
       this.robotMessageText.textContent = "Add or select a fleet robot first.";
@@ -7621,8 +7706,11 @@ class OperatorApp {
       this.lastFleetPlanDebug = result.debug || result.state?.debug || null;
       this.selectedFleetRobotName = robot.name;
       window.localStorage.setItem("operator:selectedFleetRobotName", this.selectedFleetRobotName);
-      this.robotMessageText.textContent = `Order sent: ${robot.name} -> ${goalLm}.`;
       this.renderFleetStateImmediately();
+      const requestedPose = options.requestedPose;
+      this.robotMessageText.textContent = requestedPose
+        ? `Order sent: ${robot.name} -> pose x ${requestedPose.x.toFixed(3)}, y ${requestedPose.y.toFixed(3)}; graph target ${goalLm} (${Number(options.snapDistance || 0).toFixed(2)} m snap).`
+        : `Order sent: ${robot.name} -> ${goalLm}.`;
     } catch (error) {
       this.robotMessageText.textContent = `Order failed: ${error.message || error}`;
     }

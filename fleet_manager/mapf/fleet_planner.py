@@ -81,6 +81,11 @@ class FleetMapfPlanner:
         rotate_enabled = self._rotate_enabled(payload)
         turn_speed = self._turn_speed(payload)
         stretch_motion = self._stretch_motion_to_reservation_ticks(payload)
+        low_level_max_time = self._payload_low_level_max_time(payload)
+        allow_cbs_fallback = bool(payload.get("allowCbsFallback", True))
+        reserved_detour_enabled = bool(
+            payload.get("reservedEdgeDetourEnabled", self.reserved_edge_detour_enabled)
+        )
         blocked_edges = self._blocked_edges(payload)
         blocked_lms = {
             str(name)
@@ -119,7 +124,7 @@ class FleetMapfPlanner:
         reserved_interval_edges = self._reserved_interval_blocked_edges(payload)
         detour_blocked_edges = (
             blocked_edges | reserved_interval_edges
-            if self.reserved_edge_detour_enabled
+            if reserved_detour_enabled
             else blocked_edges
         )
 
@@ -135,6 +140,8 @@ class FleetMapfPlanner:
             reserved_vertex_intervals=reserved_vertex_intervals,
             reserved_edge_intervals=reserved_edge_intervals,
             reserved_interval_edges=reserved_interval_edges,
+            low_level_max_time=low_level_max_time,
+            allow_cbs_fallback=allow_cbs_fallback,
         )
 
         plans = []
@@ -184,10 +191,12 @@ class FleetMapfPlanner:
                 "reservedEdges": len(reserved_edge_constraints),
                 "reservedVertexIntervals": len(reserved_vertex_intervals),
                 "reservedEdgeIntervals": len(reserved_edge_intervals),
-                "reservedDetourEnabled": self.reserved_edge_detour_enabled,
+                "reservedDetourEnabled": reserved_detour_enabled,
                 "reservedFallbackReason": fallback_reason,
                 "waitCost": self.wait_cost,
                 "plannerBackend": self.planner_backend,
+                "lowLevelMaxTime": low_level_max_time,
+                "cbsFallbackAllowed": allow_cbs_fallback,
                 "routeSpeed": speed,
                 "routeAcceleration": acceleration,
                 "rotateEnabled": rotate_enabled,
@@ -246,6 +255,8 @@ class FleetMapfPlanner:
         reserved_vertex_intervals: list[tuple[int, int, str, str]],
         reserved_edge_intervals: list[tuple[int, int, str, str, str]],
         reserved_interval_edges: set[tuple[str, str]],
+        low_level_max_time: int,
+        allow_cbs_fallback: bool,
     ):
         if self.planner_backend in {"rolling_sipp", "hybrid"}:
             result = self._run_rolling_sipp(
@@ -258,6 +269,7 @@ class FleetMapfPlanner:
                 reserved_edge_constraints=reserved_edge_constraints,
                 reserved_vertex_intervals=reserved_vertex_intervals,
                 reserved_edge_intervals=reserved_edge_intervals,
+                low_level_max_time=low_level_max_time,
             )
             if result.plans or self.planner_backend == "rolling_sipp":
                 if result.plans and reserved_interval_edges:
@@ -268,6 +280,8 @@ class FleetMapfPlanner:
                     bool(result.plans) and bool(reserved_interval_edges),
                     "",
                 )
+            if not allow_cbs_fallback:
+                return result, detour_blocked_edges, False, ""
             rolling_reason = result.debug.reason
             if any(
                 marker in str(rolling_reason or "")
@@ -286,6 +300,7 @@ class FleetMapfPlanner:
                 reserved_vertex_intervals=reserved_vertex_intervals,
                 reserved_edge_intervals=reserved_edge_intervals,
                 reserved_interval_edges=reserved_interval_edges,
+                low_level_max_time=low_level_max_time,
             )
             if cbs_result.plans:
                 cbs_result.debug.reason = f"{cbs_result.debug.reason}:hybrid_cbs_fallback"
@@ -306,6 +321,7 @@ class FleetMapfPlanner:
             reserved_vertex_intervals=reserved_vertex_intervals,
             reserved_edge_intervals=reserved_edge_intervals,
             reserved_interval_edges=reserved_interval_edges,
+            low_level_max_time=low_level_max_time,
         )
 
     def _run_cbs_with_reserved_detour(
@@ -321,6 +337,7 @@ class FleetMapfPlanner:
         reserved_vertex_intervals: list[tuple[int, int, str, str]],
         reserved_edge_intervals: list[tuple[int, int, str, str, str]],
         reserved_interval_edges: set[tuple[str, str]],
+        low_level_max_time: int,
     ):
         result = self._run_cbs(
             requests,
@@ -332,6 +349,7 @@ class FleetMapfPlanner:
             reserved_edge_constraints=reserved_edge_constraints,
             reserved_vertex_intervals=reserved_vertex_intervals,
             reserved_edge_intervals=reserved_edge_intervals,
+            low_level_max_time=low_level_max_time,
         )
         used_blocked_edges = detour_blocked_edges
         used_reserved_detour = bool(result.plans) and bool(reserved_interval_edges)
@@ -353,6 +371,7 @@ class FleetMapfPlanner:
                 reserved_edge_constraints=reserved_edge_constraints,
                 reserved_vertex_intervals=reserved_vertex_intervals,
                 reserved_edge_intervals=reserved_edge_intervals,
+                low_level_max_time=low_level_max_time,
             )
             if result.plans:
                 result.debug.reason = f"{result.debug.reason}:reserved_interval_fallback_wait"
@@ -374,13 +393,14 @@ class FleetMapfPlanner:
         reserved_edge_constraints: list[tuple[int, str, str]],
         reserved_vertex_intervals: list[tuple[int, int, str, str]],
         reserved_edge_intervals: list[tuple[int, int, str, str, str]],
+        low_level_max_time: int,
     ):
         graph = self._graph_without_edges(blocked_edges)
         planner = LmCBSPlanner(
             graph,
             heuristic_fn=self._heuristic_ticks,
             move_cost_fn=lambda src, dst: self._edge_tick_cost(src, dst, speed, acceleration),
-            low_level_max_time=self.low_level_max_time,
+            low_level_max_time=low_level_max_time,
             max_high_level_nodes=self.max_high_level_nodes,
             max_planning_time_sec=self.max_planning_time_sec,
             wait_cost=self.wait_cost,
@@ -403,7 +423,7 @@ class FleetMapfPlanner:
                 traffic_graph,
                 heuristic_fn=self._heuristic_ticks,
                 move_cost_fn=lambda src, dst: self._edge_tick_cost(src, dst, speed, acceleration),
-                low_level_max_time=self.low_level_max_time,
+                low_level_max_time=low_level_max_time,
                 wait_cost=self.wait_cost,
             )
             invalid_reason = validator.validate_plans(
@@ -434,13 +454,14 @@ class FleetMapfPlanner:
         reserved_edge_constraints: list[tuple[int, str, str]],
         reserved_vertex_intervals: list[tuple[int, int, str, str]],
         reserved_edge_intervals: list[tuple[int, int, str, str, str]],
+        low_level_max_time: int,
     ):
         traffic_graph = self._traffic_graph(speed)
         planner = RollingSippPlanner(
             traffic_graph,
             heuristic_fn=self._heuristic_ticks,
             move_cost_fn=lambda src, dst: self._edge_tick_cost(src, dst, speed, acceleration),
-            low_level_max_time=self.low_level_max_time,
+            low_level_max_time=low_level_max_time,
             wait_cost=self.wait_cost,
         )
         return planner.plan_for_robots(
@@ -456,6 +477,14 @@ class FleetMapfPlanner:
                 else []
             ),
         )
+
+    def _payload_low_level_max_time(self, payload: dict[str, Any]) -> int:
+        raw = payload.get("lowLevelMaxTime", self.low_level_max_time)
+        try:
+            value = int(raw)
+        except (TypeError, ValueError):
+            value = self.low_level_max_time
+        return max(1, min(self.low_level_max_time, value))
 
     def _traffic_graph(self, speed: float) -> TrafficGraph:
         key = (round(max(0.02, float(speed)), 6), round(self.min_robot_center_distance_m, 6))

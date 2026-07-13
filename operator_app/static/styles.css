@@ -2002,6 +2002,15 @@ body[data-fleet-page="fleet"] .robot-control-actions {
   opacity: 0.34;
 }
 
+.fleet-route-preview {
+  fill: none;
+  stroke: rgba(35, 104, 255, 0.48);
+  stroke-width: 1.5;
+  stroke-dasharray: 7 6;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
 .fleet-route-done {
   fill: none;
   stroke: rgba(80, 94, 116, 0.22);

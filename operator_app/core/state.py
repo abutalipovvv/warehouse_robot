@@ -7,8 +7,8 @@ import subprocess
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from pathlib import Path
-from threading import Lock, RLock
-from time import perf_counter
+from threading import Event, Lock, RLock, Thread
+from time import monotonic, perf_counter
 from typing import Any
 from urllib.parse import urlparse
 
@@ -69,6 +69,49 @@ class OperatorAppState:
         )
         self._lock = Lock()
         self._fleet_lock = RLock()
+        self._fleet_runtime_stop = Event()
+        self._fleet_runtime_thread = Thread(
+            target=self._simulation_runtime_loop,
+            name="fleet-simulation-runtime",
+            daemon=True,
+        )
+        self._fleet_runtime_thread.start()
+
+    def close(self) -> None:
+        self._fleet_runtime_stop.set()
+        if self._fleet_runtime_thread.is_alive():
+            self._fleet_runtime_thread.join(timeout=1.0)
+
+    def _simulation_runtime_loop(self) -> None:
+        next_tick_at = monotonic()
+        while not self._fleet_runtime_stop.is_set():
+            interval = self._simulation_runtime_interval()
+            delay = next_tick_at - monotonic()
+            if delay > 0.0 and self._fleet_runtime_stop.wait(delay):
+                return
+            try:
+                with self._fleet_lock:
+                    self.fleet_manager_sim.runtime_step()
+            except Exception as exc:  # pragma: no cover - long-running safety net
+                try:
+                    self.fleet_manager_sim.manager._event(
+                        "error",
+                        f"simulation runtime tick failed: {exc}",
+                    )
+                except Exception:
+                    pass
+            next_tick_at += interval
+            now = monotonic()
+            while next_tick_at <= now:
+                next_tick_at += interval
+
+    def _simulation_runtime_interval(self) -> float:
+        try:
+            fleet = self.fleet_manager_sim.manager.params.get("fleet", {})
+            value = float(fleet.get("simulation_tick_interval_sec", 0.10) or 0.10)
+        except (AttributeError, TypeError, ValueError):
+            value = 0.10
+        return max(0.05, min(0.20, value))
 
     def _maps_dir_for_robot_id(self, robot_id: str) -> Path:
         if robot_id == FLEET_MANAGER_ID:
@@ -454,6 +497,18 @@ class OperatorAppState:
             raise ValueError(f"robot is not gRPC-backed: {robot.id}")
         return robot.base_url
 
+    def _note_fleet_external_control_takeover(self, endpoint: str) -> None:
+        fleet_manager = getattr(self, "fleet_manager", None)
+        fleet_lock = getattr(self, "_fleet_lock", None)
+        if fleet_manager is None or fleet_lock is None:
+            return
+        with fleet_lock:
+            fleet_manager.note_external_control_takeover(
+                endpoint,
+                owner_id=OPERATOR_CONTROL_OWNER_ID,
+                owner_name=OPERATOR_CONTROL_OWNER_NAME,
+            )
+
     def _probe_grpc_robot(self, host: str, port: int) -> dict[str, Any]:
         endpoint = f"grpc://{host}:{port}"
         try:
@@ -569,9 +624,13 @@ class OperatorAppState:
             if action == "identity":
                 return manager.sidebar_payload()
             if action == "status":
-                return manager.state_payload()
+                return manager.state_payload(
+                    advance_runtime=manager_id != FLEET_MANAGER_SIM_ID,
+                )
             if action == "state":
-                return manager.state_payload()
+                return manager.state_payload(
+                    advance_runtime=manager_id != FLEET_MANAGER_SIM_ID,
+                )
             if action == "mode":
                 return manager.mode_payload()
             if action == "map":
@@ -625,7 +684,10 @@ class OperatorAppState:
             if action == "orders_clear":
                 return manager.clear_orders_payload(payload)
             if action == "tick":
-                return manager.tick_payload(payload)
+                return manager.tick_payload(
+                    payload,
+                    advance_runtime=manager_id != FLEET_MANAGER_SIM_ID,
+                )
             if action == "world":
                 return manager.world_payload(payload)
             if action == "check":
@@ -666,17 +728,25 @@ class OperatorAppState:
         self,
         initial: bool = False,
         manager_id: str = FLEET_MANAGER_ID,
+        route_revisions: dict[str, int] | None = None,
     ) -> dict[str, Any] | None:
-        if initial:
+        if initial or manager_id == FLEET_MANAGER_SIM_ID:
             self._fleet_lock.acquire()
         elif not self._fleet_lock.acquire(blocking=False):
             return None
         try:
             manager = self._fleet_manager_for_id(manager_id)
             state = (
-                manager.state_payload(include_trajectories=True)
+                manager.state_payload(
+                    include_trajectories=True,
+                    advance_runtime=manager_id != FLEET_MANAGER_SIM_ID,
+                )
                 if initial
-                else manager.tick_payload({})
+                else manager.tick_payload(
+                    {},
+                    advance_runtime=manager_id != FLEET_MANAGER_SIM_ID,
+                    route_revisions=route_revisions,
+                )
             )
             return {
                 "ok": True,
@@ -1430,15 +1500,25 @@ class OperatorAppState:
             if method == "POST" and route == "/api/robot/stop":
                 return self._json_response_tuple(self.grpc_adapter.stop(endpoint, owner_id=OPERATOR_CONTROL_OWNER_ID))
             if method == "POST" and route == "/api/robot/control/acquire":
-                return self._json_response_tuple(
-                    self.grpc_adapter.acquire_control(
+                result = self.grpc_adapter.acquire_control(
+                    endpoint,
+                    owner_id=OPERATOR_CONTROL_OWNER_ID,
+                    owner_name=OPERATOR_CONTROL_OWNER_NAME,
+                    force=bool(payload.get("force")),
+                    lease_ms=int(payload.get("leaseMs", payload.get("lease_ms", 0)) or 0),
+                )
+                if bool(payload.get("stopNavigation") or payload.get("stop_navigation")):
+                    # A control handoff must not leave the previous Fleet
+                    # Manager route publishing motion behind the operator.
+                    stopped = self.grpc_adapter.stop(
                         endpoint,
                         owner_id=OPERATOR_CONTROL_OWNER_ID,
-                        owner_name=OPERATOR_CONTROL_OWNER_NAME,
-                        force=bool(payload.get("force")),
-                        lease_ms=int(payload.get("leaseMs", payload.get("lease_ms", 0)) or 0),
                     )
-                )
+                    if isinstance(stopped.get("status"), dict):
+                        result["status"] = stopped["status"]
+                    result["navigationStopped"] = True
+                    self._note_fleet_external_control_takeover(endpoint)
+                return self._json_response_tuple(result)
             if method == "POST" and route == "/api/robot/control/release":
                 return self._json_response_tuple(
                     self.grpc_adapter.release_control(
