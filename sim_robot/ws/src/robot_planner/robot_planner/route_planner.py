@@ -238,6 +238,8 @@ class RobotTrajectoryPlanner:
                 )
             ]
 
+        self._apply_timed_segments(trajectory, route_payload)
+
         planned = PlannedRobotRoute.create(
             start_lm=nodes[0],
             goal_lm=goal_lm,
@@ -246,6 +248,51 @@ class RobotTrajectoryPlanner:
             length=connector_length + route.length,
         )
         return self._apply_route_metadata(planned, route_payload)
+
+    def _apply_timed_segments(
+        self,
+        trajectory: list[RoutePoint],
+        route_payload: dict[str, Any],
+    ) -> None:
+        raw_segments = route_payload.get("timedSegments") or route_payload.get("timed_segments")
+        if not isinstance(raw_segments, list) or not trajectory:
+            return
+        try:
+            epoch = float(route_payload.get("dispatchEpochSec") or route_payload.get("dispatch_epoch_sec") or 0.0)
+        except (TypeError, ValueError):
+            epoch = 0.0
+        if epoch <= 0.0:
+            return
+
+        windows: list[tuple[str, float]] = []
+        for item in raw_segments:
+            if not isinstance(item, dict) or str(item.get("kind") or "move") != "move":
+                continue
+            src = str(item.get("from") or "").strip()
+            dst = str(item.get("to") or "").strip()
+            if not src or not dst:
+                continue
+            try:
+                relative = max(0.0, float(item.get("notBeforeSec", 0.0) or 0.0))
+            except (TypeError, ValueError):
+                relative = 0.0
+            windows.append((f"{src}->{dst}", epoch + relative))
+
+        search_from = 0
+        for edge_id, not_before in windows:
+            start_index = -1
+            for index in range(search_from, len(trajectory)):
+                if trajectory[index].edge_id == edge_id:
+                    start_index = index
+                    break
+            if start_index < 0:
+                continue
+            end_index = start_index
+            while end_index + 1 < len(trajectory) and trajectory[end_index + 1].edge_id == edge_id:
+                end_index += 1
+            for index in range(start_index, end_index + 1):
+                trajectory[index].not_before = not_before
+            search_from = end_index + 1
 
     def _plan_from_current_edge(
         self,

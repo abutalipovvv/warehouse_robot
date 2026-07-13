@@ -90,18 +90,44 @@ manual:
   prediction_time: 1
   prediction_step: 0.1
 fleet:
-  planner_backend: rolling_sipp
+  # Prioritized SIPP is the fast path; CBS is only used when priority ordering
+  # cannot resolve a coupled conflict/deadlock.
+  planner_backend: hybrid
   reservation_time_step_sec: 1
-  reservation_horizon_sec: 8
+  reservation_horizon_sec: 10
+  # Only this graph-safe prefix is committed. The remaining order route is
+  # replanned at the next horizon boundary against fresh robot reservations.
+  rolling_horizon_sec: 10
+  # Optional discrete cap; 0 means the time horizon is authoritative.
+  rolling_horizon_steps: 0
   reservation_safety_time_sec: 0.35
   robot_clearance_m: 0.35
+  # null derives center spacing from footprint diameter + collision margins.
+  mapf_min_robot_center_distance_m: null
   continuous_collision_step_sec: 0.1
   wait_time_sec: 1
   wait_cost: 6
+  order_dispatch_retry_sec: 0.5
+  # Runtime MAPF is dispatched in the background. Small joint groups coordinate
+  # new orders without a fleet-wide CBS timeout.
+  dispatch_plan_budget_per_tick: 2
+  dispatch_joint_batch_size: 4
+  # Dynamic benchmark orders target distant, but still directed-reachable,
+  # graph landmarks. The final choice is random inside the configured far tail.
+  dynamic_order_min_hops: 30
+  dynamic_order_max_hops: 160
+  dynamic_order_far_fraction: 0.08
   replan_interval_sec: 1
+  runtime_replan_lm_tolerance_m: 0.1
+  # A new MAPF route may start only while the localized robot is at its LM.
+  # The planner never creates a straight off-graph connector to that LM.
+  start_pose_lm_tolerance_m: 0.1
+  deadlock_wait_timeout_sec: 3
+  deadlock_priority_lease_sec: 2.5
   remote_route_chunk_lms: 5
   remote_poll_interval_sec: 0.25
   remote_timeout_sec: 0.8
+  remote_dispatch_lead_sec: 0.75
   cbs_low_level_max_time: 160
   cbs_max_high_level_nodes: 2000
   cbs_max_planning_time_sec: 5

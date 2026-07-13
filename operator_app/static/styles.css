@@ -693,6 +693,21 @@ body[data-fleet-page="fleet"] .robot-control-actions {
   font-size: 0.74rem;
 }
 
+.fleet-benchmark-setting {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 0.35rem;
+  color: var(--muted);
+  font-size: 0.68rem;
+}
+
+.fleet-benchmark-setting input {
+  width: 100%;
+  min-width: 0;
+  padding: 0.32rem 0.38rem;
+}
+
 .fleet-queue-list {
   display: grid;
   gap: 0.32rem;

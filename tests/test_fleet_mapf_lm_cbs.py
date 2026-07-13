@@ -86,6 +86,20 @@ def test_shared_goal_is_explicitly_rejected() -> None:
     assert result.debug.reason == "shared_goal_not_supported:r1,r2@C"
 
 
+def test_low_level_horizon_rejects_late_goal() -> None:
+    planner = LmCBSPlanner(
+        {"A": ["B"], "B": []},
+        move_cost_fn=lambda _start, _goal: 20,
+        low_level_max_time=5,
+        max_high_level_nodes=100,
+    )
+
+    result = planner.plan_for_robots([LmRobotRequest("r1", "A", "B")])
+
+    assert result.plans == {}
+    assert result.debug.reason.startswith("no_low_level_path")
+
+
 def assert_no_space_time_conflicts(plans) -> None:
     paths = {
         name: list(zip(plan.times, plan.nodes))

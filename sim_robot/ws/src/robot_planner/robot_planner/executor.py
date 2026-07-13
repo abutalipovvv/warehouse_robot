@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+from time import time
 from typing import Any, Callable
 
 from .route_planner import RobotTrajectoryPlanner, clamp, normalize_angle
@@ -87,6 +88,19 @@ class RouteExecutor:
         total_length = max(1e-6, distances[-1])
         progress = float(projection["s"]) / total_length
         self.runtime.update_route_progress(current_index, str(projection["edge_id"]), progress)
+
+        # Gate the segment currently being entered.  Looking several samples
+        # ahead can cross an LM boundary and stop the robot early for the next
+        # edge's reservation window.
+        gate_index = min(len(points) - 1, current_index + 1)
+        gate_time = max(points[current_index].not_before, points[gate_index].not_before)
+        if gate_time > time():
+            self.runtime.set_state(
+                "WAITING_TRAFFIC",
+                f"Waiting for reserved route window ({gate_time - time():.2f}s).",
+            )
+            self._publish_cmd_vel(0.0, 0.0)
+            return
 
         final_point = points[-1]
         distance_to_goal = math.hypot(final_point.x - pose.x, final_point.y - pose.y)

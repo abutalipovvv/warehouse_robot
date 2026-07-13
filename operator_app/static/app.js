@@ -1077,6 +1077,8 @@ class OperatorApp {
     this.fleetSimLoadMapButton = document.getElementById("fleetSimLoadMapButton");
     this.fleetBenchmarkButtons = Array.from(document.querySelectorAll("[data-fleet-benchmark-count]"));
     this.fleetBenchmarkPlanButton = document.getElementById("fleetBenchmarkPlanButton");
+    this.fleetBenchmarkHorizonInput = document.getElementById("fleetBenchmarkHorizonInput");
+    this.fleetBenchmarkIntervalInput = document.getElementById("fleetBenchmarkIntervalInput");
     this.fleetBenchmarkClearButton = document.getElementById("fleetBenchmarkClearButton");
     this.fleetBenchmarkRefreshMapsButton = document.getElementById("fleetBenchmarkRefreshMapsButton");
     this.fleetBenchmarkOpenLoadButton = document.getElementById("fleetBenchmarkOpenLoadButton");
@@ -3197,19 +3199,19 @@ class OperatorApp {
     const routeClockReset = Boolean(prior && baseClock < priorServerClock - 0.25);
     let visualClock = baseClock;
     if (prior && !routeClockReset) {
-      const priorClock = Math.max(0, Number(prior.clock || 0));
+      // Render with a small confirmation lag. Never extrapolate beyond the
+      // server clock: MAPF/collision checking may have stopped the robot while
+      // a websocket tick was delayed by planning work.
+      const priorClock = Math.min(baseClock, Math.max(0, Number(prior.clock || 0)));
       const frameDelta = status === "MOVING"
         ? Math.min(0.08, Math.max(0, (now - Number(prior.updatedAt || now)) / 1000))
         : 0;
-      visualClock = Math.max(baseClock, priorClock + frameDelta);
-    } else if (status === "MOVING") {
-      const firstFrameLead = Math.max(0, (now - this.fleetStatusReceivedAt) / 1000);
-      visualClock = baseClock + Math.min(firstFrameLead, Math.max(0.08, this.fleetStreamIntervalMs / 1000));
+      visualClock = Math.min(baseClock, priorClock + frameDelta);
     }
     visualClock = Math.min(finalTime, Math.max(0, visualClock));
     this.fleetVisualClocks.set(key, {
       clock: visualClock,
-      serverClock: routeClockReset ? baseClock : Math.max(baseClock, priorServerClock),
+      serverClock: baseClock,
       updatedAt: now,
     });
     return visualClock;
@@ -4370,6 +4372,14 @@ class OperatorApp {
     this.syncMapControls();
     this.syncModeButtons();
     this.syncManualButtons();
+    this.syncDynamicBenchmarkControls();
+    if (this.isFleetManagerSim() && status.dynamicBenchmark?.active && this.fleetBenchmarkStatus) {
+      this.fleetBenchmarkStatus.className = "probe-result success compact";
+      this.fleetBenchmarkStatus.textContent = this.fleetBenchmarkSummary(
+        { benchmark: status.dynamicBenchmark },
+        robots.length,
+      );
+    }
     this.ensureFleetAnimationLoop();
   }
 
@@ -4383,6 +4393,17 @@ class OperatorApp {
     this.renderFleetRuntimeTick();
     this.refreshOperatorScene3d();
     this.syncFleetStatusStream();
+    this.syncDynamicBenchmarkControls();
+  }
+
+  syncDynamicBenchmarkControls() {
+    if (!this.fleetBenchmarkPlanButton) {
+      return;
+    }
+    const dynamic = this.currentStatus?.dynamicBenchmark || {};
+    this.fleetBenchmarkPlanButton.textContent = dynamic.active
+      ? "Stop Dynamic Orders"
+      : "Start Dynamic Orders";
   }
 
   selectedFleetRobot(robots = null) {
@@ -7586,18 +7607,15 @@ class OperatorApp {
     this.syncModeButtons();
     await this.releaseFleetManualControl();
     try {
-      const result = await this.runMapTransfer(`Plan ${robot.name}`, async (progress) => {
-        await progress(12, `Planning ${robot.name} -> ${goalLm}...`, 60);
-        const planned = await this.postJson(this.fleetApiPath("/setOrder"), {
-          id: this.nextFleetOrderId(robot.name),
-          vehicle: robot.name,
-          targetLm: goalLm,
-          priority: 10,
-          ...this.fleetMotionParams(),
-          replaceActive: true,
-        });
-        await progress(78, "Applying route to simulation...", 100);
-        return planned;
+      this.robotMessageText.textContent = `Planning ${robot.name} -> ${goalLm}...`;
+      await new Promise((resolve) => window.requestAnimationFrame(resolve));
+      const result = await this.postJson(this.fleetApiPath("/setOrder"), {
+        id: this.nextFleetOrderId(robot.name),
+        vehicle: robot.name,
+        targetLm: goalLm,
+        priority: 10,
+        ...this.fleetMotionParams(),
+        replaceActive: true,
       });
       this.currentStatus = result.state || await this.getJson(this.fleetApiPath("/state"));
       this.lastFleetPlanDebug = result.debug || result.state?.debug || null;
@@ -8207,6 +8225,12 @@ class OperatorApp {
     if (this.fleetBenchmarkPlanButton) {
       this.fleetBenchmarkPlanButton.disabled = Boolean(busy);
     }
+    if (this.fleetBenchmarkHorizonInput) {
+      this.fleetBenchmarkHorizonInput.disabled = Boolean(busy);
+    }
+    if (this.fleetBenchmarkIntervalInput) {
+      this.fleetBenchmarkIntervalInput.disabled = Boolean(busy);
+    }
     if (this.fleetSimLoadMapButton) {
       this.fleetSimLoadMapButton.disabled = Boolean(busy) || this.fleetSimLoadMapButton.textContent === "Active";
     }
@@ -8229,10 +8253,42 @@ class OperatorApp {
     const waits = Number(debug.continuousWaits || debug.batchContinuousWaits || 0);
     const unresolved = Number(debug.continuousUnresolved || 0);
     const deadlock = Boolean(debug.deadlock || unresolved);
+    const plannedWaiting = Number(benchmark.plannedWaitingRobots || 0);
+    const plannedWaitSec = Number(benchmark.plannedWaitSec || 0);
+    const priorityRepairs = Number(benchmark.resolvedPriorityConflicts || 0);
+    const averageSteps = Number(benchmark.averageRouteSteps || 0);
+    const scenario = String(benchmark.scenario || "");
+    if (scenario === "continuous_random_orders") {
+      const active = Boolean(benchmark.active);
+      const generated = Number(benchmark.ordersGenerated || 0);
+      const completed = Number(benchmark.ordersCompleted || 0);
+      const queued = Number(benchmark.ordersQueued || 0);
+      const executing = Number(benchmark.ordersExecuting || 0);
+      const waitingRobots = Number(benchmark.waitingRobots || 0);
+      const cycles = Number(benchmark.waitCyclesResolved || 0);
+      const safetyRollbacks = Number(benchmark.runtimeSafetyRollbacks || 0);
+      const averageDistance = Number(benchmark.averageOrderDistanceM || 0);
+      const horizon = Number(benchmark.horizonSec || 0);
+      return [
+        active ? "dynamic orders active" : "dynamic orders stopped",
+        `${robotCount} robots`,
+        `horizon ${horizon.toFixed(1)} s`,
+        `orders ${generated} generated / ${completed} completed`,
+        averageDistance ? `avg goal ${averageDistance.toFixed(1)} m` : "",
+        `executing ${executing} / queued ${queued}`,
+        waitingRobots ? `waiting ${waitingRobots}` : "",
+        cycles ? `deadlocks resolved ${cycles}` : "",
+        safetyRollbacks ? `safety rollbacks ${safetyRollbacks}` : "",
+      ].filter(Boolean).join(" | ");
+    }
     const details = [
       `${planned}/${robotCount} planned`,
       `${elapsed} ms`,
       `backend ${backend}`,
+      scenario === "traffic_stress" ? "traffic stress" : scenario === "balanced_fallback" ? "safe fallback" : "",
+      averageSteps ? `avg route ${averageSteps.toFixed(1)} edges` : "",
+      plannedWaiting ? `waiting ${plannedWaiting} robots / ${plannedWaitSec.toFixed(0)} s` : "",
+      priorityRepairs ? `priority cycles resolved ${priorityRepairs}` : "",
       conflicts ? `conflicts ${conflicts}` : "",
       waits ? `waits ${waits}` : "",
       deadlock ? "deadlock: robots holding position" : "",
@@ -8268,6 +8324,7 @@ class OperatorApp {
     this.fleetManualLookahead = null;
     this.fleetVisualClocks.clear();
     this.lastFleetPlanDebug = result.benchmark || null;
+    this.syncDynamicBenchmarkControls();
     this.invalidateOperatorScene3d();
     window.localStorage.removeItem("operator:selectedFleetRobotName");
     await progress(86, "Refreshing empty simulation...", 70);
@@ -8328,7 +8385,7 @@ class OperatorApp {
         const total = Number(benchmark.robots ?? robots.length);
         const added = Number(benchmark.added ?? 0);
         this.fleetBenchmarkStatus.className = total >= robotCount ? "probe-result success compact" : "probe-result error compact";
-        this.fleetBenchmarkStatus.textContent = `Robots ${total}/${robotCount}; added ${added}. Press Plan to route them.`;
+        this.fleetBenchmarkStatus.textContent = `Robots ${total}/${robotCount}; added ${added}. Start dynamic orders when ready.`;
       }
       this.renderFleetStateImmediately();
       this.refreshRobots({ quiet: true, lightweight: true, probe: false }).catch(() => {});
@@ -8361,27 +8418,29 @@ class OperatorApp {
       }
       return;
     }
+    const dynamicActive = Boolean(this.currentStatus?.dynamicBenchmark?.active);
     this.setFleetBenchmarkBusy(true);
     if (this.fleetBenchmarkStatus) {
       this.fleetBenchmarkStatus.className = "probe-result neutral compact";
-      this.fleetBenchmarkStatus.textContent = `Planning ${robotCount} robots...`;
+      this.fleetBenchmarkStatus.textContent = dynamicActive
+        ? "Stopping new dynamic orders..."
+        : `Starting continuous orders for ${robotCount} robots...`;
     }
     try {
-      const result = await this.runMapTransfer(`Plan ${robotCount} Robots`, async (progress) => {
-        await progress(12, `Planning ${robotCount} robot routes...`, 60);
-        if (runId !== this.fleetBenchmarkRunId) {
-          throw new Error("Plan superseded by a newer run.");
-        }
-        const planned = await this.postJsonRaw(this.fleetApiPath("/benchmark"), {
-          action: "plan",
-          count: robotCount,
-          reset: false,
-          seed: 42,
-          ...this.fleetMotionParams(),
-          fast: false,
-        });
-        await progress(78, this.fleetBenchmarkSummary(planned, robotCount), 120);
-        return planned;
+      await new Promise((resolve) => window.requestAnimationFrame(resolve));
+      if (runId !== this.fleetBenchmarkRunId) {
+        throw new Error("Plan superseded by a newer run.");
+      }
+      const result = await this.postJsonRaw(this.fleetApiPath("/benchmark"), {
+        action: dynamicActive ? "stop" : "plan",
+        count: robotCount,
+        reset: false,
+        seed: 42,
+        horizonSec: Math.max(1, Number(this.fleetBenchmarkHorizonInput?.value || 10)),
+        orderIntervalSec: Math.max(0.25, Number(this.fleetBenchmarkIntervalInput?.value || 3)),
+        queueDepth: 2,
+        ...this.fleetMotionParams(),
+        fast: true,
       });
       this.currentStatus = result.state || result.fleetState || await this.getJson(this.fleetApiPath("/state"));
       this.lastFleetPlanDebug = {
@@ -8390,10 +8449,10 @@ class OperatorApp {
       };
       const benchmark = result.benchmark || this.currentStatus?.benchmark || {};
       if (this.fleetBenchmarkStatus) {
-        const planned = Number(benchmark.planned ?? 0);
-        this.fleetBenchmarkStatus.className = planned >= robotCount ? "probe-result success compact" : "probe-result error compact";
+        this.fleetBenchmarkStatus.className = "probe-result success compact";
         this.fleetBenchmarkStatus.textContent = this.fleetBenchmarkSummary(result, robotCount);
       }
+      this.syncDynamicBenchmarkControls();
       this.renderFleetStateImmediately();
       this.refreshRobots({ quiet: true, lightweight: true, probe: false }).catch(() => {});
     } catch (error) {

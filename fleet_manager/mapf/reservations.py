@@ -108,15 +108,14 @@ class ReservationTable:
         *,
         ignore_robot_name: str = "",
     ) -> bool:
-        capacity = self._capacities.get(resource, 1)
-        conflicts = self.conflicts(
+        start = max(0, int(start))
+        end = max(start + 1, int(end))
+        return not self._blocked_intervals_for_resource(
             resource,
             start,
             end,
             ignore_robot_name=ignore_robot_name,
         )
-        occupied_by = {interval.robot_name for interval in conflicts}
-        return len(occupied_by) < capacity
 
     def resources_are_free(
         self,
@@ -214,7 +213,11 @@ class ReservationTable:
         if not resource_intervals:
             return []
 
-        events: list[tuple[int, int]] = []
+        # Capacity is consumed by robots, not by reservation records.  A path
+        # can legitimately create overlapping visit/wait/goal reservations for
+        # the same robot; counting those records independently makes is_free()
+        # and safe_intervals_for_resources() disagree for capacity > 1.
+        events: list[tuple[int, str, int]] = []
         for interval in resource_intervals:
             if interval.start >= end:
                 break
@@ -222,20 +225,28 @@ class ReservationTable:
                 continue
             if ignore_robot_name and interval.robot_name == ignore_robot_name:
                 continue
-            events.append((max(start, interval.start), 1))
-            events.append((min(end, interval.end), -1))
+            events.append((max(start, interval.start), interval.robot_name, 1))
+            events.append((min(end, interval.end), interval.robot_name, -1))
         if not events:
             return []
 
         blocked: list[tuple[int, int]] = []
-        active = 0
+        active_by_robot: dict[str, int] = {}
         cursor = start
         for time_tick, grouped in groupby(sorted(events), key=lambda item: item[0]):
-            if cursor < time_tick and active >= capacity:
+            if cursor < time_tick and len(active_by_robot) >= capacity:
                 blocked.append((cursor, time_tick))
-            active += sum(delta for _, delta in grouped)
+            deltas: dict[str, int] = defaultdict(int)
+            for _, robot_name, delta in grouped:
+                deltas[robot_name] += delta
+            for robot_name, delta in deltas.items():
+                next_count = active_by_robot.get(robot_name, 0) + delta
+                if next_count > 0:
+                    active_by_robot[robot_name] = next_count
+                else:
+                    active_by_robot.pop(robot_name, None)
             cursor = time_tick
-        if cursor < end and active >= capacity:
+        if cursor < end and len(active_by_robot) >= capacity:
             blocked.append((cursor, end))
         return blocked
 

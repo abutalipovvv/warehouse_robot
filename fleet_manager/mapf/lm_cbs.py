@@ -91,10 +91,14 @@ class PathEdgeInterval:
 class Constraints:
     vertex_constraints: set[VertexConstraint] = field(default_factory=set)
     edge_constraints: set[EdgeConstraint] = field(default_factory=set)
+    vertex_interval_constraints: set[VertexIntervalConstraint] = field(default_factory=set)
+    edge_interval_constraints: set[EdgeIntervalConstraint] = field(default_factory=set)
 
     def add_constraint(self, other: "Constraints") -> None:
         self.vertex_constraints |= other.vertex_constraints
         self.edge_constraints |= other.edge_constraints
+        self.vertex_interval_constraints |= other.vertex_interval_constraints
+        self.edge_interval_constraints |= other.edge_interval_constraints
 
 
 @dataclass(frozen=True)
@@ -143,6 +147,18 @@ class HighLevelNode:
                 name,
                 tuple(sorted((item.time, item.node) for item in constraints.vertex_constraints)),
                 tuple(sorted((item.time, item.from_node, item.to_node) for item in constraints.edge_constraints)),
+                tuple(
+                    sorted(
+                        (item.start_time, item.end_time, item.node)
+                        for item in constraints.vertex_interval_constraints
+                    )
+                ),
+                tuple(
+                    sorted(
+                        (item.start_time, item.end_time, item.from_node, item.to_node)
+                        for item in constraints.edge_interval_constraints
+                    )
+                ),
             )
             for name, constraints in sorted(self.constraint_dict.items())
         )
@@ -209,6 +225,9 @@ class LmCBSEnvironment:
         for interval in self.global_vertex_intervals:
             if interval.node == state.node and interval.end_time >= state.time:
                 return False
+        for interval in constraints.vertex_interval_constraints:
+            if interval.node == state.node and interval.end_time >= state.time:
+                return False
         for constraint in constraints.edge_constraints | self.global_edge_constraints:
             if (
                 constraint.from_node == state.node
@@ -236,6 +255,14 @@ class LmCBSEnvironment:
                 owner = f":{interval.owner}" if interval.owner else ""
                 self.last_failure = f"reserved_lm_interval:{state.node}@{state.time}{owner}"
                 return False
+        for interval in self.constraints.vertex_interval_constraints:
+            if interval.node == state.node and self._time_in_interval(
+                state.time,
+                interval.start_time,
+                interval.end_time,
+            ):
+                self.last_failure = f"vertex_interval_constrained:{state.node}@{state.time}"
+                return False
         return True
 
     def transition_valid(self, state_1: State, state_2: State) -> bool:
@@ -252,6 +279,13 @@ class LmCBSEnvironment:
                 self.last_failure = (
                     f"reserved_edge_interval:{state_1.node}->{state_2.node}"
                     f"@{state_1.time}-{state_2.time}{owner}"
+                )
+                return False
+        for interval in self.constraints.edge_interval_constraints:
+            if self._edge_interval_conflicts(state_1, state_2, interval):
+                self.last_failure = (
+                    f"edge_interval_constrained:{state_1.node}->{state_2.node}"
+                    f"@{state_1.time}-{state_2.time}"
                 )
                 return False
         return True
@@ -478,7 +512,13 @@ class LmCBSEnvironment:
         if conflict.type == Conflict.VERTEX:
             assert conflict.node_1 is not None
             constraint = Constraints()
-            constraint.vertex_constraints.add(VertexConstraint(conflict.time, conflict.node_1))
+            constraint.vertex_interval_constraints.add(
+                VertexIntervalConstraint(
+                    start_time=conflict.time,
+                    end_time=max(conflict.time, conflict.end_time),
+                    node=conflict.node_1,
+                )
+            )
             return {
                 conflict.agent_1: constraint,
                 conflict.agent_2: constraint,
@@ -492,18 +532,20 @@ class LmCBSEnvironment:
         agent_1_to = conflict.agent_1_to or conflict.node_2
         agent_2_from = conflict.agent_2_from or conflict.node_2
         agent_2_to = conflict.agent_2_to or conflict.node_1
-        constraint_1.edge_constraints.add(
-            EdgeConstraint(
-                conflict.agent_1_time if conflict.agent_1_time >= 0 else conflict.time,
-                agent_1_from,
-                agent_1_to,
+        constraint_1.edge_interval_constraints.add(
+            EdgeIntervalConstraint(
+                start_time=conflict.time,
+                end_time=max(conflict.time, conflict.end_time),
+                from_node=agent_1_from,
+                to_node=agent_1_to,
             )
         )
-        constraint_2.edge_constraints.add(
-            EdgeConstraint(
-                conflict.agent_2_time if conflict.agent_2_time >= 0 else conflict.time,
-                agent_2_from,
-                agent_2_to,
+        constraint_2.edge_interval_constraints.add(
+            EdgeIntervalConstraint(
+                start_time=conflict.time,
+                end_time=max(conflict.time, conflict.end_time),
+                from_node=agent_2_from,
+                to_node=agent_2_to,
             )
         )
         return {
@@ -556,10 +598,10 @@ class LmCBSEnvironment:
                 continue
             open_set.remove(current)
 
-            if self.is_goal_state_final(current, agent_name):
-                return self.reconstruct_path(came_from, current)
             if current.time > max_time:
                 continue
+            if self.is_goal_state_final(current, agent_name):
+                return self.reconstruct_path(came_from, current)
 
             closed_set.add(current)
             for neighbor in self.get_neighbors(current):
@@ -768,10 +810,16 @@ class LmCBSPlanner:
                 new_node = deepcopy(current)
                 new_node.constraint_dict[agent_name].add_constraint(constraint_dict[agent_name])
                 env.constraint_dict = new_node.constraint_dict
-                new_solution = env.compute_solution()
-                if not new_solution:
+                # A CBS child changes constraints for exactly one agent.  The
+                # previous implementation replanned the entire fleet for every
+                # child, which makes 20+ robots look quadratic/exponential much
+                # earlier than necessary.  Keep unaffected paths and run one
+                # low-level search, as standard CBS does.
+                env.constraints = new_node.constraint_dict.setdefault(agent_name, Constraints())
+                local_solution = env.low_level_search(agent_name, ll_max_time)
+                if not local_solution:
                     continue
-                new_node.solution = new_solution
+                new_node.solution[agent_name] = local_solution
                 new_node.cost = env.compute_solution_cost(new_node.solution)
                 if new_node not in closed_set:
                     open_set.add(new_node)

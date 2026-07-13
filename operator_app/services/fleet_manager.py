@@ -3,7 +3,7 @@ from __future__ import annotations
 import math
 import random
 from pathlib import Path
-from time import perf_counter
+from time import perf_counter, time
 from typing import Any
 
 import yaml
@@ -210,6 +210,7 @@ class OperatorFleetManager:
 
     def state_payload(self, include_trajectories: bool = True) -> dict[str, Any]:
         self._sync_manager_mode()
+        self._pump_dynamic_benchmark()
         state = self.manager.state(include_trajectories=include_trajectories)
         return self._state_with_context(state)
 
@@ -241,7 +242,8 @@ class OperatorFleetManager:
         action = str(payload.get("action") or "").strip().lower()
         add_only = action in {"add", "add_robots", "ensure"} or bool(payload.get("addOnly", False))
         plan_existing = action in {"plan", "plan_existing"} or bool(payload.get("planExisting", False))
-        reset_default = not (add_only or plan_existing)
+        stop_dynamic = action in {"stop", "stop_dynamic", "pause_dynamic"}
+        reset_default = not (add_only or plan_existing or stop_dynamic)
         if payload.get("reset", reset_default):
             self._clear_simulation_runtime()
         if count <= 0:
@@ -259,17 +261,41 @@ class OperatorFleetManager:
         if add_only:
             return self._ensure_benchmark_robots_payload(count=count, seed=seed)
 
+        if stop_dynamic:
+            return self._stop_dynamic_benchmark_payload()
+
+        if plan_existing:
+            return self._start_dynamic_benchmark_payload(
+                count=count,
+                seed=seed,
+                horizon_sec=float(payload.get("horizonSec", 10.0) or 10.0),
+                order_interval_sec=float(payload.get("orderIntervalSec", 3.0) or 3.0),
+                queue_depth=int(payload.get("queueDepth", 2) or 2),
+                speed=speed,
+                acceleration=acceleration,
+                rotate=rotate,
+                turn_speed=turn_speed,
+            )
+
+        # Explicit Plan is a traffic demonstration: routes are deliberately
+        # longer and overlap at shared corridors. The plain benchmark endpoint
+        # remains balanced unless stress is requested explicitly.
+        stress = bool(payload.get("stress", plan_existing))
+        stress_profile = 0
+        used_traffic_stress = stress
         requests = (
             self._benchmark_requests_for_existing(
                 count=count,
                 seed=seed,
-                stress=bool(payload.get("stress", False)),
+                stress=stress,
+                stress_profile=stress_profile,
             )
             if plan_existing
             else self._benchmark_requests(
                 count=count,
                 seed=seed,
-                stress=bool(payload.get("stress", False)),
+                stress=stress,
+                stress_profile=stress_profile,
             )
         )
         if plan_existing:
@@ -277,6 +303,7 @@ class OperatorFleetManager:
         fast = bool(payload.get("fast", False))
         restore_fleet_params = self._apply_fast_benchmark_params(count)
         started = perf_counter()
+        allocation_attempts = 1
         try:
             result = self.manager.plan({
                 "robots": requests,
@@ -286,6 +313,42 @@ class OperatorFleetManager:
                 "turnSpeed": turn_speed,
                 "stretchMotionToReservationTicks": True,
             })
+            # A challenge profile can still encode an impossible terminal
+            # order in a one-way aisle. Try deterministic alternatives, then
+            # fall back to the balanced allocator instead of accepting a
+            # permanent deadlock.
+            while (
+                not result.get("ok")
+                and allocation_attempts < (4 if stress else 6)
+            ):
+                retry_seed = seed + allocation_attempts
+                stress_profile = allocation_attempts
+                use_traffic_stress = stress and stress_profile < 3
+                requests = (
+                    self._benchmark_requests_for_existing(
+                        count=count,
+                        seed=seed if use_traffic_stress else retry_seed,
+                        stress=use_traffic_stress,
+                        stress_profile=stress_profile,
+                    )
+                    if plan_existing
+                    else self._benchmark_requests(
+                        count=count,
+                        seed=seed if use_traffic_stress else retry_seed,
+                        stress=use_traffic_stress,
+                        stress_profile=stress_profile,
+                    )
+                )
+                used_traffic_stress = use_traffic_stress
+                allocation_attempts += 1
+                result = self.manager.plan({
+                    "robots": requests,
+                    "speed": speed,
+                    "acceleration": acceleration,
+                    "rotate": rotate,
+                    "turnSpeed": turn_speed,
+                    "stretchMotionToReservationTicks": True,
+                })
         finally:
             if restore_fleet_params is not None:
                 self._restore_fleet_params(restore_fleet_params)
@@ -296,6 +359,10 @@ class OperatorFleetManager:
         debug = result.get("debug", {})
         if not isinstance(debug, dict):
             debug = {}
+        plan_stats = self._benchmark_plan_stats(
+            plans,
+            float(result.get("timeStepSec", 1.0) or 1.0),
+        )
         result["benchmark"] = {
             "count": count,
             "planned": len(plans),
@@ -311,7 +378,18 @@ class OperatorFleetManager:
             "expandedNodes": debug.get("expandedNodes", 0),
             "highLevelNodes": debug.get("highLevelNodes", 0),
             "fast": fast,
+            "allocationAttempts": allocation_attempts,
             "action": "plan" if plan_existing else "benchmark",
+            "scenario": (
+                "traffic_stress"
+                if used_traffic_stress
+                else "balanced_fallback"
+                if stress
+                else "balanced"
+            ),
+            "stressProfile": stress_profile if used_traffic_stress else None,
+            "resolvedPriorityConflicts": int(debug.get("conflictsResolved", 0) or 0),
+            **plan_stats,
         }
         if isinstance(result.get("fleetState"), dict):
             result["state"] = result["fleetState"]
@@ -319,6 +397,7 @@ class OperatorFleetManager:
 
     def orders_payload(self) -> dict[str, Any]:
         self._sync_manager_mode()
+        self._pump_dynamic_benchmark()
         result = self.manager.orders_payload()
         return self._result_with_context(result)
 
@@ -348,6 +427,7 @@ class OperatorFleetManager:
 
     def tick_payload(self, payload: dict[str, Any] | None = None) -> dict[str, Any]:
         self._sync_manager_mode()
+        self._pump_dynamic_benchmark()
         state = self.manager.tick(payload or {})
         return self._state_with_context(state)
 
@@ -464,6 +544,9 @@ class OperatorFleetManager:
         self.manager.robots.clear()
         self.manager.orders.clear()
         self.manager.events.clear()
+        for key in getattr(self.manager, "traffic_metrics", {}):
+            self.manager.traffic_metrics[key] = 0
+        self._reset_dynamic_benchmark()
 
     def _benchmark_sim_robots(self) -> list[Any]:
         return sorted(
@@ -531,6 +614,352 @@ class OperatorFleetManager:
             },
         })
 
+    def _start_dynamic_benchmark_payload(
+        self,
+        *,
+        count: int,
+        seed: int,
+        horizon_sec: float,
+        order_interval_sec: float,
+        queue_depth: int,
+        speed: float,
+        acceleration: float,
+        rotate: bool,
+        turn_speed: float,
+    ) -> dict[str, Any]:
+        robots = self._benchmark_sim_robots()
+        if count > 0:
+            robots = robots[:count]
+        if not robots:
+            raise ValueError("add robots before starting dynamic orders")
+
+        horizon_sec = max(1.0, min(120.0, float(horizon_sec)))
+        order_interval_sec = max(0.25, min(120.0, float(order_interval_sec)))
+        queue_depth = max(1, min(5, int(queue_depth)))
+        fleet = self.manager.params.setdefault("fleet", {})
+        if not isinstance(fleet, dict):
+            fleet = {}
+            self.manager.params["fleet"] = fleet
+        fleet["rolling_horizon_sec"] = horizon_sec
+        fleet["reservation_horizon_sec"] = horizon_sec
+        for key in getattr(self.manager, "traffic_metrics", {}):
+            self.manager.traffic_metrics[key] = 0
+
+        now = time()
+        self._dynamic_rng = random.Random(seed)
+        self._dynamic_benchmark = {
+            "active": True,
+            "seed": seed,
+            "startedAt": now,
+            "stoppedAt": 0.0,
+            "horizonSec": horizon_sec,
+            "orderIntervalSec": order_interval_sec,
+            "queueDepth": queue_depth,
+            "ordersGenerated": 0,
+            "ordersCompleted": 0,
+            "ordersTerminated": 0,
+            "generationFailures": 0,
+            "generatedDistanceMTotal": 0.0,
+            "lastOrderDistanceM": 0.0,
+            "dispatchElapsedMs": 0.0,
+            "lastOrderAt": 0.0,
+            "lastPumpAt": now,
+            "nextOrderAt": {},
+            "orderSequence": 0,
+            "sessionId": int(now * 1000),
+            "countedTerminalOrders": set(),
+            "speed": speed,
+            "acceleration": acceleration,
+            "rotate": rotate,
+            "turnSpeed": turn_speed,
+            "initialWaveQueued": False,
+        }
+        # Queue the first order for every robot atomically.  Dispatch is
+        # intentionally deferred so MAPF can see small coupled groups instead
+        # of treating the rest of the fleet as permanently parked obstacles.
+        for robot in robots:
+            self._dynamic_benchmark["nextOrderAt"][robot.name] = now
+
+        started = perf_counter()
+        generated = self._pump_dynamic_benchmark(now=now)
+        elapsed_ms = (perf_counter() - started) * 1000.0
+        benchmark = self._dynamic_benchmark_payload()
+        benchmark.update({
+            "action": "start_dynamic",
+            "scenario": "continuous_random_orders",
+            "count": len(robots),
+            "planned": len(robots),
+            "generatedNow": generated,
+            "elapsedMs": round(elapsed_ms, 3),
+        })
+        state = self._state_with_context(self.manager.state(include_trajectories=True))
+        return self._result_with_context({
+            "ok": True,
+            "benchmark": benchmark,
+            "state": state,
+        })
+
+    def _stop_dynamic_benchmark_payload(self) -> dict[str, Any]:
+        if self._dynamic_benchmark.get("active"):
+            self._dynamic_benchmark["active"] = False
+            self._dynamic_benchmark["stoppedAt"] = time()
+        benchmark = self._dynamic_benchmark_payload()
+        benchmark["action"] = "stop_dynamic"
+        state = self._state_with_context(self.manager.state(include_trajectories=True))
+        return self._result_with_context({
+            "ok": True,
+            "benchmark": benchmark,
+            "state": state,
+        })
+
+    def _pump_dynamic_benchmark(self, now: float | None = None) -> int:
+        if self.mode != "simulation" or not getattr(self, "_dynamic_benchmark", {}).get("active"):
+            return 0
+        now = time() if now is None else float(now)
+        config = self._dynamic_benchmark
+        robots = self._benchmark_sim_robots()
+        next_order_at = config.setdefault("nextOrderAt", {})
+        interval = float(config.get("orderIntervalSec", 3.0) or 3.0)
+        queue_depth = int(config.get("queueDepth", 2) or 2)
+        due = [
+            robot for robot in robots
+            if now >= float(next_order_at.get(robot.name, now))
+            and self._dynamic_order_depth(robot.name) < queue_depth
+        ]
+        due.sort(key=lambda robot: (float(next_order_at.get(robot.name, now)), robot.name))
+        generated = 0
+        initial_wave = not bool(config.get("initialWaveQueued", False))
+        batch_limit = len(due) if initial_wave else self._dynamic_generation_batch_size()
+        for robot in due[:batch_limit]:
+            started = perf_counter()
+            try:
+                order_payload = self._next_dynamic_order_payload(robot, now)
+                if order_payload is None:
+                    config["generationFailures"] = int(config.get("generationFailures", 0) or 0) + 1
+                    self.manager._event(
+                        "warn",
+                        f"dynamic order pending for {robot.name}: no free reachable LM",
+                    )
+                else:
+                    self.manager.set_order(order_payload, dispatch=False)
+                    generated += 1
+                    config["ordersGenerated"] = int(config.get("ordersGenerated", 0) or 0) + 1
+                    distance_m = float(order_payload.get("benchmarkDistanceM", 0.0) or 0.0)
+                    config["generatedDistanceMTotal"] = float(
+                        config.get("generatedDistanceMTotal", 0.0) or 0.0
+                    ) + distance_m
+                    config["lastOrderDistanceM"] = distance_m
+                    config["lastOrderAt"] = now
+            except (RuntimeError, ValueError) as exc:
+                config["generationFailures"] = int(config.get("generationFailures", 0) or 0) + 1
+                self.manager._event(
+                    "warn",
+                    f"dynamic order pending for {robot.name}: {exc}",
+                )
+            finally:
+                config["dispatchElapsedMs"] = float(config.get("dispatchElapsedMs", 0.0) or 0.0) + (
+                    (perf_counter() - started) * 1000.0
+                )
+            jitter = self._dynamic_rng.uniform(0.70, 1.30)
+            next_order_at[robot.name] = now + (interval * jitter)
+        if initial_wave:
+            config["initialWaveQueued"] = True
+        config["lastPumpAt"] = now
+        self._prune_dynamic_order_history()
+        return generated
+
+    def _next_dynamic_order_payload(self, robot: Any, now: float) -> dict[str, Any] | None:
+        config = self._dynamic_benchmark
+        origin = self._dynamic_order_origin(robot.name) or str(robot.current_lm)
+        if origin not in self.loaded_map.landmarks:
+            return None
+        used_goals = {
+            str(order.target_lm)
+            for order in self.manager.orders.values()
+            if order.status not in {"COMPLETED", "FAILED", "CANCELED"}
+            and str(order.target_lm) in self.loaded_map.landmarks
+        }
+        occupied_lms = {
+            str(item.current_lm)
+            for item in self._benchmark_sim_robots()
+            if item.name != robot.name and str(item.current_lm) in self.loaded_map.landmarks
+        }
+        min_hops, max_hops = self._dynamic_goal_hop_window()
+        candidates = self._forward_benchmark_goals(
+            origin,
+            used_goals,
+            occupied_lms,
+            self._dynamic_rng,
+            min_hops=min_hops,
+            max_hops=max_hops,
+        )
+        if not candidates:
+            candidates = self._forward_benchmark_goals(
+                origin,
+                used_goals,
+                occupied_lms,
+                self._dynamic_rng,
+                min_hops=max(2, min_hops // 3),
+                max_hops=min(200, max(max_hops, len(self.loaded_map.landmarks))),
+            )
+        if not candidates:
+            return None
+        target_lm = self._far_dynamic_goal(origin, candidates)
+        origin_lm = self.loaded_map.landmarks[origin]
+        target = self.loaded_map.landmarks[target_lm]
+        distance_m = math.hypot(target.x - origin_lm.x, target.y - origin_lm.y)
+        sequence = int(config.get("orderSequence", 0) or 0) + 1
+        config["orderSequence"] = sequence
+        priority = self._dynamic_rng.choice((0, 0, 1, 1, 2, 3))
+        if sequence % 10 == 0:
+            priority = 5
+        return {
+            "id": f"dynamic-{int(config.get('sessionId', 0) or 0)}-{sequence:07d}-{robot.name}",
+            "vehicle": robot.name,
+            "targetLm": target_lm,
+            "priority": priority,
+            "speed": float(config.get("speed", 0.0) or 0.0),
+            "acceleration": float(config.get("acceleration", 0.0) or 0.0),
+            "rotate": bool(config.get("rotate", False)),
+            "turnSpeed": float(config.get("turnSpeed", 0.0) or 0.0),
+            "stretchMotionToReservationTicks": True,
+            "externalId": f"benchmark-{int(now * 1000)}-{sequence}",
+            "benchmarkDistanceM": round(distance_m, 3),
+        }
+
+    def _dynamic_goal_hop_window(self) -> tuple[int, int]:
+        fleet = self.manager.params.get("fleet", {})
+        if not isinstance(fleet, dict):
+            return 30, 160
+        try:
+            minimum = max(2, int(fleet.get("dynamic_order_min_hops", 30) or 30))
+        except (TypeError, ValueError):
+            minimum = 30
+        try:
+            maximum = max(minimum, int(fleet.get("dynamic_order_max_hops", 160) or 160))
+        except (TypeError, ValueError):
+            maximum = 160
+        return minimum, maximum
+
+    def _far_dynamic_goal(self, origin: str, candidates: list[str]) -> str:
+        start = self.loaded_map.landmarks[origin]
+        ranked = sorted(
+            candidates,
+            key=lambda name: math.hypot(
+                self.loaded_map.landmarks[name].x - start.x,
+                self.loaded_map.landmarks[name].y - start.y,
+            ),
+        )
+        fleet = self.manager.params.get("fleet", {})
+        try:
+            fraction = float(fleet.get("dynamic_order_far_fraction", 0.08) or 0.08)
+        except (AttributeError, TypeError, ValueError):
+            fraction = 0.08
+        fraction = max(0.05, min(1.0, fraction))
+        pool_size = max(1, int(math.ceil(len(ranked) * fraction)))
+        return self._dynamic_rng.choice(ranked[-pool_size:])
+
+    def _dynamic_order_origin(self, robot_name: str) -> str:
+        orders = [
+            order for order in self.manager.orders.values()
+            if (order.vehicle == robot_name or order.assigned_robot == robot_name)
+            and order.status not in {"COMPLETED", "FAILED", "CANCELED"}
+        ]
+        if not orders:
+            robot = self.manager.robots.get(robot_name)
+            return str(robot.route_final_lm or robot.current_lm) if robot is not None else ""
+        orders.sort(key=lambda order: (order.created_at, order.order_id))
+        return str(orders[-1].target_lm)
+
+    def _dynamic_order_depth(self, robot_name: str) -> int:
+        return sum(
+            1 for order in self.manager.orders.values()
+            if (order.vehicle == robot_name or order.assigned_robot == robot_name)
+            and order.status not in {"COMPLETED", "FAILED", "CANCELED"}
+        )
+
+    def _dynamic_generation_batch_size(self) -> int:
+        # Bound synchronous MAPF work per web tick. Orders still arrive for
+        # every robot, but the status stream never blocks on a fleet-wide burst.
+        return 2
+
+    def _prune_dynamic_order_history(self) -> None:
+        config = self._dynamic_benchmark
+        counted = config.setdefault("countedTerminalOrders", set())
+        terminal = [
+            order for order in self.manager.orders.values()
+            if order.order_id.startswith("dynamic-")
+            and order.status in {"COMPLETED", "FAILED", "CANCELED"}
+        ]
+        terminal.sort(key=lambda order: (order.updated_at, order.order_id), reverse=True)
+        for order in terminal:
+            if order.order_id in counted:
+                continue
+            counted.add(order.order_id)
+            if order.status == "COMPLETED":
+                config["ordersCompleted"] = int(config.get("ordersCompleted", 0) or 0) + 1
+            else:
+                config["ordersTerminated"] = int(config.get("ordersTerminated", 0) or 0) + 1
+        for order in terminal[240:]:
+            self.manager.orders.pop(order.order_id, None)
+            counted.discard(order.order_id)
+
+    def _dynamic_benchmark_payload(self) -> dict[str, Any]:
+        config = getattr(self, "_dynamic_benchmark", {})
+        generated = int(config.get("ordersGenerated", 0) or 0)
+        dynamic_orders = [
+            order for order in self.manager.orders.values()
+            if order.order_id.startswith("dynamic-")
+        ] if hasattr(self, "manager") else []
+        self._prune_dynamic_order_history()
+        completed = int(config.get("ordersCompleted", 0) or 0)
+        queued = sum(order.status == "QUEUED" for order in dynamic_orders)
+        executing = sum(order.status not in {"QUEUED", "COMPLETED", "FAILED", "CANCELED"} for order in dynamic_orders)
+        waiting = sum(robot.status == "WAITING" for robot in self._benchmark_sim_robots()) if hasattr(self, "manager") else 0
+        traffic = dict(getattr(self.manager, "traffic_metrics", {})) if hasattr(self, "manager") else {}
+        dispatch_ms = float(config.get("dispatchElapsedMs", 0.0) or 0.0)
+        distance_total = float(config.get("generatedDistanceMTotal", 0.0) or 0.0)
+        return {
+            "active": bool(config.get("active", False)),
+            "scenario": "continuous_random_orders",
+            "seed": int(config.get("seed", 42) or 42),
+            "horizonSec": float(config.get("horizonSec", 10.0) or 10.0),
+            "orderIntervalSec": float(config.get("orderIntervalSec", 3.0) or 3.0),
+            "queueDepth": int(config.get("queueDepth", 2) or 2),
+            "ordersGenerated": generated,
+            "ordersCompleted": completed,
+            "ordersQueued": queued,
+            "ordersExecuting": executing,
+            "waitingRobots": waiting,
+            "generationFailures": int(config.get("generationFailures", 0) or 0),
+            "averageDispatchMs": round(dispatch_ms / generated, 3) if generated else 0.0,
+            "averageOrderDistanceM": round(distance_total / generated, 2) if generated else 0.0,
+            "lastOrderDistanceM": round(float(config.get("lastOrderDistanceM", 0.0) or 0.0), 2),
+            **traffic,
+        }
+
+    def _reset_dynamic_benchmark(self) -> None:
+        self._dynamic_rng = random.Random(42)
+        self._dynamic_benchmark = {
+            "active": False,
+            "seed": 42,
+            "horizonSec": 10.0,
+            "orderIntervalSec": 3.0,
+            "queueDepth": 2,
+            "ordersGenerated": 0,
+            "ordersCompleted": 0,
+            "ordersTerminated": 0,
+            "generationFailures": 0,
+            "generatedDistanceMTotal": 0.0,
+            "lastOrderDistanceM": 0.0,
+            "dispatchElapsedMs": 0.0,
+            "nextOrderAt": {},
+            "orderSequence": 0,
+            "sessionId": 0,
+            "countedTerminalOrders": set(),
+            "initialWaveQueued": False,
+        }
+
     def _benchmark_spawn_lms(self, count: int, seed: int) -> list[str]:
         names = self._largest_benchmark_component()
         if len(names) < count:
@@ -541,7 +970,13 @@ class OperatorFleetManager:
         rng = random.Random(seed + 7919)
         shuffled = list(names)
         rng.shuffle(shuffled)
-        return shuffled
+        spaced = self._spatially_separated_lms(shuffled, count)
+        if len(spaced) < count:
+            raise ValueError(
+                f"map can safely place only {len(spaced)} of {count} robots "
+                f"with {self._benchmark_min_separation():.2f} m center spacing"
+            )
+        return spaced
 
     def _next_benchmark_robot_index(self) -> int:
         max_index = 0
@@ -582,15 +1017,18 @@ class OperatorFleetManager:
             horizon = 10.0
             iterations = 10
         else:
-            horizon = 12.0
-            iterations = 12
+            # The interactive 20-robot traffic scenario uses long routes.
+            # Validate their complete time horizon so late corridor conflicts
+            # cannot hide behind the benchmark speed optimization.
+            horizon = None
+            iterations = 60
         fleet["batch_collision_horizon_sec"] = horizon
         fleet["batch_wait_max_iterations"] = iterations
         fleet["continuous_collision_step_sec"] = 0.10
         fleet["stretch_motion_to_reservation_ticks"] = True
         planner = getattr(self.manager, "planner", None)
         if planner is not None:
-            planner.planner_backend = "rolling_sipp"
+            planner.planner_backend = "hybrid"
             planner.stretch_motion_to_reservation_ticks = True
         return previous
 
@@ -617,7 +1055,14 @@ class OperatorFleetManager:
             else:
                 fleet[key] = value
 
-    def _benchmark_requests(self, *, count: int, seed: int, stress: bool = False) -> list[dict[str, Any]]:
+    def _benchmark_requests(
+        self,
+        *,
+        count: int,
+        seed: int,
+        stress: bool = False,
+        stress_profile: int = 0,
+    ) -> list[dict[str, Any]]:
         names = self._largest_benchmark_component()
         if len(names) < count * 2:
             raise ValueError(
@@ -627,26 +1072,32 @@ class OperatorFleetManager:
         rng = random.Random(seed + count)
         shuffled = list(names)
         rng.shuffle(shuffled)
-        starts = shuffled[:count]
+        starts = self._spatially_separated_lms(shuffled, count)
+        if len(starts) < count:
+            raise ValueError(
+                f"benchmark can safely place only {len(starts)} of {count} robots"
+            )
         used_goals: set[str] = set()
         requests: list[dict[str, Any]] = []
-        landmarks = self.loaded_map.landmarks
+        start_set = set(starts)
         for index, start_name in enumerate(starts, start=1):
-            start = landmarks[start_name]
-            candidates = [
-                name
-                for name in names
-                if name != start_name and name not in used_goals
-            ]
-            candidates.sort(
-                key=lambda name: ((start.x - landmarks[name].x) ** 2) + ((start.y - landmarks[name].y) ** 2)
+            candidates = self._forward_benchmark_goals(
+                start_name,
+                used_goals,
+                start_set,
+                random.Random(seed + (index * 1009)),
+                **self._traffic_goal_window(stress, stress_profile, count),
             )
+            if not candidates:
+                raise ValueError("not enough physically separated benchmark goals")
             if stress:
-                goal_name = candidates[-1]
+                goal_name = self._traffic_goal_from_candidates(
+                    candidates,
+                    stress_profile,
+                    count,
+                )
             else:
-                low = max(0, len(candidates) // 8)
-                high = max(low + 1, len(candidates) // 3)
-                goal_name = candidates[rng.randrange(low, high)]
+                goal_name = candidates[0]
             used_goals.add(goal_name)
             requests.append({
                 "name": f"bench_{index:03d}",
@@ -655,7 +1106,14 @@ class OperatorFleetManager:
             })
         return requests
 
-    def _benchmark_requests_for_existing(self, *, count: int, seed: int, stress: bool = False) -> list[dict[str, Any]]:
+    def _benchmark_requests_for_existing(
+        self,
+        *,
+        count: int,
+        seed: int,
+        stress: bool = False,
+        stress_profile: int = 0,
+    ) -> list[dict[str, Any]]:
         robots = self._benchmark_sim_robots()
         if count > 0:
             robots = robots[:count]
@@ -669,45 +1127,50 @@ class OperatorFleetManager:
                 f"largest component has {len(names)}"
             )
         name_set = set(names)
-        landmarks = self.loaded_map.landmarks
-        rng = random.Random(seed + len(robots) + 3571)
-        start_lms = {
-            str(robot.current_lm)
-            for robot in robots
-            if str(robot.current_lm) in name_set
-        }
+        planning_starts: dict[str, str] = {}
+        for robot in robots:
+            start_lm = self.manager._safe_replan_start_lm(robot)
+            if start_lm not in name_set:
+                raise ValueError(
+                    f"{robot.name} is between graph landmarks; "
+                    "wait until it reaches the next LM before planning"
+                )
+            planning_starts[str(robot.name)] = start_lm
+        start_lms = set(planning_starts.values())
         avoid_start_goals = len(names) >= len(robots) * 2
         used_goals: set[str] = set()
         requests: list[dict[str, Any]] = []
-        for robot in robots:
-            start_lm = str(robot.current_lm or "").strip()
-            if start_lm not in name_set:
-                start_lm = names[0]
-            start = landmarks[start_lm]
-            candidates = [
-                name
-                for name in names
-                if name != start_lm
-                and name not in used_goals
-                and (not avoid_start_goals or name not in start_lms)
-            ]
+        for index, robot in enumerate(robots, start=1):
+            start_lm = planning_starts[str(robot.name)]
+            candidates = self._forward_benchmark_goals(
+                start_lm,
+                used_goals,
+                start_lms if avoid_start_goals else set(),
+                random.Random(seed + (index * 1009)),
+                **self._traffic_goal_window(
+                    stress,
+                    stress_profile,
+                    len(robots),
+                ),
+            )
             if not candidates:
                 candidates = [
                     name
                     for name in names
-                    if name != start_lm and name not in used_goals
+                    if name != start_lm
+                    and name not in used_goals
+                    and self._lm_is_separated_from(name, used_goals)
                 ]
             if not candidates:
                 raise ValueError(f"no target LM available for {robot.name}")
-            candidates.sort(
-                key=lambda name: ((start.x - landmarks[name].x) ** 2) + ((start.y - landmarks[name].y) ** 2)
-            )
             if stress:
-                goal_lm = candidates[-1]
+                goal_lm = self._traffic_goal_from_candidates(
+                    candidates,
+                    stress_profile,
+                    len(robots),
+                )
             else:
-                low = max(0, len(candidates) // 20)
-                high = max(low + 1, len(candidates) // 8)
-                goal_lm = candidates[rng.randrange(low, min(high, len(candidates)))]
+                goal_lm = candidates[0]
             used_goals.add(goal_lm)
             request: dict[str, Any] = {
                 "name": str(robot.name),
@@ -718,6 +1181,166 @@ class OperatorFleetManager:
                 request["startPose"] = dict(robot.pose)
             requests.append(request)
         return requests
+
+    def _traffic_goal_window(
+        self,
+        stress: bool,
+        profile: int,
+        count: int,
+    ) -> dict[str, int]:
+        if not stress:
+            return {"min_hops": 3, "max_hops": 15}
+        profiles = (
+            ((5, 20), (6, 20), (4, 18))
+            if count <= 30
+            else ((4, 16), (5, 18), (3, 15))
+        )
+        minimum, maximum = profiles[min(max(0, profile), len(profiles) - 1)]
+        return {"min_hops": minimum, "max_hops": maximum}
+
+    def _traffic_goal_from_candidates(
+        self,
+        candidates: list[str],
+        profile: int,
+        count: int,
+    ) -> str:
+        fractions = (0.50, 0.60, 0.40) if count <= 30 else (0.35, 0.45, 0.30)
+        fraction = fractions[min(max(0, profile), len(fractions) - 1)]
+        index = min(len(candidates) - 1, max(0, int(len(candidates) * fraction)))
+        return candidates[index]
+
+    def _benchmark_plan_stats(
+        self,
+        plans: list[Any],
+        time_step_sec: float,
+    ) -> dict[str, Any]:
+        waiting_robots = 0
+        total_wait_ticks = 0
+        max_wait_ticks = 0
+        route_steps: list[int] = []
+        for plan in plans:
+            if not isinstance(plan, dict):
+                continue
+            nodes = [str(node) for node in plan.get("nodes", [])]
+            times = [int(value) for value in plan.get("times", [])]
+            robot_wait_ticks = 0
+            move_steps = 0
+            for index in range(1, min(len(nodes), len(times))):
+                duration = max(0, times[index] - times[index - 1])
+                if nodes[index] == nodes[index - 1]:
+                    robot_wait_ticks += duration
+                else:
+                    move_steps += 1
+            if robot_wait_ticks > 0:
+                waiting_robots += 1
+            total_wait_ticks += robot_wait_ticks
+            max_wait_ticks = max(max_wait_ticks, robot_wait_ticks)
+            route_steps.append(move_steps)
+        return {
+            "plannedWaitingRobots": waiting_robots,
+            "plannedWaitTicks": total_wait_ticks,
+            "plannedWaitSec": round(
+                total_wait_ticks * max(0.0, time_step_sec),
+                3,
+            ),
+            "maxPlannedWaitTicks": max_wait_ticks,
+            "averageRouteSteps": (
+                round(sum(route_steps) / len(route_steps), 2)
+                if route_steps
+                else 0.0
+            ),
+            "maxRouteSteps": max(route_steps, default=0),
+        }
+
+    def _benchmark_min_separation(self) -> float:
+        footprint = self.manager.collision.footprint()
+        radius = max(
+            (
+                math.hypot(float(point["x"]), float(point["y"]))
+                for point in footprint
+            ),
+            default=0.22,
+        )
+        return (radius * 2.0) + self.manager.collision.robot_collision_margin()
+
+    def _forward_benchmark_goals(
+        self,
+        start_lm: str,
+        used_goals: set[str],
+        excluded_goals: set[str],
+        rng: random.Random,
+        *,
+        min_hops: int = 3,
+        max_hops: int = 15,
+    ) -> list[str]:
+        adjacency: dict[str, list[str]] = {
+            name: [] for name in self.loaded_map.landmarks
+        }
+        for edge in self.loaded_map.edges:
+            if edge.from_name in adjacency and edge.to_name in adjacency:
+                adjacency[edge.from_name].append(edge.to_name)
+        for neighbors in adjacency.values():
+            neighbors.sort()
+
+        queue: list[tuple[str, int, int]] = [(start_lm, 0, 0)]
+        best_path: dict[str, tuple[int, int]] = {start_lm: (0, 0)}
+        candidates: list[tuple[int, int, float, int, str]] = []
+        sequence = 0
+        start = self.loaded_map.landmarks[start_lm]
+        while queue:
+            node, hops, occupied_starts = queue.pop(0)
+            if best_path.get(node) != (hops, occupied_starts):
+                continue
+            if (
+                hops >= min_hops
+                and node not in used_goals
+                and node not in excluded_goals
+                and self._lm_is_separated_from(node, used_goals)
+            ):
+                landmark = self.loaded_map.landmarks[node]
+                distance_sq = ((landmark.x - start.x) ** 2) + ((landmark.y - start.y) ** 2)
+                candidates.append((occupied_starts, hops, distance_sq, sequence, node))
+                sequence += 1
+            if hops >= max_hops:
+                continue
+            neighbors = list(adjacency.get(node, ()))
+            rng.shuffle(neighbors)
+            for neighbor in neighbors:
+                next_hops = hops + 1
+                next_occupied = occupied_starts + int(
+                    neighbor in excluded_goals and neighbor != start_lm
+                )
+                previous = best_path.get(neighbor)
+                if previous is not None and previous <= (next_hops, next_occupied):
+                    continue
+                best_path[neighbor] = (next_hops, next_occupied)
+                queue.append((neighbor, next_hops, next_occupied))
+        candidates.sort()
+        return [item[4] for item in candidates]
+
+    def _lm_is_separated_from(self, candidate: str, selected: set[str] | list[str]) -> bool:
+        landmark = self.loaded_map.landmarks[candidate]
+        minimum = self._benchmark_min_separation()
+        return all(
+            math.hypot(
+                landmark.x - self.loaded_map.landmarks[name].x,
+                landmark.y - self.loaded_map.landmarks[name].y,
+            ) >= minimum
+            for name in selected
+            if name in self.loaded_map.landmarks
+        )
+
+    def _spatially_separated_lms(self, candidates: list[str], count: int) -> list[str]:
+        selected: list[str] = []
+        for name in candidates:
+            if name not in self.loaded_map.landmarks:
+                continue
+            if not self._lm_is_separated_from(name, selected):
+                continue
+            selected.append(name)
+            if len(selected) >= count:
+                break
+        return selected
 
     def _largest_benchmark_component(self) -> list[str]:
         adjacency: dict[str, set[str]] = {name: set() for name in self.loaded_map.landmarks}
@@ -797,6 +1420,7 @@ class OperatorFleetManager:
             map_metadata=loaded_map.map_metadata,
             remote_adapter=self.remote_adapter,
         )
+        self._reset_dynamic_benchmark()
         self._sync_manager_mode()
 
     def _sync_manager_mode(self) -> None:
@@ -957,6 +1581,8 @@ class OperatorFleetManager:
         state["mapName"] = self.map_dir.stem.replace(".smap", "")
         state["managerId"] = self.manager_id
         state["managerName"] = self.display_name
+        if self.mode == "simulation":
+            state["dynamicBenchmark"] = self._dynamic_benchmark_payload()
         return state
 
     def _result_with_context(self, result: dict[str, Any]) -> dict[str, Any]:

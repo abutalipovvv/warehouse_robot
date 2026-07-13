@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 import math
 from pathlib import Path
+from threading import Lock, Thread
 from time import time
 from typing import Any
 from urllib.parse import urlparse
@@ -57,15 +58,20 @@ class FleetRobot:
     route_chunk_index: int = 0
     route_chunk_goal_lm: str = ""
     route_final_lm: str = ""
+    traffic_priority_until: float = 0.0
 
     def to_dict(self, include_trajectory: bool = True) -> dict[str, Any]:
+        # target_lm is the end of the currently committed rolling chunk.  The
+        # operator, however, asked for route_final_lm and should not see the
+        # short internal horizon waypoint as if it were the order destination.
+        display_target_lm = self.route_final_lm or self.target_lm
         return {
             "name": self.name,
             "currentLm": self.current_lm,
             "mode": self.mode,
             "type": self.mode,
-            "targetName": self.target_lm,
-            "targetLm": self.target_lm,
+            "targetName": display_target_lm,
+            "targetLm": display_target_lm,
             "status": self.status,
             "updatedAt": self.updated_at,
             "pose": self.pose,
@@ -87,6 +93,7 @@ class FleetRobot:
             "routeChunkIndex": self.route_chunk_index,
             "routeChunkGoalLm": self.route_chunk_goal_lm,
             "routeFinalLm": self.route_final_lm,
+            "trafficPriorityUntil": self.traffic_priority_until,
         }
 
     def is_remote(self) -> bool:
@@ -114,6 +121,7 @@ class FleetOrder:
     rotate: bool = False
     turn_speed: float = 0.0
     stretch_motion_to_reservation_ticks: bool = True
+    dispatch_failures: int = 0
 
     def to_dict(self) -> dict[str, Any]:
         targets = self.targets or ([self.target_lm] if self.target_lm else [])
@@ -142,6 +150,7 @@ class FleetOrder:
             "rotate": self.rotate,
             "turnSpeed": self.turn_speed,
             "stretchMotionToReservationTicks": self.stretch_motion_to_reservation_ticks,
+            "dispatchFailures": self.dispatch_failures,
         }
 
     def _steps_payload(self, targets: list[str], current_step: int) -> list[dict[str, Any]]:
@@ -206,9 +215,26 @@ class WebFleetManager:
             map_dir=map_dir,
             map_metadata=map_metadata,
         )
+        self._static_blocked_edges = self._static_map_blocked_edges()
+        if self._static_blocked_edges:
+            self._event(
+                "error",
+                f"map audit blocked {len(self._static_blocked_edges)} graph edge(s) "
+                "that intersect occupancy",
+            )
         self._external_remote_adapter = remote_adapter
         self.remote_adapter = remote_adapter or GrpcRobotAdapter(timeout=self._remote_timeout())
         self._route_revision_seq = int(time() * 1000)
+        self._planner_lock = Lock()
+        self._dispatch_job_lock = Lock()
+        self._dispatch_job: dict[str, Any] | None = None
+        self.traffic_metrics: dict[str, int] = {
+            "waitCyclesDetected": 0,
+            "waitCyclesResolved": 0,
+            "cycleReplans": 0,
+            "priorityGrants": 0,
+            "runtimeSafetyRollbacks": 0,
+        }
 
     def set_active_robot_modes(self, modes: set[str] | list[str] | tuple[str, ...] | None) -> None:
         if modes is None:
@@ -219,6 +245,9 @@ class WebFleetManager:
 
     def state(self, include_trajectories: bool = True) -> dict[str, Any]:
         self._advance_runtime()
+        return self._state_snapshot(include_trajectories=include_trajectories)
+
+    def _state_snapshot(self, include_trajectories: bool = True) -> dict[str, Any]:
         return {
             "ok": True,
             "robots": [
@@ -229,21 +258,12 @@ class WebFleetManager:
             "obstacles": self.obstacles,
             "obstacleAreas": self.obstacle_areas,
             "orders": self._orders_list(),
+            "traffic": dict(self.traffic_metrics),
         }
 
     def tick(self, payload: dict[str, Any] | None = None) -> dict[str, Any]:
         self._advance_runtime()
-        state = {
-            "ok": True,
-            "robots": [
-                robot.to_dict(include_trajectory=self._should_stream_trajectory(robot))
-                for robot in self._runtime_robots()
-            ],
-            "events": [event.to_dict() for event in self.events[-80:]],
-            "obstacles": self.obstacles,
-            "obstacleAreas": self.obstacle_areas,
-            "orders": self._orders_list(),
-        }
+        state = self._state_snapshot(include_trajectories=False)
         for robot in self._runtime_robots():
             robot.trajectory_dirty = False
         return state
@@ -359,7 +379,12 @@ class WebFleetManager:
             "state": self.state(),
         }
 
-    def set_order(self, payload: dict[str, Any]) -> dict[str, Any]:
+    def set_order(
+        self,
+        payload: dict[str, Any],
+        *,
+        dispatch: bool = True,
+    ) -> dict[str, Any]:
         orders = self._build_orders(payload)
         if not orders:
             raise ValueError("no orders to queue")
@@ -387,7 +412,8 @@ class WebFleetManager:
                 "info",
                 f"order queued: {order.order_id} {order.vehicle or 'auto'}->{order.target_lm}",
             )
-        self._dispatch_orders()
+        if dispatch:
+            self._dispatch_orders()
         if len(orders[0].targets or []) > 1:
             first = orders[0]
             self._event(
@@ -399,7 +425,11 @@ class WebFleetManager:
             "order": orders[0].to_dict(),
             "queuedOrders": [order.to_dict() for order in orders],
             "orders": self._orders_list(),
-            "state": self.state(),
+            "state": (
+                self.state()
+                if dispatch
+                else self._state_snapshot(include_trajectories=True)
+            ),
         }
 
     def dispatch_orders(self, payload: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -789,6 +819,36 @@ class WebFleetManager:
                 self._block_order(name, start_lm, goal_lm, f"unknown goal LM: {goal_lm}")
                 continue
             robot = self.robots.get(name)
+            authoritative_pose = (
+                dict(robot.pose)
+                if robot is not None and isinstance(robot.pose, dict)
+                else start_pose
+            )
+            if robot is not None and robot.trajectory:
+                safe_start_lm = self._safe_replan_start_lm(robot)
+                if not safe_start_lm:
+                    self._event(
+                        "warn",
+                        f"order deferred for {name}: robot is between LMs; "
+                        "keeping the current graph edge",
+                    )
+                    continue
+                if safe_start_lm != start_lm:
+                    self._event(
+                        "info",
+                        f"corrected stale start LM for {name}: {start_lm}->{safe_start_lm}",
+                    )
+                    start_lm = safe_start_lm
+            if isinstance(authoritative_pose, dict) and not self._pose_is_at_lm(
+                authoritative_pose,
+                start_lm,
+            ):
+                self._event(
+                    "error",
+                    f"order rejected for {name}: pose is not at {start_lm}; "
+                    "off-graph approach is forbidden",
+                )
+                continue
             if robot is None:
                 robot = FleetRobot(
                     name=name,
@@ -808,11 +868,11 @@ class WebFleetManager:
                 "startLm": start_lm,
                 "goalLm": goal_lm,
             }
-            if isinstance(start_pose, dict):
+            if isinstance(authoritative_pose, dict):
                 clean_request["startPose"] = {
-                    "x": float(start_pose.get("x", 0.0) or 0.0),
-                    "y": float(start_pose.get("y", 0.0) or 0.0),
-                    "yaw": float(start_pose.get("yaw", 0.0) or 0.0),
+                    "x": float(authoritative_pose.get("x", 0.0) or 0.0),
+                    "y": float(authoritative_pose.get("y", 0.0) or 0.0),
+                    "yaw": float(authoritative_pose.get("yaw", 0.0) or 0.0),
                 }
             elif robot.pose is not None:
                 clean_request["startPose"] = dict(robot.pose)
@@ -997,17 +1057,343 @@ class WebFleetManager:
             return ""
         return str(item or "").strip()
 
-    def _dispatch_orders(self, force: bool = False) -> int:
-        dispatched = 0
+    def _dispatch_orders(
+        self,
+        force: bool = False,
+        *,
+        async_simulated: bool = False,
+    ) -> int:
+        dispatched = self._finish_async_simulated_dispatch() if async_simulated else 0
+        now = time()
         queued_orders = [
             order for order in self.orders.values()
             if order.status == "QUEUED"
+            and (
+                force
+                or not order.error
+                or now - order.updated_at >= self._order_dispatch_retry_interval()
+            )
         ]
-        queued_orders.sort(key=lambda item: (-int(item.priority or 0), item.created_at))
+        queued_orders.sort(
+            key=lambda item: (
+                bool(item.error),
+                -int(item.priority or 0),
+                item.updated_at if item.error else item.created_at,
+                item.order_id,
+            )
+        )
+
+        # Dynamic orders used to call MAPF independently for every idle robot.
+        # Apart from being expensive, that made all other robots look parked
+        # and produced a fleet full of wait-only plans.  Plan a small coupled
+        # component at a time and cap synchronous work per runtime tick.
+        handled: set[str] = set()
+        ready = self._ready_simulated_order_entries(queued_orders)
+        planning_budget = self._dispatch_plan_budget()
+        batch_size = self._dispatch_batch_size()
+        planning_calls = 0
+        while ready and planning_calls < planning_budget:
+            first = ready.pop(0)
+            motion_key = self._order_motion_key(first[0])
+            group = [first]
+            failure_count = max(0, int(first[0].dispatch_failures or 0))
+            group_limit = (
+                1
+                if failure_count >= 2
+                else min(2, batch_size)
+                if failure_count == 1
+                else batch_size
+            )
+            remaining: list[tuple[FleetOrder, FleetRobot, dict[str, Any], str]] = []
+            for entry in ready:
+                if (
+                    len(group) < group_limit
+                    and self._order_motion_key(entry[0]) == motion_key
+                ):
+                    group.append(entry)
+                else:
+                    remaining.append(entry)
+            ready = remaining
+            if async_simulated:
+                if self._async_simulated_dispatch_active():
+                    break
+                self._start_async_simulated_dispatch(group)
+                group_dispatched = 0
+            else:
+                group_dispatched, _ = self._dispatch_simulated_order_batch(group)
+                dispatched += group_dispatched
+            group_handled = {order.order_id for order, _, _, _ in group}
+            handled.update(group_handled)
+            planning_calls += 1
+            if async_simulated:
+                break
+
+        # Keep support for remote, automatic and already-at-goal orders.  A
+        # failed coupled group is deliberately not retried individually in the
+        # same tick: doing so recreated both CPU starvation and wait-only plans.
+        remaining_budget = max(0, planning_budget - planning_calls)
         for order in queued_orders:
+            if order.order_id in handled:
+                continue
+            robot = self.robots.get(order.vehicle) if order.vehicle else None
+            if async_simulated and robot is not None and not robot.is_remote():
+                # Simulated MAPF is deliberately background-only on runtime
+                # ticks.  Otherwise one leftover order here would put the
+                # expensive planner back on the websocket/status path.
+                continue
+            if (
+                robot is not None
+                and not robot.is_remote()
+                and self._robot_can_accept_order(robot, explicit=True)
+                and self._safe_replan_start_lm(robot) != order.target_lm
+            ):
+                if remaining_budget <= 0:
+                    continue
+                remaining_budget -= 1
             if self._dispatch_order(order, force=force):
                 dispatched += 1
         return dispatched
+
+    def _ready_simulated_order_entries(
+        self,
+        orders: list[FleetOrder],
+    ) -> list[tuple[FleetOrder, FleetRobot, dict[str, Any], str]]:
+        entries: list[tuple[FleetOrder, FleetRobot, dict[str, Any], str]] = []
+        used_robots: set[str] = set()
+        for order in orders:
+            if not order.vehicle or order.vehicle in used_robots:
+                continue
+            robot = self.robots.get(order.vehicle)
+            if robot is None or robot.is_remote():
+                continue
+            if not self._robot_can_accept_order(robot, explicit=True):
+                continue
+            final_goal = self._active_order_target(order)
+            start_lm = self._safe_replan_start_lm(robot)
+            if not start_lm or start_lm not in self.landmarks or start_lm == final_goal:
+                continue
+            planning_goal = self._rolling_planning_goal(start_lm, final_goal, order)
+            request: dict[str, Any] = {
+                "name": robot.name,
+                "startLm": start_lm,
+                "goalLm": planning_goal,
+            }
+            if robot.pose is not None:
+                request["startPose"] = dict(robot.pose)
+            entries.append((order, robot, request, final_goal))
+            used_robots.add(robot.name)
+        return entries
+
+    def _dispatch_simulated_order_batch(
+        self,
+        entries: list[tuple[FleetOrder, FleetRobot, dict[str, Any], str]],
+    ) -> tuple[int, set[str]]:
+        if not entries:
+            return 0, set()
+        requests, payload = self._prepare_simulated_order_batch(entries)
+        result = self._plan_valid_requests(requests, payload)
+        return self._finish_simulated_order_batch(entries, result)
+
+    def _prepare_simulated_order_batch(
+        self,
+        entries: list[tuple[FleetOrder, FleetRobot, dict[str, Any], str]],
+    ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+        requests = [dict(request) for _, _, request, _ in entries]
+        for order, robot, request, _ in entries:
+            self._set_order_status(
+                order,
+                "PLANNING",
+                robot=robot,
+                start_lm=str(request["startLm"]),
+            )
+        first_order = entries[0][0]
+        payload = self._order_plan_payload(first_order, requests[0]) | {"robots": requests}
+        return requests, payload
+
+    def _finish_simulated_order_batch(
+        self,
+        entries: list[tuple[FleetOrder, FleetRobot, dict[str, Any], str]],
+        result: dict[str, Any],
+    ) -> tuple[int, set[str]]:
+        handled = {order.order_id for order, _, _, _ in entries}
+        final_goals = {
+            robot.name: final_goal
+            for _, robot, _, final_goal in entries
+        }
+        if not result.get("ok") or not result.get("plans"):
+            reason = self._planner_failure_reason(result)
+            for order, _, _, _ in entries:
+                self._set_order_error(order, reason)
+            return 0, handled
+
+        result = self._rolling_result(result, final_goals)
+        plans_by_robot = {
+            str(plan.get("robot")): plan
+            for plan in result.get("plans", [])
+            if isinstance(plan, dict)
+        }
+        accepted: list[dict[str, Any]] = []
+        accepted_entries: list[tuple[FleetOrder, FleetRobot, dict[str, Any], str, dict[str, Any]]] = []
+        for order, robot, request, final_goal in entries:
+            plan = plans_by_robot.get(robot.name)
+            if plan is None:
+                self._set_order_error(order, "planner did not return robot plan")
+                continue
+            if self._wait_only_rolling_plan(plan, final_goal):
+                self._set_order_error(order, "traffic window has no progress; joint retry pending")
+                self._event(
+                    "warn",
+                    f"{robot.name} wait-only route rejected; order kept queued",
+                )
+                continue
+            accepted.append(plan)
+            accepted_entries.append((order, robot, request, final_goal, plan))
+
+        if not accepted:
+            return 0, handled
+        accepted_result = {**result, "plans": accepted}
+        now = time()
+        self._apply_planner_result(accepted_result, now)
+        for order, robot, request, _, plan in accepted_entries:
+            order.route_nodes = [str(item) for item in plan.get("nodes", [])]
+            robot.active_order_id = order.order_id
+            self._apply_simulated_route_metadata(robot, order, plan, now)
+            self._set_order_status(
+                order,
+                "EXECUTING",
+                robot=robot,
+                start_lm=str(request["startLm"]),
+            )
+            self._event(
+                "info",
+                f"order dispatched: {order.order_id} {robot.name} "
+                f"{request['startLm']}->{order.target_lm}",
+            )
+        return len(accepted_entries), handled
+
+    def _async_simulated_dispatch_active(self) -> bool:
+        with self._dispatch_job_lock:
+            return self._dispatch_job is not None
+
+    def _start_async_simulated_dispatch(
+        self,
+        entries: list[tuple[FleetOrder, FleetRobot, dict[str, Any], str]],
+    ) -> None:
+        if not entries:
+            return
+        requests, payload = self._prepare_simulated_order_batch(entries)
+        job: dict[str, Any] = {
+            "entries": list(entries),
+            "requests": requests,
+            "payload": payload,
+            "done": False,
+            "result": None,
+        }
+        with self._dispatch_job_lock:
+            if self._dispatch_job is not None:
+                for order, _, _, _ in entries:
+                    if order.status == "PLANNING":
+                        order.status = "QUEUED"
+                return
+            self._dispatch_job = job
+
+        def run() -> None:
+            try:
+                result = self._plan_valid_requests(requests, payload)
+            except Exception as exc:  # pragma: no cover - defensive worker guard
+                result = {
+                    "ok": False,
+                    "plans": [],
+                    "debug": {"reason": f"background planner failed: {exc}"},
+                }
+            with self._dispatch_job_lock:
+                if self._dispatch_job is job:
+                    job["result"] = result
+                    job["done"] = True
+
+        Thread(
+            target=run,
+            name="fleet-mapf-dispatch",
+            daemon=True,
+        ).start()
+
+    def _finish_async_simulated_dispatch(self) -> int:
+        with self._dispatch_job_lock:
+            job = self._dispatch_job
+            if job is None or not bool(job.get("done")):
+                return 0
+            self._dispatch_job = None
+
+        entries = [
+            entry
+            for entry in job.get("entries", [])
+            if self._async_dispatch_entry_is_current(entry)
+        ]
+        if not entries:
+            return 0
+        result = job.get("result")
+        if not isinstance(result, dict):
+            result = {
+                "ok": False,
+                "plans": [],
+                "debug": {"reason": "background planner returned no result"},
+            }
+        dispatched, _ = self._finish_simulated_order_batch(entries, result)
+        return dispatched
+
+    def _async_dispatch_entry_is_current(
+        self,
+        entry: tuple[FleetOrder, FleetRobot, dict[str, Any], str],
+    ) -> bool:
+        order, robot, request, _ = entry
+        if self.orders.get(order.order_id) is not order or order.status != "PLANNING":
+            return False
+        if self.robots.get(robot.name) is not robot or robot.active_order_id:
+            order.status = "QUEUED"
+            return False
+        start_lm = self._safe_replan_start_lm(robot)
+        if start_lm != str(request.get("startLm") or ""):
+            order.status = "QUEUED"
+            order.error = "robot moved while background plan was running"
+            order.updated_at = time()
+            return False
+        return True
+
+    def _order_motion_key(self, order: FleetOrder) -> tuple[float, float, bool, float, bool]:
+        return (
+            round(float(order.speed), 6),
+            round(float(order.acceleration), 6),
+            bool(order.rotate),
+            round(float(order.turn_speed), 6),
+            bool(order.stretch_motion_to_reservation_ticks),
+        )
+
+    def _dispatch_plan_budget(self) -> int:
+        fleet = self.params.get("fleet", {})
+        if not isinstance(fleet, dict):
+            return 2
+        try:
+            return max(1, min(8, int(fleet.get("dispatch_plan_budget_per_tick", 2) or 2)))
+        except (TypeError, ValueError):
+            return 2
+
+    def _dispatch_batch_size(self) -> int:
+        fleet = self.params.get("fleet", {})
+        if not isinstance(fleet, dict):
+            return 2
+        try:
+            return max(2, min(8, int(fleet.get("dispatch_joint_batch_size", 2) or 2)))
+        except (TypeError, ValueError):
+            return 2
+
+    def _order_dispatch_retry_interval(self) -> float:
+        fleet = self.params.get("fleet", {})
+        if not isinstance(fleet, dict):
+            return 0.5
+        try:
+            return max(0.1, float(fleet.get("order_dispatch_retry_sec", 0.5) or 0.5))
+        except (TypeError, ValueError):
+            return 0.5
 
     def _dispatch_order(self, order: FleetOrder, force: bool = False) -> bool:
         order.target_lm = self._active_order_target(order)
@@ -1018,9 +1404,9 @@ class WebFleetManager:
 
         failed_reason = ""
         for robot in candidates:
-            start_lm = self._nearest_lm_for_robot(robot)
+            start_lm = self._safe_replan_start_lm(robot)
             if not start_lm or start_lm not in self.landmarks:
-                failed_reason = "cannot find nearest LM"
+                failed_reason = "robot is between graph landmarks"
                 continue
             if start_lm == order.target_lm and not robot.trajectory:
                 robot.current_lm = order.target_lm
@@ -1034,10 +1420,15 @@ class WebFleetManager:
                     return True
                 return self._dispatch_order(order, force=force)
 
+            planning_goal = (
+                order.target_lm
+                if robot.is_remote()
+                else self._rolling_planning_goal(start_lm, order.target_lm, order)
+            )
             request: dict[str, Any] = {
                 "name": robot.name,
                 "startLm": start_lm,
-                "goalLm": order.target_lm,
+                "goalLm": planning_goal,
             }
             if robot.pose is not None:
                 request["startPose"] = dict(robot.pose)
@@ -1062,6 +1453,22 @@ class WebFleetManager:
                         robot.last_reason = failed_reason
                         robot.updated_at = now
                         continue
+                if not robot.is_remote():
+                    result = self._rolling_result(
+                        result,
+                        {robot.name: order.target_lm},
+                    )
+                    plan = self._plan_for_robot(result, robot.name)
+                    if plan is None:
+                        failed_reason = "planner did not return rolling route chunk"
+                        continue
+                    if self._wait_only_rolling_plan(plan, order.target_lm):
+                        failed_reason = "traffic window has no progress; joint retry pending"
+                        self._event(
+                            "warn",
+                            f"{robot.name} wait-only route rejected; order kept queued",
+                        )
+                        continue
                 order.route_nodes = [
                     str(item)
                     for plan in result.get("plans", [])
@@ -1071,6 +1478,8 @@ class WebFleetManager:
                 self._apply_planner_result(result, now, order_id=order.order_id)
                 if remote_route is not None:
                     self._apply_remote_route_metadata(robot, remote_route, now)
+                elif plan is not None:
+                    self._apply_simulated_route_metadata(robot, order, plan, now)
                 self._set_order_status(order, "EXECUTING", robot=robot, start_lm=start_lm)
                 self._event(
                     "info",
@@ -1164,6 +1573,8 @@ class WebFleetManager:
         order.status = status
         order.updated_at = time()
         order.error = error
+        if status in {"EXECUTING", "COMPLETED"}:
+            order.dispatch_failures = 0
         if robot is not None:
             order.assigned_robot = robot.name
             if not order.vehicle and status not in {"PLANNING", "QUEUED"}:
@@ -1176,6 +1587,7 @@ class WebFleetManager:
             self._event("warn", f"order pending: {order.order_id} {error}")
         order.status = "QUEUED"
         order.error = error
+        order.dispatch_failures += 1
         if not order.vehicle:
             order.assigned_robot = ""
         order.updated_at = time()
@@ -1329,6 +1741,31 @@ class WebFleetManager:
         order.route_nodes = list(robot.plan_nodes)
         self._advance_or_complete_order(order, robot, now)
 
+    def _complete_simulated_route_chunk(self, robot: FleetRobot, now: float) -> bool:
+        """Finish a committed rolling-horizon chunk without completing its order."""
+        if not robot.active_order_id or not robot.route_chunk_goal_lm:
+            return False
+        order = self.orders.get(robot.active_order_id)
+        if order is None or order.status in TERMINAL_ORDER_STATUSES:
+            return False
+        final_target = self._active_order_target(order)
+        if robot.current_lm != robot.route_chunk_goal_lm or robot.current_lm == final_target:
+            return False
+
+        order.status = "QUEUED"
+        order.error = ""
+        order.updated_at = now
+        order.assigned_robot = robot.name
+        order.start_lm = robot.current_lm
+        order.route_nodes = list(robot.plan_nodes)
+        robot.active_order_id = ""
+        self._event(
+            "info",
+            f"route horizon reached: {order.order_id} {robot.name}@{robot.current_lm}; "
+            f"rolling replan to {final_target}",
+        )
+        return True
+
     def _update_active_order_from_robot(self, robot: FleetRobot) -> None:
         if not robot.active_order_id:
             return
@@ -1336,7 +1773,9 @@ class WebFleetManager:
         if order is None or order.status in TERMINAL_ORDER_STATUSES:
             return
         if robot.status == "WAITING":
-            if self._is_robot_conflict(robot.last_reason):
+            if self._is_robot_conflict(robot.last_reason) or str(robot.last_reason).startswith(
+                "planned traffic wait"
+            ):
                 status = "WAITING_TRAFFIC"
             else:
                 status = "WAITING_OBSTACLE"
@@ -1566,6 +2005,175 @@ class WebFleetManager:
         robot.route_chunk_goal_lm = ""
         robot.route_final_lm = ""
 
+    def _apply_simulated_route_metadata(
+        self,
+        robot: FleetRobot,
+        order: FleetOrder,
+        plan: dict[str, Any],
+        now: float,
+    ) -> None:
+        previous_final = robot.route_final_lm
+        previous_chunk = robot.route_chunk_goal_lm
+        chunk_goal = str(plan.get("goalLm") or order.target_lm).strip()
+        final_goal = str(plan.get("finalGoalLm") or order.target_lm).strip()
+        if previous_final == final_goal and previous_chunk == robot.current_lm:
+            chunk_index = robot.route_chunk_index + 1
+        else:
+            chunk_index = 0
+        robot.route_revision = self._next_route_revision()
+        robot.route_chunk_index = chunk_index
+        robot.route_chunk_goal_lm = chunk_goal
+        robot.route_final_lm = final_goal
+        robot.target_lm = chunk_goal
+        robot.updated_at = now
+
+    def _rolling_planning_goal(
+        self,
+        start_lm: str,
+        final_goal_lm: str,
+        order: FleetOrder,
+    ) -> str:
+        """Choose the committed waypoint before running time-aware MAPF.
+
+        Planning the complete lifelong order first defeats a rolling horizon:
+        sufficiently distant goals exceed the low-level time bound before a
+        usable prefix exists.  The spatial route is only used to select a graph
+        waypoint; MAPF still owns all timing, waiting and conflict decisions.
+        """
+        horizon = self._rolling_horizon()
+        step_limit = self._rolling_horizon_steps()
+        if horizon <= 0.0 and step_limit <= 0:
+            return final_goal_lm
+        try:
+            route = self.planner.route_planner.find_route(start_lm, final_goal_lm)
+        except ValueError:
+            return final_goal_lm
+        if len(route.nodes) < 2:
+            return final_goal_lm
+
+        route_payload: dict[str, Any] = {}
+        if order.speed > 0.0:
+            route_payload["speed"] = order.speed
+        if order.acceleration > 0.0:
+            route_payload["acceleration"] = order.acceleration
+        speed = self.planner._route_speed(route_payload)
+        acceleration = self.planner._route_acceleration(route_payload)
+        elapsed = 0.0
+        selected_index = 1
+        for index in range(1, len(route.nodes)):
+            if step_limit > 0 and index > step_limit:
+                break
+            elapsed += (
+                self.planner._edge_tick_cost(
+                    route.nodes[index - 1],
+                    route.nodes[index],
+                    speed,
+                    acceleration,
+                )
+                * max(0.001, self.planner.time_step_sec)
+            )
+            # Always choose at least the next graph LM.  A single long edge is
+            # indivisible and must be committed as one safe graph segment.
+            if index == 1 or horizon <= 0.0 or elapsed <= horizon + 0.000001:
+                selected_index = index
+                continue
+            break
+        return str(route.nodes[selected_index])
+
+    def _wait_only_rolling_plan(
+        self,
+        plan: dict[str, Any],
+        final_goal_lm: str,
+    ) -> bool:
+        nodes = [str(node) for node in plan.get("nodes", [])]
+        if not nodes:
+            return True
+        start_lm = str(plan.get("startLm") or nodes[0])
+        if final_goal_lm == start_lm:
+            return False
+        return all(node == start_lm for node in nodes)
+
+    def _rolling_result(
+        self,
+        result: dict[str, Any],
+        final_goals: dict[str, str],
+    ) -> dict[str, Any]:
+        """Commit only complete graph nodes inside the configured rolling horizon."""
+        horizon = self._rolling_horizon()
+        step_limit = self._rolling_horizon_steps()
+        if horizon <= 0.0 and step_limit <= 0:
+            return result
+        time_step = max(0.001, float(result.get("timeStepSec", 1.0) or 1.0))
+        for plan in result.get("plans", []):
+            if not isinstance(plan, dict):
+                continue
+            robot_name = str(plan.get("robot") or "")
+            final_goal = str(final_goals.get(robot_name) or plan.get("goalLm") or "").strip()
+            nodes = [str(node) for node in plan.get("nodes", [])]
+            times = [int(value) for value in plan.get("times", [])]
+            if len(nodes) < 2 or len(times) != len(nodes):
+                plan["finalGoalLm"] = final_goal
+                continue
+
+            final_index = len(nodes) - 1
+            chunk_index = final_index
+            if horizon > 0.0:
+                allowed_tick = horizon / time_step
+                eligible = [
+                    index for index, tick in enumerate(times)
+                    if index > 0 and float(tick - times[0]) <= allowed_tick + 0.000001
+                ]
+                chunk_index = max(eligible, default=1)
+            if step_limit > 0:
+                chunk_index = min(chunk_index, max(1, step_limit))
+            chunk_index = min(final_index, max(1, chunk_index))
+
+            chunk_goal = nodes[chunk_index]
+            arrival_time = max(0.0, float(times[chunk_index] - times[0]) * time_step)
+            trajectory = [
+                sample for sample in plan.get("trajectory", [])
+                if isinstance(sample, dict)
+            ]
+            trajectory_end = self._trajectory_chunk_end_index(
+                trajectory,
+                chunk_goal,
+                arrival_time,
+            )
+            if trajectory_end is not None:
+                plan["trajectory"] = trajectory[:trajectory_end + 1]
+                if plan["trajectory"]:
+                    arrival_time = float(plan["trajectory"][-1].get("t", arrival_time) or arrival_time)
+            plan["nodes"] = nodes[:chunk_index + 1]
+            plan["times"] = times[:chunk_index + 1]
+            plan["goalLm"] = chunk_goal
+            plan["finalGoalLm"] = final_goal
+            plan["arrivalTime"] = arrival_time
+            plan["rollingChunk"] = chunk_index < final_index
+        return result
+
+    def _trajectory_chunk_end_index(
+        self,
+        trajectory: list[dict[str, Any]],
+        chunk_goal: str,
+        arrival_time: float,
+    ) -> int | None:
+        if not trajectory:
+            return None
+        candidates = [
+            index
+            for index, sample in enumerate(trajectory)
+            if str(sample.get("lm") or "").strip() == chunk_goal
+            and float(sample.get("t", 0.0) or 0.0) >= arrival_time - 0.001
+        ]
+        if candidates:
+            return candidates[0]
+        before = [
+            index
+            for index, sample in enumerate(trajectory)
+            if float(sample.get("t", 0.0) or 0.0) <= arrival_time + 0.001
+        ]
+        return before[-1] if before else 0
+
     def _remote_poll_interval(self) -> float:
         fleet = self.params.get("fleet", {})
         if not isinstance(fleet, dict):
@@ -1781,10 +2389,18 @@ class WebFleetManager:
         revision = self._next_route_revision()
         chunk_index = self._next_remote_chunk_index(robot, order, chunk_start_lm)
         is_final = bool(chunk_nodes and full_nodes and chunk_nodes[-1] == full_nodes[-1])
+        dispatch_epoch = time() + self._remote_dispatch_lead_time()
+        timed_segments = self._timed_segments_from_trajectory(plan.get("trajectory", []))
+        if not timed_segments:
+            timed_segments = [
+                dict(item)
+                for item in plan.get("timedSegments", [])
+                if isinstance(item, dict)
+            ]
         return {
             "routeId": f"{order.order_id}:{order.step_index}",
             "protocol": "lm_route",
-            "protocolVersion": 1,
+            "protocolVersion": 2,
             "revision": revision,
             "orderId": order.order_id,
             "startLm": chunk_start_lm,
@@ -1795,6 +2411,8 @@ class WebFleetManager:
             "length": chunk_length if chunk_length > 0.0 else full_length,
             "fullLength": full_length,
             "replaceMode": "immediate",
+            "dispatchEpochSec": dispatch_epoch,
+            "timedSegments": timed_segments,
             "chunk": {
                 "index": chunk_index,
                 "stepIndex": order.step_index,
@@ -1807,6 +2425,49 @@ class WebFleetManager:
                 "isFinal": is_final,
             },
         }
+
+    def _remote_dispatch_lead_time(self) -> float:
+        fleet = self.params.get("fleet", {})
+        if not isinstance(fleet, dict):
+            return 0.75
+        try:
+            return max(0.25, float(fleet.get("remote_dispatch_lead_sec", 0.75) or 0.75))
+        except (TypeError, ValueError):
+            return 0.75
+
+    def _timed_segments_from_trajectory(self, raw_trajectory: Any) -> list[dict[str, Any]]:
+        if not isinstance(raw_trajectory, list):
+            return []
+        trajectory = [item for item in raw_trajectory if isinstance(item, dict)]
+        segments: list[dict[str, Any]] = []
+        for index in range(len(trajectory) - 1):
+            start = trajectory[index]
+            end = trajectory[index + 1]
+            edge_id = str(end.get("edgeId") or start.get("edgeId") or "")
+            parsed = self._parse_edge_id(edge_id)
+            if parsed is None or edge_id.startswith("WAIT@") or parsed[0] == parsed[1]:
+                continue
+            src, dst = parsed
+            start_time = float(start.get("t", 0.0) or 0.0)
+            end_time = float(end.get("t", start_time) or start_time)
+            if (
+                segments
+                and segments[-1].get("from") == src
+                and segments[-1].get("to") == dst
+                and abs(float(segments[-1].get("plannedArrivalSec", 0.0)) - start_time) < 1e-6
+            ):
+                segments[-1]["plannedArrivalSec"] = end_time
+                continue
+            segments.append(
+                {
+                    "kind": "move",
+                    "from": src,
+                    "to": dst,
+                    "notBeforeSec": start_time,
+                    "plannedArrivalSec": end_time,
+                }
+            )
+        return segments
 
     def _remote_route_chunk_nodes(self, nodes: list[str]) -> list[str]:
         if len(nodes) <= 2:
@@ -1935,6 +2596,18 @@ class WebFleetManager:
         return best_time
 
     def _plan_valid_requests(
+        self,
+        valid_requests: list[dict[str, Any]],
+        payload: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        # FleetMapfPlanner keeps reusable graph/planner objects.  Dynamic
+        # dispatch runs in one background thread, while explicit operator
+        # requests may still arrive from the HTTP server, so serialize planner
+        # use without serializing runtime ticks and rendering.
+        with self._planner_lock:
+            return self._plan_valid_requests_unlocked(valid_requests, payload)
+
+    def _plan_valid_requests_unlocked(
         self,
         valid_requests: list[dict[str, Any]],
         payload: dict[str, Any] | None = None,
@@ -2349,45 +3022,73 @@ class WebFleetManager:
         horizon = min(final_time, self._batch_collision_horizon(final_time))
         t = 0.0
         while t <= horizon + 0.000001:
-            for priority_index in range(len(plans)):
+            # Pose interpolation used to run once for every robot pair.  At 20
+            # robots that means 190 scans through sampled trajectories for
+            # every time slice.  Cache the N poses for this slice and keep the
+            # same exact footprint checks below.
+            poses = [
+                self._pose_at_trajectory(
+                    plan.get("trajectory", [])
+                    if isinstance(plan.get("trajectory", []), list)
+                    else [],
+                    t,
+                )
+                for plan in plans
+            ]
+            cell_size = max(0.05, self.collision.robot_broadphase_distance())
+            grid: dict[tuple[int, int], list[int]] = {}
+            candidate_pairs: set[tuple[int, int]] = set()
+            for index, pose in enumerate(poses):
+                if pose is None:
+                    continue
+                cell = (
+                    math.floor(float(pose.get("x", 0.0) or 0.0) / cell_size),
+                    math.floor(float(pose.get("y", 0.0) or 0.0) / cell_size),
+                )
+                for dx in (-1, 0, 1):
+                    for dy in (-1, 0, 1):
+                        for other_index in grid.get((cell[0] + dx, cell[1] + dy), ()):
+                            candidate_pairs.add((other_index, index))
+                grid.setdefault(cell, []).append(index)
+
+            for priority_index, wait_index in sorted(candidate_pairs):
                 priority_trajectory = plans[priority_index].get("trajectory", [])
                 if not isinstance(priority_trajectory, list):
                     continue
-                priority_pose = self._pose_at_trajectory(priority_trajectory, t)
+                priority_pose = poses[priority_index]
                 if priority_pose is None:
                     continue
-                for wait_index in range(priority_index + 1, len(plans)):
-                    waiting_trajectory = plans[wait_index].get("trajectory", [])
-                    if not isinstance(waiting_trajectory, list):
-                        continue
-                    waiting_pose = self._pose_at_trajectory(waiting_trajectory, t)
-                    if waiting_pose is None:
-                        continue
-                    if self.collision.robot_footprints_conflict(priority_pose, waiting_pose):
-                        priority_edge = self._edge_id_at_trajectory(priority_trajectory, t) or "unknown"
-                        waiting_edge = self._edge_id_at_trajectory(waiting_trajectory, t) or "unknown"
-                        if waiting_edge.startswith("WAIT@") and not priority_edge.startswith("WAIT@"):
-                            return {
-                                "time": t,
-                                "priorityIndex": wait_index,
-                                "waitIndex": priority_index,
-                                "edge": priority_edge,
-                            }
-                        priority_entry = self._edge_start_time_at_trajectory(priority_trajectory, t)
-                        waiting_entry = self._edge_start_time_at_trajectory(waiting_trajectory, t)
-                        if priority_entry > waiting_entry + step:
-                            return {
-                                "time": t,
-                                "priorityIndex": wait_index,
-                                "waitIndex": priority_index,
-                                "edge": priority_edge,
-                            }
+                waiting_trajectory = plans[wait_index].get("trajectory", [])
+                if not isinstance(waiting_trajectory, list):
+                    continue
+                waiting_pose = poses[wait_index]
+                if waiting_pose is None:
+                    continue
+                if self.collision.robot_footprints_conflict(priority_pose, waiting_pose):
+                    priority_edge = self._edge_id_at_trajectory(priority_trajectory, t) or "unknown"
+                    waiting_edge = self._edge_id_at_trajectory(waiting_trajectory, t) or "unknown"
+                    if waiting_edge.startswith("WAIT@") and not priority_edge.startswith("WAIT@"):
                         return {
                             "time": t,
-                            "priorityIndex": priority_index,
-                            "waitIndex": wait_index,
-                            "edge": waiting_edge,
+                            "priorityIndex": wait_index,
+                            "waitIndex": priority_index,
+                            "edge": priority_edge,
                         }
+                    priority_entry = self._edge_start_time_at_trajectory(priority_trajectory, t)
+                    waiting_entry = self._edge_start_time_at_trajectory(waiting_trajectory, t)
+                    if priority_entry > waiting_entry + step:
+                        return {
+                            "time": t,
+                            "priorityIndex": wait_index,
+                            "waitIndex": priority_index,
+                            "edge": priority_edge,
+                        }
+                    return {
+                        "time": t,
+                        "priorityIndex": priority_index,
+                        "waitIndex": wait_index,
+                        "edge": waiting_edge,
+                    }
             t += step
         return None
 
@@ -2445,21 +3146,26 @@ class WebFleetManager:
         trajectory: list[dict[str, Any]],
         ignore_robot_names: set[str] | None = None,
     ) -> dict[str, Any] | None:
+        ignored = ignore_robot_names or set()
+        corridor_robots = [
+            robot
+            for robot in self._runtime_robots()
+            if robot.name != robot_name
+            and robot.name not in ignored
+            and robot.pose is not None
+        ]
+        if not corridor_robots:
+            return None
         final_time = float(trajectory[-1].get("t", 0.0) or 0.0)
         step = self._continuous_collision_step()
         horizon = min(final_time, self._reservation_horizon())
-        ignored = ignore_robot_names or set()
         t = 0.0
         while t <= horizon + 0.000001:
             pose = self._pose_at_trajectory(trajectory, t)
             if pose is None:
                 t += step
                 continue
-            for other in self._runtime_robots():
-                if other.name in ignored:
-                    continue
-                if other.name == robot_name or other.pose is None:
-                    continue
+            for other in corridor_robots:
                 other_pose = self._predicted_robot_pose(other, t)
                 if other_pose is None:
                     continue
@@ -2558,9 +3264,9 @@ class WebFleetManager:
         return trajectory[: insert_index + 1] + [hold] + shifted
 
     def _dynamic_blocked_edges(self) -> set[tuple[str, str]]:
+        blocked = set(self._static_blocked_edges)
         if not self.obstacles and not self.obstacle_areas:
-            return set()
-        blocked: set[tuple[str, str]] = set()
+            return blocked
         for edge in self.edges:
             route = PlannedRoute(
                 nodes=[edge.from_name, edge.to_name],
@@ -2583,6 +3289,35 @@ class WebFleetManager:
                     self.obstacle_areas,
                 )
                 if reason:
+                    blocked.add((edge.from_name, edge.to_name))
+                    break
+        return blocked
+
+    def _static_map_blocked_edges(self) -> set[tuple[str, str]]:
+        if self.collision.map_pixels is None or self.collision.map_metadata is None:
+            return set()
+        blocked: set[tuple[str, str]] = set()
+        for edge in self.edges:
+            route = PlannedRoute(
+                nodes=[edge.from_name, edge.to_name],
+                edges=[edge],
+                length=edge.length,
+            )
+            try:
+                samples = self.planner.route_planner.sample_route(
+                    route,
+                    sample_distance=0.10,
+                )
+            except Exception:
+                blocked.add((edge.from_name, edge.to_name))
+                continue
+            for sample in samples:
+                pose = {
+                    "x": float(sample.get("x", 0.0) or 0.0),
+                    "y": float(sample.get("y", 0.0) or 0.0),
+                    "yaw": float(sample.get("yaw", 0.0) or 0.0),
+                }
+                if self.collision.blocked_reason(pose, [], []):
                     blocked.add((edge.from_name, edge.to_name))
                     break
         return blocked
@@ -2823,6 +3558,24 @@ class WebFleetManager:
         except (TypeError, ValueError):
             return 8.0
 
+    def _rolling_horizon(self) -> float:
+        fleet = self.params.get("fleet", {})
+        if not isinstance(fleet, dict):
+            return 10.0
+        try:
+            return max(0.0, float(fleet.get("rolling_horizon_sec", 10.0) or 0.0))
+        except (TypeError, ValueError):
+            return 10.0
+
+    def _rolling_horizon_steps(self) -> int:
+        fleet = self.params.get("fleet", {})
+        if not isinstance(fleet, dict):
+            return 0
+        try:
+            return max(0, int(fleet.get("rolling_horizon_steps", 0) or 0))
+        except (TypeError, ValueError):
+            return 0
+
     def _reservation_safety_time(self) -> float:
         fleet = self.params.get("fleet", {})
         if not isinstance(fleet, dict):
@@ -2887,7 +3640,7 @@ class WebFleetManager:
         return str(trajectory[-1].get("edgeId", "") or "")
 
     def _parse_edge_id(self, edge_id: str) -> tuple[str, str] | None:
-        if "->" not in edge_id or edge_id.startswith("CURRENT->"):
+        if "->" not in edge_id:
             return None
         src, dst = edge_id.split("->", 1)
         src = src.strip()
@@ -2967,6 +3720,11 @@ class WebFleetManager:
 
     def _advance_runtime(self) -> None:
         now = time()
+        safety_snapshots = {
+            robot.name: self._runtime_safety_snapshot(robot)
+            for robot in self._runtime_robots()
+            if not robot.is_remote()
+        }
         for robot in self._runtime_robots():
             if robot.is_remote():
                 self._advance_remote_robot_order(robot, now)
@@ -2979,7 +3737,7 @@ class WebFleetManager:
                 self._update_active_order_from_robot(robot)
                 continue
             if robot.status in {"BLOCKED", "PLANNING"} and robot.target_lm:
-                self._maybe_replan_robot(robot, now, "no active trajectory")
+                self._schedule_runtime_replan(robot, now, "no active trajectory")
                 self._update_active_order_from_robot(robot)
                 robot.last_tick_at = now
                 continue
@@ -2989,7 +3747,7 @@ class WebFleetManager:
                 continue
             if not robot.trajectory:
                 if robot.target_lm:
-                    self._maybe_replan_robot(robot, now, "empty trajectory")
+                    self._schedule_runtime_replan(robot, now, "empty trajectory")
                     self._update_active_order_from_robot(robot)
                 continue
             final_time = float(robot.trajectory[-1].get("t", 0.0) or 0.0)
@@ -2997,19 +3755,24 @@ class WebFleetManager:
             dt = min(0.20, max(0.0, now - last_tick_at))
             robot.last_tick_at = now
             blocked_reason = ""
-            remaining_dt = dt
-            step_dt = self._runtime_motion_step()
-            while remaining_dt > 0.000001 and robot.route_clock < final_time:
-                proposed_clock = min(final_time, robot.route_clock + min(step_dt, remaining_dt))
-                blocked_reason = self._blocked_ahead(robot, proposed_clock)
-                if blocked_reason:
-                    break
-                robot.route_clock = proposed_clock
-                remaining_dt -= step_dt
+            if dt > 0.000001 and robot.route_clock < final_time:
+                remaining = dt
+                # Never jump over the interval between websocket ticks.  Each
+                # small move is checked at its actual future pose, which also
+                # prevents two robots from swapping sides between snapshots.
+                while remaining > 0.000001 and robot.route_clock < final_time:
+                    motion_dt = min(self._runtime_motion_step(), remaining)
+                    proposed_clock = min(final_time, robot.route_clock + motion_dt)
+                    blocked_reason = self._blocked_at_clock(robot, proposed_clock)
+                    if blocked_reason:
+                        break
+                    robot.route_clock = proposed_clock
+                    remaining -= motion_dt
             if blocked_reason:
                 pose = self._pose_at_trajectory(robot.trajectory, robot.route_clock)
                 if pose is not None:
                     robot.pose = pose
+                self._update_current_lm_from_trajectory(robot)
                 if robot.status != "WAITING" or robot.last_reason != blocked_reason:
                     self._event("warn", f"{robot.name} waiting: {blocked_reason}")
                 robot.status = "WAITING"
@@ -3018,23 +3781,38 @@ class WebFleetManager:
                     robot.blocked_since = now
                 robot.updated_at = now
                 if self._should_replan_for_blocked_reason(blocked_reason):
-                    self._maybe_replan_robot(robot, now, blocked_reason)
+                    self._schedule_runtime_replan(robot, now, blocked_reason)
                 self._update_active_order_from_robot(robot)
                 continue
-            if robot.status != "MOVING":
-                self._event("info", f"{robot.name} moving")
-            robot.status = "MOVING"
-            robot.last_reason = "moving"
-            self._update_active_order_from_robot(robot)
-            robot.blocked_since = None
             pose = self._pose_at_trajectory(robot.trajectory, robot.route_clock)
             if pose is not None:
                 robot.pose = pose
+            self._update_current_lm_from_trajectory(robot)
+            planned_wait_lm = self._planned_wait_lm_at_trajectory(
+                robot.trajectory,
+                robot.route_clock,
+            )
+            if planned_wait_lm:
+                wait_reason = f"planned traffic wait at {planned_wait_lm}"
+                if robot.status != "WAITING" or robot.last_reason != wait_reason:
+                    self._event("info", f"{robot.name} {wait_reason}")
+                robot.status = "WAITING"
+                robot.last_reason = wait_reason
+                robot.blocked_since = None
+            else:
+                if robot.status != "MOVING":
+                    self._event("info", f"{robot.name} moving")
+                robot.status = "MOVING"
+                robot.last_reason = "moving"
+                robot.blocked_since = None
+            self._update_active_order_from_robot(robot)
             if final_time > 0.0 and robot.route_clock >= final_time:
                 robot.current_lm = robot.target_lm or robot.current_lm
-                self._complete_active_order(robot, now)
+                rolling_chunk = self._complete_simulated_route_chunk(robot, now)
+                if not rolling_chunk:
+                    self._complete_active_order(robot, now)
                 robot.target_lm = ""
-                robot.status = "ARRIVED"
+                robot.status = "IDLE" if rolling_chunk else "ARRIVED"
                 robot.trajectory = []
                 robot.plan_nodes = []
                 robot.trajectory_dirty = True
@@ -3042,14 +3820,290 @@ class WebFleetManager:
                 robot.route_clock = 0.0
                 robot.last_tick_at = None
                 robot.blocked_since = None
-                robot.last_reason = "arrived"
+                robot.last_reason = "rolling horizon reached" if rolling_chunk else "arrived"
                 robot.route_note = ""
                 robot.updated_at = now
-                self._event("info", f"{robot.name} arrived at {robot.current_lm}")
-        self._dispatch_orders()
+                if not rolling_chunk:
+                    self._clear_remote_route_metadata(robot)
+                    self._event("info", f"{robot.name} arrived at {robot.current_lm}")
+        self._enforce_runtime_safety_invariant(safety_snapshots, now)
+        self._resolve_runtime_wait_cycles(now)
+        self._dispatch_orders(async_simulated=True)
+
+    def _runtime_safety_snapshot(self, robot: FleetRobot) -> dict[str, Any]:
+        active_order = self.orders.get(robot.active_order_id) if robot.active_order_id else None
+        return {
+            "pose": dict(robot.pose) if robot.pose is not None else None,
+            "current_lm": robot.current_lm,
+            "target_lm": robot.target_lm,
+            "status": robot.status,
+            "trajectory": robot.trajectory,
+            "plan_nodes": robot.plan_nodes,
+            "route_started_at": robot.route_started_at,
+            "route_clock": robot.route_clock,
+            "last_reason": robot.last_reason,
+            "route_note": robot.route_note,
+            "blocked_since": robot.blocked_since,
+            "last_replan_at": robot.last_replan_at,
+            "route_revision": robot.route_revision,
+            "route_chunk_index": robot.route_chunk_index,
+            "route_chunk_goal_lm": robot.route_chunk_goal_lm,
+            "route_final_lm": robot.route_final_lm,
+            "traffic_priority_until": robot.traffic_priority_until,
+            "active_order_id": robot.active_order_id,
+            "active_order": (
+                {
+                    "status": active_order.status,
+                    "updated_at": active_order.updated_at,
+                    "assigned_robot": active_order.assigned_robot,
+                    "start_lm": active_order.start_lm,
+                    "route_nodes": list(active_order.route_nodes),
+                    "error": active_order.error,
+                    "target_lm": active_order.target_lm,
+                    "step_index": active_order.step_index,
+                }
+                if active_order is not None
+                else None
+            ),
+        }
+
+    def _restore_runtime_safety_snapshot(
+        self,
+        robot: FleetRobot,
+        snapshot: dict[str, Any],
+        now: float,
+    ) -> None:
+        robot.pose = dict(snapshot["pose"]) if snapshot["pose"] is not None else None
+        robot.current_lm = str(snapshot["current_lm"])
+        robot.target_lm = str(snapshot["target_lm"])
+        robot.status = str(snapshot["status"])
+        robot.trajectory = snapshot["trajectory"]
+        robot.plan_nodes = snapshot["plan_nodes"]
+        robot.route_started_at = snapshot["route_started_at"]
+        robot.route_clock = float(snapshot["route_clock"])
+        robot.last_reason = str(snapshot["last_reason"])
+        robot.route_note = str(snapshot["route_note"])
+        robot.blocked_since = snapshot["blocked_since"]
+        robot.last_replan_at = snapshot["last_replan_at"]
+        robot.route_revision = int(snapshot["route_revision"])
+        robot.route_chunk_index = int(snapshot["route_chunk_index"])
+        robot.route_chunk_goal_lm = str(snapshot["route_chunk_goal_lm"])
+        robot.route_final_lm = str(snapshot["route_final_lm"])
+        robot.traffic_priority_until = float(snapshot["traffic_priority_until"])
+        robot.active_order_id = str(snapshot["active_order_id"])
+        order_snapshot = snapshot.get("active_order")
+        order = self.orders.get(robot.active_order_id) if robot.active_order_id else None
+        if order is not None and isinstance(order_snapshot, dict):
+            order.status = str(order_snapshot["status"])
+            order.updated_at = float(order_snapshot["updated_at"])
+            order.assigned_robot = str(order_snapshot["assigned_robot"])
+            order.start_lm = str(order_snapshot["start_lm"])
+            order.route_nodes = list(order_snapshot["route_nodes"])
+            order.error = str(order_snapshot["error"])
+            order.target_lm = str(order_snapshot["target_lm"])
+            order.step_index = int(order_snapshot["step_index"])
+        robot.last_tick_at = now
+        robot.trajectory_dirty = True
+        robot.updated_at = now
+
+    def _enforce_runtime_safety_invariant(
+        self,
+        snapshots: dict[str, dict[str, Any]],
+        now: float,
+    ) -> None:
+        robots = [
+            robot for robot in self._runtime_robots()
+            if not robot.is_remote() and robot.pose is not None and robot.name in snapshots
+        ]
+        unsafe_names: set[str] = set()
+        unsafe_pairs: list[tuple[str, str]] = []
+        for index, robot in enumerate(robots):
+            for other in robots[index + 1:]:
+                previous_robot_pose = snapshots[robot.name].get("pose")
+                previous_other_pose = snapshots[other.name].get("pose")
+                if (
+                    not self.collision.footprints_overlap(robot.pose, other.pose)
+                    and not self._swept_footprints_overlap(
+                        previous_robot_pose,
+                        robot.pose,
+                        previous_other_pose,
+                        other.pose,
+                    )
+                ):
+                    continue
+                if (
+                    previous_robot_pose is not None
+                    and previous_other_pose is not None
+                    and self.collision.footprints_overlap(
+                        previous_robot_pose,
+                        previous_other_pose,
+                    )
+                ):
+                    # The invariant cannot repair an overlap that existed
+                    # before this tick; do not create an endless rollback loop.
+                    continue
+                unsafe_names.update((robot.name, other.name))
+                unsafe_pairs.append((robot.name, other.name))
+        if not unsafe_names:
+            return
+
+        involved = [self.robots[name] for name in sorted(unsafe_names)]
+        for robot in involved:
+            self._restore_runtime_safety_snapshot(robot, snapshots[robot.name], now)
+
+        def priority_key(robot: FleetRobot) -> tuple[int, str]:
+            order = self._active_order_for_robot(robot)
+            return (-int(order.priority if order is not None else 0), robot.name)
+
+        winner = min(involved, key=priority_key)
+        winner.traffic_priority_until = now + self._deadlock_priority_lease()
+        winner.status = "MOVING" if winner.trajectory else "WAITING"
+        winner.last_reason = "runtime safety rollback; priority granted"
+        winner.blocked_since = now
+        for robot in involved:
+            if robot.name == winner.name:
+                continue
+            robot.status = "WAITING"
+            robot.last_reason = f"yield to {winner.name}"
+            robot.blocked_since = now
+            self._update_active_order_from_robot(robot)
+        self._update_active_order_from_robot(winner)
+        self.traffic_metrics["runtimeSafetyRollbacks"] += 1
+        pairs = ", ".join(f"{first}/{second}" for first, second in unsafe_pairs)
+        self._event(
+            "error",
+            f"runtime safety invariant prevented footprint overlap: {pairs}; "
+            f"rolled back, priority {winner.name}",
+        )
+
+    def _swept_footprints_overlap(
+        self,
+        first_start: dict[str, float] | None,
+        first_end: dict[str, float],
+        second_start: dict[str, float] | None,
+        second_end: dict[str, float],
+    ) -> bool:
+        if first_start is None or second_start is None:
+            return False
+
+        relative_x = float(first_start.get("x", 0.0) or 0.0) - float(second_start.get("x", 0.0) or 0.0)
+        relative_y = float(first_start.get("y", 0.0) or 0.0) - float(second_start.get("y", 0.0) or 0.0)
+        relative_dx = (
+            float(first_end.get("x", 0.0) or 0.0) - float(first_start.get("x", 0.0) or 0.0)
+            - float(second_end.get("x", 0.0) or 0.0) + float(second_start.get("x", 0.0) or 0.0)
+        )
+        relative_dy = (
+            float(first_end.get("y", 0.0) or 0.0) - float(first_start.get("y", 0.0) or 0.0)
+            - float(second_end.get("y", 0.0) or 0.0) + float(second_start.get("y", 0.0) or 0.0)
+        )
+        relative_speed_sq = (relative_dx * relative_dx) + (relative_dy * relative_dy)
+        closest_ratio = 0.0
+        if relative_speed_sq > 0.000000001:
+            closest_ratio = max(
+                0.0,
+                min(1.0, -((relative_x * relative_dx) + (relative_y * relative_dy)) / relative_speed_sq),
+            )
+        closest_distance = math.hypot(
+            relative_x + (relative_dx * closest_ratio),
+            relative_y + (relative_dy * closest_ratio),
+        )
+        if closest_distance > self.collision.robot_broadphase_distance():
+            return False
+
+        first_travel = math.hypot(
+            float(first_end.get("x", 0.0) or 0.0) - float(first_start.get("x", 0.0) or 0.0),
+            float(first_end.get("y", 0.0) or 0.0) - float(first_start.get("y", 0.0) or 0.0),
+        )
+        second_travel = math.hypot(
+            float(second_end.get("x", 0.0) or 0.0) - float(second_start.get("x", 0.0) or 0.0),
+            float(second_end.get("y", 0.0) or 0.0) - float(second_start.get("y", 0.0) or 0.0),
+        )
+        first_turn = abs(math.atan2(
+            math.sin(float(first_end.get("yaw", 0.0) or 0.0) - float(first_start.get("yaw", 0.0) or 0.0)),
+            math.cos(float(first_end.get("yaw", 0.0) or 0.0) - float(first_start.get("yaw", 0.0) or 0.0)),
+        ))
+        second_turn = abs(math.atan2(
+            math.sin(float(second_end.get("yaw", 0.0) or 0.0) - float(second_start.get("yaw", 0.0) or 0.0)),
+            math.cos(float(second_end.get("yaw", 0.0) or 0.0) - float(second_start.get("yaw", 0.0) or 0.0)),
+        ))
+        linear_samples = int(math.ceil(max(first_travel, second_travel) / 0.025))
+        angular_samples = int(math.ceil(max(first_turn, second_turn) / 0.05))
+        samples = max(2, min(40, max(linear_samples, angular_samples)))
+        for index in range(1, samples):
+            ratio = index / samples
+            first_pose = self._interpolate_pose(first_start, first_end, ratio)
+            second_pose = self._interpolate_pose(second_start, second_end, ratio)
+            if self.collision.footprints_overlap(first_pose, second_pose):
+                return True
+        return False
+
+    def _interpolate_pose(
+        self,
+        start: dict[str, float],
+        end: dict[str, float],
+        ratio: float,
+    ) -> dict[str, float]:
+        return {
+            "x": float(start.get("x", 0.0) or 0.0)
+            + ((float(end.get("x", 0.0) or 0.0) - float(start.get("x", 0.0) or 0.0)) * ratio),
+            "y": float(start.get("y", 0.0) or 0.0)
+            + ((float(end.get("y", 0.0) or 0.0) - float(start.get("y", 0.0) or 0.0)) * ratio),
+            "yaw": self._interpolate_angle(
+                float(start.get("yaw", 0.0) or 0.0),
+                float(end.get("yaw", 0.0) or 0.0),
+                ratio,
+            ),
+        }
 
     def _runtime_motion_step(self) -> float:
         return max(0.02, min(0.05, self._continuous_collision_step() / 2.0))
+
+    def _schedule_runtime_replan(self, robot: FleetRobot, now: float, reason: str) -> bool:
+        if self._queue_active_order_for_background_replan(robot, now, reason):
+            return True
+        # Manual/ad-hoc routes have no order that can be returned to the
+        # dispatcher, so retain the synchronous compatibility path for those
+        # uncommon requests only.
+        return self._maybe_replan_robot(robot, now, reason)
+
+    def _queue_active_order_for_background_replan(
+        self,
+        robot: FleetRobot,
+        now: float,
+        reason: str,
+    ) -> bool:
+        if robot.is_remote() or not robot.active_order_id:
+            return False
+        order = self.orders.get(robot.active_order_id)
+        if order is None or order.status in TERMINAL_ORDER_STATUSES:
+            return False
+        start_lm = self._safe_replan_start_lm(robot)
+        if not start_lm:
+            return False
+
+        order.status = "QUEUED"
+        order.error = ""
+        order.updated_at = now
+        order.assigned_robot = robot.name
+        order.start_lm = start_lm
+        order.route_nodes = list(robot.plan_nodes)
+        robot.current_lm = start_lm
+        robot.active_order_id = ""
+        robot.target_lm = ""
+        robot.status = "IDLE"
+        robot.trajectory = []
+        robot.plan_nodes = []
+        robot.trajectory_dirty = True
+        robot.route_started_at = None
+        robot.route_clock = 0.0
+        robot.last_tick_at = now
+        robot.blocked_since = None
+        robot.last_replan_at = now
+        robot.last_reason = f"background replan queued: {reason}"
+        robot.route_note = ""
+        robot.updated_at = now
+        self._event("warn", f"{robot.name} background replan queued: {reason}")
+        return True
 
     def _maybe_replan_robot(self, robot: FleetRobot, now: float, reason: str) -> bool:
         if not robot.target_lm:
@@ -3058,14 +4112,21 @@ class WebFleetManager:
         if robot.last_replan_at is not None and now - robot.last_replan_at < interval:
             return False
 
-        robot.last_replan_at = now
-        start_lm = self._nearest_lm_for_robot(robot)
+        start_lm = self._safe_replan_start_lm(robot)
         if not start_lm or start_lm not in self.landmarks:
-            robot.status = "BLOCKED"
-            robot.last_reason = "cannot find nearest LM for replan"
+            already_deferred = robot.status == "WAITING" and robot.last_reason == reason
+            robot.last_replan_at = now
+            robot.status = "WAITING" if robot.trajectory else "BLOCKED"
+            robot.last_reason = reason
             robot.updated_at = now
+            if robot.trajectory and not already_deferred:
+                self._event(
+                    "info",
+                    f"{robot.name} replan deferred until the next LM (holding current edge)",
+                )
             return False
 
+        robot.last_replan_at = now
         request = {
             "name": robot.name,
             "startLm": start_lm,
@@ -3126,10 +4187,11 @@ class WebFleetManager:
         if robot.last_replan_at is not None and now - robot.last_replan_at < interval:
             return False
 
-        start_lm = self._nearest_lm_for_robot(robot)
+        start_lm = self._safe_replan_start_lm(robot)
         if not start_lm or start_lm not in self.landmarks:
-            robot.status = "BLOCKED"
-            robot.last_reason = "cannot find nearest LM for remote replan"
+            robot.last_replan_at = now
+            robot.status = "WAITING" if robot.trajectory else "BLOCKED"
+            robot.last_reason = reason
             robot.updated_at = now
             return False
 
@@ -3189,6 +4251,216 @@ class WebFleetManager:
             return set()
         return {(start_lm, previous)}
 
+    def _safe_replan_start_lm(self, robot: FleetRobot) -> str:
+        if robot.pose is None:
+            return robot.current_lm if robot.current_lm in self.landmarks else ""
+        nearest_lm = self._nearest_lm_for_robot(robot)
+        landmark = self.landmarks.get(nearest_lm)
+        if landmark is None:
+            return ""
+        distance = math.hypot(
+            landmark.x - float(robot.pose.get("x", 0.0) or 0.0),
+            landmark.y - float(robot.pose.get("y", 0.0) or 0.0),
+        )
+        if distance > self._runtime_replan_lm_tolerance():
+            return ""
+        return nearest_lm
+
+    def _pose_is_at_lm(self, pose: dict[str, Any], lm_name: str) -> bool:
+        landmark = self.landmarks.get(lm_name)
+        if landmark is None:
+            return False
+        return math.hypot(
+            landmark.x - float(pose.get("x", 0.0) or 0.0),
+            landmark.y - float(pose.get("y", 0.0) or 0.0),
+        ) <= self._runtime_replan_lm_tolerance()
+
+    def _update_current_lm_from_trajectory(self, robot: FleetRobot) -> None:
+        latest_lm = ""
+        for sample in robot.trajectory:
+            sample_time = float(sample.get("t", 0.0) or 0.0)
+            if sample_time > robot.route_clock + 0.000001:
+                break
+            lm_name = str(sample.get("lm") or "").strip()
+            if lm_name in self.landmarks:
+                latest_lm = lm_name
+        if latest_lm:
+            robot.current_lm = latest_lm
+
+    def _planned_wait_lm_at_trajectory(
+        self,
+        trajectory: list[dict[str, Any]],
+        elapsed: float,
+    ) -> str:
+        for index in range(len(trajectory) - 1):
+            start = trajectory[index]
+            end = trajectory[index + 1]
+            start_time = float(start.get("t", 0.0) or 0.0)
+            end_time = float(end.get("t", start_time) or start_time)
+            if end_time <= start_time or not (start_time <= elapsed < end_time):
+                continue
+            edge_id = str(end.get("edgeId") or start.get("edgeId") or "")
+            if edge_id.startswith("WAIT@ROTATE:"):
+                return ""
+            if edge_id.startswith("WAIT@"):
+                return self._lm_from_wait_segment(start, end)
+            if "->" not in edge_id:
+                return ""
+            source, target = (value.strip() for value in edge_id.split("->", 1))
+            if source == target and source in self.landmarks:
+                return source
+            return ""
+        return ""
+
+    def _runtime_replan_lm_tolerance(self) -> float:
+        fleet = self.params.get("fleet", {})
+        if not isinstance(fleet, dict):
+            return 0.10
+        try:
+            return max(
+                0.03,
+                float(fleet.get("runtime_replan_lm_tolerance_m", 0.10) or 0.10),
+            )
+        except (TypeError, ValueError):
+            return 0.10
+
+    def _resolve_runtime_wait_cycles(self, now: float) -> None:
+        waiting = {
+            robot.name: robot
+            for robot in self._runtime_robots()
+            if robot.status == "WAITING" and self._is_robot_conflict(robot.last_reason)
+        }
+        wait_for = {
+            name: self._robot_name_from_conflict_reason(robot.last_reason)
+            for name, robot in waiting.items()
+        }
+        handled: set[str] = set()
+        for start_name in sorted(wait_for):
+            chain: list[str] = []
+            positions: dict[str, int] = {}
+            current = start_name
+            while current in wait_for and current not in handled:
+                if current in positions:
+                    cycle = chain[positions[current]:]
+                    self.traffic_metrics["waitCyclesDetected"] += 1
+                    self._break_runtime_wait_cycle(cycle, waiting, now)
+                    handled.update(cycle)
+                    break
+                positions[current] = len(chain)
+                chain.append(current)
+                current = wait_for[current]
+            handled.update(chain)
+
+        timeout = self._deadlock_wait_timeout()
+        for robot in waiting.values():
+            if robot.blocked_since is None or now - robot.blocked_since < timeout:
+                continue
+            if self._safe_replan_start_lm(robot):
+                self._schedule_runtime_replan(robot, now, "traffic wait timeout")
+
+    def _break_runtime_wait_cycle(
+        self,
+        cycle: list[str],
+        waiting: dict[str, FleetRobot],
+        now: float,
+    ) -> None:
+        robots = [waiting[name] for name in cycle if name in waiting]
+        if len(robots) < 2:
+            return
+
+        def priority_key(robot: FleetRobot) -> tuple[int, float, str]:
+            order = self._active_order_for_robot(robot)
+            priority = int(order.priority if order is not None else 0)
+            waited = now - (robot.blocked_since or now)
+            return (-priority, -waited, robot.name)
+
+        winner = min(robots, key=priority_key)
+        # Breaking a wait-for cycle must be immediate and deterministic.  A
+        # synchronous joint replan here used to freeze the whole status stream
+        # while every robot was already stopped.  The winner receives a short
+        # lease; any later rolling replan is handled by the background queue.
+        lease_until = now + self._deadlock_priority_lease()
+        winner.traffic_priority_until = max(winner.traffic_priority_until, lease_until)
+        winner.status = "MOVING"
+        winner.last_reason = "deadlock priority granted"
+        winner.updated_at = now
+        for robot in robots:
+            if robot.name == winner.name:
+                continue
+            robot.status = "WAITING"
+            robot.last_reason = f"yield to {winner.name}"
+            robot.blocked_since = robot.blocked_since or now
+            robot.updated_at = now
+        self.traffic_metrics["waitCyclesResolved"] += 1
+        self.traffic_metrics["priorityGrants"] += 1
+        self._event(
+            "warn",
+            f"traffic wait cycle resolved: priority granted to {winner.name}",
+        )
+
+    def _replan_runtime_wait_cycle(
+        self,
+        robots: list[FleetRobot],
+        winner: FleetRobot,
+        now: float,
+    ) -> bool:
+        requests: list[dict[str, Any]] = []
+        final_goals: dict[str, str] = {}
+        ordered = [winner] + sorted(
+            (robot for robot in robots if robot.name != winner.name),
+            key=lambda robot: robot.name,
+        )
+        for robot in ordered:
+            start_lm = self._safe_replan_start_lm(robot)
+            order = self._active_order_for_robot(robot)
+            goal_lm = self._active_order_target(order) if order is not None else robot.route_final_lm or robot.target_lm
+            if not start_lm or start_lm not in self.landmarks or goal_lm not in self.landmarks:
+                return False
+            request: dict[str, Any] = {
+                "name": robot.name,
+                "startLm": start_lm,
+                "goalLm": goal_lm,
+            }
+            if robot.pose is not None:
+                request["startPose"] = dict(robot.pose)
+            requests.append(request)
+            final_goals[robot.name] = goal_lm
+
+        result = self._plan_valid_requests(requests, {"robots": requests})
+        if not result.get("ok") or len(result.get("plans", [])) != len(requests):
+            return False
+        result = self._rolling_result(result, final_goals)
+        self._apply_planner_result(result, now)
+        for robot in ordered:
+            plan = self._plan_for_robot(result, robot.name)
+            order = self._active_order_for_robot(robot)
+            if plan is not None and order is not None and not robot.is_remote():
+                self._apply_simulated_route_metadata(robot, order, plan, now)
+            robot.last_replan_at = now
+        self._event(
+            "warn",
+            f"traffic wait cycle replanned jointly; priority {winner.name}",
+        )
+        return True
+
+    def _deadlock_priority_lease(self) -> float:
+        fleet = self.params.get("fleet", {})
+        if not isinstance(fleet, dict):
+            return 2.5
+        try:
+            return max(0.5, float(fleet.get("deadlock_priority_lease_sec", 2.5) or 2.5))
+        except (TypeError, ValueError):
+            return 2.5
+
+    def _deadlock_wait_timeout(self) -> float:
+        fleet = self.params.get("fleet", {})
+        if not isinstance(fleet, dict):
+            return 3.0
+        try:
+            return max(1.0, float(fleet.get("deadlock_wait_timeout_sec", 3.0) or 3.0))
+        except (TypeError, ValueError):
+            return 3.0
+
     def _replan_interval(self) -> float:
         fleet = self.params.get("fleet", {})
         if not isinstance(fleet, dict):
@@ -3211,27 +4483,34 @@ class WebFleetManager:
             checks.append(clock)
             clock += step
         for check_clock in checks:
-            pose = self._pose_at_trajectory(robot.trajectory, check_clock)
-            if pose is None:
-                continue
-            offset = max(0.0, check_clock - robot.route_clock)
-            reason = self.collision.blocked_reason(
-                pose=pose,
-                obstacles=self.obstacles,
-                obstacle_areas=self.obstacle_areas,
-            )
+            reason = self._blocked_at_clock(robot, check_clock)
             if reason:
                 return reason
-            for other in self._runtime_robots():
-                if other.name == robot.name or other.pose is None:
-                    continue
-                other_pose = self._predicted_robot_pose(other, offset)
-                if other_pose is None:
-                    continue
-                if self.collision.robot_footprints_conflict(pose, other_pose):
-                    reason = self._robot_conflict_reason(robot, other, pose, other_pose)
-                    if reason:
-                        return reason
+        return ""
+
+    def _blocked_at_clock(self, robot: FleetRobot, check_clock: float) -> str:
+        pose = self._pose_at_trajectory(robot.trajectory, check_clock)
+        if pose is None:
+            return ""
+        reason = self.collision.blocked_reason(
+            pose=pose,
+            obstacles=self.obstacles,
+            obstacle_areas=self.obstacle_areas,
+        )
+        if reason:
+            return reason
+        offset = max(0.0, check_clock - robot.route_clock)
+        for other in self._runtime_robots():
+            if other.name == robot.name or other.pose is None:
+                continue
+            other_pose = self._predicted_robot_pose(other, offset)
+            if other_pose is None:
+                continue
+            if not self.collision.robot_footprints_conflict(pose, other_pose):
+                continue
+            reason = self._robot_conflict_reason(robot, other, pose, other_pose)
+            if reason:
+                return reason
         return ""
 
     def _predicted_robot_pose(self, robot: FleetRobot, offset: float) -> dict[str, float] | None:
@@ -3301,6 +4580,11 @@ class WebFleetManager:
             return False
         if not self._is_active_traffic(other):
             return False
+        now = time()
+        robot_lease = robot.traffic_priority_until > now
+        other_lease = other.traffic_priority_until > now
+        if robot_lease != other_lease:
+            return robot_lease
         if self._is_yielding_to(other, robot):
             return True
         if self._is_yielding_to(robot, other):
@@ -3406,12 +4690,16 @@ class WebFleetManager:
         if elapsed >= float(last.get("t", 0.0) or 0.0):
             return self._pose_from_sample(last)
 
-        index = 0
-        while (
-            index < len(trajectory) - 2
-            and float(trajectory[index + 1].get("t", 0.0) or 0.0) < elapsed
-        ):
-            index += 1
+        low = 0
+        high = len(trajectory) - 1
+        while low + 1 < high:
+            middle = (low + high) // 2
+            middle_time = float(trajectory[middle].get("t", 0.0) or 0.0)
+            if middle_time < elapsed:
+                low = middle
+            else:
+                high = middle
+        index = low
         start = trajectory[index]
         goal = trajectory[index + 1]
         start_t = float(start.get("t", 0.0) or 0.0)
@@ -3521,18 +4809,51 @@ class FleetCollisionChecker:
         return ""
 
     def footprints_overlap(self, first_pose: dict[str, float], second_pose: dict[str, float]) -> bool:
+        margin = self.collision_margin()
+        if not self._footprint_bounds_may_overlap(first_pose, second_pose, margin):
+            return False
         return self.polygons_overlap(
             self.footprint_corners(first_pose),
             self.footprint_corners(second_pose),
-            self.collision_margin(),
+            margin,
         )
 
     def robot_footprints_conflict(self, first_pose: dict[str, float], second_pose: dict[str, float]) -> bool:
+        margin = self.robot_collision_margin()
+        if not self._footprint_bounds_may_overlap(first_pose, second_pose, margin):
+            return False
         return self.polygons_overlap(
             self.footprint_corners(first_pose),
             self.footprint_corners(second_pose),
-            self.robot_collision_margin(),
+            margin,
         )
+
+    def _footprint_bounds_may_overlap(
+        self,
+        first_pose: dict[str, float],
+        second_pose: dict[str, float],
+        margin: float,
+    ) -> bool:
+        center_distance = math.hypot(
+            float(first_pose.get("x", 0.0) or 0.0)
+            - float(second_pose.get("x", 0.0) or 0.0),
+            float(first_pose.get("y", 0.0) or 0.0)
+            - float(second_pose.get("y", 0.0) or 0.0),
+        )
+        return center_distance <= self._footprint_diameter() + max(0.0, margin)
+
+    def robot_broadphase_distance(self) -> float:
+        return self._footprint_diameter() + self.robot_collision_margin()
+
+    def _footprint_diameter(self) -> float:
+        radius = max(
+            (
+                math.hypot(point["x"], point["y"])
+                for point in self.footprint()
+            ),
+            default=0.22,
+        )
+        return radius * 2.0
 
     def pose_sample_points(self, pose: dict[str, float]) -> list[dict[str, float]]:
         footprint = self.footprint()

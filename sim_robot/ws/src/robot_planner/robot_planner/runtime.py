@@ -40,6 +40,7 @@ class RoutePoint:
     yaw: float
     edge_id: str
     motion_direction: str = "forward"
+    not_before: float = 0.0
 
     def to_dict(self) -> dict[str, float | str]:
         return {
@@ -48,6 +49,7 @@ class RoutePoint:
             "yaw": self.yaw,
             "edgeId": self.edge_id,
             "motionDirection": self.motion_direction,
+            "notBefore": self.not_before,
         }
 
     @classmethod
@@ -58,6 +60,7 @@ class RoutePoint:
             yaw=float(payload.get("yaw", 0.0) or 0.0),
             edge_id=str(payload.get("edgeId") or payload.get("edge_id") or ""),
             motion_direction=str(payload.get("motionDirection") or payload.get("motion_direction") or "forward"),
+            not_before=float(payload.get("notBefore") or payload.get("not_before") or 0.0),
         )
 
 

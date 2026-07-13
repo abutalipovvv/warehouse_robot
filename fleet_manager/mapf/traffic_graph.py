@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import math
 from typing import Mapping
 
 from fleet_manager.route_core import GraphEdge, Landmark
@@ -17,6 +18,7 @@ class TrafficVertex:
     is_parking: bool = False
     is_charger: bool = False
     mutex_zone_ids: tuple[str, ...] = ()
+    clearance_zone_ids: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -29,6 +31,8 @@ class TrafficLane:
     lane_group_id: str
     capacity: int = 1
     mutex_zone_ids: tuple[str, ...] = ()
+    clearance_zone_ids: tuple[str, ...] = ()
+    centerline: tuple[tuple[float, float], ...] = ()
 
 
 @dataclass(slots=True)
@@ -44,12 +48,17 @@ class TrafficGraph:
         edges: list[GraphEdge],
         *,
         default_speed_mps: float,
+        min_robot_center_distance_m: float = 0.0,
     ) -> "TrafficGraph":
         edge_keys = {(edge.from_name, edge.to_name) for edge in edges}
         vertices = {
             name: _traffic_vertex_from_landmark(landmark)
             for name, landmark in landmarks.items()
         }
+        vertices = _with_clearance_zones(
+            vertices,
+            max(0.0, float(min_robot_center_distance_m)),
+        )
         lanes: dict[str, TrafficLane] = {}
         outgoing: dict[str, list[str]] = {name: [] for name in landmarks}
         for edge in edges:
@@ -62,6 +71,11 @@ class TrafficGraph:
             )
             lanes[lane.id] = lane
             outgoing.setdefault(lane.from_lm, []).append(lane.id)
+        vertices, lanes = _with_lane_vertex_clearance_zones(
+            vertices,
+            lanes,
+            max(0.0, float(min_robot_center_distance_m)),
+        )
         for lane_ids in outgoing.values():
             lane_ids.sort()
         return cls(vertices=vertices, lanes=lanes, outgoing=outgoing)
@@ -82,7 +96,14 @@ class TrafficGraph:
             ResourceId("lane_group", lane.lane_group_id),
         ]
         resources.extend(ResourceId("mutex_zone", zone_id) for zone_id in lane.mutex_zone_ids)
-        return tuple(resources)
+        resources.extend(ResourceId("clearance", zone_id) for zone_id in lane.clearance_zone_ids)
+        # A robot occupies the swept corridor, including both endpoint
+        # clearances, for the complete traversal.  Reserving only the abstract
+        # edge lets another robot sit at (or too close to) an endpoint while a
+        # continuous footprint is still passing through it.
+        resources.extend(self.vertex_resources(lane.from_lm))
+        resources.extend(self.vertex_resources(lane.to_lm))
+        return tuple(dict.fromkeys(resources))
 
     def vertex_resources(self, lm_id: str) -> tuple[ResourceId, ...]:
         vertex = self.vertices.get(lm_id)
@@ -90,6 +111,7 @@ class TrafficGraph:
             return (ResourceId("vertex", lm_id),)
         resources = [ResourceId("vertex", lm_id)]
         resources.extend(ResourceId("mutex_zone", zone_id) for zone_id in vertex.mutex_zone_ids)
+        resources.extend(ResourceId("clearance", zone_id) for zone_id in vertex.clearance_zone_ids)
         return tuple(resources)
 
     def reservation_capacities(self) -> dict[ResourceId, int]:
@@ -122,6 +144,165 @@ def _traffic_vertex_from_landmark(landmark: Landmark) -> TrafficVertex:
     )
 
 
+def _with_clearance_zones(
+    vertices: dict[str, TrafficVertex],
+    min_center_distance: float,
+) -> dict[str, TrafficVertex]:
+    if min_center_distance <= 0.0:
+        return vertices
+
+    zones: dict[str, list[str]] = {name: [] for name in vertices}
+    ordered = sorted(vertices.values(), key=lambda item: item.id)
+    threshold_sq = min_center_distance * min_center_distance
+    for index, first in enumerate(ordered):
+        for second in ordered[index + 1:]:
+            distance_sq = ((first.x - second.x) ** 2) + ((first.y - second.y) ** 2)
+            if distance_sq >= threshold_sq:
+                continue
+            zone_id = f"{first.id}<->{second.id}"
+            zones[first.id].append(zone_id)
+            zones[second.id].append(zone_id)
+
+    return {
+        name: TrafficVertex(
+            id=vertex.id,
+            x=vertex.x,
+            y=vertex.y,
+            can_wait=vertex.can_wait,
+            is_parking=vertex.is_parking,
+            is_charger=vertex.is_charger,
+            mutex_zone_ids=vertex.mutex_zone_ids,
+            clearance_zone_ids=tuple(zones.get(name, ())),
+        )
+        for name, vertex in vertices.items()
+    }
+
+
+def _with_lane_vertex_clearance_zones(
+    vertices: dict[str, TrafficVertex],
+    lanes: dict[str, TrafficLane],
+    min_center_distance: float,
+) -> tuple[dict[str, TrafficVertex], dict[str, TrafficLane]]:
+    if min_center_distance <= 0.0:
+        return vertices, lanes
+
+    vertex_zones = {
+        name: list(vertex.clearance_zone_ids)
+        for name, vertex in vertices.items()
+    }
+    lane_zones: dict[str, list[str]] = {lane_id: [] for lane_id in lanes}
+    threshold_sq = min_center_distance * min_center_distance
+    cell_size = min_center_distance
+    vertex_order = {name: index for index, name in enumerate(vertices)}
+    vertex_grid: dict[tuple[int, int], list[str]] = {}
+    for vertex in vertices.values():
+        cell = (
+            math.floor(vertex.x / cell_size),
+            math.floor(vertex.y / cell_size),
+        )
+        vertex_grid.setdefault(cell, []).append(vertex.id)
+
+    for lane in lanes.values():
+        start = vertices.get(lane.from_lm)
+        end = vertices.get(lane.to_lm)
+        if start is None or end is None:
+            continue
+        centerline = lane.centerline or (
+            (start.x, start.y),
+            (end.x, end.y),
+        )
+        min_x = min(point[0] for point in centerline) - min_center_distance
+        max_x = max(point[0] for point in centerline) + min_center_distance
+        min_y = min(point[1] for point in centerline) - min_center_distance
+        max_y = max(point[1] for point in centerline) + min_center_distance
+        candidate_names: set[str] = set()
+        for cell_x in range(
+            math.floor(min_x / cell_size),
+            math.floor(max_x / cell_size) + 1,
+        ):
+            for cell_y in range(
+                math.floor(min_y / cell_size),
+                math.floor(max_y / cell_size) + 1,
+            ):
+                candidate_names.update(vertex_grid.get((cell_x, cell_y), ()))
+
+        for vertex_name in sorted(
+            candidate_names,
+            key=lambda name: vertex_order[name],
+        ):
+            vertex = vertices[vertex_name]
+            if vertex.id in {lane.from_lm, lane.to_lm}:
+                continue
+            if _point_polyline_distance_sq(vertex, centerline) >= threshold_sq:
+                continue
+            zone_id = f"{lane.id}<->{vertex.id}"
+            lane_zones[lane.id].append(zone_id)
+            vertex_zones[vertex.id].append(zone_id)
+
+    updated_vertices = {
+        name: TrafficVertex(
+            id=vertex.id,
+            x=vertex.x,
+            y=vertex.y,
+            can_wait=vertex.can_wait,
+            is_parking=vertex.is_parking,
+            is_charger=vertex.is_charger,
+            mutex_zone_ids=vertex.mutex_zone_ids,
+            clearance_zone_ids=tuple(dict.fromkeys(vertex_zones.get(name, ()))),
+        )
+        for name, vertex in vertices.items()
+    }
+    updated_lanes = {
+        lane_id: TrafficLane(
+            id=lane.id,
+            from_lm=lane.from_lm,
+            to_lm=lane.to_lm,
+            length_m=lane.length_m,
+            max_speed_mps=lane.max_speed_mps,
+            lane_group_id=lane.lane_group_id,
+            capacity=lane.capacity,
+            mutex_zone_ids=lane.mutex_zone_ids,
+            clearance_zone_ids=tuple(dict.fromkeys(lane_zones.get(lane_id, ()))),
+            centerline=lane.centerline,
+        )
+        for lane_id, lane in lanes.items()
+    }
+    return updated_vertices, updated_lanes
+
+
+def _point_polyline_distance_sq(
+    point: TrafficVertex,
+    centerline: tuple[tuple[float, float], ...],
+) -> float:
+    if len(centerline) < 2:
+        return 10**18
+    return min(
+        _point_segment_distance_sq(point, start, end)
+        for start, end in zip(centerline, centerline[1:])
+    )
+
+
+def _point_segment_distance_sq(
+    point: TrafficVertex,
+    start: tuple[float, float],
+    end: tuple[float, float],
+) -> float:
+    start_x, start_y = start
+    end_x, end_y = end
+    dx = end_x - start_x
+    dy = end_y - start_y
+    length_sq = (dx * dx) + (dy * dy)
+    if length_sq <= 1e-12:
+        return ((point.x - start_x) ** 2) + ((point.y - start_y) ** 2)
+    ratio = (
+        ((point.x - start_x) * dx) + ((point.y - start_y) * dy)
+    ) / length_sq
+    ratio = max(0.0, min(1.0, ratio))
+    nearest_x = start_x + (dx * ratio)
+    nearest_y = start_y + (dy * ratio)
+    return ((point.x - nearest_x) ** 2) + ((point.y - nearest_y) ** 2)
+
+
 def _traffic_lane_from_edge(
     edge: GraphEdge,
     *,
@@ -145,7 +326,43 @@ def _traffic_lane_from_edge(
         lane_group_id=group_id,
         capacity=_int_property(properties, ("capacity", "trafficCapacity", "laneCapacity"), 1),
         mutex_zone_ids=_string_tuple_property(properties, ("mutex_zone", "mutexZone", "mutex_group", "mutexGroup")),
+        centerline=_edge_centerline(edge),
     )
+
+
+def _edge_centerline(edge: GraphEdge) -> tuple[tuple[float, float], ...]:
+    geometry = edge.geometry
+    if geometry is not None and str(geometry.geometry).lower() == "bezier":
+        controls = [
+            (float(point.x), float(point.y))
+            for point in geometry.control_points
+        ]
+        if len(controls) >= 2:
+            return tuple(
+                _bezier_xy(controls, step / 20.0)
+                for step in range(21)
+            )
+    points = tuple(
+        (float(point.x), float(point.y))
+        for point in edge.world_points
+    )
+    return points if len(points) >= 2 else ()
+
+
+def _bezier_xy(
+    controls: list[tuple[float, float]],
+    t: float,
+) -> tuple[float, float]:
+    points = list(controls)
+    while len(points) > 1:
+        points = [
+            (
+                start[0] + ((end[0] - start[0]) * t),
+                start[1] + ((end[1] - start[1]) * t),
+            )
+            for start, end in zip(points, points[1:])
+        ]
+    return points[0]
 
 
 def _canonical_lane_group(first: str, second: str) -> str:

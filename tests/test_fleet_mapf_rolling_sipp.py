@@ -1,6 +1,16 @@
 from __future__ import annotations
 
-from fleet_manager.mapf import FleetMapfPlanner, ReservationInterval, ReservationTable, ResourceId, TrafficGraph
+import pytest
+
+from fleet_manager.mapf import (
+    FleetMapfPlanner,
+    LmRobotRequest,
+    ReservationInterval,
+    ReservationTable,
+    ResourceId,
+    RollingSippPlanner,
+    TrafficGraph,
+)
 from fleet_manager.route_core import GraphEdge, Landmark, WorldPoint
 
 
@@ -21,6 +31,62 @@ def test_traffic_graph_groups_reverse_lanes_as_same_resource() -> None:
     assert forward is not None
     assert reverse is not None
     assert forward.lane_group_id == reverse.lane_group_id
+
+
+def test_traffic_graph_reserves_endpoint_and_physical_clearance_resources() -> None:
+    landmarks = {
+        "A": Landmark(name="A", x=0.0, y=0.0),
+        "B": Landmark(name="B", x=0.5, y=0.0),
+        "C": Landmark(name="C", x=2.0, y=0.0),
+    }
+    graph = TrafficGraph.from_route_core(
+        landmarks,
+        [_edge(landmarks, "A", "B")],
+        default_speed_mps=1.0,
+        min_robot_center_distance_m=0.83,
+    )
+
+    a_resources = set(graph.vertex_resources("A"))
+    b_resources = set(graph.vertex_resources("B"))
+    shared_clearance = {
+        resource
+        for resource in a_resources & b_resources
+        if resource.kind == "clearance"
+    }
+    lane = graph.lane_for("A", "B")
+
+    assert shared_clearance
+    assert lane is not None
+    assert ResourceId("vertex", "A") in graph.lane_resources(lane)
+    assert ResourceId("vertex", "B") in graph.lane_resources(lane)
+
+
+def test_rolling_sipp_rejects_overlapping_initial_robot_footprints() -> None:
+    landmarks = {
+        "A": Landmark(name="A", x=0.0, y=0.0),
+        "B": Landmark(name="B", x=0.5, y=0.0),
+        "C": Landmark(name="C", x=2.0, y=0.0),
+        "D": Landmark(name="D", x=3.0, y=0.0),
+    }
+    params = _rolling_params()
+    params["fleet"]["mapf_min_robot_center_distance_m"] = 0.83
+    planner = FleetMapfPlanner(
+        landmarks,
+        [_edge(landmarks, "A", "C"), _edge(landmarks, "B", "D")],
+        params=params,
+    )
+
+    result = planner.plan(
+        {
+            "robots": [
+                {"name": "r1", "startLm": "A", "goalLm": "C"},
+                {"name": "r2", "startLm": "B", "goalLm": "D"},
+            ]
+        }
+    )
+
+    assert not result["ok"]
+    assert result["plans"] == []
 
 
 def test_reservation_table_blocks_overlapping_resource_interval() -> None:
@@ -47,6 +113,68 @@ def test_reservation_table_returns_safe_intervals() -> None:
     ]
 
 
+def test_reservation_capacity_uses_concurrent_distinct_robots() -> None:
+    resource = ResourceId("lane_group", "shared")
+    table = ReservationTable({resource: 2})
+    table.reserve(ReservationInterval(resource, "r1", 0, 2))
+    table.reserve(ReservationInterval(resource, "r2", 3, 5))
+
+    assert table.is_free(resource, 0, 5)
+    assert table.safe_intervals_for_resources([resource], 0, 5) == (
+        table.safe_intervals_for_resources([resource], 0, 5)[0],
+    )
+    assert (
+        table.safe_intervals_for_resources([resource], 0, 5)[0].start,
+        table.safe_intervals_for_resources([resource], 0, 5)[0].end,
+    ) == (0, 5)
+
+
+def test_duplicate_reservations_from_one_robot_consume_one_capacity_slot() -> None:
+    resource = ResourceId("lane_group", "shared")
+    table = ReservationTable({resource: 2})
+    table.reserve(ReservationInterval(resource, "r1", 0, 5, reason="visit"))
+    table.reserve(ReservationInterval(resource, "r1", 0, 5, reason="wait"))
+
+    assert table.is_free(resource, 0, 5)
+    intervals = table.safe_intervals_for_resources([resource], 0, 5)
+    assert [(interval.start, interval.end) for interval in intervals] == [(0, 5)]
+
+
+def test_rolling_sipp_never_uses_vertex_at_safe_interval_end() -> None:
+    landmarks = _landmarks("A", "B", "C", "D")
+    graph = TrafficGraph.from_route_core(
+        landmarks,
+        [
+            _edge(landmarks, "A", "B"),
+            _edge(landmarks, "B", "A"),
+            _edge(landmarks, "B", "C"),
+            _edge(landmarks, "C", "B"),
+            _edge(landmarks, "B", "D"),
+            _edge(landmarks, "D", "B"),
+        ],
+        default_speed_mps=1.0,
+    )
+    planner = RollingSippPlanner(graph, low_level_max_time=12)
+
+    result = planner.plan_for_robots(
+        [
+            LmRobotRequest("r1", "A", "C"),
+            LmRobotRequest("r2", "C", "A"),
+        ]
+    )
+
+    # Prioritized SIPP may reject this solvable case and let the hybrid backend
+    # repair it, but it must never return the old colliding t=2 plan.
+    if result.plans:
+        first = result.plans["r1"]
+        second = result.plans["r2"]
+        occupied = {}
+        for name, plan in (("r1", first), ("r2", second)):
+            for time_tick, node in zip(plan.times, plan.nodes):
+                assert (time_tick, node) not in occupied
+                occupied[(time_tick, node)] = name
+
+
 def test_rolling_sipp_backend_waits_for_reserved_vertex_interval() -> None:
     planner = FleetMapfPlanner(
         _landmarks("A", "B", "C"),
@@ -67,8 +195,10 @@ def test_rolling_sipp_backend_waits_for_reserved_vertex_interval() -> None:
     assert result["debug"]["plannerBackend"] == "rolling_sipp"
     assert result["debug"]["reason"].startswith("rolling_sipp:success")
     plan = result["plans"][0]
-    assert plan["nodes"] == ["A", "A", "A", "B", "C"]
-    assert plan["times"] == [0, 1, 2, 3, 4]
+    # Traversal A->B owns B's endpoint clearance as well, so it starts only
+    # after the half-open reservation [1, 3) has cleared.
+    assert plan["nodes"] == ["A", "A", "A", "A", "B", "C"]
+    assert plan["times"] == [0, 1, 2, 3, 4, 5]
 
 
 def test_rolling_sipp_backend_waits_for_reserved_edge_interval() -> None:
@@ -82,7 +212,7 @@ def test_rolling_sipp_backend_waits_for_reserved_edge_interval() -> None:
         {
             "robots": [{"name": "r1", "startLm": "A", "goalLm": "C"}],
             "reserved_edge_intervals": [
-                {"from": "A", "to": "B", "start": 0.0, "end": 2.0, "robot": "other"},
+                {"from": "B", "to": "C", "start": 0.0, "end": 2.0, "robot": "other"},
             ],
         }
     )
@@ -105,14 +235,129 @@ def test_rolling_sipp_does_not_wait_on_non_waitable_lm() -> None:
     result = planner.plan(
         {
             "robots": [{"name": "r1", "startLm": "A", "goalLm": "B"}],
-            "reserved_edge_intervals": [
-                {"from": "A", "to": "B", "start": 0.0, "end": 2.0, "robot": "other"},
+            "reserved_vertex_intervals": [
+                {"node": "B", "start": 0.0, "end": 2.0, "robot": "other"},
             ],
         }
     )
 
     assert not result["ok"]
     assert result["debug"]["reason"].startswith("cannot_wait:A")
+
+
+def test_zero_tick_constraints_are_not_dropped() -> None:
+    planner = FleetMapfPlanner(_landmarks("A", "B"), [], params=_rolling_params())
+
+    assert planner._reserved_vertex_constraints(
+        {"reserved_vertex_constraints": [{"time": 0, "node": "A"}]}
+    ) == [(0, "A")]
+    assert planner._reserved_edge_constraints(
+        {"reserved_edge_constraints": [{"time": 0, "from": "A", "to": "B"}]}
+    ) == [(0, "A", "B")]
+
+
+def test_duplicate_robot_names_are_rejected() -> None:
+    planner = FleetMapfPlanner(
+        _landmarks("A", "B"),
+        _line_edges(("A", "B")),
+        params=_rolling_params(),
+    )
+
+    with pytest.raises(ValueError, match="duplicate robot name"):
+        planner.plan(
+            {
+                "robots": [
+                    {"name": "r1", "startLm": "A", "goalLm": "B"},
+                    {"name": "r1", "startLm": "A", "goalLm": "B"},
+                ]
+            }
+        )
+
+
+def test_start_pose_cannot_create_an_off_graph_approach() -> None:
+    planner = FleetMapfPlanner(
+        _landmarks("A", "B"),
+        _line_edges(("A", "B")),
+        params=_rolling_params(),
+    )
+
+    with pytest.raises(ValueError, match="off-graph approach is forbidden"):
+        planner.plan(
+            {
+                "robots": [
+                    {
+                        "name": "r1",
+                        "startLm": "A",
+                        "goalLm": "B",
+                        "startPose": {"x": 0.5, "y": 0.5, "yaw": 0.0},
+                    }
+                ]
+            }
+        )
+
+
+def test_mapf_trajectory_contains_only_real_graph_edges() -> None:
+    planner = FleetMapfPlanner(
+        _landmarks("A", "B", "C"),
+        _line_edges(("A", "B"), ("B", "C")),
+        params=_rolling_params(),
+    )
+
+    result = planner.plan(
+        {
+            "robots": [
+                {
+                    "name": "r1",
+                    "startLm": "A",
+                    "goalLm": "C",
+                    "startPose": {"x": 0.0, "y": 0.0, "yaw": 1.2},
+                }
+            ]
+        }
+    )
+
+    trajectory = result["plans"][0]["trajectory"]
+    moving_edges = {
+        str(sample["edgeId"])
+        for sample in trajectory
+        if "->" in str(sample["edgeId"])
+        and not str(sample["edgeId"]).startswith("WAIT@")
+        and str(sample["edgeId"]).split("->", 1)[0]
+        != str(sample["edgeId"]).split("->", 1)[1]
+    }
+    assert moving_edges == {"A->B", "B->C"}
+    assert not any("CURRENT" in str(sample["edgeId"]) for sample in trajectory)
+    assert any(sample.get("lm") == "B" for sample in trajectory)
+
+
+def test_rotation_never_shifts_motion_outside_mapf_reservation_time() -> None:
+    landmarks = {
+        "A": Landmark(name="A", x=0.0, y=0.0),
+        "B": Landmark(name="B", x=1.0, y=0.0),
+        "C": Landmark(name="C", x=1.0, y=1.0),
+    }
+    params = _rolling_params()
+    params["fleet"]["stretch_motion_to_reservation_ticks"] = True
+    planner = FleetMapfPlanner(
+        landmarks,
+        [
+            _edge(landmarks, "A", "B"),
+            _edge(landmarks, "B", "C"),
+        ],
+        params=params,
+    )
+
+    result = planner.plan(
+        {
+            "robots": [{"name": "r1", "startLm": "A", "goalLm": "C"}],
+            "rotate": True,
+            "turnSpeed": 0.9,
+            "stretchMotionToReservationTicks": True,
+        }
+    )
+
+    plan = result["plans"][0]
+    assert plan["arrivalTime"] == plan["times"][-1] * result["timeStepSec"]
 
 
 def _rolling_params() -> dict[str, object]:

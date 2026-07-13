@@ -5,7 +5,7 @@ from heapq import heappop, heappush
 from itertools import count
 from typing import Callable
 
-from .reservations import ReservationTable, SafeInterval
+from .reservations import ReservationTable, ResourceId, SafeInterval
 from .traffic_graph import TrafficGraph, TrafficLane
 
 
@@ -70,6 +70,7 @@ class SippPlanner:
         self.wait_cost = max(1, int(wait_cost))
         self.expanded_nodes = 0
         self.last_failure = ""
+        self.blocking_robot_names: set[str] = set()
         self._safe_interval_cache: dict[tuple[NodeName, str], tuple[SafeInterval, ...]] = {}
 
     def plan(
@@ -84,6 +85,7 @@ class SippPlanner:
         blocked_edges = blocked_edges or set()
         self.expanded_nodes = 0
         self.last_failure = ""
+        self.blocking_robot_names = set()
         self._safe_interval_cache = {}
         start = self._start_state(request, reservations, blocked_nodes)
         if start is None:
@@ -223,7 +225,10 @@ class SippPlanner:
         reservations: ReservationTable,
     ) -> SippState | None:
         earliest_depart = max(state.time, interval.start - duration)
-        latest_depart = min(state.interval_end, interval.end - duration)
+        # Safe intervals are half-open.  The path representation reserves the
+        # source vertex for [depart, depart + 1), so departing exactly at
+        # interval_end would put two robots on the vertex at that tick.
+        latest_depart = min(state.interval_end - 1, interval.end - duration)
         if earliest_depart > latest_depart:
             return None
 
@@ -262,6 +267,14 @@ class SippPlanner:
             self.low_level_max_time + 1,
             ignore_robot_name=robot_name,
         )
+        if intervals != (SafeInterval(0, self.low_level_max_time + 1),):
+            self._record_blocking_owners(
+                self.graph.vertex_resources(node),
+                0,
+                self.low_level_max_time + 1,
+                robot_name,
+                reservations,
+            )
         self._safe_interval_cache[cache_key] = intervals
         return intervals
 
@@ -283,11 +296,43 @@ class SippPlanner:
                 ignore_robot_name=robot_name,
             ):
                 return depart
+            self._record_blocking_owners(
+                self.graph.lane_resources(lane),
+                depart,
+                end_time,
+                robot_name,
+                reservations,
+            )
         self.last_failure = (
             f"reserved_edge:{lane.from_lm}->{lane.to_lm}"
             f"@{earliest_depart}-{latest_depart + duration}"
         )
         return None
+
+    def _record_blocking_owners(
+        self,
+        resources: tuple[ResourceId, ...],
+        start: int,
+        end: int,
+        robot_name: str,
+        reservations: ReservationTable,
+    ) -> None:
+        for resource in resources:
+            if reservations.is_free(
+                resource,
+                start,
+                end,
+                ignore_robot_name=robot_name,
+            ):
+                continue
+            for interval in reservations.conflicts(
+                resource,
+                start,
+                end,
+                ignore_robot_name=robot_name,
+            ):
+                if interval.robot_name and interval.robot_name != robot_name:
+                    self.blocking_robot_names.add(interval.robot_name)
 
     def _transition_duration(self, lane: TrafficLane) -> int:
         return max(1, int(self.move_cost_fn(lane.from_lm, lane.to_lm)))
