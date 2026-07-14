@@ -104,7 +104,14 @@ def _apply_nav2_robot_model(params: dict[str, Any], params_path: Path) -> dict[s
         segments = int(robot_model.get("footprint_segments", DEFAULT_NAV2_FOOTPRINT_SEGMENTS) or DEFAULT_NAV2_FOOTPRINT_SEGMENTS)
         for costmap_name in ("local_costmap", "global_costmap"):
             costmap = nav2_overrides.get(costmap_name)
-            if not isinstance(costmap, dict) or "robot_radius" not in costmap:
+            if not isinstance(costmap, dict):
+                continue
+            footprint = _parse_nav2_footprint(costmap.get("footprint"))
+            if footprint:
+                robot_model["footprint"] = footprint
+                robot_model["nav2_costmap"] = costmap_name
+                return params
+            if "robot_radius" not in costmap:
                 continue
             radius = float(costmap["robot_radius"])
             robot_model["radius"] = radius

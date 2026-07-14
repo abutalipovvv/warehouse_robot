@@ -137,6 +137,11 @@ private:
     double imu_yaw_bias_;
     double imu_angular_velocity_bias_;
     double odom_yaw_offset_;
+    double odom_world_yaw_offset_;
+    bool imu_odom_initialized_;
+    double imu_odom_x_;
+    double imu_odom_y_;
+    double imu_odom_yaw_;
 
     double sample_noise(double stddev);
     void ensure_imu_initialized();

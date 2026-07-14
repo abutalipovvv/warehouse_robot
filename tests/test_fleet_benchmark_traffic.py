@@ -7,6 +7,7 @@ import operator_app.services.fleet_manager as service_module
 
 from operator_app.services.fleet_manager import (
     DEFAULT_FLEET_MAP_DIR,
+    DEFAULT_FLEET_SIM_MAP_DIR,
     FLEET_MANAGER_SIM_ID,
     OperatorFleetManager,
 )
@@ -232,6 +233,55 @@ def test_dynamic_runtime_keeps_robots_collision_free_and_wait_graph_acyclic(
     benchmark = service._dynamic_benchmark_payload()
     assert benchmark["ordersGenerated"] >= 20
     assert any(robot.route_revision > 1 for robot in service.manager.robots.values())
+    assert service.manager.traffic_metrics["runtimeSafetyRollbacks"] == 0
+
+
+def test_50_robot_runtime_never_exposes_route_less_moving_blockers(
+    monkeypatch,
+) -> None:
+    clock = [2_000.0]
+    monkeypatch.setattr(runtime_module, "time", lambda: clock[0])
+    monkeypatch.setattr(service_module, "time", lambda: clock[0])
+    service = OperatorFleetManager(
+        # The production simulation manager uses the spacious benchmark map.
+        # The field map has 0.44 m LM spacing and cannot physically park 50
+        # one-metre Ecom robots at once without overlapping their footprints.
+        DEFAULT_FLEET_SIM_MAP_DIR,
+        DEFAULT_FLEET_MAP_DIR.parents[2] / "params.yaml",
+        manager_id=FLEET_MANAGER_SIM_ID,
+        mode="simulation",
+    )
+    service.benchmark_payload(
+        {"action": "add", "count": 50, "seed": 42, "reset": False}
+    )
+    service.benchmark_payload({
+        "action": "plan",
+        "count": 50,
+        "seed": 42,
+        "reset": False,
+        "horizonSec": 10,
+        "orderIntervalSec": 3,
+        "queueDepth": 2,
+    })
+    _pump_until(
+        service,
+        lambda: any(robot.route_revision > 0 for robot in service.manager.robots.values()),
+    )
+
+    for _ in range(400):
+        clock[0] += 0.2
+        service.tick_payload({})
+        route_less = [
+            robot.name
+            for robot in service.manager.robots.values()
+            if robot.status in {"MOVING", "WAITING", "RETREATING"}
+            and not robot.trajectory
+        ]
+        assert not route_less, f"route-less traffic blockers: {route_less}"
+        sleep(0.003)
+
+    assert len(service.manager.robots) == 50
+    assert service._dynamic_benchmark_payload()["ordersGenerated"] >= 50
 
 
 def _pump_until(service: OperatorFleetManager, predicate, timeout: float = 6.0) -> None:

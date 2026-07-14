@@ -1,3 +1,14 @@
+const FLEET_ROBOT_PALETTE = [
+  "#2563eb",
+  "#22c55e",
+  "#f59e0b",
+  "#ef4444",
+  "#8b5cf6",
+  "#06b6d4",
+  "#ec4899",
+  "#84cc16",
+];
+
 const ROBOT_PARAM_SCHEMA = [
   {
     group: "Nav2",
@@ -899,6 +910,7 @@ class OperatorApp {
     this.robots = [];
     this.selectedRobotId = window.localStorage.getItem("operator:selectedRobotId") || "";
     this.selectedFleetRobotName = window.localStorage.getItem("operator:selectedFleetRobotName") || "";
+    this.fleetSelectionCleared = false;
     this.lastProbe = null;
     this.sidebarOpen = false;
     this.pendingRobotMaps = [];
@@ -4416,11 +4428,32 @@ class OperatorApp {
 
   selectedFleetRobot(robots = null) {
     const items = robots || (Array.isArray(this.currentStatus?.robots) ? this.currentStatus.robots : []);
-    if (!items.length) {
+    if (!items.length || this.fleetSelectionCleared) {
       return null;
     }
     const selected = items.find((robot) => robot.name === this.selectedFleetRobotName);
     return selected || items[0];
+  }
+
+  fleetRobotColor(robotName) {
+    const name = String(robotName || "robot");
+    let hash = 2166136261;
+    for (let index = 0; index < name.length; index += 1) {
+      hash ^= name.charCodeAt(index);
+      hash = Math.imul(hash, 16777619);
+    }
+    return FLEET_ROBOT_PALETTE[(hash >>> 0) % FLEET_ROBOT_PALETTE.length];
+  }
+
+  clearFleetRobotSelection() {
+    if (!this.isFleetManager()) {
+      return;
+    }
+    this.selectedFleetRobotName = "";
+    this.fleetSelectionCleared = true;
+    this.mapView.follow = false;
+    window.localStorage.removeItem("operator:selectedFleetRobotName");
+    this.renderSelectedRobot();
   }
 
   selectFleetRobotByName(robotName) {
@@ -4429,6 +4462,7 @@ class OperatorApp {
       return;
     }
     this.selectedFleetRobotName = name;
+    this.fleetSelectionCleared = false;
     if (this.navigateMode && this.pendingFleetAction) {
       this.pendingFleetRobotName = name;
     }
@@ -4670,12 +4704,7 @@ class OperatorApp {
       button.type = "button";
       button.className = "fleet-list-main";
       const selectFleetRobot = () => {
-        this.selectedFleetRobotName = robot.name;
-        if (this.navigateMode && this.pendingFleetAction) {
-          this.pendingFleetRobotName = robot.name;
-        }
-        window.localStorage.setItem("operator:selectedFleetRobotName", robot.name);
-        this.renderSelectedRobot();
+        this.selectFleetRobotByName(robot.name);
       };
       button.addEventListener("pointerdown", (event) => {
         if (event.button !== 0) {
@@ -4693,7 +4722,7 @@ class OperatorApp {
 
       const color = document.createElement("span");
       color.className = "fleet-list-color";
-      color.style.background = robot.name === this.selectedFleetRobotName ? "#2368ff" : "#d37a22";
+      color.style.background = this.fleetRobotColor(robot.name);
       button.append(color);
 
       const info = document.createElement("span");
@@ -5494,9 +5523,13 @@ class OperatorApp {
     const active = robot.name === this.selectedFleetRobotName;
     const preview = Array.isArray(robot.routePreview) ? robot.routePreview : [];
     if (active && preview.length >= 2) {
-      this.appendRoutePolyline(preview, "fleet-route-preview");
+      this.appendRoutePolyline(preview, "fleet-route-preview active", this.fleetRobotColor(robot.name));
     }
-    this.appendRoutePolyline(trajectory, active ? "fleet-route-plan active" : "fleet-route-plan");
+    this.appendRoutePolyline(
+      trajectory,
+      active ? "fleet-route-plan active" : "fleet-route-plan",
+      active ? this.fleetRobotColor(robot.name) : "",
+    );
     if (!active) {
       return;
     }
@@ -5508,17 +5541,20 @@ class OperatorApp {
       this.appendRoutePolyline(done, "fleet-route-done");
     }
     if (remaining.length > 1) {
-      this.appendRoutePolyline(remaining, "fleet-route-active");
+      this.appendRoutePolyline(remaining, "fleet-route-active", this.fleetRobotColor(robot.name));
     }
   }
 
-  appendRoutePolyline(points, className) {
+  appendRoutePolyline(points, className, stroke = "") {
     if (!Array.isArray(points) || points.length < 2) {
       return;
     }
     const polyline = document.createElementNS("http://www.w3.org/2000/svg", "polyline");
     polyline.setAttribute("class", className);
     polyline.style.strokeWidth = String(this.routeStrokeWidth(className));
+    if (stroke) {
+      polyline.style.stroke = stroke;
+    }
     polyline.setAttribute("points", points.map((point) => {
       const px = this.worldToPixel(point);
       return `${px.x},${px.y}`;
@@ -5627,10 +5663,17 @@ class OperatorApp {
 
   routeStrokeWidth(className = "") {
     const profile = this.mapVisualProfile();
-    if (String(className).includes("active")) {
+    const routeClass = String(className);
+    if (routeClass.includes("preview") && routeClass.includes("active")) {
+      return profile.unit(profile.massive ? 3.2 : 4.2);
+    }
+    if (routeClass.includes("route-active")) {
+      return profile.unit(profile.massive ? 2.4 : 3.2);
+    }
+    if (routeClass.includes("active")) {
       return profile.unit(profile.massive ? 1.8 : 2.2);
     }
-    if (String(className).includes("done") || String(className).includes("plan")) {
+    if (routeClass.includes("done") || routeClass.includes("plan")) {
       return profile.unit(profile.massive ? 1.1 : 1.5);
     }
     return profile.unit(profile.massive ? 1.2 : 1.7);
@@ -5794,12 +5837,7 @@ class OperatorApp {
           }
           event.preventDefault();
           event.stopPropagation();
-          this.selectedFleetRobotName = robot.name || "";
-          if (this.navigateMode && this.pendingFleetAction) {
-            this.pendingFleetRobotName = this.selectedFleetRobotName;
-          }
-          window.localStorage.setItem("operator:selectedFleetRobotName", this.selectedFleetRobotName);
-          this.renderSelectedRobot();
+          this.selectFleetRobotByName(robot.name || "");
         };
         group.addEventListener("pointerdown", (event) => {
           if (event.button !== 0) {
@@ -5808,10 +5846,24 @@ class OperatorApp {
           selectRobot(event);
         });
         group.addEventListener("click", selectRobot);
+        const footprintPoints = this.robotFootprintPoints(pose);
+        if (robot.name === this.selectedFleetRobotName) {
+          const halo = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
+          halo.setAttribute("class", "robot-selection-halo");
+          halo.setAttribute("points", footprintPoints);
+          halo.style.stroke = this.fleetRobotColor(robot.name);
+          halo.style.strokeWidth = String(robotStyle.footprintStrokeWidth * 3.6);
+          group.append(halo);
+        }
         const footprint = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
         footprint.setAttribute("class", "robot-footprint");
-        footprint.setAttribute("points", this.robotFootprintPoints(pose));
+        footprint.setAttribute("points", footprintPoints);
         footprint.style.strokeWidth = String(robotStyle.footprintStrokeWidth);
+        if (robot.name === this.selectedFleetRobotName) {
+          const robotColor = this.fleetRobotColor(robot.name);
+          footprint.style.stroke = robotColor;
+          footprint.style.fill = `${robotColor}2e`;
+        }
         group.append(footprint);
         const centerDot = document.createElementNS("http://www.w3.org/2000/svg", "circle");
         centerDot.setAttribute("class", "robot-center-dot");
@@ -6198,7 +6250,13 @@ class OperatorApp {
       event.preventDefault();
       return;
     }
-    if ((!this.navigateMode && !this.relocateMode) || event.target.closest(".landmark")) {
+    if (!this.navigateMode && !this.relocateMode) {
+      if (this.isFleetManager() && !event.target.closest(".landmark, .fleet-robot")) {
+        this.clearFleetRobotSelection();
+      }
+      return;
+    }
+    if (event.target.closest(".landmark")) {
       return;
     }
     const mapPixel = this.screenToMapPixel(event.clientX, event.clientY);
@@ -6231,6 +6289,10 @@ class OperatorApp {
       return;
     }
     if (!this.navigateMode) {
+      const nearest = this.nearestLandmark(world);
+      if (!nearest || nearest.distance > 0.55) {
+        this.clearFleetRobotSelection();
+      }
       return;
     }
     if (this.isRos2Robot() && !this.isFleetManager()) {
@@ -7257,7 +7319,7 @@ class OperatorApp {
     }
     scene.setTargetArmed(this.scene3dTargetArmed());
     const robots = this.fleetRenderRobots();
-    const selectedName = this.selectedFleetRobot(robots)?.name || this.selectedFleetRobotName || "";
+    const selectedName = this.selectedFleetRobot(robots)?.name || "";
     scene.updateRobots(robots, selectedName);
     return true;
   }
@@ -7705,6 +7767,7 @@ class OperatorApp {
       this.currentStatus = result.state || await this.getJson(this.fleetApiPath("/state"));
       this.lastFleetPlanDebug = result.debug || result.state?.debug || null;
       this.selectedFleetRobotName = robot.name;
+      this.fleetSelectionCleared = false;
       window.localStorage.setItem("operator:selectedFleetRobotName", this.selectedFleetRobotName);
       this.renderFleetStateImmediately();
       const requestedPose = options.requestedPose;
@@ -8403,6 +8466,7 @@ class OperatorApp {
     await progress(55, "Removing robots and queued orders...", 80);
     this.currentStatus = result.state || result.fleetState || await this.getJson(this.fleetApiPath("/state"));
     this.selectedFleetRobotName = "";
+    this.fleetSelectionCleared = false;
     this.pendingFleetRobotName = "";
     this.pendingFleetAction = "";
     this.navigateMode = false;
@@ -8463,6 +8527,7 @@ class OperatorApp {
       const robots = Array.isArray(this.currentStatus?.robots) ? this.currentStatus.robots : [];
       if (robots.length && !robots.some((robot) => robot.name === this.selectedFleetRobotName)) {
         this.selectedFleetRobotName = robots[0].name || "";
+        this.fleetSelectionCleared = false;
         window.localStorage.setItem("operator:selectedFleetRobotName", this.selectedFleetRobotName);
       } else if (!robots.length) {
         this.selectedFleetRobotName = "";
@@ -8579,6 +8644,7 @@ class OperatorApp {
       const result = await this.postJson(this.fleetApiPath("/robots"), payload);
       const addedName = String(result.robot?.name || requestedName || "").trim();
       this.selectedFleetRobotName = addedName;
+      this.fleetSelectionCleared = false;
       if (addedName) {
         window.localStorage.setItem("operator:selectedFleetRobotName", addedName);
       }

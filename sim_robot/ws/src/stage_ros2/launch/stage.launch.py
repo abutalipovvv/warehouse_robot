@@ -94,9 +94,9 @@ def generate_launch_description():
         Command([
             'xacro ',
             PathJoinSubstitution([
-                FindPackageShare('trp1_description'),
+                FindPackageShare('ecom_mobile_robot_description'),
                 'urdf',
-                'trp1.xacro'
+                'ecom_stage.urdf.xacro'
             ])
         ]),
         value_type=str

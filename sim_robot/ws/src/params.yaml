@@ -1,41 +1,20 @@
 robot_model:
+  source: nav2
+  radius: 0.632
+  footprint_segments: 4
   footprint:
-  - x: 0.22
-    y: 0
-  - x: 0.203
-    y: 0.084
-  - x: 0.156
-    y: 0.156
-  - x: 0.084
-    y: 0.203
-  - x: 0
-    y: 0.22
-  - x: -0.084
-    y: 0.203
-  - x: -0.156
-    y: 0.156
-  - x: -0.203
-    y: 0.084
-  - x: -0.22
-    y: 0
-  - x: -0.203
-    y: -0.084
-  - x: -0.156
-    y: -0.156
-  - x: -0.084
-    y: -0.203
-  - x: 0
-    y: -0.22
-  - x: 0.084
-    y: -0.203
-  - x: 0.156
-    y: -0.156
-  - x: 0.203
-    y: -0.084
+  - x: -0.523
+    y: -0.353
+  - x: 0.477
+    y: -0.353
+  - x: 0.477
+    y: 0.347
+  - x: -0.523
+    y: 0.347
   frames:
     lidar:
-      x: 0.218
-      y: 0
+      x: 0.325
+      y: 0.249
       label: LiDAR
       color: '#1f6feb'
     imu:
@@ -44,21 +23,18 @@ robot_model:
       label: IMU
       color: '#d95521'
     wheel_left:
-      x: 0
-      y: 0.218
+      x: -0.043
+      y: 0.323
       label: WL
       color: '#2f3a4a'
     wheel_right:
-      x: 0
-      y: -0.218
+      x: -0.043
+      y: -0.328
       label: WR
       color: '#2f3a4a'
-  source: nav2
-  radius: 0.22
-  footprint_segments: 16
 navigation:
   route_speed: 1
-  footprint_lookahead: 0.45
+  footprint_lookahead: 0.65
   collision_margin: 0.04
   stop_distance: 0.18
   angular_gain: 2.2
@@ -88,11 +64,13 @@ manual:
   prediction_step: 0.1
 nav2:
   amcl:
-    update_min_d: 0.01
-    update_min_a: 0.01
-    transform_tolerance: 0.2
-    min_particles: 1000
-    max_particles: 2500
+    update_min_d: 0.05
+    update_min_a: 0.04
+    transform_tolerance: 0.5
+    min_particles: 500
+    max_particles: 2000
+    max_beams: 120
+    sigma_hit: 0.15
   controller_server:
     controller_frequency: 20
     xy_goal_tolerance: 0.05
@@ -102,11 +80,29 @@ nav2:
       vx_min: -0.35
       wz_max: 1.9
   local_costmap:
-    robot_radius: 0.22
+    robot_radius: 0.632
+    footprint:
+    - x: -0.523
+      y: -0.3532
+    - x: 0.477
+      y: -0.3532
+    - x: 0.477
+      y: 0.3468
+    - x: -0.523
+      y: 0.3468
     inflation_radius: 0.7
     cost_scaling_factor: 3
   global_costmap:
-    robot_radius: 0.22
+    robot_radius: 0.632
+    footprint:
+    - x: -0.523
+      y: -0.3532
+    - x: 0.477
+      y: -0.3532
+    - x: 0.477
+      y: 0.3468
+    - x: -0.523
+      y: 0.3468
     inflation_radius: 0.7
   velocity_smoother:
     max_velocity_x: 0.5

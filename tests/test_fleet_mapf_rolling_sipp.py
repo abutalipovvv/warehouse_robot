@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import pytest
 
 from fleet_manager.mapf import (
@@ -59,6 +60,108 @@ def test_traffic_graph_reserves_endpoint_and_physical_clearance_resources() -> N
     assert lane is not None
     assert ResourceId("vertex", "A") in graph.lane_resources(lane)
     assert ResourceId("vertex", "B") in graph.lane_resources(lane)
+
+
+def test_fleet_cbs_uses_same_mutex_resources_as_commit_validator() -> None:
+    landmarks = {
+        "A": Landmark(name="A", x=0.0, y=0.0),
+        "B": Landmark(name="B", x=1.0, y=0.0),
+        "C": Landmark(name="C", x=0.0, y=2.0),
+        "D": Landmark(name="D", x=1.0, y=2.0),
+    }
+    edges = []
+    for start, goal in (("A", "B"), ("C", "D")):
+        edges.append(
+            GraphEdge(
+                from_name=start,
+                to_name=goal,
+                length=1.0,
+                kind="line",
+                edge_type="FeatureLine",
+                world_points=(
+                    WorldPoint(landmarks[start].x, landmarks[start].y),
+                    WorldPoint(landmarks[goal].x, landmarks[goal].y),
+                ),
+                properties={"direction": 2, "mutex_zone": "crossing"},
+            )
+        )
+    planner = FleetMapfPlanner(
+        landmarks,
+        edges,
+        params={
+            "navigation": {"route_speed": 1.0},
+            "fleet": {
+                "planner_backend": "cbs",
+                "reservation_time_step_sec": 1.0,
+                "cbs_low_level_max_time": 10,
+                "mapf_min_robot_center_distance_m": 0.5,
+            },
+        },
+    )
+
+    result = planner.plan(
+        {
+            "rotateEnabled": False,
+            "robots": [
+                {"name": "r1", "startLm": "A", "goalLm": "B"},
+                {"name": "r2", "startLm": "C", "goalLm": "D"},
+            ],
+        }
+    )
+
+    assert result["ok"]
+    assert result["debug"]["conflictsResolved"] == 1
+    assert sorted(plan["times"][-1] for plan in result["plans"]) == [1, 2]
+
+
+def test_locked_spatial_route_waits_instead_of_taking_free_detour() -> None:
+    landmarks = {
+        "A": Landmark(name="A", x=0.0, y=0.0),
+        "B": Landmark(name="B", x=1.0, y=0.0),
+        "C": Landmark(name="C", x=2.0, y=0.0),
+        "D": Landmark(name="D", x=1.0, y=1.0),
+    }
+    planner = FleetMapfPlanner(
+        landmarks,
+        [
+            _edge(landmarks, "A", "B"),
+            _edge(landmarks, "B", "C"),
+            _edge(landmarks, "A", "D"),
+            _edge(landmarks, "D", "C"),
+        ],
+        params={
+            "navigation": {"route_speed": 1.0},
+            "fleet": {
+                "planner_backend": "rolling_sipp",
+                "reservation_time_step_sec": 1.0,
+                "cbs_low_level_max_time": 12,
+                "mapf_min_robot_center_distance_m": 0.5,
+                "reserved_edge_detour_enabled": False,
+            },
+        },
+    )
+
+    result = planner.plan(
+        {
+            "rotate": False,
+            "robots": [
+                {
+                    "name": "r1",
+                    "startLm": "A",
+                    "goalLm": "C",
+                    "routeNodes": ["A", "B", "C"],
+                }
+            ],
+            "reserved_vertex_intervals": [
+                {"node": "B", "start": 0, "end": 2, "robot": "other"},
+            ],
+        }
+    )
+
+    assert result["ok"]
+    plan = result["plans"][0]
+    assert "D" not in plan["nodes"]
+    assert plan["nodes"] == ["A", "A", "A", "A", "B", "C"]
 
 
 def test_rolling_sipp_rejects_overlapping_initial_robot_footprints() -> None:
@@ -358,6 +461,50 @@ def test_rotation_never_shifts_motion_outside_mapf_reservation_time() -> None:
 
     plan = result["plans"][0]
     assert plan["arrivalTime"] == plan["times"][-1] * result["timeStepSec"]
+
+
+def test_rotation_is_an_explicit_reserved_action_with_real_start_yaw() -> None:
+    landmarks = {
+        "A": Landmark(name="A", x=0.0, y=0.0),
+        "B": Landmark(name="B", x=1.0, y=0.0),
+    }
+    params = _rolling_params()
+    params["fleet"]["stretch_motion_to_reservation_ticks"] = True
+    planner = FleetMapfPlanner(
+        landmarks,
+        [_edge(landmarks, "A", "B")],
+        params=params,
+    )
+
+    result = planner.plan(
+        {
+            "robots": [
+                {
+                    "name": "r1",
+                    "startLm": "A",
+                    "goalLm": "B",
+                    "startPose": {"x": 0.0, "y": 0.0, "yaw": math.pi},
+                }
+            ],
+            "rotate": True,
+            "turnSpeed": 0.9,
+            "stretchMotionToReservationTicks": True,
+        }
+    )
+
+    plan = result["plans"][0]
+    assert plan["nodes"][:2] == ["A", "A"]
+    assert plan["actions"][:3] == ["start", "rotate", "move"]
+    assert plan["times"][1] == 4  # ceil(pi / 0.9) reservation seconds
+    assert plan["trajectory"][0]["yaw"] == pytest.approx(math.pi)
+    rotate_sample = next(
+        sample
+        for sample in plan["trajectory"]
+        if str(sample.get("edgeId", "")).startswith("WAIT@ROTATE")
+    )
+    assert rotate_sample["t"] == pytest.approx(4.0)
+    assert rotate_sample["x"] == pytest.approx(0.0)
+    assert rotate_sample["y"] == pytest.approx(0.0)
 
 
 def _rolling_params() -> dict[str, object]:

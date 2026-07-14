@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from heapq import heappop, heappush
 from itertools import count
+import math
 from typing import Callable
 
 from .reservations import ReservationTable, ResourceId, SafeInterval
@@ -17,12 +18,16 @@ class SippRobotRequest:
     robot_name: str
     start_lm: NodeName
     goal_lm: NodeName
+    start_yaw: float = 0.0
+    route_nodes: tuple[NodeName, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
 class TimedState:
     time: int
     node: NodeName
+    yaw: float = 0.0
+    action: str = "wait"
 
 
 @dataclass(frozen=True, slots=True)
@@ -31,10 +36,16 @@ class SippState:
     node: NodeName
     interval_start: int
     interval_end: int
+    yaw: float = 0.0
 
     @property
-    def key(self) -> tuple[NodeName, int, int]:
-        return (self.node, self.interval_start, self.interval_end)
+    def key(self) -> tuple[NodeName, int, int, int]:
+        return (
+            self.node,
+            self.interval_start,
+            self.interval_end,
+            int(round(self.yaw * 1_000_000)),
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -52,6 +63,14 @@ class TimedPath:
     def times(self) -> list[int]:
         return [state.time for state in self.states]
 
+    @property
+    def yaws(self) -> list[float]:
+        return [state.yaw for state in self.states]
+
+    @property
+    def actions(self) -> list[str]:
+        return [state.action for state in self.states]
+
 
 class SippPlanner:
     def __init__(
@@ -60,12 +79,16 @@ class SippPlanner:
         *,
         heuristic_fn: Callable[[NodeName, NodeName], float] | None = None,
         move_cost_fn: Callable[[NodeName, NodeName], int] | None = None,
+        heading_fn: Callable[[NodeName, NodeName], float] | None = None,
+        turn_cost_fn: Callable[[float, float], int] | None = None,
         low_level_max_time: int = 160,
         wait_cost: int = 6,
     ) -> None:
         self.graph = graph
         self.heuristic_fn = heuristic_fn or (lambda _node, _goal: 0.0)
         self.move_cost_fn = move_cost_fn or (lambda _src, _dst: 1)
+        self.heading_fn = heading_fn or (lambda _src, _dst: 0.0)
+        self.turn_cost_fn = turn_cost_fn or (lambda _from_yaw, _to_yaw: 0)
         self.low_level_max_time = max(1, int(low_level_max_time))
         self.wait_cost = max(1, int(wait_cost))
         self.expanded_nodes = 0
@@ -93,10 +116,10 @@ class SippPlanner:
 
         open_heap: list[tuple[float, int, int, SippState]] = []
         tie_breaker = count()
-        came_from: dict[tuple[NodeName, int, int], tuple[NodeName, int, int]] = {}
-        g_score: dict[tuple[NodeName, int, int], int] = {start.key: 0}
-        state_by_key: dict[tuple[NodeName, int, int], SippState] = {start.key: start}
-        closed: dict[tuple[NodeName, int, int], int] = {}
+        came_from: dict[tuple[NodeName, int, int, int], tuple[NodeName, int, int, int]] = {}
+        g_score: dict[tuple[NodeName, int, int, int], int] = {start.key: 0}
+        state_by_key: dict[tuple[NodeName, int, int, int], SippState] = {start.key: start}
+        closed: dict[tuple[NodeName, int, int, int], int] = {}
         heappush(
             open_heap,
             (
@@ -129,6 +152,7 @@ class SippPlanner:
             for neighbor, transition_cost in self._neighbors(
                 current,
                 request.robot_name,
+                request.route_nodes,
                 reservations,
                 blocked_nodes,
                 blocked_edges,
@@ -160,15 +184,25 @@ class SippPlanner:
         self,
         state: SippState,
         robot_name: str,
+        route_nodes: tuple[NodeName, ...],
         reservations: ReservationTable,
         blocked_nodes: set[NodeName],
         blocked_edges: set[tuple[NodeName, NodeName]],
     ) -> list[tuple[SippState, int]]:
         neighbors: list[tuple[SippState, int]] = []
+        route_next = {
+            start: goal
+            for start, goal in zip(route_nodes, route_nodes[1:])
+            if start != goal
+        } if route_nodes else None
         for lane in self.graph.neighbors(state.node):
+            if route_next is not None and lane.to_lm != route_next.get(state.node):
+                continue
             if (lane.from_lm, lane.to_lm) in blocked_edges:
                 continue
-            duration = self._transition_duration(lane)
+            move_duration = self._transition_duration(lane)
+            lane_yaw = self._normalize_yaw(self.heading_fn(lane.from_lm, lane.to_lm))
+            rotate_duration = max(0, int(self.turn_cost_fn(state.yaw, lane_yaw)))
             if lane.to_lm in blocked_nodes:
                 self.last_failure = f"blocked_lm:{lane.to_lm}"
                 continue
@@ -181,15 +215,20 @@ class SippPlanner:
                 next_state = self._successor_for_interval(
                     state,
                     lane,
-                    duration,
+                    move_duration,
+                    rotate_duration,
+                    lane_yaw,
                     interval,
                     robot_name,
                     reservations,
                 )
                 if next_state is None:
                     continue
-                wait_ticks = max(0, next_state.time - duration - state.time)
-                transition_cost = duration + (wait_ticks * self.wait_cost)
+                wait_ticks = max(
+                    0,
+                    next_state.time - move_duration - rotate_duration - state.time,
+                )
+                transition_cost = move_duration + rotate_duration + (wait_ticks * self.wait_cost)
                 neighbors.append((next_state, transition_cost))
         return neighbors
 
@@ -211,7 +250,13 @@ class SippPlanner:
             reservations,
         ):
             if interval.contains(0):
-                return SippState(0, request.start_lm, interval.start, interval.end)
+                return SippState(
+                    0,
+                    request.start_lm,
+                    interval.start,
+                    interval.end,
+                    self._normalize_yaw(request.start_yaw),
+                )
         self.last_failure = f"reserved_lm:{request.start_lm}@0"
         return None
 
@@ -219,16 +264,21 @@ class SippPlanner:
         self,
         state: SippState,
         lane: TrafficLane,
-        duration: int,
+        move_duration: int,
+        rotate_duration: int,
+        lane_yaw: float,
         interval: SafeInterval,
         robot_name: str,
         reservations: ReservationTable,
     ) -> SippState | None:
-        earliest_depart = max(state.time, interval.start - duration)
+        earliest_depart = max(
+            state.time + rotate_duration,
+            interval.start - move_duration,
+        )
         # Safe intervals are half-open.  The path representation reserves the
         # source vertex for [depart, depart + 1), so departing exactly at
         # interval_end would put two robots on the vertex at that tick.
-        latest_depart = min(state.interval_end - 1, interval.end - duration)
+        latest_depart = min(state.interval_end - 1, interval.end - move_duration)
         if earliest_depart > latest_depart:
             return None
 
@@ -236,7 +286,7 @@ class SippPlanner:
             lane,
             earliest_depart,
             latest_depart,
-            duration,
+            move_duration,
             robot_name,
             reservations,
         )
@@ -246,10 +296,16 @@ class SippPlanner:
         if vertex is not None and not vertex.can_wait and depart > state.time:
             self.last_failure = f"cannot_wait:{state.node}@{state.time}-{depart}"
             return None
-        arrival = depart + duration
+        arrival = depart + move_duration
         if arrival > self.low_level_max_time or not interval.contains(arrival):
             return None
-        return SippState(arrival, lane.to_lm, interval.start, interval.end)
+        return SippState(
+            arrival,
+            lane.to_lm,
+            interval.start,
+            interval.end,
+            lane_yaw,
+        )
 
     def _safe_intervals_for_node(
         self,
@@ -342,8 +398,11 @@ class SippPlanner:
 
     def _reconstruct(
         self,
-        came_from: dict[tuple[NodeName, int, int], tuple[NodeName, int, int]],
-        state_by_key: dict[tuple[NodeName, int, int], SippState],
+        came_from: dict[
+            tuple[NodeName, int, int, int],
+            tuple[NodeName, int, int, int],
+        ],
+        state_by_key: dict[tuple[NodeName, int, int, int], SippState],
         current: SippState,
     ) -> list[TimedState]:
         keys = [current.key]
@@ -353,15 +412,40 @@ class SippPlanner:
         if not states:
             return []
 
-        expanded: list[TimedState] = [TimedState(states[0].time, states[0].node)]
+        expanded: list[TimedState] = [
+            TimedState(states[0].time, states[0].node, states[0].yaw, "start")
+        ]
         for index in range(1, len(states)):
             previous = states[index - 1]
             current_state = states[index]
-            duration = self._transition_duration_between(previous.node, current_state.node)
-            depart_time = max(previous.time, current_state.time - duration)
-            for time_tick in range(previous.time + 1, depart_time + 1):
-                expanded.append(TimedState(time_tick, previous.node))
-            expanded.append(TimedState(current_state.time, current_state.node))
+            move_duration = self._transition_duration_between(previous.node, current_state.node)
+            rotate_duration = max(
+                0,
+                int(self.turn_cost_fn(previous.yaw, current_state.yaw)),
+            )
+            move_depart_time = max(previous.time, current_state.time - move_duration)
+            rotate_start_time = max(previous.time, move_depart_time - rotate_duration)
+            for time_tick in range(previous.time + 1, rotate_start_time + 1):
+                expanded.append(
+                    TimedState(time_tick, previous.node, previous.yaw, "wait")
+                )
+            if rotate_duration > 0:
+                expanded.append(
+                    TimedState(
+                        move_depart_time,
+                        previous.node,
+                        current_state.yaw,
+                        "rotate",
+                    )
+                )
+            expanded.append(
+                TimedState(
+                    current_state.time,
+                    current_state.node,
+                    current_state.yaw,
+                    "move",
+                )
+            )
         return expanded
 
     def _transition_duration_between(self, from_node: NodeName, to_node: NodeName) -> int:
@@ -371,3 +455,7 @@ class SippPlanner:
         if lane is None:
             return max(1, int(self.move_cost_fn(from_node, to_node)))
         return self._transition_duration(lane)
+
+    @staticmethod
+    def _normalize_yaw(value: float) -> float:
+        return round(math.atan2(math.sin(float(value)), math.cos(float(value))), 9)

@@ -4,6 +4,7 @@ from copy import deepcopy
 from dataclasses import dataclass, field
 from heapq import heappop, heappush
 from itertools import combinations
+import math
 import time as py_time
 from typing import Callable
 
@@ -15,6 +16,7 @@ NodeName = str
 class State:
     time: int
     node: NodeName
+    yaw: float = 0.0
 
     def is_equal_except_time(self, other: "State") -> bool:
         return self.node == other.node
@@ -24,6 +26,7 @@ class State:
 class Conflict:
     VERTEX = 1
     EDGE = 2
+    RESOURCE = 3
 
     time: int = -1
     end_time: int = -1
@@ -38,6 +41,9 @@ class Conflict:
     agent_2_from: NodeName | None = None
     agent_2_to: NodeName | None = None
     agent_2_time: int = -1
+    agent_1_resource_kind: str = ""
+    agent_2_resource_kind: str = ""
+    resource: object | None = None
 
 
 @dataclass(frozen=True)
@@ -71,6 +77,13 @@ class EdgeIntervalConstraint:
 
 
 @dataclass(frozen=True)
+class ResourceIntervalConstraint:
+    start_time: int
+    end_time: int
+    resource: object
+
+
+@dataclass(frozen=True)
 class PathVertexInterval:
     agent: str
     start_time: int
@@ -87,18 +100,32 @@ class PathEdgeInterval:
     to_node: NodeName
 
 
+@dataclass(frozen=True)
+class PathResourceInterval:
+    agent: str
+    start_time: int
+    end_time: int
+    resource: object
+    kind: str
+    node: NodeName | None = None
+    from_node: NodeName | None = None
+    to_node: NodeName | None = None
+
+
 @dataclass
 class Constraints:
     vertex_constraints: set[VertexConstraint] = field(default_factory=set)
     edge_constraints: set[EdgeConstraint] = field(default_factory=set)
     vertex_interval_constraints: set[VertexIntervalConstraint] = field(default_factory=set)
     edge_interval_constraints: set[EdgeIntervalConstraint] = field(default_factory=set)
+    resource_interval_constraints: set[ResourceIntervalConstraint] = field(default_factory=set)
 
     def add_constraint(self, other: "Constraints") -> None:
         self.vertex_constraints |= other.vertex_constraints
         self.edge_constraints |= other.edge_constraints
         self.vertex_interval_constraints |= other.vertex_interval_constraints
         self.edge_interval_constraints |= other.edge_interval_constraints
+        self.resource_interval_constraints |= other.resource_interval_constraints
 
 
 @dataclass(frozen=True)
@@ -106,6 +133,8 @@ class LmRobotRequest:
     robot_name: str
     start_lm: NodeName
     goal_lm: NodeName
+    start_yaw: float = 0.0
+    route_nodes: tuple[NodeName, ...] = ()
 
 
 @dataclass
@@ -115,6 +144,8 @@ class LmRobotPlan:
     goal_lm: NodeName
     nodes: list[NodeName]
     times: list[int] = field(default_factory=list)
+    yaws: list[float] = field(default_factory=list)
+    actions: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -139,7 +170,7 @@ class HighLevelNode:
 
     def __hash__(self) -> int:
         frozen_solution = tuple(
-            (name, tuple((state.time, state.node) for state in path))
+            (name, tuple((state.time, state.node, state.yaw) for state in path))
             for name, path in sorted(self.solution.items())
         )
         frozen_constraints = tuple(
@@ -157,6 +188,12 @@ class HighLevelNode:
                     sorted(
                         (item.start_time, item.end_time, item.from_node, item.to_node)
                         for item in constraints.edge_interval_constraints
+                    )
+                ),
+                tuple(
+                    sorted(
+                        (item.start_time, item.end_time, str(item.resource))
+                        for item in constraints.resource_interval_constraints
                     )
                 ),
             )
@@ -180,6 +217,10 @@ class LmCBSEnvironment:
         global_edge_intervals: list[EdgeIntervalConstraint] | None = None,
         heuristic_fn: Callable[[NodeName, NodeName], float] | None = None,
         move_cost_fn: Callable[[NodeName, NodeName], int] | None = None,
+        heading_fn: Callable[[NodeName, NodeName], float] | None = None,
+        turn_cost_fn: Callable[[float, float], int] | None = None,
+        vertex_resources_fn: Callable[[NodeName], tuple[object, ...]] | None = None,
+        lane_resources_fn: Callable[[NodeName, NodeName], tuple[object, ...]] | None = None,
         low_level_max_time: int = 128,
         wait_cost: int = 6,
     ) -> None:
@@ -192,20 +233,31 @@ class LmCBSEnvironment:
         self.global_edge_intervals = global_edge_intervals or []
         self.heuristic_fn = heuristic_fn or (lambda _node, _goal: 0.0)
         self.move_cost_fn = move_cost_fn or (lambda _src, _dst: 1)
+        self.heading_fn = heading_fn or (lambda _src, _dst: 0.0)
+        self.turn_cost_fn = turn_cost_fn or (lambda _from_yaw, _to_yaw: 0)
+        self.vertex_resources_fn = vertex_resources_fn
+        self.lane_resources_fn = lane_resources_fn
         self.low_level_max_time = max(1, int(low_level_max_time))
         self.wait_cost = max(1, int(wait_cost))
         self.agent_dict: dict[str, dict[str, State]] = {}
         self.constraint_dict: dict[str, Constraints] = {}
         self.constraints = Constraints()
         self.last_failure = ""
+        self.route_next_by_agent: dict[str, dict[NodeName, NodeName]] = {}
         self._make_agent_dict()
 
     def _make_agent_dict(self) -> None:
         for agent in self.agent_requests:
             self.agent_dict[agent.robot_name] = {
-                "start": State(0, agent.start_lm),
+                "start": State(0, agent.start_lm, self._normalize_yaw(agent.start_yaw)),
                 "goal": State(0, agent.goal_lm),
             }
+            if agent.route_nodes:
+                self.route_next_by_agent[agent.robot_name] = {
+                    start: goal
+                    for start, goal in zip(agent.route_nodes, agent.route_nodes[1:])
+                    if start != goal
+                }
 
     def admissible_heuristic(self, state: State, agent_name: str) -> float:
         goal = self.agent_dict[agent_name]["goal"].node
@@ -235,6 +287,11 @@ class LmCBSEnvironment:
                 and constraint.time >= state.time
             ):
                 return False
+        if self.vertex_resources_fn is not None:
+            goal_resources = set(self.vertex_resources_fn(state.node))
+            for interval in constraints.resource_interval_constraints:
+                if interval.resource in goal_resources and interval.end_time >= state.time:
+                    return False
         return True
 
     def state_valid(self, state: State) -> bool:
@@ -263,18 +320,45 @@ class LmCBSEnvironment:
             ):
                 self.last_failure = f"vertex_interval_constrained:{state.node}@{state.time}"
                 return False
+        if self.vertex_resources_fn is not None and not self._resource_constraints_allow(
+            self.vertex_resources_fn(state.node),
+            state.time,
+            state.time,
+        ):
+            self.last_failure = f"resource_constrained:{state.node}@{state.time}"
+            return False
         return True
 
     def transition_valid(self, state_1: State, state_2: State) -> bool:
-        edge_constraint = EdgeConstraint(state_1.time, state_1.node, state_2.node)
+        turn_ticks, _ = self.transition_parts(state_1, state_2)
+        move_start = state_1.time + turn_ticks
+        if state_1.node == state_2.node and self.vertex_resources_fn is not None:
+            if not self._resource_constraints_allow(
+                self.vertex_resources_fn(state_1.node),
+                state_1.time,
+                state_2.time,
+            ):
+                self.last_failure = (
+                    f"wait_resource_constrained:{state_1.node}"
+                    f"@{state_1.time}-{state_2.time}"
+                )
+                return False
+        if turn_ticks and not self._rotation_vertex_valid(
+            state_1.node,
+            state_1.time,
+            move_start,
+        ):
+            return False
+        edge_constraint = EdgeConstraint(move_start, state_1.node, state_2.node)
         if edge_constraint in self.constraints.edge_constraints:
             self.last_failure = f"edge_constrained:{state_1.node}->{state_2.node}@{state_1.time}"
             return False
         if edge_constraint in self.global_edge_constraints:
             self.last_failure = f"reserved_edge:{state_1.node}->{state_2.node}@{state_1.time}"
             return False
+        move_state = State(move_start, state_1.node, state_2.yaw)
         for interval in self.global_edge_intervals:
-            if self._edge_interval_conflicts(state_1, state_2, interval):
+            if self._edge_interval_conflicts(move_state, state_2, interval):
                 owner = f":{interval.owner}" if interval.owner else ""
                 self.last_failure = (
                     f"reserved_edge_interval:{state_1.node}->{state_2.node}"
@@ -282,13 +366,75 @@ class LmCBSEnvironment:
                 )
                 return False
         for interval in self.constraints.edge_interval_constraints:
-            if self._edge_interval_conflicts(state_1, state_2, interval):
+            if self._edge_interval_conflicts(move_state, state_2, interval):
                 self.last_failure = (
                     f"edge_interval_constrained:{state_1.node}->{state_2.node}"
                     f"@{state_1.time}-{state_2.time}"
                 )
                 return False
+        if state_1.node != state_2.node and self.lane_resources_fn is not None:
+            if not self._resource_constraints_allow(
+                self.lane_resources_fn(state_1.node, state_2.node),
+                move_start,
+                max(move_start, state_2.time - 1),
+            ):
+                self.last_failure = (
+                    f"edge_resource_constrained:{state_1.node}->{state_2.node}"
+                    f"@{move_start}-{state_2.time}"
+                )
+                return False
         return True
+
+    def _rotation_vertex_valid(self, node: NodeName, start: int, end: int) -> bool:
+        for constraint in self.constraints.vertex_constraints | self.global_vertex_constraints:
+            if constraint.node == node and start <= constraint.time <= end:
+                self.last_failure = f"rotation_vertex_constrained:{node}@{constraint.time}"
+                return False
+        for interval in self.global_vertex_intervals:
+            if interval.node == node and self._intervals_overlap(
+                start,
+                end,
+                interval.start_time,
+                interval.end_time,
+            ):
+                owner = f":{interval.owner}" if interval.owner else ""
+                self.last_failure = f"rotation_vertex_reserved:{node}@{start}-{end}{owner}"
+                return False
+        for interval in self.constraints.vertex_interval_constraints:
+            if interval.node == node and self._intervals_overlap(
+                start,
+                end,
+                interval.start_time,
+                interval.end_time,
+            ):
+                self.last_failure = f"rotation_vertex_interval_constrained:{node}@{start}-{end}"
+                return False
+        if self.vertex_resources_fn is not None and not self._resource_constraints_allow(
+            self.vertex_resources_fn(node),
+            start,
+            end,
+        ):
+            self.last_failure = f"rotation_resource_constrained:{node}@{start}-{end}"
+            return False
+        return True
+
+    def _resource_constraints_allow(
+        self,
+        resources: tuple[object, ...],
+        start_time: int,
+        end_time: int,
+    ) -> bool:
+        resource_set = set(resources)
+        return not any(
+            interval.resource in resource_set
+            and self._intervals_overlap(
+                start_time,
+                end_time,
+                interval.start_time,
+                interval.end_time,
+            )
+            for interval in self.constraints.resource_interval_constraints
+        )
 
     def _time_in_interval(self, time_value: int, start_time: int, end_time: int) -> bool:
         return start_time <= time_value <= end_time
@@ -318,24 +464,68 @@ class LmCBSEnvironment:
             interval.end_time,
         )
 
-    def get_neighbors(self, state: State) -> list[State]:
+    def get_neighbors(self, state: State, agent_name: str = "") -> list[State]:
         candidates = list(self.graph.get(state.node, [])) + [state.node]
+        route_next = self.route_next_by_agent.get(agent_name)
+        if route_next is not None:
+            expected = route_next.get(state.node)
+            candidates = [
+                node
+                for node in candidates
+                if node == state.node or node == expected
+            ]
         neighbors: list[State] = []
         for node in candidates:
-            next_state = State(state.time + self.transition_duration(state.node, node), node)
+            if node == state.node:
+                next_state = State(state.time + 1, node, state.yaw)
+            else:
+                target_yaw = self._normalize_yaw(self.heading_fn(state.node, node))
+                next_state = State(
+                    state.time + self.transition_duration(
+                        state.node,
+                        node,
+                        from_yaw=state.yaw,
+                        to_yaw=target_yaw,
+                    ),
+                    node,
+                    target_yaw,
+                )
             if self.state_valid(next_state) and self.transition_valid(state, next_state):
                 neighbors.append(next_state)
         return neighbors
 
-    def transition_duration(self, from_node: NodeName, to_node: NodeName) -> int:
+    def transition_duration(
+        self,
+        from_node: NodeName,
+        to_node: NodeName,
+        *,
+        from_yaw: float = 0.0,
+        to_yaw: float | None = None,
+    ) -> int:
         if from_node == to_node:
             return 1
-        return max(1, int(self.move_cost_fn(from_node, to_node)))
+        lane_yaw = self._normalize_yaw(
+            self.heading_fn(from_node, to_node) if to_yaw is None else to_yaw
+        )
+        move_ticks = max(1, int(self.move_cost_fn(from_node, to_node)))
+        turn_ticks = max(0, int(self.turn_cost_fn(from_yaw, lane_yaw)))
+        return move_ticks + turn_ticks
 
     def transition_cost(self, state_1: State, state_2: State) -> int:
         if state_1.node == state_2.node:
             return self.wait_cost
-        return self.transition_duration(state_1.node, state_2.node)
+        return max(1, state_2.time - state_1.time)
+
+    def transition_parts(self, state_1: State, state_2: State) -> tuple[int, int]:
+        if state_1.node == state_2.node:
+            return 0, max(1, state_2.time - state_1.time)
+        move_ticks = max(1, int(self.move_cost_fn(state_1.node, state_2.node)))
+        turn_ticks = max(0, state_2.time - state_1.time - move_ticks)
+        return turn_ticks, move_ticks
+
+    @staticmethod
+    def _normalize_yaw(value: float) -> float:
+        return round(math.atan2(math.sin(float(value)), math.cos(float(value))), 9)
 
     def get_state(self, agent_name: str, solution: dict[str, list[State]], t: int) -> State:
         if t < len(solution[agent_name]):
@@ -349,10 +539,17 @@ class LmCBSEnvironment:
         horizon = max(path[-1].time for path in solution.values() if path)
         vertex_intervals: dict[str, list[PathVertexInterval]] = {}
         edge_intervals: dict[str, list[PathEdgeInterval]] = {}
+        resource_intervals: dict[str, list[PathResourceInterval]] = {}
         for agent_name, path in solution.items():
             vertices, edges = self._path_intervals(agent_name, path, horizon)
             vertex_intervals[agent_name] = vertices
             edge_intervals[agent_name] = edges
+            if self.vertex_resources_fn is not None and self.lane_resources_fn is not None:
+                resource_intervals[agent_name] = self._path_resource_intervals(
+                    agent_name,
+                    path,
+                    horizon,
+                )
 
         first_conflict: Conflict | None = None
         for agent_1, agent_2 in combinations(solution.keys(), 2):
@@ -367,7 +564,104 @@ class LmCBSEnvironment:
                 edge_intervals[agent_2],
             )
             first_conflict = self._earlier_conflict(first_conflict, conflict)
+            if resource_intervals:
+                conflict = self._first_resource_interval_conflict(
+                    resource_intervals[agent_1],
+                    resource_intervals[agent_2],
+                )
+                first_conflict = self._earlier_conflict(first_conflict, conflict)
         return first_conflict
+
+    def _path_resource_intervals(
+        self,
+        agent_name: str,
+        path: list[State],
+        horizon: int,
+    ) -> list[PathResourceInterval]:
+        if not path or self.vertex_resources_fn is None or self.lane_resources_fn is None:
+            return []
+        intervals: set[PathResourceInterval] = set()
+
+        def add_vertex(node: NodeName, start: int, end: int) -> None:
+            for resource in self.vertex_resources_fn(node):
+                intervals.add(
+                    PathResourceInterval(
+                        agent_name,
+                        start,
+                        max(start + 1, end),
+                        resource,
+                        "vertex",
+                        node=node,
+                    )
+                )
+
+        for state in path:
+            add_vertex(state.node, state.time, state.time + 1)
+        for start, end in zip(path, path[1:]):
+            if start.node == end.node:
+                add_vertex(start.node, start.time, end.time + 1)
+                continue
+            turn_ticks, _ = self.transition_parts(start, end)
+            move_start = start.time + turn_ticks
+            if turn_ticks:
+                add_vertex(start.node, start.time, move_start + 1)
+            for resource in self.lane_resources_fn(start.node, end.node):
+                intervals.add(
+                    PathResourceInterval(
+                        agent_name,
+                        move_start,
+                        max(move_start + 1, end.time),
+                        resource,
+                        "edge",
+                        from_node=start.node,
+                        to_node=end.node,
+                    )
+                )
+        final = path[-1]
+        add_vertex(final.node, final.time, horizon + 1)
+        return sorted(
+            intervals,
+            key=lambda item: (
+                item.start_time,
+                item.end_time,
+                str(item.resource),
+                item.kind,
+            ),
+        )
+
+    def _first_resource_interval_conflict(
+        self,
+        first: list[PathResourceInterval],
+        second: list[PathResourceInterval],
+    ) -> Conflict | None:
+        best: Conflict | None = None
+        second_by_resource: dict[object, list[PathResourceInterval]] = {}
+        for interval in second:
+            second_by_resource.setdefault(interval.resource, []).append(interval)
+        for interval_1 in first:
+            for interval_2 in second_by_resource.get(interval_1.resource, []):
+                start = max(interval_1.start_time, interval_2.start_time)
+                end = min(interval_1.end_time, interval_2.end_time)
+                if start >= end:
+                    continue
+                conflict = Conflict(
+                    time=start,
+                    end_time=end - 1,
+                    type=Conflict.RESOURCE,
+                    agent_1=interval_1.agent,
+                    agent_2=interval_2.agent,
+                    node_1=interval_1.node,
+                    node_2=interval_2.node,
+                    agent_1_from=interval_1.from_node,
+                    agent_1_to=interval_1.to_node,
+                    agent_2_from=interval_2.from_node,
+                    agent_2_to=interval_2.to_node,
+                    agent_1_resource_kind=interval_1.kind,
+                    agent_2_resource_kind=interval_2.kind,
+                    resource=interval_1.resource,
+                )
+                best = self._earlier_conflict(best, conflict)
+        return best
 
     def _path_intervals(
         self,
@@ -393,10 +687,20 @@ class LmCBSEnvironment:
                     PathVertexInterval(agent_name, start.time, end.time, start.node)
                 )
                 continue
+            turn_ticks, _ = self.transition_parts(start, end)
+            if turn_ticks:
+                vertex_intervals.append(
+                    PathVertexInterval(
+                        agent_name,
+                        start.time,
+                        start.time + turn_ticks,
+                        start.node,
+                    )
+                )
             edge_intervals.append(
                 PathEdgeInterval(
                     agent=agent_name,
-                    start_time=start.time,
+                    start_time=start.time + turn_ticks,
                     end_time=end.time,
                     from_node=start.node,
                     to_node=end.node,
@@ -524,6 +828,22 @@ class LmCBSEnvironment:
                 conflict.agent_2: constraint,
             }
 
+        if conflict.type == Conflict.RESOURCE:
+            assert conflict.resource is not None
+            constraint_1 = Constraints()
+            constraint_2 = Constraints()
+            resource_constraint = ResourceIntervalConstraint(
+                start_time=conflict.time,
+                end_time=max(conflict.time, conflict.end_time),
+                resource=conflict.resource,
+            )
+            constraint_1.resource_interval_constraints.add(resource_constraint)
+            constraint_2.resource_interval_constraints.add(resource_constraint)
+            return {
+                conflict.agent_1: constraint_1,
+                conflict.agent_2: constraint_2,
+            }
+
         assert conflict.node_1 is not None
         assert conflict.node_2 is not None
         constraint_1 = Constraints()
@@ -604,7 +924,7 @@ class LmCBSEnvironment:
                 return self.reconstruct_path(came_from, current)
 
             closed_set.add(current)
-            for neighbor in self.get_neighbors(current):
+            for neighbor in self.get_neighbors(current, agent_name):
                 if neighbor in closed_set:
                     continue
                 tentative_g = g_score[current] + self.transition_cost(current, neighbor)
@@ -632,6 +952,10 @@ class LmCBSPlanner:
         graph: dict[NodeName, list[NodeName]],
         heuristic_fn: Callable[[NodeName, NodeName], float] | None = None,
         move_cost_fn: Callable[[NodeName, NodeName], int] | None = None,
+        heading_fn: Callable[[NodeName, NodeName], float] | None = None,
+        turn_cost_fn: Callable[[float, float], int] | None = None,
+        vertex_resources_fn: Callable[[NodeName], tuple[object, ...]] | None = None,
+        lane_resources_fn: Callable[[NodeName, NodeName], tuple[object, ...]] | None = None,
         low_level_max_time: int = 128,
         max_high_level_nodes: int = 2000,
         max_planning_time_sec: float = 5.0,
@@ -640,6 +964,10 @@ class LmCBSPlanner:
         self.graph = graph
         self.heuristic_fn = heuristic_fn
         self.move_cost_fn = move_cost_fn
+        self.heading_fn = heading_fn
+        self.turn_cost_fn = turn_cost_fn
+        self.vertex_resources_fn = vertex_resources_fn
+        self.lane_resources_fn = lane_resources_fn
         self.low_level_max_time = max(1, int(low_level_max_time))
         self.max_high_level_nodes = max(1, int(max_high_level_nodes))
         self.max_planning_time_sec = max(0.0, float(max_planning_time_sec))
@@ -745,6 +1073,10 @@ class LmCBSPlanner:
             global_edge_intervals=global_edge_intervals,
             heuristic_fn=self.heuristic_fn,
             move_cost_fn=move_cost_fn or self.move_cost_fn,
+            heading_fn=self.heading_fn,
+            turn_cost_fn=self.turn_cost_fn,
+            vertex_resources_fn=self.vertex_resources_fn,
+            lane_resources_fn=self.lane_resources_fn,
             low_level_max_time=ll_max_time,
             wait_cost=self.wait_cost,
         )
@@ -789,14 +1121,17 @@ class LmCBSPlanner:
                 total_nodes = 0
                 for req in robot_requests:
                     states = current.solution[req.robot_name]
-                    nodes = [state.node for state in states]
+                    expanded = self._expand_kinematic_states(env, states)
+                    nodes = [state.node for state, _ in expanded]
                     total_nodes += len(nodes)
                     plans[req.robot_name] = LmRobotPlan(
                         robot_name=req.robot_name,
                         start_lm=req.start_lm,
                         goal_lm=req.goal_lm,
                         nodes=nodes,
-                        times=[state.time for state in states],
+                        times=[state.time for state, _ in expanded],
+                        yaws=[state.yaw for state, _ in expanded],
+                        actions=[action for _, action in expanded],
                     )
                 debug.reason = "success"
                 debug.conflicts_resolved = conflicts_resolved
@@ -828,3 +1163,26 @@ class LmCBSPlanner:
         debug.conflicts_resolved = conflicts_resolved
         debug.high_level_nodes = high_level_nodes
         return PlannerResult(plans={}, debug=debug)
+
+    def _expand_kinematic_states(
+        self,
+        env: LmCBSEnvironment,
+        states: list[State],
+    ) -> list[tuple[State, str]]:
+        if not states:
+            return []
+        expanded: list[tuple[State, str]] = [(states[0], "start")]
+        for start, end in zip(states, states[1:]):
+            if start.node == end.node:
+                expanded.append((end, "wait"))
+                continue
+            turn_ticks, _ = env.transition_parts(start, end)
+            if turn_ticks:
+                expanded.append(
+                    (
+                        State(start.time + turn_ticks, start.node, end.yaw),
+                        "rotate",
+                    )
+                )
+            expanded.append((end, "move"))
+        return expanded

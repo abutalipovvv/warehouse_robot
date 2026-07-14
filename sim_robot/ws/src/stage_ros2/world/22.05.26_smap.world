@@ -39,6 +39,6 @@ floorplan
 trp1_with_laser
 (
   name "trp1"
-  color "red"
+  color "LightSteelBlue"
   pose [ -4.902 1.362 0.000 0.000 ]
 )

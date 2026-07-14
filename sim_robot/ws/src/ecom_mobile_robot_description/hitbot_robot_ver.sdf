@@ -1,0 +1,513 @@
+<sdf version='1.11'>
+  <model name='TinyRobot'>
+    <plugin name="slotcar" filename="libslotcar.so">
+
+      <nominal_drive_speed>0.5</nominal_drive_speed>
+      <nominal_drive_acceleration>0.25</nominal_drive_acceleration>
+      <max_drive_acceleration>0.75</max_drive_acceleration>
+
+      <nominal_turn_speed>0.6</nominal_turn_speed>
+      <nominal_turn_acceleration>1.5</nominal_turn_acceleration>
+      <max_turn_acceleration>2.0</max_turn_acceleration>
+
+      <tire_radius>0.9</tire_radius>
+      <base_width>0.053</base_width>
+
+      <stop_distance>0.75</stop_distance>
+      <stop_radius>0.75</stop_radius>
+
+      <!-- Can the robot drive backwards -->
+      <reversible>true</reversible>
+
+      <!-- Battery params -->
+      <nominal_voltage>12.0</nominal_voltage>
+      <nominal_capacity>24.0</nominal_capacity>
+      <charging_current>5.0</charging_current>
+
+      <!-- Physical params -->
+      <mass>20.0</mass>
+      <inertia>10.0</inertia>
+      <friction_coefficient>0.22</friction_coefficient>
+
+      <!-- Power systems -->
+      <nominal_power>20.0</nominal_power>
+
+    </plugin>
+    <link name='base_footprint'>
+      <inertial>
+        <pose>-0.015973971021848658 -0.002675428771750503 0.077327065198417783 0 0 0</pose>
+        <mass>100.29998000000001</mass>
+        <inertia>
+          <ixx>5.9433213170782722</ixx>
+          <ixy>-0.031925225439520387</ixy>
+          <ixz>0.013588399520510219</ixz>
+          <iyy>11.655851867180321</iyy>
+          <iyz>0.00088742370452402769</iyz>
+          <izz>16.700056877774681</izz>
+        </inertia>
+      </inertial>
+
+      <collision name='base_footprint_fixed_joint_lump__base_link_collision'>
+        <pose>0 0 0 0 0 0</pose>
+        <geometry>
+          <box>
+            <size>1 0.68999999999999995 0.17999999999999999</size>
+          </box>
+        </geometry>
+      </collision>
+      <collision name='base_footprint_fixed_joint_lump__lidar_back_link_collision_1'>
+        <pose>-0.41524 -0.25105 0.218 0 0 0</pose>
+        <geometry>
+          <mesh>
+            <scale>1 1 1</scale>
+            <uri>file:///home/assem/ros2_ws/install/yahboom_rosmaster_description/share/yahboom_rosmaster_description/meshes/lidar_back_link.STL</uri>
+          </mesh>
+        </geometry>
+      </collision>
+      <collision name='base_footprint_fixed_joint_lump__lidar_front_link_collision_2'>
+        <pose>0.32486999999999999 0.24906 0.218 0 0 0</pose>
+        <geometry>
+          <mesh>
+            <scale>1 1 1</scale>
+            <uri>file:///home/assem/ros2_ws/install/yahboom_rosmaster_description/share/yahboom_rosmaster_description/meshes/lidar_front_link.STL</uri>
+          </mesh>
+        </geometry>
+      </collision>
+
+      <visual name='base_footprint_fixed_joint_lump__base_link_visual'>
+        <pose>0 0 0 0 0 0</pose>
+        <geometry>
+          <mesh>
+            <scale>1 1 1</scale>
+            <uri>file:///home/assem/ros2_ws/install/yahboom_rosmaster_description/share/yahboom_rosmaster_description/meshes/base_link.STL</uri>
+          </mesh>
+        </geometry>
+        <material>
+          <diffuse>0.990199983 1 1 1</diffuse>
+          <ambient>0.990199983 1 1 1</ambient>
+        </material>
+      </visual>
+
+      <visual name='base_footprint_fixed_joint_lump__lidar_back_link_visual_1'>
+        <pose>-0.41524 -0.25105 0.218 0 0 0</pose>
+        <geometry>
+          <mesh>
+            <scale>1 1 1</scale>
+            <uri>file:///home/assem/ros2_ws/install/yahboom_rosmaster_description/share/yahboom_rosmaster_description/meshes/lidar_back_link.STL</uri>
+          </mesh>
+        </geometry>
+        <material>
+          <diffuse>0.990199983 1 1 1</diffuse>
+          <ambient>0.990199983 1 1 1</ambient>
+        </material>
+      </visual>
+
+      <visual name='base_footprint_fixed_joint_lump__lidar_front_link_visual_2'>
+        <pose>0.32486999999999999 0.24906 0.218 0 0 0</pose>
+        <geometry>
+          <mesh>
+            <scale>1 1 1</scale>
+            <uri>file:///home/assem/ros2_ws/install/yahboom_rosmaster_description/share/yahboom_rosmaster_description/meshes/lidar_front_link.STL</uri>
+          </mesh>
+        </geometry>
+        <material>
+          <diffuse>0.990199983 1 1 1</diffuse>
+          <ambient>0.990199983 1 1 1</ambient>
+        </material>
+      </visual>
+    </link>
+
+    <joint name='BL_wheel_link_joint' type='revolute'>
+      <pose relative_to='base_footprint'>-0.26300000000000001 0.27088000000000001 0.0121 0.00061433000000000006 0.019368000000000017 0.070225999999999997</pose>
+      <parent>base_footprint</parent>
+      <child>BL_wheel_link</child>
+      <axis>
+        <xyz>-0.070154999999999995 -0.99753999999999998 -0.00074611999999999996</xyz>
+        <limit>
+          <effort>150</effort>
+          <velocity>15.56</velocity>
+          <lower>-inf</lower>
+          <upper>inf</upper>
+        </limit>
+        <dynamics>
+          <damping>0.050000000000000003</damping>
+          <friction>0.10000000000000001</friction>
+          <spring_reference>0</spring_reference>
+          <spring_stiffness>0</spring_stiffness>
+        </dynamics>
+      </axis>
+    </joint>
+    <link name='BL_wheel_link'>
+      <pose relative_to='BL_wheel_link_joint'>0 0 0 0 0 0</pose>
+      <inertial>
+        <pose>-0.0016927999999999999 -0.024070000000000001 -1.8003e-05 0 0 0</pose>
+        <mass>0.76207999999999998</mass>
+        <inertia>
+          <ixx>0.0001995</ixx>
+          <ixy>1.2055999999999999e-05</ixy>
+          <ixz>7.1848000000000003e-09</ixz>
+          <iyy>0.00037007000000000001</iyy>
+          <iyz>1.2834e-07</iyz>
+          <izz>0.00019866</izz>
+        </inertia>
+      </inertial>
+      <collision name='BL_wheel_link_collision'>
+        <pose>0 0 0 0 0 0</pose>
+        <geometry>
+          <cylinder>
+            <length>0.050000000000000003</length>
+            <radius>0.035000000000000003</radius>
+          </cylinder>
+        </geometry>
+      </collision>
+      <visual name='BL_wheel_link_visual'>
+        <pose>0 0 0 0 0 0</pose>
+        <geometry>
+          <mesh>
+            <scale>1 1 1</scale>
+            <uri>file:///home/assem/ros2_ws/install/yahboom_rosmaster_description/share/yahboom_rosmaster_description/meshes/BL_wheel_link.STL</uri>
+          </mesh>
+        </geometry>
+        <material>
+          <diffuse>0.990199983 1 1 1</diffuse>
+          <ambient>0.990199983 1 1 1</ambient>
+        </material>
+      </visual>
+    </link>
+    <joint name='BR_wheel_link_joint' type='revolute'>
+      <pose relative_to='base_footprint'>-0.30299999999999999 -0.27738000000000002 0.0121 0.00061433000000000006 0.019368000000000017 0.070225999999999997</pose>
+      <parent>base_footprint</parent>
+      <child>BR_wheel_link</child>
+      <axis>
+        <xyz>0.070154999999999995 0.99753999999999998 0.00074611999999999996</xyz>
+        <limit>
+          <effort>150</effort>
+          <velocity>15.56</velocity>
+          <lower>-inf</lower>
+          <upper>inf</upper>
+        </limit>
+        <dynamics>
+          <damping>0.050000000000000003</damping>
+          <friction>0.10000000000000001</friction>
+          <spring_reference>0</spring_reference>
+          <spring_stiffness>0</spring_stiffness>
+        </dynamics>
+      </axis>
+    </joint>
+    <link name='BR_wheel_link'>
+      <pose relative_to='BR_wheel_link_joint'>0 0 0 0 0 0</pose>
+      <inertial>
+        <pose>0.0016929 0.024070999999999999 1.8005000000000001e-05 0 0 0</pose>
+        <mass>0.76207999999999998</mass>
+        <inertia>
+          <ixx>0.0001995</ixx>
+          <ixy>1.2055999999999999e-05</ixy>
+          <ixz>7.5814000000000003e-09</ixz>
+          <iyy>0.00037007000000000001</iyy>
+          <iyz>1.2832e-07</iyz>
+          <izz>0.00019866</izz>
+        </inertia>
+      </inertial>
+      <collision name='BR_wheel_link_collision'>
+        <pose>0 0 0 0 0 0</pose>
+        <geometry>
+          <cylinder>
+            <length>0.050000000000000003</length>
+            <radius>0.035000000000000003</radius>
+          </cylinder>
+        </geometry>
+      </collision>
+      <visual name='BR_wheel_link_visual'>
+        <pose>0 0 0 0 0 0</pose>
+        <geometry>
+          <mesh>
+            <scale>1 1 1</scale>
+            <uri>file:///home/assem/ros2_ws/install/yahboom_rosmaster_description/share/yahboom_rosmaster_description/meshes/BR_wheel_link.STL</uri>
+          </mesh>
+        </geometry>
+        <material>
+          <diffuse>0.990199983 1 1 1</diffuse>
+          <ambient>0.990199983 1 1 1</ambient>
+        </material>
+      </visual>
+    </link>
+    <joint name='FL_wheel_link_joint' type='revolute'>
+      <pose relative_to='base_footprint'>0.217 0.27101999999999998 0.0121 0 0 0.070213999999999999</pose>
+      <parent>base_footprint</parent>
+      <child>FL_wheel_link</child>
+      <axis>
+        <xyz>-0.070155999999999996 -0.99753999999999998 0</xyz>
+        <limit>
+          <effort>150</effort>
+          <velocity>15.56</velocity>
+          <lower>-inf</lower>
+          <upper>inf</upper>
+        </limit>
+        <dynamics>
+          <damping>0.050000000000000003</damping>
+          <friction>0.10000000000000001</friction>
+          <spring_reference>0</spring_reference>
+          <spring_stiffness>0</spring_stiffness>
+        </dynamics>
+      </axis>
+    </joint>
+    <link name='FL_wheel_link'>
+      <pose relative_to='FL_wheel_link_joint'>0 0 0 0 0 0</pose>
+      <inertial>
+        <pose>-0.0016927999999999999 -0.024070000000000001 5.0220999999999996e-10 0 0 0</pose>
+        <mass>0.76207999999999998</mass>
+        <inertia>
+          <ixx>0.0001995</ixx>
+          <ixy>1.2055999999999999e-05</ixy>
+          <ixz>-1.3667e-09</ixz>
+          <iyy>0.00037007000000000001</iyy>
+          <iyz>9.6114e-11</iyz>
+          <izz>0.00019866</izz>
+        </inertia>
+      </inertial>
+      <collision name='FL_wheel_link_collision'>
+        <pose>0 0 0 0 0 0</pose>
+        <geometry>
+          <cylinder>
+            <length>0.050000000000000003</length>
+            <radius>0.035000000000000003</radius>
+          </cylinder>
+        </geometry>
+      </collision>
+      <visual name='FL_wheel_link_visual'>
+        <pose>0 0 0 0 0 0</pose>
+        <geometry>
+          <mesh>
+            <scale>1 1 1</scale>
+            <uri>file:///home/assem/ros2_ws/install/yahboom_rosmaster_description/share/yahboom_rosmaster_description/meshes/FL_wheel_link.STL</uri>
+          </mesh>
+        </geometry>
+        <material>
+          <diffuse>0.990199983 1 1 1</diffuse>
+          <ambient>0.990199983 1 1 1</ambient>
+        </material>
+      </visual>
+    </link>
+    <joint name='FR_wheel_link_joint' type='revolute'>
+      <pose relative_to='base_footprint'>0.17699999999999999 -0.27738000000000002 0.0121 0.00061433000000000006 0.019368000000000017 0.070225999999999997</pose>
+      <parent>base_footprint</parent>
+      <child>FR_wheel_link</child>
+      <axis>
+        <xyz>0.070154999999999995 0.99753999999999998 0.00074611999999999996</xyz>
+        <limit>
+          <effort>150</effort>
+          <velocity>15.56</velocity>
+          <lower>-inf</lower>
+          <upper>inf</upper>
+        </limit>
+        <dynamics>
+          <damping>0.050000000000000003</damping>
+          <friction>0.10000000000000001</friction>
+          <spring_reference>0</spring_reference>
+          <spring_stiffness>0</spring_stiffness>
+        </dynamics>
+      </axis>
+    </joint>
+    <link name='FR_wheel_link'>
+      <pose relative_to='FR_wheel_link_joint'>0 0 0 0 0 0</pose>
+      <inertial>
+        <pose>0.0016929 0.024070999999999999 1.8005000000000001e-05 0 0 0</pose>
+        <mass>0.76207999999999998</mass>
+        <inertia>
+          <ixx>0.0001995</ixx>
+          <ixy>1.2055999999999999e-05</ixy>
+          <ixz>7.5814000000000003e-09</ixz>
+          <iyy>0.00037007000000000001</iyy>
+          <iyz>1.2832e-07</iyz>
+          <izz>0.00019866</izz>
+        </inertia>
+      </inertial>
+      <collision name='FR_wheel_link_collision'>
+        <pose>0 0 0 0 0 0</pose>
+        <geometry>
+          <cylinder>
+            <length>0.050000000000000003</length>
+            <radius>0.035000000000000003</radius>
+          </cylinder>
+        </geometry>
+      </collision>
+      <visual name='FR_wheel_link_visual'>
+        <pose>0 0 0 0 0 0</pose>
+        <geometry>
+          <mesh>
+            <scale>1 1 1</scale>
+            <uri>file:///home/assem/ros2_ws/install/yahboom_rosmaster_description/share/yahboom_rosmaster_description/meshes/FR_wheel_link.STL</uri>
+          </mesh>
+        </geometry>
+        <material>
+          <diffuse>0.990199983 1 1 1</diffuse>
+          <ambient>0.990199983 1 1 1</ambient>
+        </material>
+      </visual>
+    </link>
+    <joint name='joint_tire_left' type='revolute'>
+      <pose relative_to='base_footprint'>-0.043000999999999998 0.32282 0.065000000000000002 0.00061433000000000006 0.019368000000000017 0.070225999999999997</pose>
+      <parent>base_footprint</parent>
+      <child>left_wheel</child>
+      <axis>
+        <!--<xyz>-0.070154999999999995 -0.99753999999999998 -0.00074611999999999996</xyz>-->
+        <xyz>0 1 0</xyz>
+        <limit>
+          <lower>-1e+16</lower>
+          <upper>1e+16</upper>
+        </limit>
+        <dynamics>
+          <spring_reference>0</spring_reference>
+          <spring_stiffness>0</spring_stiffness>
+        </dynamics>
+      </axis>
+    </joint>
+    <link name='left_wheel'>
+      <pose relative_to='joint_tire_left'>0 0 0 0 0 0</pose>
+      <inertial>
+        <pose>-0.0014756999999999999 -0.020983000000000002 -1.5695000000000001e-05 0 0 0</pose>
+        <mass>3.5</mass>
+        <inertia>
+          <ixx>0.0021513999999999999</ixx>
+          <ixy>0.00013184000000000001</ixy>
+          <ixz>1.0007e-07</ixz>
+          <iyy>0.0040168000000000001</iyy>
+          <iyz>1.3970999999999999e-06</iyz>
+          <izz>0.0021423000000000002</izz>
+        </inertia>
+      </inertial>
+      <collision name='left_wheel_collision'>
+        <pose>0 0 0 0 0 0</pose>
+        <geometry>
+          <cylinder>
+            <length>0.043999999999999997</length>
+            <radius>0.089999999999999997</radius>
+          </cylinder>
+        </geometry>
+        <surface>
+          <contact>
+            <ode>
+            <!--
+              <kp>1e+08</kp>
+              <min_depth>0.005</min_depth>
+              -->
+              <kp>10000000.0</kp>
+              <kd>1.0</kd>
+            </ode>
+          </contact>
+          <friction>
+            <ode>
+              <mu>1</mu>
+              <mu2>1</mu2>
+              <fdir1>0 0 1</fdir1>
+            </ode>
+          </friction>
+        </surface>
+      </collision>
+      <visual name='left_wheel_visual'>
+        <pose>0 0 0 0 0 0</pose>
+        <geometry>
+          <mesh>
+            <scale>1 1 1</scale>
+            <uri>file:///home/assem/ros2_ws/install/yahboom_rosmaster_description/share/yahboom_rosmaster_description/meshes/ML_wheel_link.STL</uri>
+          </mesh>
+        </geometry>
+        <material>
+          <diffuse>0.990199983 1 1 1</diffuse>
+          <ambient>0.990199983 1 1 1</ambient>
+        </material>
+      </visual>
+    </link>
+    <joint name='joint_tire_right' type='revolute'>
+      <pose relative_to='base_footprint'>-0.043000999999999998 -0.32757999999999998 0.065000000000000002 0.00061433000000000006 0.019368000000000017 0.070225999999999997</pose>
+      <parent>base_footprint</parent>
+      <child>right_wheel</child>
+      <axis>
+        <!--<xyz>0.070154999999999995 0.99753999999999998 0.00074611999999999996</xyz> -->
+        <xyz> 0 1 0 </xyz>
+        <limit>
+          <lower>-1e+16</lower>
+          <upper>1e+16</upper>
+        </limit>
+        <dynamics>
+          <spring_reference>0</spring_reference>
+          <spring_stiffness>0</spring_stiffness>
+        </dynamics>
+      </axis>
+    </joint>
+    <link name='right_wheel'>
+      <pose relative_to='joint_tire_right'>0 0 0 0 0 0</pose>
+      <inertial>
+        <pose>0.0014756999999999999 0.020983000000000002 1.5695000000000001e-05 0 0 0</pose>
+        <mass>3.5</mass>
+        <inertia>
+          <ixx>0.0021513999999999999</ixx>
+          <ixy>0.00013184000000000001</ixy>
+          <ixz>9.2888000000000004e-08</ixz>
+          <iyy>0.0040168000000000001</iyy>
+          <iyz>1.4024999999999999e-06</iyz>
+          <izz>0.0021423000000000002</izz>
+        </inertia>
+      </inertial>
+      <collision name='right_wheel_collision'>
+        <pose>0 0 0 0 0 0</pose>
+        <geometry>
+          <cylinder>
+            <length>0.043999999999999997</length>
+            <radius>0.089999999999999997</radius>
+          </cylinder>
+        </geometry>
+        <surface>
+          <contact>
+            <ode>
+            <!--
+              <kp>1e+08</kp>
+              <min_depth>0.005</min_depth>
+              -->
+              <kp>10000000.0</kp>
+              <kd>1.0</kd>
+            </ode>
+          </contact>
+          <friction>
+            <ode>
+              <mu>1</mu>
+              <mu2>1</mu2>
+              <fdir1>0 0 1</fdir1>
+            </ode>
+          </friction>
+        </surface>
+      </collision>
+      <visual name='right_wheel_visual'>
+        <pose>0 0 0 0 0 0</pose>
+        <geometry>
+          <mesh>
+            <scale>1 1 1</scale>
+            <uri>file:///home/assem/ros2_ws/install/yahboom_rosmaster_description/share/yahboom_rosmaster_description/meshes/MR_wheel_link.STL</uri>
+          </mesh>
+        </geometry>
+        <material>
+          <diffuse>0.990199983 1 1 1</diffuse>
+          <ambient>0.990199983 1 1 1</ambient>
+        </material>
+      </visual>
+    </link>
+    <frame name='lidar_back_link_joint' attached_to='base_link'>
+      <pose>-0.41524 -0.25105 0.218 0 0 0</pose>
+    </frame>
+    <frame name='lidar_back_link' attached_to='lidar_back_link_joint'>
+      <pose>0 0 0 0 0 0</pose>
+    </frame>
+    <frame name='lidar_front_link_joint' attached_to='base_link'>
+      <pose>0.32486999999999999 0.24906 0.218 0 0 0</pose>
+    </frame>
+    <frame name='lidar_front_link' attached_to='lidar_front_link_joint'>
+      <pose>0 0 0 0 0 0</pose>
+    </frame>
+    <frame name='base_joint' attached_to='base_footprint'>
+      <pose>0 0 0 0 0 0</pose>
+    </frame>
+    <frame name='base_link' attached_to='base_joint'>
+      <pose>0 0 0 0 0 0</pose>
+    </frame>
+  </model>
+</sdf>

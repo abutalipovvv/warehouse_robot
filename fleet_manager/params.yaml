@@ -1,44 +1,17 @@
 robot_model:
   source: nav2
-  radius: 0.22
-  footprint_segments: 16
+  # Circumscribed radius of the 1.00 x 0.70 m Ecom body mesh.
+  radius: 0.632
+  footprint_segments: 4
   footprint:
-  - x: 0.22
-    y: 0.0
-  - x: 0.203253
-    y: 0.08419
-  - x: 0.155563
-    y: 0.155563
-  - x: 0.08419
-    y: 0.203253
-  - x: 0.0
-    y: 0.22
-  - x: -0.08419
-    y: 0.203253
-  - x: -0.155563
-    y: 0.155563
-  - x: -0.203253
-    y: 0.08419
-  - x: -0.22
-    y: 0.0
-  - x: -0.203253
-    y: -0.08419
-  - x: -0.155563
-    y: -0.155563
-  - x: -0.08419
-    y: -0.203253
-  - x: 0.0
-    y: -0.22
-  - x: 0.08419
-    y: -0.203253
-  - x: 0.155563
-    y: -0.155563
-  - x: 0.203253
-    y: -0.08419
+  - {x: -0.523, y: -0.3532}
+  - {x: 0.477, y: -0.3532}
+  - {x: 0.477, y: 0.3468}
+  - {x: -0.523, y: 0.3468}
   frames:
     lidar:
-      x: 0.28
-      y: 0
+      x: 0.32487
+      y: 0.24906
       label: LiDAR
       color: '#1f6feb'
     imu:
@@ -47,13 +20,13 @@ robot_model:
       label: IMU
       color: '#d95521'
     wheel_left:
-      x: 0
-      y: 0.225
+      x: -0.043001
+      y: 0.32282
       label: WL
       color: '#2f3a4a'
     wheel_right:
-      x: 0
-      y: -0.225
+      x: -0.043001
+      y: -0.32758
       label: WR
       color: '#2f3a4a'
 navigation:
@@ -61,7 +34,7 @@ navigation:
   route_acceleration: 0.6
   simulate_rotation: true
   turn_speed: 0.9
-  footprint_lookahead: 0.45
+  footprint_lookahead: 0.65
   collision_margin: 0.04
   stop_distance: 0.18
   angular_gain: 2.2
@@ -107,9 +80,15 @@ fleet:
   # clients. A 10 Hz physics clock keeps 50 robots visually smooth.
   simulation_tick_interval_sec: 0.1
   reservation_safety_time_sec: 0.35
-  robot_clearance_m: 0.35
-  # null derives center spacing from footprint diameter + collision margins.
-  mapf_min_robot_center_distance_m: null
+  # The Ecom body is one metre long. A 0.10 m traffic envelope leaves safe
+  # room on the 1.20 m benchmark graph without pretending it is still TRP1.
+  robot_clearance_m: 0.10
+  # Explicit graph reservation distance; exact rectangle overlap remains the
+  # final authority for spawn and continuous runtime collision checks.
+  mapf_min_robot_center_distance_m: 1.15
+  # null derives the runtime preview from route speed, acceleration and the
+  # spatial footprint lookahead. Set seconds explicitly to tune field robots.
+  runtime_collision_lookahead_sec: null
   continuous_collision_step_sec: 0.1
   wait_time_sec: 1
   wait_cost: 6
@@ -135,7 +114,15 @@ fleet:
   # The planner never creates a straight off-graph connector to that LM.
   start_pose_lm_tolerance_m: 0.1
   deadlock_wait_timeout_sec: 3
+  # Keep following the committed route while a predicted blocker is expected
+  # to leave. Spatial replanning is allowed only after a persistent stall.
+  traffic_replan_after_sec: 8
   deadlock_priority_lease_sec: 2.5
+  # Wait/priority ordering is cheaper and more stable than changing routes.
+  # Escalate only the coupled wait-cycle to CBS, then retreat as a last resort.
+  deadlock_coupled_replan_after_sec: 5
+  deadlock_coupled_replan_interval_sec: 4
+  deadlock_retreat_after_sec: 12
   remote_route_chunk_lms: 5
   remote_poll_interval_sec: 0.25
   remote_timeout_sec: 0.8
@@ -143,8 +130,12 @@ fleet:
   cbs_low_level_max_time: 160
   cbs_max_high_level_nodes: 2000
   cbs_max_planning_time_sec: 5
+  # CBS is a local coupled-component solver, never a 50-robot global fallback.
+  local_cbs_max_robots: 8
   reservation_detour_horizon_sec: 8
-  reserved_edge_detour_enabled: true
+  # Moving robots create time reservations. They do not rewrite the committed
+  # shortest spatial route unless deadlock recovery explicitly requests it.
+  reserved_edge_detour_enabled: false
   reserved_edge_hard_constraints_enabled: true
   batch_collision_horizon_sec: null
   batch_wait_max_iterations: 60

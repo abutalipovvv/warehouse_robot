@@ -34,6 +34,10 @@ class FleetMapfPlanner:
         self.low_level_max_time = int(fleet_params.get("cbs_low_level_max_time", 160))
         self.max_high_level_nodes = int(fleet_params.get("cbs_max_high_level_nodes", 2000))
         self.max_planning_time_sec = float(fleet_params.get("cbs_max_planning_time_sec", 5.0))
+        self.local_cbs_max_robots = max(
+            2,
+            int(fleet_params.get("local_cbs_max_robots", 8) or 8),
+        )
         self.time_step_sec = float(fleet_params.get("reservation_time_step_sec", 1.0))
         self.wait_time_sec = float(fleet_params.get("wait_time_sec", self.time_step_sec))
         self.wait_cost = int(fleet_params.get("wait_cost", 6))
@@ -41,7 +45,7 @@ class FleetMapfPlanner:
             fleet_params.get("stretch_motion_to_reservation_ticks", False)
         )
         self.reserved_edge_detour_enabled = bool(
-            fleet_params.get("reserved_edge_detour_enabled", True)
+            fleet_params.get("reserved_edge_detour_enabled", False)
         )
         self.reserved_edge_hard_constraints_enabled = bool(
             fleet_params.get("reserved_edge_hard_constraints_enabled", True)
@@ -93,6 +97,7 @@ class FleetMapfPlanner:
             if isinstance(name, str)
         }
         requests: list[LmRobotRequest] = []
+        start_yaws: dict[str, float] = {}
         seen_robot_names: set[str] = set()
         for index, item in enumerate(robots):
             if not isinstance(item, dict):
@@ -108,6 +113,7 @@ class FleetMapfPlanner:
                 raise ValueError(f"duplicate robot name: {name}")
             seen_robot_names.add(name)
             pose = item.get("startPose")
+            start_yaw = 0.0
             if isinstance(pose, dict):
                 clean_pose = {
                     "x": float(pose.get("x", 0.0) or 0.0),
@@ -115,7 +121,23 @@ class FleetMapfPlanner:
                     "yaw": float(pose.get("yaw", 0.0) or 0.0),
                 }
                 self._validate_start_pose_at_lm(name, start_lm, clean_pose)
-            requests.append(LmRobotRequest(name, start_lm, goal_lm))
+                start_yaw = clean_pose["yaw"]
+            start_yaws[name] = start_yaw
+            route_nodes = self._request_route_nodes(
+                item,
+                robot_name=name,
+                start_lm=start_lm,
+                goal_lm=goal_lm,
+            )
+            requests.append(
+                LmRobotRequest(
+                    name,
+                    start_lm,
+                    goal_lm,
+                    start_yaw,
+                    route_nodes,
+                )
+            )
 
         reserved_vertex_constraints = self._reserved_vertex_constraints(payload)
         reserved_edge_constraints = self._reserved_edge_constraints(payload)
@@ -142,6 +164,9 @@ class FleetMapfPlanner:
             reserved_interval_edges=reserved_interval_edges,
             low_level_max_time=low_level_max_time,
             allow_cbs_fallback=allow_cbs_fallback,
+            rotate_enabled=rotate_enabled,
+            turn_speed=turn_speed,
+            selected_backend=self._planner_backend_for_payload(payload),
         )
 
         plans = []
@@ -158,6 +183,9 @@ class FleetMapfPlanner:
                     rotate_enabled=rotate_enabled,
                     turn_speed=turn_speed,
                     stretch_motion_to_reservation_ticks=stretch_motion,
+                    start_yaw=start_yaws.get(request.robot_name, request.start_yaw),
+                    yaws=plan.yaws,
+                    actions=plan.actions,
                 )
                 plans.append(
                     {
@@ -166,7 +194,13 @@ class FleetMapfPlanner:
                         "goalLm": request.goal_lm,
                         "nodes": plan.nodes,
                         "times": plan.times,
-                        "timedSegments": self._timed_segments_for_nodes(plan.nodes, plan.times),
+                        "yaws": plan.yaws,
+                        "actions": plan.actions,
+                        "timedSegments": self._timed_segments_for_nodes(
+                            plan.nodes,
+                            plan.times,
+                            plan.actions,
+                        ),
                         "trajectory": trajectory,
                         "arrivalTime": trajectory[-1]["t"] if trajectory else 0.0,
                     }
@@ -194,7 +228,7 @@ class FleetMapfPlanner:
                 "reservedDetourEnabled": reserved_detour_enabled,
                 "reservedFallbackReason": fallback_reason,
                 "waitCost": self.wait_cost,
-                "plannerBackend": self.planner_backend,
+                "plannerBackend": self._planner_backend_for_payload(payload),
                 "lowLevelMaxTime": low_level_max_time,
                 "cbsFallbackAllowed": allow_cbs_fallback,
                 "routeSpeed": speed,
@@ -216,6 +250,7 @@ class FleetMapfPlanner:
         self,
         nodes: list[str],
         times: list[int],
+        actions: list[str] | None = None,
     ) -> list[dict[str, Any]]:
         segments: list[dict[str, Any]] = []
         for index in range(1, min(len(nodes), len(times))):
@@ -223,6 +258,11 @@ class FleetMapfPlanner:
             end_tick = int(times[index])
             start_node = nodes[index - 1]
             end_node = nodes[index]
+            action = (
+                str(actions[index]).strip().lower()
+                if actions is not None and index < len(actions)
+                else ""
+            )
             base = {
                 "startTick": start_tick,
                 "endTick": end_tick,
@@ -230,7 +270,13 @@ class FleetMapfPlanner:
                 "plannedArrivalSec": end_tick * self.time_step_sec,
             }
             if start_node == end_node:
-                segments.append({**base, "kind": "wait", "node": start_node})
+                segments.append(
+                    {
+                        **base,
+                        "kind": "rotate" if action == "rotate" else "wait",
+                        "node": start_node,
+                    }
+                )
             else:
                 segments.append(
                     {
@@ -257,8 +303,11 @@ class FleetMapfPlanner:
         reserved_interval_edges: set[tuple[str, str]],
         low_level_max_time: int,
         allow_cbs_fallback: bool,
+        rotate_enabled: bool,
+        turn_speed: float,
+        selected_backend: str,
     ):
-        if self.planner_backend in {"rolling_sipp", "hybrid"}:
+        if selected_backend in {"rolling_sipp", "hybrid"}:
             result = self._run_rolling_sipp(
                 requests,
                 blocked_lms=blocked_lms,
@@ -270,8 +319,10 @@ class FleetMapfPlanner:
                 reserved_vertex_intervals=reserved_vertex_intervals,
                 reserved_edge_intervals=reserved_edge_intervals,
                 low_level_max_time=low_level_max_time,
+                rotate_enabled=rotate_enabled,
+                turn_speed=turn_speed,
             )
-            if result.plans or self.planner_backend == "rolling_sipp":
+            if result.plans or selected_backend == "rolling_sipp":
                 if result.plans and reserved_interval_edges:
                     result.debug.reason = f"{result.debug.reason}:reserved_edge_detour"
                 return (
@@ -286,7 +337,7 @@ class FleetMapfPlanner:
             if any(
                 marker in str(rolling_reason or "")
                 for marker in ("priority_cycle", "priority_repair_limit")
-            ):
+            ) and len(requests) > self.local_cbs_max_robots:
                 return result, detour_blocked_edges, False, ""
             cbs_result, used_edges, used_detour, cbs_fallback = self._run_cbs_with_reserved_detour(
                 requests,
@@ -301,6 +352,8 @@ class FleetMapfPlanner:
                 reserved_edge_intervals=reserved_edge_intervals,
                 reserved_interval_edges=reserved_interval_edges,
                 low_level_max_time=low_level_max_time,
+                rotate_enabled=rotate_enabled,
+                turn_speed=turn_speed,
             )
             if cbs_result.plans:
                 cbs_result.debug.reason = f"{cbs_result.debug.reason}:hybrid_cbs_fallback"
@@ -322,6 +375,8 @@ class FleetMapfPlanner:
             reserved_edge_intervals=reserved_edge_intervals,
             reserved_interval_edges=reserved_interval_edges,
             low_level_max_time=low_level_max_time,
+            rotate_enabled=rotate_enabled,
+            turn_speed=turn_speed,
         )
 
     def _run_cbs_with_reserved_detour(
@@ -338,6 +393,8 @@ class FleetMapfPlanner:
         reserved_edge_intervals: list[tuple[int, int, str, str, str]],
         reserved_interval_edges: set[tuple[str, str]],
         low_level_max_time: int,
+        rotate_enabled: bool,
+        turn_speed: float,
     ):
         result = self._run_cbs(
             requests,
@@ -350,6 +407,8 @@ class FleetMapfPlanner:
             reserved_vertex_intervals=reserved_vertex_intervals,
             reserved_edge_intervals=reserved_edge_intervals,
             low_level_max_time=low_level_max_time,
+            rotate_enabled=rotate_enabled,
+            turn_speed=turn_speed,
         )
         used_blocked_edges = detour_blocked_edges
         used_reserved_detour = bool(result.plans) and bool(reserved_interval_edges)
@@ -372,6 +431,8 @@ class FleetMapfPlanner:
                 reserved_vertex_intervals=reserved_vertex_intervals,
                 reserved_edge_intervals=reserved_edge_intervals,
                 low_level_max_time=low_level_max_time,
+                rotate_enabled=rotate_enabled,
+                turn_speed=turn_speed,
             )
             if result.plans:
                 result.debug.reason = f"{result.debug.reason}:reserved_interval_fallback_wait"
@@ -394,12 +455,34 @@ class FleetMapfPlanner:
         reserved_vertex_intervals: list[tuple[int, int, str, str]],
         reserved_edge_intervals: list[tuple[int, int, str, str, str]],
         low_level_max_time: int,
+        rotate_enabled: bool,
+        turn_speed: float,
     ):
         graph = self._graph_without_edges(blocked_edges)
+        traffic_graph = self._traffic_graph(speed)
+
+        def lane_resources(src: str, dst: str) -> tuple[object, ...]:
+            lane = traffic_graph.lane_for(src, dst)
+            if lane is None:
+                return ()
+            return traffic_graph.lane_resources(lane)
+
         planner = LmCBSPlanner(
             graph,
             heuristic_fn=self._heuristic_ticks,
             move_cost_fn=lambda src, dst: self._edge_tick_cost(src, dst, speed, acceleration),
+            heading_fn=self._edge_heading,
+            turn_cost_fn=(
+                lambda from_yaw, to_yaw: self._rotation_tick_cost(
+                    from_yaw,
+                    to_yaw,
+                    turn_speed,
+                )
+                if rotate_enabled
+                else 0
+            ),
+            vertex_resources_fn=traffic_graph.vertex_resources,
+            lane_resources_fn=lane_resources,
             low_level_max_time=low_level_max_time,
             max_high_level_nodes=self.max_high_level_nodes,
             max_planning_time_sec=self.max_planning_time_sec,
@@ -418,11 +501,20 @@ class FleetMapfPlanner:
             ),
         )
         if result.plans:
-            traffic_graph = self._traffic_graph(speed)
             validator = RollingSippPlanner(
                 traffic_graph,
                 heuristic_fn=self._heuristic_ticks,
                 move_cost_fn=lambda src, dst: self._edge_tick_cost(src, dst, speed, acceleration),
+                heading_fn=self._edge_heading,
+                turn_cost_fn=(
+                    lambda from_yaw, to_yaw: self._rotation_tick_cost(
+                        from_yaw,
+                        to_yaw,
+                        turn_speed,
+                    )
+                    if rotate_enabled
+                    else 0
+                ),
                 low_level_max_time=low_level_max_time,
                 wait_cost=self.wait_cost,
             )
@@ -455,12 +547,24 @@ class FleetMapfPlanner:
         reserved_vertex_intervals: list[tuple[int, int, str, str]],
         reserved_edge_intervals: list[tuple[int, int, str, str, str]],
         low_level_max_time: int,
+        rotate_enabled: bool,
+        turn_speed: float,
     ):
         traffic_graph = self._traffic_graph(speed)
         planner = RollingSippPlanner(
             traffic_graph,
             heuristic_fn=self._heuristic_ticks,
             move_cost_fn=lambda src, dst: self._edge_tick_cost(src, dst, speed, acceleration),
+            heading_fn=self._edge_heading,
+            turn_cost_fn=(
+                lambda from_yaw, to_yaw: self._rotation_tick_cost(
+                    from_yaw,
+                    to_yaw,
+                    turn_speed,
+                )
+                if rotate_enabled
+                else 0
+            ),
             low_level_max_time=low_level_max_time,
             wait_cost=self.wait_cost,
         )
@@ -485,6 +589,35 @@ class FleetMapfPlanner:
         except (TypeError, ValueError):
             value = self.low_level_max_time
         return max(1, min(self.low_level_max_time, value))
+
+    def _request_route_nodes(
+        self,
+        item: dict[str, Any],
+        *,
+        robot_name: str,
+        start_lm: str,
+        goal_lm: str,
+    ) -> tuple[str, ...]:
+        raw = item.get("routeNodes") or item.get("route_nodes")
+        if not isinstance(raw, list):
+            return ()
+        nodes = tuple(
+            str(node).strip()
+            for node in raw
+            if str(node).strip()
+        )
+        if not nodes:
+            return ()
+        if nodes[0] != start_lm or nodes[-1] != goal_lm:
+            raise ValueError(
+                f"routeNodes for {robot_name} must span {start_lm}->{goal_lm}"
+            )
+        for src, dst in zip(nodes, nodes[1:]):
+            if dst not in self.graph.get(src, []):
+                raise ValueError(
+                    f"routeNodes for {robot_name} contains non-edge {src}->{dst}"
+                )
+        return nodes
 
     def _traffic_graph(self, speed: float) -> TrafficGraph:
         key = (round(max(0.02, float(speed)), 6), round(self.min_robot_center_distance_m, 6))
@@ -598,6 +731,12 @@ class FleetMapfPlanner:
         if backend in {"hybrid", "rolling_sipp+cbs", "sipp+cbs"}:
             return "hybrid"
         return "cbs"
+
+    def _planner_backend_for_payload(self, payload: dict[str, Any]) -> str:
+        override = payload.get("plannerBackend") or payload.get("planner_backend")
+        if override is None:
+            return self.planner_backend
+        return self._planner_backend({"planner_backend": override})
 
     def _reserved_vertex_constraints(self, payload: dict[str, Any]) -> list[tuple[int, str]]:
         raw_constraints = (
@@ -885,6 +1024,9 @@ class FleetMapfPlanner:
         rotate_enabled: bool = False,
         turn_speed: float = 0.9,
         stretch_motion_to_reservation_ticks: bool | None = None,
+        start_yaw: float = 0.0,
+        yaws: list[float] | None = None,
+        actions: list[str] | None = None,
     ) -> list[dict[str, float | str]]:
         if not nodes:
             return []
@@ -895,33 +1037,56 @@ class FleetMapfPlanner:
                 "t": 0.0,
                 "x": first.x,
                 "y": first.y,
-                "yaw": 0.0,
+                "yaw": float(start_yaw),
                 "edgeId": f"{first.name}->{first.name}",
                 "lm": first.name,
                 "motionDirection": "not_specified",
             }
         ]
         current_time = 0.0
-        last_yaw = 0.0
+        last_yaw = float(start_yaw)
+        has_kinematic_timing = bool(
+            actions
+            and len(actions) == len(nodes)
+            and yaws
+            and len(yaws) == len(nodes)
+        )
 
         for index in range(1, len(nodes)):
             from_lm = nodes[index - 1]
             to_lm = nodes[index]
             planned_duration = self._planned_segment_duration(times, index)
+            planned_action = (
+                str(actions[index]).strip().lower()
+                if actions is not None and index < len(actions)
+                else ""
+            )
+            planned_yaw = (
+                float(yaws[index])
+                if yaws is not None and index < len(yaws)
+                else last_yaw
+            )
             if from_lm == to_lm:
                 current_time += max(0.05, planned_duration or self.wait_time_sec)
                 landmark = self.landmarks[from_lm]
+                is_rotation = planned_action == "rotate"
                 trajectory.append(
                     {
                         "t": current_time,
                         "x": landmark.x,
                         "y": landmark.y,
-                        "yaw": last_yaw,
-                        "edgeId": f"{from_lm}->{from_lm}",
+                        "yaw": planned_yaw if is_rotation else last_yaw,
+                        "edgeId": (
+                            f"WAIT@ROTATE:{from_lm}"
+                            if is_rotation
+                            else f"{from_lm}->{from_lm}"
+                        ),
                         "lm": from_lm,
-                        "motionDirection": "not_specified",
+                        "motionDirection": "rotate" if is_rotation else "not_specified",
                     }
                 )
+                if is_rotation:
+                    last_yaw = planned_yaw
                 continue
 
             route = self._direct_route(from_lm, to_lm)
@@ -932,14 +1097,12 @@ class FleetMapfPlanner:
             continuous_duration = self._travel_time(segment_length, speed, acceleration)
             stretch_motion = self.stretch_motion_to_reservation_ticks if stretch_motion_to_reservation_ticks is None else stretch_motion_to_reservation_ticks
             rotate_duration = 0.0
-            if rotate_enabled:
+            if rotate_enabled and not has_kinematic_timing:
                 rotate_duration = self._rotation_duration(last_yaw, segment_yaw, turn_speed)
                 if stretch_motion and planned_duration is not None:
                     reservation_slack = max(0.0, planned_duration - continuous_duration)
-                    # An in-place turn may use reservation slack, but it must
-                    # never shift the following edge outside its MAPF window.
-                    # If the full turn does not fit, yaw is blended along the
-                    # first moving samples while the center stays on the edge.
+                    # Compatibility for old plans without explicit ROTATE
+                    # actions. New SIPP/CBS plans reserve the turn separately.
                     if rotate_duration > reservation_slack + 0.000001:
                         rotate_duration = 0.0
                 if rotate_duration > 0.001:
@@ -957,7 +1120,11 @@ class FleetMapfPlanner:
                         }
                     )
                     last_yaw = segment_yaw
-            if stretch_motion:
+            if has_kinematic_timing:
+                # The reservation is authoritative. ROTATE was emitted as a
+                # separate same-node action, so this interval is MOVE only.
+                duration = max(continuous_duration, planned_duration or 0.0, 0.05)
+            elif stretch_motion:
                 duration = max(
                     continuous_duration,
                     (planned_duration or 0.0) - rotate_duration,
@@ -1017,6 +1184,19 @@ class FleetMapfPlanner:
         if delta < math.radians(2.0):
             return 0.0
         return delta / max(0.05, float(turn_speed or 0.05))
+
+    def _rotation_tick_cost(self, from_yaw: float, to_yaw: float, turn_speed: float) -> int:
+        duration = self._rotation_duration(from_yaw, to_yaw, turn_speed)
+        if duration <= 0.0:
+            return 0
+        return max(1, int(math.ceil(duration / max(self.time_step_sec, 1e-6))))
+
+    def _edge_heading(self, from_lm: str, to_lm: str) -> float:
+        start = self.landmarks.get(from_lm)
+        goal = self.landmarks.get(to_lm)
+        if start is None or goal is None:
+            return 0.0
+        return math.atan2(goal.y - start.y, goal.x - start.x)
 
     def _normalize_angle(self, value: float) -> float:
         while value > math.pi:

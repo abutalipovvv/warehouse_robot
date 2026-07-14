@@ -1300,15 +1300,15 @@ class OperatorFleetManager:
         }
 
     def _benchmark_min_separation(self) -> float:
-        footprint = self.manager.collision.footprint()
-        radius = max(
-            (
-                math.hypot(float(point["x"]), float(point["y"]))
-                for point in footprint
-            ),
-            default=0.22,
-        )
-        return (radius * 2.0) + self.manager.collision.robot_collision_margin()
+        fleet = self.manager.params.get("fleet", {})
+        if isinstance(fleet, dict):
+            configured = fleet.get("mapf_min_robot_center_distance_m")
+            if configured is not None:
+                try:
+                    return max(0.0, float(configured))
+                except (TypeError, ValueError):
+                    pass
+        return self.manager.collision.robot_broadphase_distance()
 
     def _forward_benchmark_goals(
         self,
@@ -1368,14 +1368,22 @@ class OperatorFleetManager:
     def _lm_is_separated_from(self, candidate: str, selected: set[str] | list[str]) -> bool:
         landmark = self.loaded_map.landmarks[candidate]
         minimum = self._benchmark_min_separation()
-        return all(
-            math.hypot(
+        candidate_pose = {"x": landmark.x, "y": landmark.y, "yaw": 0.0}
+        for name in selected:
+            if name not in self.loaded_map.landmarks:
+                continue
+            other = self.loaded_map.landmarks[name]
+            if math.hypot(
                 landmark.x - self.loaded_map.landmarks[name].x,
                 landmark.y - self.loaded_map.landmarks[name].y,
-            ) >= minimum
-            for name in selected
-            if name in self.loaded_map.landmarks
-        )
+            ) < minimum:
+                return False
+            if self.manager.collision.robot_footprints_conflict(
+                candidate_pose,
+                {"x": other.x, "y": other.y, "yaw": 0.0},
+            ):
+                return False
+        return True
 
     def _spatially_separated_lms(self, candidates: list[str], count: int) -> list[str]:
         selected: list[str] = []

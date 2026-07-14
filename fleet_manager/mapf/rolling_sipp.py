@@ -19,12 +19,16 @@ class RollingSippPlanner:
         *,
         heuristic_fn: Callable[[NodeName, NodeName], float] | None = None,
         move_cost_fn: Callable[[NodeName, NodeName], int] | None = None,
+        heading_fn: Callable[[NodeName, NodeName], float] | None = None,
+        turn_cost_fn: Callable[[float, float], int] | None = None,
         low_level_max_time: int = 160,
         wait_cost: int = 6,
     ) -> None:
         self.graph = graph
         self.heuristic_fn = heuristic_fn
         self.move_cost_fn = move_cost_fn
+        self.heading_fn = heading_fn
+        self.turn_cost_fn = turn_cost_fn
         self.low_level_max_time = max(1, int(low_level_max_time))
         self.wait_cost = max(1, int(wait_cost))
 
@@ -101,6 +105,8 @@ class RollingSippPlanner:
             self.graph,
             heuristic_fn=self.heuristic_fn,
             move_cost_fn=self.move_cost_fn,
+            heading_fn=self.heading_fn,
+            turn_cost_fn=self.turn_cost_fn,
             low_level_max_time=self.low_level_max_time,
             wait_cost=self.wait_cost,
         )
@@ -128,6 +134,8 @@ class RollingSippPlanner:
                         robot_name=request.robot_name,
                         start_lm=request.start_lm,
                         goal_lm=request.goal_lm,
+                        start_yaw=request.start_yaw,
+                        route_nodes=request.route_nodes,
                     ),
                     reservations,
                     blocked_nodes=blocked_set,
@@ -175,6 +183,8 @@ class RollingSippPlanner:
                     goal_lm=request.goal_lm,
                     nodes=path.nodes,
                     times=path.times,
+                    yaws=path.yaws,
+                    actions=path.actions,
                 )
 
             if retry_with_new_order:
@@ -210,8 +220,13 @@ class RollingSippPlanner:
             start_lm=plan.start_lm,
             goal_lm=plan.goal_lm,
             states=tuple(
-                TimedState(int(time_tick), node)
-                for time_tick, node in zip(plan.times, plan.nodes)
+                TimedState(
+                    int(time_tick),
+                    node,
+                    float(plan.yaws[index]) if index < len(plan.yaws) else 0.0,
+                    str(plan.actions[index]) if index < len(plan.actions) else "wait",
+                )
+                for index, (time_tick, node) in enumerate(zip(plan.times, plan.nodes))
             ),
         )
 

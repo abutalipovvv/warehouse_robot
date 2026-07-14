@@ -8,12 +8,23 @@ const COLORS = {
   lm: 0xf59e0b,
   lmHover: 0xffca4f,
   robot: 0x2563eb,
-  robotActive: 0x16a34a,
   route: 0x64748b,
-  trpOrange: 0xff6c0a,
-  trpBlue: 0x0000cc,
+  ecomBody: 0xffffff,
+  ecomDeck: 0xb8bec8,
+  lidar: 0x374151,
   wheel: 0x1f2937,
 };
+
+const ROBOT_PALETTE = [
+  0x2563eb,
+  0x22c55e,
+  0xf59e0b,
+  0xef4444,
+  0x8b5cf6,
+  0x06b6d4,
+  0xec4899,
+  0x84cc16,
+];
 
 export class OperatorScene3D {
   constructor(container) {
@@ -59,6 +70,7 @@ export class OperatorScene3D {
     this.maxStaticLmLabels = 220;
     this.maxInactiveRoutePoints = 48;
     this.maxActiveRoutePoints = 220;
+    this.lastAnimationRenderAt = 0;
     this.needsRender = true;
     this.disposed = false;
 
@@ -616,13 +628,37 @@ export class OperatorScene3D {
     entry.active = active;
     const bodyMaterial = entry.group.userData.bodyMaterial;
     if (bodyMaterial) {
-      bodyMaterial.color.setHex(active ? COLORS.robotActive : COLORS.trpOrange);
+      bodyMaterial.color.setHex(COLORS.ecomBody);
     }
-    const ringMaterial = entry.group.userData.ringMaterial;
-    if (ringMaterial) {
-      ringMaterial.color.setHex(active ? COLORS.edgeActive : COLORS.robot);
-      ringMaterial.opacity = active ? 0.95 : 0.45;
+    const underglowMaterial = entry.group.userData.underglowMaterial;
+    if (underglowMaterial) {
+      underglowMaterial.color.setHex(entry.group.userData.selectionColor || COLORS.robot);
+      underglowMaterial.opacity = active ? 0.72 : 0.12;
     }
+    const underglowMesh = entry.group.userData.underglowMesh;
+    if (underglowMesh && !active) {
+      underglowMesh.scale.set(1, 1, 1);
+    }
+    const selectionHaloMesh = entry.group.userData.selectionHaloMesh;
+    const selectionRingMesh = entry.group.userData.selectionRingMesh;
+    if (selectionHaloMesh) {
+      selectionHaloMesh.visible = active;
+      selectionHaloMesh.scale.set(1, 1, 1);
+    }
+    if (selectionRingMesh) {
+      selectionRingMesh.visible = active;
+      selectionRingMesh.scale.set(1, 1, 1);
+    }
+  }
+
+  robotColor(robotName) {
+    const name = String(robotName || "robot");
+    let hash = 2166136261;
+    for (let index = 0; index < name.length; index += 1) {
+      hash ^= name.charCodeAt(index);
+      hash = Math.imul(hash, 16777619);
+    }
+    return ROBOT_PALETTE[(hash >>> 0) % ROBOT_PALETTE.length];
   }
 
   robotPose(robot) {
@@ -653,7 +689,7 @@ export class OperatorScene3D {
     group.renderOrder = 20;
     group.userData.robotName = String(robot.name || "");
 
-    this.addTrp1Model(group, active);
+    this.addEcomModel(group, robot, active);
     const label = this.labelSprite(String(robot.name || ""), new THREE.Vector3(0, 0.46, 0), 0);
     label.scale.set(0.7, 0.26, 1);
     group.userData.label = label;
@@ -661,15 +697,39 @@ export class OperatorScene3D {
     return group;
   }
 
-  addTrp1Model(group, active) {
-    const orange = new THREE.MeshStandardMaterial({
-      color: active ? COLORS.robotActive : COLORS.trpOrange,
+  addEcomModel(group, robot, active) {
+    const selectionColor = this.robotColor(robot?.name);
+    const body = new THREE.MeshStandardMaterial({
+      color: COLORS.ecomBody,
       roughness: 0.48,
-      metalness: 0.02,
+      metalness: 0.12,
     });
-    const blue = new THREE.MeshStandardMaterial({ color: COLORS.trpBlue, roughness: 0.38 });
+    const deck = new THREE.MeshStandardMaterial({ color: COLORS.ecomDeck, roughness: 0.52 });
     const wheel = new THREE.MeshStandardMaterial({ color: COLORS.wheel, roughness: 0.72 });
-    const white = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.4 });
+    const lidar = new THREE.MeshStandardMaterial({ color: COLORS.lidar, roughness: 0.34 });
+    const underglow = new THREE.MeshBasicMaterial({
+      color: selectionColor,
+      transparent: true,
+      opacity: active ? 0.72 : 0.12,
+      depthWrite: false,
+      blending: THREE.NormalBlending,
+    });
+    const selectionHalo = new THREE.MeshBasicMaterial({
+      color: selectionColor,
+      transparent: true,
+      opacity: 0.38,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+      blending: THREE.NormalBlending,
+    });
+    const selectionRing = new THREE.MeshBasicMaterial({
+      color: selectionColor,
+      transparent: true,
+      opacity: 0.82,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+      blending: THREE.NormalBlending,
+    });
 
     const addBox = (size, position, material) => {
       const mesh = new THREE.Mesh(new THREE.BoxGeometry(size.x, size.z, size.y), material);
@@ -692,29 +752,108 @@ export class OperatorScene3D {
       group.add(mesh);
       return mesh;
     };
+    const addExtrudedPolygon = (outline, height, baseZ, material) => {
+      const vertices = [];
+      const indices = [];
+      const count = outline.length;
+      for (const point of outline) {
+        vertices.push(point.x, baseZ, point.y);
+      }
+      for (const point of outline) {
+        vertices.push(point.x, baseZ + height, point.y);
+      }
+      for (let index = 1; index < count - 1; index += 1) {
+        indices.push(0, index, index + 1);
+        indices.push(count, count + index + 1, count + index);
+      }
+      for (let index = 0; index < count; index += 1) {
+        const next = (index + 1) % count;
+        indices.push(index, count + next, next);
+        indices.push(index, count + index, count + next);
+      }
+      const geometry = new THREE.BufferGeometry();
+      geometry.setAttribute("position", new THREE.Float32BufferAttribute(vertices, 3));
+      geometry.setIndex(indices);
+      geometry.computeVertexNormals();
+      const mesh = new THREE.Mesh(geometry, material);
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      mesh.renderOrder = 22;
+      group.add(mesh);
+      return mesh;
+    };
 
-    group.userData.bodyMaterial = orange;
+    group.userData.bodyMaterial = body;
+    group.userData.underglowMaterial = underglow;
+    group.userData.selectionColor = selectionColor;
+    group.userData.selectionHaloMaterial = selectionHalo;
+    group.userData.selectionRingMaterial = selectionRing;
 
-    // Dimensions mirror sim_robot/ws/src/trp1_description/urdf/trp1.xacro visual primitives.
-    addBox({ x: 0.58, y: 0.22, z: 0.3 }, { x: 0, y: 0, z: 0.225 }, orange);
-    addBox({ x: 0.38, y: 0.42, z: 0.3 }, { x: 0, y: 0, z: 0.225 }, orange);
-    for (const [x, y] of [[0.19, 0.11], [-0.19, -0.11], [0.19, -0.11], [-0.19, 0.11]]) {
-      addCylinder(0.1, 0.3, { x, y, z: 0.225 }, orange);
-    }
-    addCylinder(0.05, 0.31, { x: 0.2, y: 0, z: 0.225 }, blue);
-    addCylinder(0.0605, 0.05, { x: 0, y: 0.18, z: 0.0605 }, wheel, { x: Math.PI / 2 });
-    addCylinder(0.0605, 0.05, { x: 0, y: -0.18, z: 0.0605 }, wheel, { x: Math.PI / 2 });
-    addBox({ x: 0.16, y: 0.055, z: 0.03 }, { x: 0.31, y: 0, z: 0.36 }, white);
+    // Lightweight browser representation of ecom_stage.urdf.xacro.  RViz
+    // uses the supplied STL meshes; the browser keeps primitive geometry so
+    // a 50-robot view does not duplicate the 21 MB chassis mesh 50 times.
+    const bodyOutline = [
+      { x: -0.5230, y: -0.1840 },
+      { x: -0.5000, y: -0.2350 },
+      { x: -0.4520, y: -0.3163 },
+      { x: -0.4339, y: -0.3280 },
+      { x: -0.0504, y: -0.3532 },
+      { x: 0.3507, y: -0.3282 },
+      { x: 0.4337, y: -0.2110 },
+      { x: 0.4770, y: -0.1000 },
+      { x: 0.4770, y: 0.1000 },
+      { x: 0.4337, y: 0.2047 },
+      { x: 0.3507, y: 0.3219 },
+      { x: -0.0479, y: 0.3468 },
+      { x: -0.4339, y: 0.3217 },
+      { x: -0.5000, y: 0.2300 },
+      { x: -0.5230, y: 0.1840 },
+    ];
+    const deckOutline = [
+      { x: -0.420, y: -0.220 },
+      { x: -0.360, y: -0.265 },
+      { x: 0.275, y: -0.265 },
+      { x: 0.355, y: -0.205 },
+      { x: 0.380, y: -0.090 },
+      { x: 0.380, y: 0.090 },
+      { x: 0.355, y: 0.205 },
+      { x: 0.275, y: 0.265 },
+      { x: -0.360, y: 0.265 },
+      { x: -0.420, y: 0.220 },
+    ];
+    const glowOutline = bodyOutline.map((point) => ({
+      x: point.x * 1.07,
+      y: point.y * 1.10,
+    }));
+    const underglowMesh = addExtrudedPolygon(glowOutline, 0.008, 0.006, underglow);
+    underglowMesh.renderOrder = 24;
+    group.userData.underglowMesh = underglowMesh;
+    const selectionHaloMesh = new THREE.Mesh(new THREE.CircleGeometry(0.64, 56), selectionHalo);
+    selectionHaloMesh.rotation.x = -Math.PI / 2;
+    selectionHaloMesh.position.y = 0.012;
+    selectionHaloMesh.renderOrder = 23;
+    selectionHaloMesh.visible = active;
+    group.userData.selectionHaloMesh = selectionHaloMesh;
+    group.add(selectionHaloMesh);
+    const selectionRingMesh = new THREE.Mesh(new THREE.RingGeometry(0.61, 0.68, 56), selectionRing);
+    selectionRingMesh.rotation.x = -Math.PI / 2;
+    selectionRingMesh.position.y = 0.014;
+    selectionRingMesh.renderOrder = 24;
+    selectionRingMesh.visible = active;
+    group.userData.selectionRingMesh = selectionRingMesh;
+    group.add(selectionRingMesh);
+    addExtrudedPolygon(bodyOutline, 0.170, 0.0, body);
+    addExtrudedPolygon(deckOutline, 0.045, 0.160, deck);
 
-    const ring = new THREE.Mesh(
-      new THREE.TorusGeometry(0.38, active ? 0.014 : 0.009, 8, 64),
-      new THREE.MeshBasicMaterial({ color: active ? COLORS.edgeActive : COLORS.robot, transparent: true, opacity: active ? 0.95 : 0.45 })
-    );
-    group.userData.ringMaterial = ring.material;
-    ring.rotation.x = Math.PI / 2;
-    ring.position.y = 0.024;
-    ring.renderOrder = 18;
-    group.add(ring);
+    // Keep the drive wheels below and inside the shell. From normal camera
+    // angles the body hides them; they are only visible from underneath.
+    addCylinder(0.09, 0.057, { x: -0.043, y: 0.300, z: 0.060 }, wheel, { x: Math.PI / 2 });
+    addCylinder(0.09, 0.057, { x: -0.043, y: -0.300, z: 0.060 }, wheel, { x: Math.PI / 2 });
+
+    addCylinder(0.0337, 0.042, { x: 0.32487, y: 0.24906, z: 0.218 }, lidar);
+    addCylinder(0.0337, 0.042, { x: -0.41524, y: -0.25105, z: 0.218 }, lidar);
+    addBox({ x: 0.055, y: 0.26, z: 0.018 }, { x: 0.438, y: 0, z: 0.166 }, lidar);
+
   }
 
   addRobotRoute(robot, active) {
@@ -742,16 +881,78 @@ export class OperatorScene3D {
     const maxPoints = active ? this.maxActiveRoutePoints : this.maxInactiveRoutePoints;
     const points = this.sampleTrajectory(trajectory, maxPoints)
       .map((point) => new THREE.Vector3(Number(point.x || 0), 0.095, Number(point.y || 0)));
-    const geometry = new THREE.BufferGeometry().setFromPoints(points);
-    const material = new THREE.LineBasicMaterial({
-      color: active ? COLORS.edgeActive : COLORS.route,
-      transparent: true,
-      opacity: active ? 0.95 : 0.45,
-    });
-    const line = new THREE.Line(geometry, material);
-    this.routeGroup.add(line);
-    this.robotRouteObjects.set(name, line);
+    let routeObject;
+    if (active) {
+      const material = new THREE.MeshBasicMaterial({
+        color: this.robotColor(name),
+        transparent: true,
+        opacity: 0.9,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+      });
+      routeObject = new THREE.Mesh(this.routeRibbonGeometry(points, 0.105), material);
+      routeObject.renderOrder = 16;
+    } else {
+      const geometry = new THREE.BufferGeometry().setFromPoints(points);
+      const material = new THREE.LineBasicMaterial({
+        color: COLORS.route,
+        transparent: true,
+        opacity: 0.38,
+      });
+      routeObject = new THREE.Line(geometry, material);
+    }
+    this.routeGroup.add(routeObject);
+    this.robotRouteObjects.set(name, routeObject);
     this.robotRouteKeys.set(name, routeKey);
+  }
+
+  routeRibbonGeometry(points, width) {
+    const vertices = [];
+    const indices = [];
+    const halfWidth = width * 0.5;
+    const direction = (from, to) => {
+      const result = new THREE.Vector3(to.x - from.x, 0, to.z - from.z);
+      return result.lengthSq() > 0.00000001 ? result.normalize() : null;
+    };
+    let fallbackDirection = new THREE.Vector3(1, 0, 0);
+
+    for (let index = 0; index < points.length; index += 1) {
+      const previous = index > 0 ? direction(points[index - 1], points[index]) : null;
+      const next = index < points.length - 1 ? direction(points[index], points[index + 1]) : null;
+      const incoming = previous || next || fallbackDirection;
+      const outgoing = next || previous || fallbackDirection;
+      fallbackDirection = outgoing;
+      const tangent = incoming.clone().add(outgoing);
+      if (tangent.lengthSq() < 0.00000001) {
+        tangent.copy(outgoing);
+      }
+      tangent.normalize();
+      const normal = new THREE.Vector3(-tangent.z, 0, tangent.x);
+      const incomingNormal = new THREE.Vector3(-incoming.z, 0, incoming.x);
+      const denominator = Math.max(0.35, Math.abs(normal.dot(incomingNormal)));
+      const offset = Math.min(halfWidth / denominator, halfWidth * 2.4);
+      vertices.push(
+        points[index].x + normal.x * offset,
+        points[index].y,
+        points[index].z + normal.z * offset,
+        points[index].x - normal.x * offset,
+        points[index].y,
+        points[index].z - normal.z * offset,
+      );
+      if (index > 0) {
+        const previousLeft = (index - 1) * 2;
+        const previousRight = previousLeft + 1;
+        const left = index * 2;
+        const right = left + 1;
+        indices.push(previousLeft, previousRight, left, previousRight, right, left);
+      }
+    }
+
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute("position", new THREE.Float32BufferAttribute(vertices, 3));
+    geometry.setIndex(indices);
+    geometry.computeVertexNormals();
+    return geometry;
   }
 
   robotRouteKey(robot, active) {
@@ -820,15 +1021,51 @@ export class OperatorScene3D {
     this.needsRender = true;
   }
 
-  animate() {
+  updateSelectionAnimation(timestamp) {
+    let animating = false;
+    const pulse = 0.5 + (0.5 * Math.sin(Number(timestamp || 0) * 0.005));
+    for (const entry of this.robotObjects.values()) {
+      const mesh = entry.group.userData.underglowMesh;
+      const material = entry.group.userData.underglowMaterial;
+      if (!entry.active || !mesh || !material) {
+        continue;
+      }
+      animating = true;
+      const scale = 1.02 + (pulse * 0.1);
+      mesh.scale.set(scale, 1, scale);
+      material.opacity = 0.58 + (pulse * 0.24);
+      const selectionHaloMesh = entry.group.userData.selectionHaloMesh;
+      const selectionHaloMaterial = entry.group.userData.selectionHaloMaterial;
+      if (selectionHaloMesh && selectionHaloMaterial) {
+        const haloScale = 0.98 + (pulse * 0.08);
+        selectionHaloMesh.scale.set(haloScale, haloScale, 1);
+        selectionHaloMaterial.opacity = 0.3 + (pulse * 0.18);
+      }
+      const selectionRingMesh = entry.group.userData.selectionRingMesh;
+      const selectionRingMaterial = entry.group.userData.selectionRingMaterial;
+      if (selectionRingMesh && selectionRingMaterial) {
+        const ringScale = 0.96 + (pulse * 0.12);
+        selectionRingMesh.scale.set(ringScale, ringScale, 1);
+        selectionRingMaterial.opacity = 0.62 + (pulse * 0.28);
+      }
+    }
+    return animating;
+  }
+
+  animate(timestamp = 0) {
     if (this.disposed) {
       return;
     }
-    window.requestAnimationFrame(() => this.animate());
-    if (!this.needsRender && !this.drag) {
+    window.requestAnimationFrame((nextTimestamp) => this.animate(nextTimestamp));
+    const selectionAnimating = this.updateSelectionAnimation(timestamp);
+    if (!this.needsRender && !this.drag && !selectionAnimating) {
+      return;
+    }
+    if (selectionAnimating && !this.needsRender && !this.drag && timestamp - this.lastAnimationRenderAt < 32) {
       return;
     }
     this.needsRender = false;
+    this.lastAnimationRenderAt = timestamp;
     this.updateCamera();
     this.renderer.render(this.scene, this.activeCamera);
   }

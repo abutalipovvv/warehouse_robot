@@ -1,0 +1,180 @@
+<?xml version="1.0"?>
+<robot name="ecom_mobile_robot" xmlns:xacro="http://www.ros.org/wiki/xacro">
+  <!--
+    Ecom geometry with the ROS contract of the former trp1_description.
+
+    Keep these frame and joint names stable: Stage, Nav2 and the robot API use
+    base_link/imu_link/laser and existing deployments may consume the wheel and
+    camera transforms. The Stage node owns odom->base_link and base_link->laser;
+    therefore the laser link is intentionally not duplicated in this URDF.
+  -->
+
+  <material name="ecom_body">
+    <color rgba="0.79216 0.81961 0.93333 1"/>
+  </material>
+  <material name="ecom_wheel">
+    <color rgba="0.08 0.08 0.09 1"/>
+  </material>
+
+  <link name="base_link">
+    <visual name="ecom_chassis">
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="package://ecom_mobile_robot_description/meshes/base_link.STL"/>
+      </geometry>
+      <material name="ecom_body"/>
+    </visual>
+
+    <!-- Four passive corner wheels are visuals on base_link. This preserves
+         the old TF tree instead of introducing exported CAD frame names. -->
+    <visual name="front_right_wheel">
+      <origin xyz="0.177 -0.27738 0.0121" rpy="0.00061433 0.019368 0.070226"/>
+      <geometry>
+        <mesh filename="package://ecom_mobile_robot_description/meshes/FR_wheel_link.STL"/>
+      </geometry>
+      <material name="ecom_wheel"/>
+    </visual>
+    <visual name="front_left_wheel">
+      <origin xyz="0.217 0.27102 0.0121" rpy="0 0 0.070214"/>
+      <geometry>
+        <mesh filename="package://ecom_mobile_robot_description/meshes/FL_wheel_link.STL"/>
+      </geometry>
+      <material name="ecom_wheel"/>
+    </visual>
+    <visual name="back_right_wheel">
+      <origin xyz="-0.303 -0.27738 0.0121" rpy="0.00061433 0.019368 0.070226"/>
+      <geometry>
+        <mesh filename="package://ecom_mobile_robot_description/meshes/BR_wheel_link.STL"/>
+      </geometry>
+      <material name="ecom_wheel"/>
+    </visual>
+    <visual name="back_left_wheel">
+      <origin xyz="-0.263 0.27088 0.0121" rpy="0.00061433 0.019368 0.070226"/>
+      <geometry>
+        <mesh filename="package://ecom_mobile_robot_description/meshes/BL_wheel_link.STL"/>
+      </geometry>
+      <material name="ecom_wheel"/>
+    </visual>
+
+    <!-- Stage publishes a single 360-degree scan from the physical front
+         scanner location. Both scanner housings remain visible. -->
+    <visual name="front_lidar_housing">
+      <origin xyz="0.32487 0.24906 0.218" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="package://ecom_mobile_robot_description/meshes/lidar_front_link.STL"/>
+      </geometry>
+      <material name="ecom_body"/>
+    </visual>
+    <visual name="back_lidar_housing">
+      <origin xyz="-0.41524 -0.25105 0.218" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="package://ecom_mobile_robot_description/meshes/lidar_back_link.STL"/>
+      </geometry>
+      <material name="ecom_body"/>
+    </visual>
+
+    <collision name="ecom_body_collision">
+      <origin xyz="-0.0230 -0.0032 0.09235" rpy="0 0 0"/>
+      <geometry>
+        <box size="1.0000 0.7000 0.1923"/>
+      </geometry>
+    </collision>
+  </link>
+
+  <link name="imu_link"/>
+  <joint name="imu_joint" type="fixed">
+    <origin xyz="0 0 0.18" rpy="0 0 0"/>
+    <parent link="base_link"/>
+    <child link="imu_link"/>
+  </joint>
+
+  <link name="camera_mount_link"/>
+  <joint name="camera_joint" type="fixed">
+    <origin xyz="0.34 0 0.08" rpy="0 -0.13 0"/>
+    <parent link="base_link"/>
+    <child link="camera_mount_link"/>
+  </joint>
+  <link name="camera_optical_depth_link"/>
+  <joint name="camera_mount_joint" type="fixed">
+    <origin xyz="0.016 0 0.009" rpy="0 0 3.14"/>
+    <parent link="camera_mount_link"/>
+    <child link="camera_optical_depth_link"/>
+  </joint>
+
+  <link name="left_wheel">
+    <inertial>
+      <origin xyz="-0.0014757 -0.020983 -0.000015695" rpy="0 0 0"/>
+      <mass value="3.5"/>
+      <inertia
+        ixx="0.0021514" ixy="0.00013184" ixz="0.00000010007"
+        iyy="0.0040168" iyz="0.0000013971" izz="0.0021423"/>
+    </inertial>
+    <visual>
+      <geometry>
+        <mesh filename="package://ecom_mobile_robot_description/meshes/ML_wheel_link.STL"/>
+      </geometry>
+      <material name="ecom_wheel"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="1.57079632679 0 0"/>
+      <geometry>
+        <cylinder radius="0.09" length="0.057"/>
+      </geometry>
+    </collision>
+  </link>
+  <joint name="left_wheel_hinge" type="fixed">
+    <origin xyz="-0.043001 0.32282 0.065" rpy="0.00061433 0.019368 0.070226"/>
+    <parent link="base_link"/>
+    <child link="left_wheel"/>
+  </joint>
+
+  <link name="right_wheel">
+    <inertial>
+      <origin xyz="0.0014757 0.020983 0.000015695" rpy="0 0 0"/>
+      <mass value="3.5"/>
+      <inertia
+        ixx="0.0021514" ixy="0.00013184" ixz="0.000000092888"
+        iyy="0.0040168" iyz="0.0000014025" izz="0.0021423"/>
+    </inertial>
+    <visual>
+      <geometry>
+        <mesh filename="package://ecom_mobile_robot_description/meshes/MR_wheel_link.STL"/>
+      </geometry>
+      <material name="ecom_wheel"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="1.57079632679 0 0"/>
+      <geometry>
+        <cylinder radius="0.09" length="0.057"/>
+      </geometry>
+    </collision>
+  </link>
+  <joint name="right_wheel_hinge" type="fixed">
+    <origin xyz="-0.043001 -0.32758 0.065" rpy="0.00061433 0.019368 0.070226"/>
+    <parent link="base_link"/>
+    <child link="right_wheel"/>
+  </joint>
+
+  <!-- Names retained for consumers that inspect the old transmission
+       contract. Stage itself is the hardware backend and consumes /cmd_vel. -->
+  <transmission name="tran1">
+    <type>transmission_interface/SimpleTransmission</type>
+    <joint name="left_wheel_hinge">
+      <hardwareInterface>VelocityJointInterface</hardwareInterface>
+    </joint>
+    <actuator name="left_motor">
+      <hardwareInterface>VelocityJointInterface</hardwareInterface>
+      <mechanicalReduction>1</mechanicalReduction>
+    </actuator>
+  </transmission>
+  <transmission name="tran2">
+    <type>transmission_interface/SimpleTransmission</type>
+    <joint name="right_wheel_hinge">
+      <hardwareInterface>VelocityJointInterface</hardwareInterface>
+    </joint>
+    <actuator name="right_motor">
+      <hardwareInterface>VelocityJointInterface</hardwareInterface>
+      <mechanicalReduction>1</mechanicalReduction>
+    </actuator>
+  </transmission>
+</robot>

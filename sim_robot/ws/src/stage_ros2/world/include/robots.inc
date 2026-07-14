@@ -113,33 +113,31 @@ define trp1_base position
 
 define trp1_no_sonar trp1_base
 (
-  size [0.60 0.50 0.22]
+  # Legacy aggregate include kept in sync with include/trp1.inc.  The Stage
+  # type name stays unchanged because it is part of the topic/namespace API.
+  size [1.00 0.70 0.22]
   origin [0.0 0.0 0.0 0.0]
   gui_nose 1
-  mass 20.0
+  mass 100.0
 
   block(
-    points 8
-    point[0] [-0.30  0.12]
-    point[1] [-0.30 -0.12]
-    point[2] [-0.20 -0.25]
-    point[3] [ 0.20 -0.25]
-    point[4] [ 0.30 -0.12]
-    point[5] [ 0.30  0.12]
-    point[6] [ 0.20  0.25]
-    point[7] [-0.20  0.25]
+    points 4
+    point[0] [-0.5230 -0.3532]
+    point[1] [ 0.4770 -0.3532]
+    point[2] [ 0.4770  0.3468]
+    point[3] [-0.5230  0.3468]
     z [0 0.22]
   )
 )
 
 define trp1_with_laser trp1_no_sonar
 (
-  hokuyolaser(pose [ 0.28 0.0 0 0 ])
+  hokuyolaser(pose [ 0.32487 0.24906 -0.002 0 ])
 
   model
   (
-    pose [ 0.0 0.0 0.0 0.0 ]
-    size [ 0.10 0.10 0.05 ]
+    pose [ 0.32487 0.24906 0.0 0.0 ]
+    size [ 0.0674 0.0674 0.042 ]
     color "DimGray"
   )
 )

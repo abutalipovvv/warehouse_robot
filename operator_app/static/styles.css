@@ -2011,6 +2011,12 @@ body[data-fleet-page="fleet"] .robot-control-actions {
   stroke-linecap: round;
 }
 
+.fleet-route-preview.active {
+  stroke-dasharray: none;
+  opacity: 0.94;
+  filter: drop-shadow(0 2px 4px rgba(20, 49, 88, 0.28));
+}
+
 .fleet-route-done {
   fill: none;
   stroke: rgba(80, 94, 116, 0.22);
@@ -2115,6 +2121,27 @@ body[data-fleet-page="fleet"] .robot-control-actions {
 
 .fleet-robot {
   cursor: pointer;
+}
+
+.robot-selection-halo {
+  fill: none;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  stroke-dasharray: 7 5;
+  pointer-events: none;
+  animation: fleet-robot-selection-pulse 1.15s ease-in-out infinite;
+}
+
+@keyframes fleet-robot-selection-pulse {
+  0%, 100% {
+    stroke-opacity: 0.28;
+    stroke-dashoffset: 0;
+  }
+
+  50% {
+    stroke-opacity: 0.82;
+    stroke-dashoffset: -12;
+  }
 }
 
 .robot-footprint {

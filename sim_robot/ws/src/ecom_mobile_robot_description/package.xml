@@ -1,0 +1,19 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>ecom_mobile_robot_description</name>
+  <version>0.1.0</version>
+  <description>Ecom mobile robot description adapted to the existing TRP1 ROS interface.</description>
+
+  <maintainer email="kaisar.abutlaipov@teleworker.ai">kaisar.abutlaipov</maintainer>
+  <license>Proprietary</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <exec_depend>robot_state_publisher</exec_depend>
+  <exec_depend>urdf</exec_depend>
+  <exec_depend>xacro</exec_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

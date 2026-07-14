@@ -2,26 +2,27 @@ define laser ranger
 (
   sensor
   (
-    range [0.0 20.0]
-    fov 180
-    samples 300
+    range [0.0 40.0]
+    fov 360
+    samples 361
   )
   # generic model properties
-  color "black"
-  size [ 0.06 0.15 0.03 ]
+  color "DimGray"
+  size [ 0.0674 0.0674 0.042 ]
 )
 
 define trp1 position
 (
   pose [ 0.0 0.0 0.0 0.0 ]
 
-  size [ 0.6 0.5 0.15 ]
-  origin [ 0.0 0.0 0.0 0.0 ]
+  size [ 1.0 0.70 0.22 ]
+  origin [ -0.023 -0.0032 0.0 0.0 ]
   gui_nose 1
   drive "diff"
   color "red"
+  mass 100.0
   
-  laser(pose [ -0.1 0.0 -0.11 0.0 ])
+  laser(pose [ 0.32487 0.24906 -0.002 0.0 ])
 
   localization "odom"
   odom_error [ 0.05 0.05 0.0 0.1 ]

@@ -1,6 +1,7 @@
 #include <stage_ros2/stage_node.hpp>
 
 #include <chrono>
+#include <cmath>
 #include <memory>
 #include <filesystem>
 
@@ -25,7 +26,12 @@ StageNode::Vehicle::Vehicle(
       imu_initialized_(false),
       imu_yaw_bias_(0.0),
       imu_angular_velocity_bias_(0.0),
-      odom_yaw_offset_(0.0)
+      odom_yaw_offset_(0.0),
+      odom_world_yaw_offset_(0.0),
+      imu_odom_initialized_(false),
+      imu_odom_x_(0.0),
+      imu_odom_y_(0.0),
+      imu_odom_yaw_(0.0)
 {
 }
 
@@ -55,7 +61,7 @@ size_t StageNode::Vehicle::id() const
 void StageNode::Vehicle::soft_reset()
 {
   positionmodel->SetPose(this->initial_pose_);
-  positionmodel->SetStall(false);
+  reset_odom();
 }
 
 void StageNode::Vehicle::reset_odom()
@@ -67,6 +73,11 @@ void StageNode::Vehicle::reset_odom()
 
   const Stg::Pose gpose = positionmodel->GetGlobalPose();
   odom_yaw_offset_ = Stg::normalize(gpose.a + imu_yaw_bias_);
+  odom_world_yaw_offset_ = gpose.a;
+  imu_odom_initialized_ = true;
+  imu_odom_x_ = 0.0;
+  imu_odom_y_ = 0.0;
+  imu_odom_yaw_ = 0.0;
   time_last_pose_update_ = rclcpp::Time(0, 0);
   time_last_cmd_received_ = node_->sim_time_;
   timeout_cmd_ = rclcpp::Time(0, 0);
@@ -74,6 +85,23 @@ void StageNode::Vehicle::reset_odom()
   body_velocity_.reset();
   msg_odom_ = nav_msgs::msg::Odometry();
   msg_imu_ = sensor_msgs::msg::Imu();
+
+  // Planar odometry covariance. Z/roll/pitch are intentionally unobserved.
+  msg_odom_.pose.covariance[0] = 0.0025;
+  msg_odom_.pose.covariance[7] = 0.0025;
+  msg_odom_.pose.covariance[14] = 1e6;
+  msg_odom_.pose.covariance[21] = 1e6;
+  msg_odom_.pose.covariance[28] = 1e6;
+  msg_odom_.pose.covariance[35] =
+    node_->imu_yaw_noise_stddev_ * node_->imu_yaw_noise_stddev_;
+  msg_odom_.twist.covariance[0] = 0.0004;
+  msg_odom_.twist.covariance[7] = 0.0004;
+  msg_odom_.twist.covariance[14] = 1e6;
+  msg_odom_.twist.covariance[21] = 1e6;
+  msg_odom_.twist.covariance[28] = 1e6;
+  msg_odom_.twist.covariance[35] =
+    node_->imu_angular_velocity_noise_stddev_ *
+    node_->imu_angular_velocity_noise_stddev_;
 }
 
 const std::string &StageNode::Vehicle::name() const
@@ -131,6 +159,10 @@ void StageNode::Vehicle::init(bool use_topic_prefixes, bool use_one_tf_tree)
           std::bind(&StageNode::Vehicle::callback_cmd, this, _1));
 
   positionmodel->Subscribe();
+  // Stage initializes est_pose from the model, but the IMU heading offset
+  // must be initialized explicitly as well. Without this, a non-zero spawn
+  // yaw leaks directly into odom->base_link on the first frame.
+  reset_odom();
 
   for (std::shared_ptr<Ranger> ranger : rangers_)
   {
@@ -150,7 +182,6 @@ void StageNode::Vehicle::publish_msg()
   if (!initialized_)
     return;
 
-  Stg::Velocity v = positionmodel->GetVelocity();
   Stg::Pose gpose = positionmodel->GetGlobalPose();
   tf2::Quaternion q_gpose;
   q_gpose.setRPY(0.0, 0.0, gpose.a);
@@ -162,13 +193,19 @@ void StageNode::Vehicle::publish_msg()
   }
 
   Stg::Velocity gvel(0, 0, 0, 0);
+  double delta_world_x = 0.0;
+  double delta_world_y = 0.0;
+  bool has_pose_delta = false;
   if (global_pose_)
   {
     if (dt > 0)
     {
+      delta_world_x = gpose.x - global_pose_->x;
+      delta_world_y = gpose.y - global_pose_->y;
+      has_pose_delta = true;
       gvel = Stg::Velocity(
-          (gpose.x - global_pose_->x) / dt,
-          (gpose.y - global_pose_->y) / dt,
+          delta_world_x / dt,
+          delta_world_y / dt,
           (gpose.z - global_pose_->z) / dt,
           Stg::normalize(gpose.a - global_pose_->a) / dt);
     }
@@ -182,24 +219,64 @@ void StageNode::Vehicle::publish_msg()
 
   ensure_imu_initialized();
 
+  // ModelPosition::GetVelocity() returns the requested velocity even when
+  // Stage has stopped the body on a collision. Derive sensor motion from the
+  // actual pose delta so odometry and IMU stop with the physical robot.
+  const double heading_cos = std::cos(gpose.a);
+  const double heading_sin = std::sin(gpose.a);
+  const Stg::Velocity body_motion(
+    (gvel.x * heading_cos) + (gvel.y * heading_sin),
+    (-gvel.x * heading_sin) + (gvel.y * heading_cos),
+    gvel.z,
+    gvel.a);
+
   double linear_acceleration_x = 0.0;
   double linear_acceleration_y = 0.0;
   if (body_velocity_ && dt > 0.0) {
-    linear_acceleration_x = (v.x - body_velocity_->x) / dt;
-    linear_acceleration_y = (v.y - body_velocity_->y) / dt;
+    // REP-103 body-frame acceleration: derivative in a rotating frame needs
+    // the omega x velocity term. This matters while the robot follows arcs.
+    linear_acceleration_x =
+      ((body_motion.x - body_velocity_->x) / dt) - (body_motion.a * body_motion.y);
+    linear_acceleration_y =
+      ((body_motion.y - body_velocity_->y) / dt) + (body_motion.a * body_motion.x);
   }
   if (body_velocity_) {
-    *body_velocity_ = v;
+    *body_velocity_ = body_motion;
   } else {
-    body_velocity_ = std::make_shared<Stg::Velocity>(v);
+    body_velocity_ = std::make_shared<Stg::Velocity>(body_motion);
   }
 
   const double imu_yaw = Stg::normalize(gpose.a + imu_yaw_bias_);
-  const double odom_yaw = node_->use_imu_for_odom_yaw_
-    ? Stg::normalize(imu_yaw - odom_yaw_offset_)
-    : positionmodel->est_pose.a;
+  const double relative_imu_yaw = Stg::normalize(imu_yaw - odom_yaw_offset_);
+  if (node_->use_imu_for_odom_yaw_) {
+    if (!imu_odom_initialized_) {
+      imu_odom_x_ = 0.0;
+      imu_odom_y_ = 0.0;
+      imu_odom_yaw_ = relative_imu_yaw;
+      imu_odom_initialized_ = true;
+    } else {
+      if (has_pose_delta) {
+        // Express the collision-constrained world displacement in the odom
+        // frame fixed at reset. This keeps translation and IMU heading in one
+        // coordinate system without integrating a stale velocity command.
+        const double origin_cos = std::cos(odom_world_yaw_offset_);
+        const double origin_sin = std::sin(odom_world_yaw_offset_);
+        imu_odom_x_ +=
+          (delta_world_x * origin_cos) + (delta_world_y * origin_sin);
+        imu_odom_y_ +=
+          (-delta_world_x * origin_sin) + (delta_world_y * origin_cos);
+      }
+      imu_odom_yaw_ = relative_imu_yaw;
+    }
+  } else {
+    imu_odom_x_ = positionmodel->est_pose.x;
+    imu_odom_y_ = positionmodel->est_pose.y;
+    imu_odom_yaw_ = positionmodel->est_pose.a;
+    imu_odom_initialized_ = true;
+  }
   const double imu_angular_velocity_z =
-    v.a + imu_angular_velocity_bias_ + sample_noise(node_->imu_angular_velocity_noise_stddev_);
+    body_motion.a + imu_angular_velocity_bias_ +
+    sample_noise(node_->imu_angular_velocity_noise_stddev_);
 
   msg_imu_.header.stamp = node_->sim_time_;
   msg_imu_.header.frame_id = frame_id_imu_;
@@ -211,7 +288,10 @@ void StageNode::Vehicle::publish_msg()
     linear_acceleration_x + sample_noise(node_->imu_linear_acceleration_noise_stddev_);
   msg_imu_.linear_acceleration.y =
     linear_acceleration_y + sample_noise(node_->imu_linear_acceleration_noise_stddev_);
-  msg_imu_.linear_acceleration.z = 0.0;
+  // REP-103/145 ENU specific force: a stationary, upright accelerometer
+  // measures +g on Z. robot_localization is configured to remove gravity.
+  msg_imu_.linear_acceleration.z =
+    9.80665 + sample_noise(node_->imu_linear_acceleration_noise_stddev_);
   msg_imu_.orientation_covariance.fill(0.0);
   msg_imu_.angular_velocity_covariance.fill(0.0);
   msg_imu_.linear_acceleration_covariance.fill(0.0);
@@ -227,19 +307,22 @@ void StageNode::Vehicle::publish_msg()
     node_->imu_linear_acceleration_noise_stddev_ * node_->imu_linear_acceleration_noise_stddev_;
   msg_imu_.linear_acceleration_covariance[4] =
     node_->imu_linear_acceleration_noise_stddev_ * node_->imu_linear_acceleration_noise_stddev_;
-  msg_imu_.linear_acceleration_covariance[8] = 1e6;
+  msg_imu_.linear_acceleration_covariance[8] =
+    node_->imu_linear_acceleration_noise_stddev_ *
+    node_->imu_linear_acceleration_noise_stddev_;
 
   if (node_->publish_imu_ && pub_imu_) {
     pub_imu_->publish(msg_imu_);
   }
 
-  // Get latest odometry data and stabilize yaw with the simulated IMU when requested.
-  msg_odom_.pose.pose.position.x = positionmodel->est_pose.x;
-  msg_odom_.pose.pose.position.y = positionmodel->est_pose.y;
-  msg_odom_.pose.pose.orientation = createQuaternionMsgFromYaw(odom_yaw);
-  msg_odom_.twist.twist.linear.x = v.x;
-  msg_odom_.twist.twist.linear.y = v.y;
-  msg_odom_.twist.twist.angular.z = node_->use_imu_for_odom_yaw_ ? imu_angular_velocity_z : v.a;
+  // Publish one self-consistent planar odometry estimate.
+  msg_odom_.pose.pose.position.x = imu_odom_x_;
+  msg_odom_.pose.pose.position.y = imu_odom_y_;
+  msg_odom_.pose.pose.orientation = createQuaternionMsgFromYaw(imu_odom_yaw_);
+  msg_odom_.twist.twist.linear.x = body_motion.x;
+  msg_odom_.twist.twist.linear.y = body_motion.y;
+  msg_odom_.twist.twist.angular.z =
+    node_->use_imu_for_odom_yaw_ ? imu_angular_velocity_z : body_motion.a;
   msg_odom_.header.frame_id = frame_id_odom_;
   msg_odom_.header.stamp = node_->sim_time_;
   msg_odom_.child_frame_id = frame_id_base_link_;

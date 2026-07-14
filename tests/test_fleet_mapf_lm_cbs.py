@@ -1,3 +1,5 @@
+import math
+
 from fleet_manager.mapf import LmCBSPlanner, LmRobotRequest
 
 
@@ -98,6 +100,47 @@ def test_low_level_horizon_rejects_late_goal() -> None:
 
     assert result.plans == {}
     assert result.debug.reason.startswith("no_low_level_path")
+
+
+def test_cbs_reserves_rotation_before_entering_an_edge() -> None:
+    planner = LmCBSPlanner(
+        {"A": ["B"], "B": []},
+        move_cost_fn=lambda _start, _goal: 1,
+        heading_fn=lambda _start, _goal: 0.0,
+        turn_cost_fn=lambda start, goal: 4 if abs(start - goal) > 1.0 else 0,
+        low_level_max_time=10,
+        max_high_level_nodes=100,
+    )
+
+    result = planner.plan_for_robots(
+        [LmRobotRequest("r1", "A", "B", start_yaw=math.pi)]
+    )
+
+    plan = result.plans["r1"]
+    assert plan.nodes == ["A", "A", "B"]
+    assert plan.times == [0, 4, 5]
+    assert plan.actions == ["start", "rotate", "move"]
+
+
+def test_cbs_constrains_shared_topometric_resource_directly() -> None:
+    planner = LmCBSPlanner(
+        {"A": ["B"], "B": [], "C": ["D"], "D": []},
+        vertex_resources_fn=lambda node: (f"vertex:{node}",),
+        lane_resources_fn=lambda _start, _goal: ("mutex:crossing",),
+        low_level_max_time=10,
+        max_high_level_nodes=100,
+    )
+
+    result = planner.plan_for_robots(
+        [
+            LmRobotRequest("r1", "A", "B"),
+            LmRobotRequest("r2", "C", "D"),
+        ]
+    )
+
+    assert result.debug.reason == "success"
+    assert result.debug.conflicts_resolved == 1
+    assert sorted(plan.times[-1] for plan in result.plans.values()) == [1, 2]
 
 
 def assert_no_space_time_conflicts(plans) -> None:
