@@ -163,6 +163,7 @@ def test_rolling_prefetch_hands_off_without_idle_frame() -> None:
     order_id = robot.active_order_id
     first_revision = robot.route_revision
     first_chunk = robot.route_chunk_goal_lm
+    handoff_yaw = float(robot.trajectory[-1]["yaw"])
     robot.route_clock = max(0.0, float(robot.trajectory[-1]["t"]) - 0.5)
     service.manager._advance_runtime()
     _pump_until(
@@ -179,6 +180,7 @@ def test_rolling_prefetch_hands_off_without_idle_frame() -> None:
     assert robot.current_lm == first_chunk
     assert robot.status == "MOVING"
     assert robot.trajectory
+    assert abs(float(robot.trajectory[0]["yaw"]) - handoff_yaw) < 1e-6
     assert robot.route_revision > first_revision
     assert robot.pending_route is None
     assert service.manager.orders[order_id].status == "EXECUTING"
@@ -282,6 +284,7 @@ def test_50_robot_runtime_never_exposes_route_less_moving_blockers(
 
     assert len(service.manager.robots) == 50
     assert service._dynamic_benchmark_payload()["ordersGenerated"] >= 50
+    assert service.manager.traffic_metrics["runtimeSafetyRollbacks"] == 0
 
 
 def _pump_until(service: OperatorFleetManager, predicate, timeout: float = 6.0) -> None:

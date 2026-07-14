@@ -220,6 +220,7 @@ class LmCBSEnvironment:
         heading_fn: Callable[[NodeName, NodeName], float] | None = None,
         turn_cost_fn: Callable[[float, float], int] | None = None,
         vertex_resources_fn: Callable[[NodeName], tuple[object, ...]] | None = None,
+        rotation_resources_fn: Callable[[NodeName], tuple[object, ...]] | None = None,
         lane_resources_fn: Callable[[NodeName, NodeName], tuple[object, ...]] | None = None,
         low_level_max_time: int = 128,
         wait_cost: int = 6,
@@ -236,6 +237,7 @@ class LmCBSEnvironment:
         self.heading_fn = heading_fn or (lambda _src, _dst: 0.0)
         self.turn_cost_fn = turn_cost_fn or (lambda _from_yaw, _to_yaw: 0)
         self.vertex_resources_fn = vertex_resources_fn
+        self.rotation_resources_fn = rotation_resources_fn or vertex_resources_fn
         self.lane_resources_fn = lane_resources_fn
         self.low_level_max_time = max(1, int(low_level_max_time))
         self.wait_cost = max(1, int(wait_cost))
@@ -409,8 +411,8 @@ class LmCBSEnvironment:
             ):
                 self.last_failure = f"rotation_vertex_interval_constrained:{node}@{start}-{end}"
                 return False
-        if self.vertex_resources_fn is not None and not self._resource_constraints_allow(
-            self.vertex_resources_fn(node),
+        if self.rotation_resources_fn is not None and not self._resource_constraints_allow(
+            self.rotation_resources_fn(node),
             start,
             end,
         ):
@@ -582,8 +584,21 @@ class LmCBSEnvironment:
             return []
         intervals: set[PathResourceInterval] = set()
 
-        def add_vertex(node: NodeName, start: int, end: int) -> None:
-            for resource in self.vertex_resources_fn(node):
+        def add_vertex(
+            node: NodeName,
+            start: int,
+            end: int,
+            *,
+            rotation: bool = False,
+        ) -> None:
+            resource_fn = (
+                self.rotation_resources_fn
+                if rotation and self.rotation_resources_fn is not None
+                else self.vertex_resources_fn
+            )
+            if resource_fn is None:
+                return
+            for resource in resource_fn(node):
                 intervals.add(
                     PathResourceInterval(
                         agent_name,
@@ -604,7 +619,12 @@ class LmCBSEnvironment:
             turn_ticks, _ = self.transition_parts(start, end)
             move_start = start.time + turn_ticks
             if turn_ticks:
-                add_vertex(start.node, start.time, move_start + 1)
+                add_vertex(
+                    start.node,
+                    start.time,
+                    move_start + 1,
+                    rotation=True,
+                )
             for resource in self.lane_resources_fn(start.node, end.node):
                 intervals.add(
                     PathResourceInterval(
@@ -955,6 +975,7 @@ class LmCBSPlanner:
         heading_fn: Callable[[NodeName, NodeName], float] | None = None,
         turn_cost_fn: Callable[[float, float], int] | None = None,
         vertex_resources_fn: Callable[[NodeName], tuple[object, ...]] | None = None,
+        rotation_resources_fn: Callable[[NodeName], tuple[object, ...]] | None = None,
         lane_resources_fn: Callable[[NodeName, NodeName], tuple[object, ...]] | None = None,
         low_level_max_time: int = 128,
         max_high_level_nodes: int = 2000,
@@ -967,6 +988,7 @@ class LmCBSPlanner:
         self.heading_fn = heading_fn
         self.turn_cost_fn = turn_cost_fn
         self.vertex_resources_fn = vertex_resources_fn
+        self.rotation_resources_fn = rotation_resources_fn or vertex_resources_fn
         self.lane_resources_fn = lane_resources_fn
         self.low_level_max_time = max(1, int(low_level_max_time))
         self.max_high_level_nodes = max(1, int(max_high_level_nodes))
@@ -1076,6 +1098,7 @@ class LmCBSPlanner:
             heading_fn=self.heading_fn,
             turn_cost_fn=self.turn_cost_fn,
             vertex_resources_fn=self.vertex_resources_fn,
+            rotation_resources_fn=self.rotation_resources_fn,
             lane_resources_fn=self.lane_resources_fn,
             low_level_max_time=ll_max_time,
             wait_cost=self.wait_cost,

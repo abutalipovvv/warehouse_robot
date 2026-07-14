@@ -19,6 +19,7 @@ class TrafficVertex:
     is_charger: bool = False
     mutex_zone_ids: tuple[str, ...] = ()
     clearance_zone_ids: tuple[str, ...] = ()
+    rotation_conflict_lms: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -49,6 +50,7 @@ class TrafficGraph:
         *,
         default_speed_mps: float,
         min_robot_center_distance_m: float = 0.0,
+        rotation_min_robot_center_distance_m: float = 0.0,
     ) -> "TrafficGraph":
         edge_keys = {(edge.from_name, edge.to_name) for edge in edges}
         vertices = {
@@ -58,6 +60,10 @@ class TrafficGraph:
         vertices = _with_clearance_zones(
             vertices,
             max(0.0, float(min_robot_center_distance_m)),
+        )
+        vertices = _with_rotation_conflict_lms(
+            vertices,
+            max(0.0, float(rotation_min_robot_center_distance_m)),
         )
         lanes: dict[str, TrafficLane] = {}
         outgoing: dict[str, list[str]] = {name: [] for name in landmarks}
@@ -113,6 +119,28 @@ class TrafficGraph:
         resources.extend(ResourceId("mutex_zone", zone_id) for zone_id in vertex.mutex_zone_ids)
         resources.extend(ResourceId("clearance", zone_id) for zone_id in vertex.clearance_zone_ids)
         return tuple(resources)
+
+    def rotation_resources(self, lm_id: str) -> tuple[ResourceId, ...]:
+        """Resources swept by an in-place rotation at ``lm_id``.
+
+        Normal vertex occupancy remains compact. Nearby turns share a
+        turn-only pair resource, so their swept bodies are serialized without
+        making an ordinary parked or passing robot occupy the entire
+        circumscribed rotation circle. Exact footprint geometry remains the
+        authority for a turn against non-rotating traffic.
+        """
+        vertex = self.vertices.get(lm_id)
+        if vertex is None:
+            return self.vertex_resources(lm_id)
+        resources = list(self.vertex_resources(lm_id))
+        resources.extend(
+            ResourceId(
+                "rotation_clearance",
+                "<->".join(sorted((lm_id, other_lm))),
+            )
+            for other_lm in vertex.rotation_conflict_lms
+        )
+        return tuple(dict.fromkeys(resources))
 
     def reservation_capacities(self) -> dict[ResourceId, int]:
         capacities: dict[ResourceId, int] = {}
@@ -173,6 +201,41 @@ def _with_clearance_zones(
             is_charger=vertex.is_charger,
             mutex_zone_ids=vertex.mutex_zone_ids,
             clearance_zone_ids=tuple(zones.get(name, ())),
+            rotation_conflict_lms=vertex.rotation_conflict_lms,
+        )
+        for name, vertex in vertices.items()
+    }
+
+
+def _with_rotation_conflict_lms(
+    vertices: dict[str, TrafficVertex],
+    min_center_distance: float,
+) -> dict[str, TrafficVertex]:
+    if min_center_distance <= 0.0:
+        return vertices
+
+    conflicts: dict[str, list[str]] = {name: [] for name in vertices}
+    ordered = sorted(vertices.values(), key=lambda item: item.id)
+    threshold_sq = min_center_distance * min_center_distance
+    for index, first in enumerate(ordered):
+        for second in ordered[index + 1:]:
+            distance_sq = ((first.x - second.x) ** 2) + ((first.y - second.y) ** 2)
+            if distance_sq >= threshold_sq:
+                continue
+            conflicts[first.id].append(second.id)
+            conflicts[second.id].append(first.id)
+
+    return {
+        name: TrafficVertex(
+            id=vertex.id,
+            x=vertex.x,
+            y=vertex.y,
+            can_wait=vertex.can_wait,
+            is_parking=vertex.is_parking,
+            is_charger=vertex.is_charger,
+            mutex_zone_ids=vertex.mutex_zone_ids,
+            clearance_zone_ids=vertex.clearance_zone_ids,
+            rotation_conflict_lms=tuple(conflicts.get(name, ())),
         )
         for name, vertex in vertices.items()
     }
@@ -249,6 +312,7 @@ def _with_lane_vertex_clearance_zones(
             is_charger=vertex.is_charger,
             mutex_zone_ids=vertex.mutex_zone_ids,
             clearance_zone_ids=tuple(dict.fromkeys(vertex_zones.get(name, ()))),
+            rotation_conflict_lms=vertex.rotation_conflict_lms,
         )
         for name, vertex in vertices.items()
     }

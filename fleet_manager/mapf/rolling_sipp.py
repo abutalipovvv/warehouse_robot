@@ -244,7 +244,11 @@ class RollingSippPlanner:
                 return False
         for start, end in zip(states, states[1:]):
             if start.node == end.node:
-                resources = self.graph.vertex_resources(start.node)
+                resources = (
+                    self.graph.rotation_resources(start.node)
+                    if end.action == "rotate"
+                    else self.graph.vertex_resources(start.node)
+                )
                 interval_end = end.time + 1
             else:
                 lane = self.graph.lane_for(start.node, end.node)
@@ -362,15 +366,25 @@ class RollingSippPlanner:
             start = states[index]
             end = states[index + 1]
             if start.node == end.node:
-                self._reserve_vertex(
-                    reservations,
-                    start.node,
-                    start.time,
-                    end.time + 1,
-                    path.robot_name,
-                    "wait",
-                    committed=False,
-                )
+                if end.action == "rotate":
+                    self._reserve_rotation(
+                        reservations,
+                        start.node,
+                        start.time,
+                        end.time + 1,
+                        path.robot_name,
+                        committed=False,
+                    )
+                else:
+                    self._reserve_vertex(
+                        reservations,
+                        start.node,
+                        start.time,
+                        end.time + 1,
+                        path.robot_name,
+                        "wait",
+                        committed=False,
+                    )
                 continue
             self._reserve_lane(
                 reservations,
@@ -412,6 +426,28 @@ class RollingSippPlanner:
                     start=start,
                     end=end,
                     reason=reason,
+                    committed=committed,
+                )
+            )
+
+    def _reserve_rotation(
+        self,
+        reservations: ReservationTable,
+        node: NodeName,
+        start: int,
+        end: int,
+        robot_name: str,
+        *,
+        committed: bool = True,
+    ) -> None:
+        for resource in self.graph.rotation_resources(node):
+            reservations.reserve(
+                ReservationInterval(
+                    resource=resource,
+                    robot_name=robot_name,
+                    start=start,
+                    end=end,
+                    reason="rotate",
                     committed=committed,
                 )
             )

@@ -62,6 +62,33 @@ def test_traffic_graph_reserves_endpoint_and_physical_clearance_resources() -> N
     assert ResourceId("vertex", "B") in graph.lane_resources(lane)
 
 
+def test_adjacent_rotations_share_turn_only_resource() -> None:
+    landmarks = {
+        "A": Landmark(name="A", x=0.0, y=0.0),
+        "B": Landmark(name="B", x=1.2, y=0.0),
+    }
+    graph = TrafficGraph.from_route_core(
+        landmarks,
+        [],
+        default_speed_mps=1.0,
+        min_robot_center_distance_m=1.15,
+        rotation_min_robot_center_distance_m=1.304,
+    )
+
+    a_vertex = set(graph.vertex_resources("A"))
+    a_turn = set(graph.rotation_resources("A"))
+    b_turn = set(graph.rotation_resources("B"))
+    shared_turn_resources = {
+        resource
+        for resource in a_turn & b_turn
+        if resource.kind == "rotation_clearance"
+    }
+
+    assert ResourceId("vertex", "B") not in a_vertex
+    assert shared_turn_resources
+    assert not any(resource.kind == "rotation_clearance" for resource in a_vertex)
+
+
 def test_fleet_cbs_uses_same_mutex_resources_as_commit_validator() -> None:
     landmarks = {
         "A": Landmark(name="A", x=0.0, y=0.0),

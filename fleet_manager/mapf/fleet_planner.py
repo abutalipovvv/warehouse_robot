@@ -22,7 +22,7 @@ class FleetMapfPlanner:
         self.params = params or {}
         self.route_planner = LmRoutePlanner(landmarks, edges, params=params)
         self.graph = self._build_graph()
-        self._traffic_graph_cache: dict[tuple[float, float], TrafficGraph] = {}
+        self._traffic_graph_cache: dict[tuple[float, float, float], TrafficGraph] = {}
         self._heuristic_cache: dict[tuple[str, str], float] = {}
         self.edge_by_key = {
             (edge.from_name, edge.to_name): edge
@@ -57,6 +57,9 @@ class FleetMapfPlanner:
             )
         )
         self.min_robot_center_distance_m = self._min_robot_center_distance(fleet_params)
+        self.rotation_min_robot_center_distance_m = self._rotation_min_robot_center_distance(
+            fleet_params
+        )
         self.planner_backend = self._planner_backend(fleet_params)
         planner_params = self.params.get("planner", {})
         if not isinstance(planner_params, dict):
@@ -482,6 +485,7 @@ class FleetMapfPlanner:
                 else 0
             ),
             vertex_resources_fn=traffic_graph.vertex_resources,
+            rotation_resources_fn=traffic_graph.rotation_resources,
             lane_resources_fn=lane_resources,
             low_level_max_time=low_level_max_time,
             max_high_level_nodes=self.max_high_level_nodes,
@@ -620,7 +624,11 @@ class FleetMapfPlanner:
         return nodes
 
     def _traffic_graph(self, speed: float) -> TrafficGraph:
-        key = (round(max(0.02, float(speed)), 6), round(self.min_robot_center_distance_m, 6))
+        key = (
+            round(max(0.02, float(speed)), 6),
+            round(self.min_robot_center_distance_m, 6),
+            round(self.rotation_min_robot_center_distance_m, 6),
+        )
         cached = self._traffic_graph_cache.get(key)
         if cached is not None:
             return cached
@@ -629,6 +637,9 @@ class FleetMapfPlanner:
             self.edges,
             default_speed_mps=speed,
             min_robot_center_distance_m=self.min_robot_center_distance_m,
+            rotation_min_robot_center_distance_m=(
+                self.rotation_min_robot_center_distance_m
+            ),
         )
         self._traffic_graph_cache[key] = graph
         return graph
@@ -681,6 +692,48 @@ class FleetMapfPlanner:
         except (TypeError, ValueError):
             clearance = 0.35
         return (radius * 2.0) + collision_margin + clearance
+
+    def _rotation_min_robot_center_distance(self, fleet_params: dict[str, Any]) -> float:
+        configured = fleet_params.get("mapf_rotation_center_distance_m")
+        if configured is not None:
+            try:
+                return max(0.0, float(configured))
+            except (TypeError, ValueError):
+                pass
+
+        robot_model = self.params.get("robot_model", {})
+        if not isinstance(robot_model, dict):
+            robot_model = {}
+        try:
+            radius = max(0.0, float(robot_model.get("radius", 0.22) or 0.22))
+        except (TypeError, ValueError):
+            radius = 0.22
+        footprint = robot_model.get("footprint")
+        if isinstance(footprint, list):
+            for point in footprint:
+                if not isinstance(point, dict):
+                    continue
+                try:
+                    radius = max(
+                        radius,
+                        math.hypot(
+                            float(point.get("x", 0.0) or 0.0),
+                            float(point.get("y", 0.0) or 0.0),
+                        ),
+                    )
+                except (TypeError, ValueError):
+                    continue
+        navigation = self.params.get("navigation", {})
+        if not isinstance(navigation, dict):
+            navigation = {}
+        try:
+            collision_margin = max(
+                0.0,
+                float(navigation.get("collision_margin", 0.04) or 0.04),
+            )
+        except (TypeError, ValueError):
+            collision_margin = 0.04
+        return (radius * 2.0) + collision_margin
 
     def _build_graph(self) -> dict[str, list[str]]:
         graph: dict[str, set[str]] = {name: set() for name in self.landmarks}

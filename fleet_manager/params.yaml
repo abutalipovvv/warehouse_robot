@@ -86,6 +86,10 @@ fleet:
   # Explicit graph reservation distance; exact rectangle overlap remains the
   # final authority for spawn and continuous runtime collision checks.
   mapf_min_robot_center_distance_m: 1.15
+  # Only simultaneous in-place ROTATE actions share this circumscribed-body
+  # resource. Turn-vs-stationary/moving traffic uses exact footprint geometry,
+  # so adjacent 1.20 m graph cells do not become an artificial wall.
+  mapf_rotation_center_distance_m: 1.304
   # null derives the runtime preview from route speed, acceleration and the
   # spatial footprint lookahead. Set seconds explicitly to tune field robots.
   runtime_collision_lookahead_sec: null

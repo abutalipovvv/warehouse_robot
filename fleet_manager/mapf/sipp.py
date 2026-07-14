@@ -287,6 +287,7 @@ class SippPlanner:
             earliest_depart,
             latest_depart,
             move_duration,
+            rotate_duration,
             robot_name,
             reservations,
         )
@@ -340,11 +341,27 @@ class SippPlanner:
         earliest_depart: int,
         latest_depart: int,
         duration: int,
+        rotate_duration: int,
         robot_name: str,
         reservations: ReservationTable,
     ) -> int | None:
         for depart in range(max(0, earliest_depart), max(0, latest_depart) + 1):
             end_time = depart + duration
+            rotate_start = max(0, depart - rotate_duration)
+            if rotate_duration and not reservations.resources_are_free(
+                self.graph.rotation_resources(lane.from_lm),
+                rotate_start,
+                depart,
+                ignore_robot_name=robot_name,
+            ):
+                self._record_blocking_owners(
+                    self.graph.rotation_resources(lane.from_lm),
+                    rotate_start,
+                    depart,
+                    robot_name,
+                    reservations,
+                )
+                continue
             if reservations.resources_are_free(
                 self.graph.lane_resources(lane),
                 depart,

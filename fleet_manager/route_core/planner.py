@@ -42,6 +42,7 @@ class LmRoutePlanner:
         start: str,
         goal: str,
         blocked_edges: set[tuple[str, str]] | None = None,
+        edge_penalties: dict[tuple[str, str], float] | None = None,
     ) -> PlannedRoute:
         if start not in self.landmarks:
             raise ValueError(f"Unknown start LM: {start}")
@@ -51,6 +52,7 @@ class LmRoutePlanner:
             return PlannedRoute(nodes=[start], edges=[], length=0.0)
 
         blocked_edges = blocked_edges or set()
+        edge_penalties = edge_penalties or {}
         open_heap: list[tuple[float, str]] = [(0.0, start)]
         came_from: dict[str, tuple[str, GraphEdge]] = {}
         g_score: dict[str, float] = {start: 0.0}
@@ -65,12 +67,23 @@ class LmRoutePlanner:
                     current = previous
                 ordered_edges.reverse()
                 nodes = [start] + [edge.to_name for edge in ordered_edges]
-                return PlannedRoute(nodes=nodes, edges=ordered_edges, length=g_score[goal])
+                return PlannedRoute(
+                    nodes=nodes,
+                    edges=ordered_edges,
+                    length=sum(float(edge.length) for edge in ordered_edges),
+                )
 
             for edge in self._adjacency.get(current, []):
                 if (edge.from_name, edge.to_name) in blocked_edges:
                     continue
-                tentative = g_score[current] + edge.length
+                tentative = (
+                    g_score[current]
+                    + edge.length
+                    + max(
+                        0.0,
+                        float(edge_penalties.get((edge.from_name, edge.to_name), 0.0)),
+                    )
+                )
                 if tentative >= g_score.get(edge.to_name, math.inf):
                     continue
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 import math
 from pathlib import Path
@@ -265,6 +266,11 @@ class WebFleetManager:
         self._coupled_replan_last_attempt: dict[tuple[str, ...], float] = {}
         self._coupled_replan_failures: dict[tuple[str, ...], int] = {}
         self._active_wait_cycles: dict[tuple[str, ...], float] = {}
+        # Populated only while a physics tick is advancing. All pairwise
+        # predictions must use the same clocks from the start of that tick;
+        # otherwise iteration order makes an already-updated peer appear one
+        # extra step ahead and can admit a crossing that is rolled back later.
+        self._runtime_tick_route_clocks: dict[str, float] = {}
         self.traffic_metrics: dict[str, int] = {
             "waitCyclesDetected": 0,
             "waitCyclesResolved": 0,
@@ -1235,13 +1241,16 @@ class WebFleetManager:
             motion_key = self._order_motion_key(first[0])
             group = [first]
             failure_count = max(0, int(first[0].dispatch_failures or 0))
-            group_limit = (
-                1
-                if failure_count >= 2
-                else min(2, batch_size)
-                if failure_count == 1
-                else batch_size
-            )
+            group_limit = batch_size
+            if failure_count >= 2:
+                # Repeating a failed one-robot request against the same parked
+                # neighbours can never open a dense start area. Escalate the
+                # connected release wave to local-CBS size; planning remains
+                # background-only and bounded by the existing CBS limits.
+                group_limit = min(
+                    self.planner.local_cbs_max_robots,
+                    max(batch_size, 2 + failure_count),
+                )
             # Initial assignment benefits from a small coupled group because
             # all robots are still parked.  A rolling continuation is a much
             # more frequent operation (N / horizon requests per second) and
@@ -1536,11 +1545,18 @@ class WebFleetManager:
                 continue
             start_lm = robot.route_chunk_goal_lm
             planning_goal = self._rolling_planning_goal(start_lm, final_goal, order)
+            handoff_pose = self._pose_at_trajectory(
+                robot.trajectory,
+                final_time,
+            ) or self._pose_at_landmark(start_lm)
             request: dict[str, Any] = {
                 "name": robot.name,
                 "startLm": start_lm,
                 "goalLm": planning_goal,
-                "startPose": self._pose_at_landmark(start_lm),
+                # Preserve the exact arrival yaw. Resetting to the landmark's
+                # synthetic yaw=0 made the body rotate instantaneously at the
+                # rolling handoff and could sweep through a nearby robot.
+                "startPose": handoff_pose,
             }
             self._attach_spatial_route_to_request(
                 request,
@@ -2896,15 +2912,62 @@ class WebFleetManager:
                 return suffix
 
         blocked_edges = set(order.traffic_detour_edges) | self._dynamic_blocked_edges()
+        edge_penalties = (
+            self._traffic_route_edge_penalties(order, start_lm, final_goal_lm)
+            if order.traffic_detour_edges
+            else None
+        )
         route = self.planner.route_planner.find_route(
             start_lm,
             final_goal_lm,
             blocked_edges=blocked_edges,
+            edge_penalties=edge_penalties,
         )
         order.spatial_route_nodes = [str(node) for node in route.nodes]
         order.spatial_route_revision = self._next_route_revision()
         order.traffic_blocked_since = None
         return list(order.spatial_route_nodes)
+
+    def _traffic_route_edge_penalties(
+        self,
+        order: FleetOrder,
+        start_lm: str,
+        final_goal_lm: str,
+    ) -> dict[tuple[str, str], float]:
+        """Prefer a globally quieter route after a persistent traffic stall.
+
+        Penalties are deliberately soft: if every route crosses traffic, A*
+        still returns a path. In normal operation this method is not used, so
+        the originally committed shortest route remains stable across rolling
+        horizons and turns.
+        """
+        owner = order.vehicle or order.assigned_robot
+        node_penalties: dict[str, float] = {}
+        for robot in self._runtime_robots():
+            if robot.name == owner or robot.pose is None:
+                continue
+            node = self._nearest_lm_for_robot(robot)
+            if not node or node in {start_lm, final_goal_lm}:
+                continue
+            if robot.status in {"IDLE", "BLOCKED", "PAUSED", "OFFLINE"}:
+                penalty = 18.0
+            elif robot.status == "WAITING" and self._is_robot_conflict(robot.last_reason):
+                penalty = 14.0
+            elif robot.status in {"WAITING", "RETREATING"}:
+                penalty = 8.0
+            else:
+                penalty = 3.0
+            node_penalties[node] = max(node_penalties.get(node, 0.0), penalty)
+
+        penalties: dict[tuple[str, str], float] = {}
+        for edge in self.edges:
+            penalty = max(
+                node_penalties.get(edge.from_name, 0.0) * 0.35,
+                node_penalties.get(edge.to_name, 0.0),
+            )
+            if penalty > 0.0:
+                penalties[(edge.from_name, edge.to_name)] = penalty
+        return penalties
 
     def _attach_spatial_route_to_request(
         self,
@@ -2987,6 +3050,12 @@ class WebFleetManager:
             return final_goal_lm
         if len(route_nodes) < 2:
             return final_goal_lm
+        if order.dispatch_failures > 0:
+            # Recovery must make useful progress instead of rejecting an
+            # entire horizon because its second/third edge is temporarily
+            # unavailable. The same committed spatial suffix remains intact;
+            # only the temporal chunk is shortened to the next graph LM.
+            return str(route_nodes[1])
 
         route_payload: dict[str, Any] = {}
         if order.speed > 0.0:
@@ -4121,6 +4190,28 @@ class WebFleetManager:
             if isinstance(trajectory, list) and trajectory:
                 final_time = max(final_time, float(trajectory[-1].get("t", 0.0) or 0.0))
         horizon = min(final_time, self._batch_collision_horizon(final_time))
+        initial_clearance_release: dict[tuple[int, int], float] = {}
+        for first_index, first_plan in enumerate(plans):
+            first_trajectory = first_plan.get("trajectory", [])
+            if not isinstance(first_trajectory, list):
+                continue
+            for second_index in range(first_index + 1, len(plans)):
+                second_trajectory = plans[second_index].get("trajectory", [])
+                if not isinstance(second_trajectory, list):
+                    continue
+                release = self._initial_clearance_release_time(
+                    lambda elapsed, trajectory=first_trajectory: self._pose_at_trajectory(
+                        trajectory,
+                        elapsed,
+                    ),
+                    lambda elapsed, trajectory=second_trajectory: self._pose_at_trajectory(
+                        trajectory,
+                        elapsed,
+                    ),
+                    horizon,
+                )
+                if release is not None:
+                    initial_clearance_release[(first_index, second_index)] = release
         t = 0.0
         while t <= horizon + 0.000001:
             # Pose interpolation used to run once for every robot pair.  At 20
@@ -4166,6 +4257,13 @@ class WebFleetManager:
                 if waiting_pose is None:
                     continue
                 if self.collision.robot_footprints_conflict(priority_pose, waiting_pose):
+                    release = initial_clearance_release.get((priority_index, wait_index))
+                    if (
+                        release is not None
+                        and t <= release + 0.000001
+                        and not self.collision.footprints_overlap(priority_pose, waiting_pose)
+                    ):
+                        continue
                     priority_edge = self._edge_id_at_trajectory(priority_trajectory, t) or "unknown"
                     waiting_edge = self._edge_id_at_trajectory(waiting_trajectory, t) or "unknown"
                     if waiting_edge.startswith("WAIT@") and not priority_edge.startswith("WAIT@"):
@@ -4261,6 +4359,18 @@ class WebFleetManager:
         final_time = float(trajectory[-1].get("t", 0.0) or 0.0)
         step = self._continuous_collision_step()
         horizon = min(final_time, self._reservation_horizon())
+        initial_clearance_release: dict[str, float] = {}
+        for other in corridor_robots:
+            release = self._initial_clearance_release_time(
+                lambda elapsed: self._pose_at_trajectory(trajectory, elapsed),
+                lambda elapsed, peer=other: self._predicted_robot_pose(
+                    peer,
+                    prediction_offset + elapsed,
+                ),
+                horizon,
+            )
+            if release is not None:
+                initial_clearance_release[other.name] = release
         t = 0.0
         while t <= horizon + 0.000001:
             pose = self._pose_at_trajectory(trajectory, t)
@@ -4272,6 +4382,13 @@ class WebFleetManager:
                 if other_pose is None:
                     continue
                 if self.collision.robot_footprints_conflict(pose, other_pose):
+                    release = initial_clearance_release.get(other.name)
+                    if (
+                        release is not None
+                        and t <= release + 0.000001
+                        and not self.collision.footprints_overlap(pose, other_pose)
+                    ):
+                        continue
                     edge = self._edge_id_at_trajectory(trajectory, t)
                     return {
                         "time": t,
@@ -4279,6 +4396,76 @@ class WebFleetManager:
                         "edge": edge or "unknown",
                     }
             t += step
+        return None
+
+    def _initial_clearance_release_time(
+        self,
+        first_pose_at: Callable[[float], dict[str, float] | None],
+        second_pose_at: Callable[[float], dict[str, float] | None],
+        horizon: float,
+    ) -> float | None:
+        """Return when an initially tight, physically safe pair separates.
+
+        Clearance is a preventive envelope, not an obstacle that may imprison
+        robots which already start inside it. The waiver lasts only until the
+        pair first exits the envelope and is granted only when their first
+        translational motion increases distance without physical overlap.
+        """
+        first_start = first_pose_at(0.0)
+        second_start = second_pose_at(0.0)
+        if first_start is None or second_start is None:
+            return None
+        if not self.collision.robot_footprints_conflict(first_start, second_start):
+            return None
+        if self.collision.footprints_overlap(first_start, second_start):
+            return None
+
+        initial_distance = math.hypot(
+            float(first_start.get("x", 0.0) or 0.0)
+            - float(second_start.get("x", 0.0) or 0.0),
+            float(first_start.get("y", 0.0) or 0.0)
+            - float(second_start.get("y", 0.0) or 0.0),
+        )
+        step = self._continuous_collision_step()
+        elapsed = step
+        departed = False
+        while elapsed <= horizon + 0.000001:
+            first_pose = first_pose_at(elapsed)
+            second_pose = second_pose_at(elapsed)
+            if first_pose is None or second_pose is None:
+                return None
+            if self.collision.footprints_overlap(first_pose, second_pose):
+                return None
+            distance = math.hypot(
+                float(first_pose.get("x", 0.0) or 0.0)
+                - float(second_pose.get("x", 0.0) or 0.0),
+                float(first_pose.get("y", 0.0) or 0.0)
+                - float(second_pose.get("y", 0.0) or 0.0),
+            )
+            translation = max(
+                math.hypot(
+                    float(first_pose.get("x", 0.0) or 0.0)
+                    - float(first_start.get("x", 0.0) or 0.0),
+                    float(first_pose.get("y", 0.0) or 0.0)
+                    - float(first_start.get("y", 0.0) or 0.0),
+                ),
+                math.hypot(
+                    float(second_pose.get("x", 0.0) or 0.0)
+                    - float(second_start.get("x", 0.0) or 0.0),
+                    float(second_pose.get("y", 0.0) or 0.0)
+                    - float(second_start.get("y", 0.0) or 0.0),
+                ),
+            )
+            if not departed and translation >= 0.02:
+                if distance <= initial_distance + 0.01:
+                    return None
+                departed = True
+            if departed and not self.collision.robot_footprints_conflict(
+                first_pose,
+                second_pose,
+            ):
+                return elapsed
+            elapsed += step
         return None
 
     def _wait_duration_for_conflict(
@@ -4858,6 +5045,10 @@ class WebFleetManager:
             for robot in self._runtime_robots()
             if not robot.is_remote()
         }
+        self._runtime_tick_route_clocks = {
+            name: float(snapshot["route_clock"])
+            for name, snapshot in safety_snapshots.items()
+        }
         for robot in self._runtime_robots():
             if robot.is_remote():
                 self._advance_remote_robot_order(robot, now)
@@ -5019,6 +5210,7 @@ class WebFleetManager:
                     self._clear_remote_route_metadata(robot)
                     self._event("info", f"{robot.name} arrived at {robot.current_lm}")
         self._enforce_runtime_safety_invariant(safety_snapshots, now)
+        self._runtime_tick_route_clocks = {}
         self._resolve_runtime_wait_cycles(now)
         self._dispatch_orders(async_simulated=True)
 
@@ -5398,6 +5590,8 @@ class WebFleetManager:
         robot.last_replan_at = now
         robot.last_reason = f"background replan queued: {reason}"
         robot.route_note = ""
+        robot.pending_route = None
+        self._clear_wait_dependency(robot)
         robot.updated_at = now
         self._event("warn", f"{robot.name} background replan queued: {reason}")
         return True
@@ -5972,6 +6166,13 @@ class WebFleetManager:
         fleet = self.params.get("fleet", {})
         if not isinstance(fleet, dict):
             return 3.0
+        try:
+            return max(
+                1.0,
+                float(fleet.get("deadlock_wait_timeout_sec", 3.0) or 3.0),
+            )
+        except (TypeError, ValueError):
+            return 3.0
 
     def _traffic_replan_after(self) -> float:
         fleet = self.params.get("fleet", {})
@@ -5984,10 +6185,6 @@ class WebFleetManager:
             )
         except (TypeError, ValueError):
             return 8.0
-        try:
-            return max(1.0, float(fleet.get("deadlock_wait_timeout_sec", 3.0) or 3.0))
-        except (TypeError, ValueError):
-            return 3.0
 
     def _deadlock_coupled_replan_after(self) -> float:
         fleet = self.params.get("fleet", {})
@@ -6119,7 +6316,14 @@ class WebFleetManager:
         pose = self._pose_at_trajectory(robot.trajectory, check_clock)
         if pose is None:
             return ""
-        offset = max(0.0, check_clock - robot.route_clock)
+        # Use elapsed time from the common beginning-of-tick clock. Earlier
+        # robots in the loop may already have advanced their mutable clock;
+        # basing the offset on that value makes pair predictions asynchronous.
+        robot_clock = self._runtime_tick_route_clocks.get(
+            robot.name,
+            robot.route_clock,
+        )
+        offset = max(0.0, check_clock - robot_clock)
         future_prediction = offset > self._runtime_motion_step() + 0.000001
         if future_prediction:
             reason = (
@@ -6150,6 +6354,16 @@ class WebFleetManager:
             other_pose = self._predicted_robot_pose(other, offset)
             if other_pose is None:
                 continue
+            rotation_reason = self._rotation_sweep_conflict_reason(
+                robot,
+                other,
+                check_clock,
+                pose,
+                other_pose,
+                offset,
+            )
+            if rotation_reason:
+                return rotation_reason
             if future_prediction:
                 center_distance = math.hypot(
                     float(pose.get("x", 0.0) or 0.0)
@@ -6189,7 +6403,71 @@ class WebFleetManager:
                 return reason
         return ""
 
+    def _rotation_sweep_conflict_reason(
+        self,
+        robot: FleetRobot,
+        other: FleetRobot,
+        check_clock: float,
+        candidate_pose: dict[str, float],
+        other_pose: dict[str, float],
+        prediction_offset: float,
+    ) -> str:
+        robot_rotating = self._is_rotation_at_trajectory(
+            robot.trajectory,
+            check_clock,
+        )
+        other_clock = self._runtime_tick_route_clocks.get(
+            other.name,
+            other.route_clock,
+        ) + max(0.0, prediction_offset)
+        other_rotating = bool(
+            other.trajectory
+            and self._is_rotation_at_trajectory(other.trajectory, other_clock)
+        )
+        # The coarse circumscribed-radius rule exists only to serialize two
+        # simultaneous adjacent turns. A stationary or translating neighbour
+        # is checked below by the exact oriented footprint geometry; treating
+        # it as occupying the complete circle creates artificial grid walls.
+        if not (robot_rotating and other_rotating):
+            return ""
+        distance = math.hypot(
+            float(candidate_pose.get("x", 0.0) or 0.0)
+            - float(other_pose.get("x", 0.0) or 0.0),
+            float(candidate_pose.get("y", 0.0) or 0.0)
+            - float(other_pose.get("y", 0.0) or 0.0),
+        )
+        threshold = max(
+            0.0,
+            float(self.planner.rotation_min_robot_center_distance_m),
+        )
+        if threshold <= 0.0 or distance >= threshold:
+            return ""
+
+        if self._is_active_traffic(other):
+            return f"yield to {other.name}"
+        return f"keep clearance from {other.name}"
+
+    def _is_rotation_at_trajectory(
+        self,
+        trajectory: list[dict[str, Any]],
+        elapsed: float,
+    ) -> bool:
+        for index in range(len(trajectory) - 1):
+            start = trajectory[index]
+            end = trajectory[index + 1]
+            start_time = float(start.get("t", 0.0) or 0.0)
+            end_time = float(end.get("t", start_time) or start_time)
+            if end_time <= start_time or not (start_time <= elapsed < end_time):
+                continue
+            edge_id = str(end.get("edgeId") or start.get("edgeId") or "")
+            return edge_id.startswith("WAIT@ROTATE:")
+        return False
+
     def _predicted_robot_pose(self, robot: FleetRobot, offset: float) -> dict[str, float] | None:
+        route_clock = self._runtime_tick_route_clocks.get(
+            robot.name,
+            robot.route_clock,
+        )
         if (
             robot.status == "RETREATING"
             and robot.trajectory
@@ -6199,7 +6477,7 @@ class WebFleetManager:
                 robot.trajectory,
                 max(
                     robot.retreat_target_clock,
-                    robot.route_clock - max(0.0, offset),
+                    route_clock - max(0.0, offset),
                 ),
             )
         follows_committed_timeline = (
@@ -6214,7 +6492,7 @@ class WebFleetManager:
         final_time = float(robot.trajectory[-1].get("t", 0.0) or 0.0)
         return self._pose_at_trajectory(
             robot.trajectory,
-            min(final_time, robot.route_clock + max(0.0, offset)),
+            min(final_time, route_clock + max(0.0, offset)),
         )
 
     def _robot_conflict_reason(
@@ -6246,6 +6524,16 @@ class WebFleetManager:
                 return f"yield to {other.name}"
             return f"occupied by {other.name}"
         if robot.pose is not None and self._candidate_stays_put(robot.pose, candidate_pose):
+            return ""
+        if (
+            robot.pose is not None
+            and other.pose is not None
+            and self._candidate_moves_away(robot.pose, candidate_pose, other.pose)
+        ):
+            # The physical-overlap guards above remain authoritative. A robot
+            # that already starts inside the softer traffic-clearance envelope
+            # must be allowed to leave it, otherwise adjacent graph cells form
+            # an artificial wall and every replan fails at t=0.
             return ""
         if (
             robot.status == "RETREATING"
