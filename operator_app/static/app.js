@@ -954,7 +954,11 @@ class OperatorApp {
     this.fleetStatusStreamAttemptedAt = 0;
     this.fleetStatusStreamFallback = false;
     this.fleetHttpFallbackLastAt = 0;
-    this.fleetStreamIntervalMs = 180;
+    // Compact pose/status deltas arrive at 20 Hz. Physics is intentionally
+    // slower; requestAnimationFrame advances a short, bounded portion of the
+    // already committed trajectory between confirmed server clocks.
+    this.fleetStreamIntervalMs = 50;
+    this.fleetRuntimeUiLastAt = 0;
     this.robotStatusSocket = null;
     this.robotStatusStreamShouldRun = false;
     this.robotStatusReconnectTimer = null;
@@ -979,11 +983,16 @@ class OperatorApp {
     this.teleopSocket = null;
     this.teleopRobotId = "";
     this.fleetStatusReceivedAt = 0;
+    this.fleetStatusFreshTimeoutMs = 1500;
     this.fleetStatusObjectRef = null;
     this.fleetAnimationFrame = null;
     this.fleetAnimationLastAt = 0;
+    this.fleetVisualControlLastAt = 0;
     this.fleetRouteRenderLastAt = 0;
     this.fleetVisualClocks = new Map();
+    this.fleetNavigationPredictionMaxSec = 0.4;
+    this.fleetRobotSvgEntries = new Map();
+    this.fleetWaitDependencyLine = null;
     this.fleetManualRobotName = "";
     this.fleetManualLastAt = 0;
     this.fleetManualLookahead = null;
@@ -1010,6 +1019,9 @@ class OperatorApp {
     this.mapClickConsumed = false;
     this.manualKeys = new Set();
     this.teleopPending = false;
+    this.fleetSimManualFrame = null;
+    this.fleetSimManualLastAt = 0;
+    this.fleetSimManualGeneration = 0;
     this.mapView = {
       scale: 1,
       tx: 0,
@@ -1089,8 +1101,10 @@ class OperatorApp {
     this.fleetSimLoadMapButton = document.getElementById("fleetSimLoadMapButton");
     this.fleetBenchmarkButtons = Array.from(document.querySelectorAll("[data-fleet-benchmark-count]"));
     this.fleetBenchmarkPlanButton = document.getElementById("fleetBenchmarkPlanButton");
+    this.fleetBenchmarkPackageButton = document.getElementById("fleetBenchmarkPackageButton");
     this.fleetBenchmarkHorizonInput = document.getElementById("fleetBenchmarkHorizonInput");
     this.fleetBenchmarkIntervalInput = document.getElementById("fleetBenchmarkIntervalInput");
+    this.fleetSimulationTimeScaleSelect = document.getElementById("fleetSimulationTimeScaleSelect");
     this.fleetBenchmarkClearButton = document.getElementById("fleetBenchmarkClearButton");
     this.fleetBenchmarkRefreshMapsButton = document.getElementById("fleetBenchmarkRefreshMapsButton");
     this.fleetBenchmarkOpenLoadButton = document.getElementById("fleetBenchmarkOpenLoadButton");
@@ -1253,8 +1267,10 @@ class OperatorApp {
       this.tickFleetIfSelected().catch(() => {});
     }, 80);
     window.setInterval(() => {
-      this.sendTeleopIfNeeded().catch(() => {});
-    }, 120);
+      if (!this.isFleetManagerSim()) {
+        this.sendTeleopIfNeeded().catch(() => {});
+      }
+    }, 33);
   }
 
   bindEvents() {
@@ -1305,6 +1321,8 @@ class OperatorApp {
       button.addEventListener("click", () => this.runFleetBenchmark(Number(button.dataset.fleetBenchmarkCount || 20)));
     });
     this.fleetBenchmarkPlanButton?.addEventListener("click", () => this.planFleetBenchmarkRobots());
+    this.fleetBenchmarkPackageButton?.addEventListener("click", () => this.planFleetPackageOrders());
+    this.fleetSimulationTimeScaleSelect?.addEventListener("change", () => this.setFleetSimulationTimeScale());
     this.fleetBenchmarkClearButton?.addEventListener("click", () => this.runFleetBenchmark(0));
     this.fleetBenchmarkRefreshMapsButton?.addEventListener("click", () => this.refreshFleetSimMapSelect({ force: true }));
     this.fleetBenchmarkOpenLoadButton?.addEventListener("click", () => this.handleLoadMap());
@@ -3032,12 +3050,22 @@ class OperatorApp {
     this.fleetStatusReceivedAt = performance.now();
     if (payload.type === "state") {
       this.currentStatus = state;
+      this.fleetRuntimeUiLastAt = performance.now();
       this.renderFleetRuntimeTick();
       this.ensureFleetAnimationLoop();
       return;
     }
     this.currentStatus = this.mergeFleetTickState(state);
-    this.renderFleetRuntimeTick();
+    this.ensureFleetAnimationLoop();
+    // Robot poses are rendered from currentStatus on requestAnimationFrame.
+    // Rebuilding the fleet list, queue, inspector and map on every 20 Hz
+    // status packet only steals frame time, so keep those heavier panels at
+    // a human-readable 5 Hz without delaying robot motion.
+    const now = performance.now();
+    if (now - this.fleetRuntimeUiLastAt >= 200) {
+      this.fleetRuntimeUiLastAt = now;
+      this.renderFleetRuntimeTick();
+    }
   }
 
   ensureFleetAnimationLoop() {
@@ -3050,11 +3078,11 @@ class OperatorApp {
         return;
       }
       const shouldContinue = this.fleetNeedsAnimation();
-      const frameIntervalMs = this.mapViewMode === "3d" ? 16 : 33;
-      if (now - this.fleetAnimationLastAt >= frameIntervalMs) {
-        this.fleetAnimationLastAt = now;
-        this.drawFleetAnimationFrame(now);
-      }
+      // requestAnimationFrame is already the display clock. A second
+      // `>= 1000 / 60` gate drops every other frame on many 60 Hz displays
+      // because the callback arrives fractionally before 16.667 ms.
+      this.fleetAnimationLastAt = now;
+      this.drawFleetAnimationFrame(now);
       if (!shouldContinue) {
         return;
       }
@@ -3076,11 +3104,20 @@ class OperatorApp {
     if (!this.isFleetManager() || !this.activeOperatorMapPayload()) {
       return;
     }
+    // Keep transforms on the display clock, but do not repeat labels,
+    // selection state and route topology work sixty times per second. Those
+    // are control-plane values and 8 Hz is already faster than a human can
+    // perceive their changes. This is especially important with 50 robots:
+    // DOM and Three.js scene-graph updates run on one browser main thread.
+    const motionOnly = now - this.fleetVisualControlLastAt < 125;
+    if (!motionOnly) {
+      this.fleetVisualControlLastAt = now;
+    }
     if (this.mapViewMode === "3d") {
-      this.refreshOperatorScene3d();
+      this.refreshOperatorScene3d({ motionOnly });
       return;
     }
-    this.drawRobot();
+    this.drawRobot(motionOnly);
     if (now - this.fleetRouteRenderLastAt >= 180) {
       this.fleetRouteRenderLastAt = now;
       this.drawRoute();
@@ -3091,6 +3128,15 @@ class OperatorApp {
 
   fleetNeedsAnimation() {
     if (!this.isFleetManager()) {
+      return false;
+    }
+    // A disconnected or stopped server can leave the last snapshot in
+    // MOVING state. Do not keep a 60 FPS browser loop alive forever for stale
+    // robots; the next websocket/HTTP state packet restarts it immediately.
+    if (
+      !this.fleetStatusReceivedAt
+      || performance.now() - this.fleetStatusReceivedAt > this.fleetStatusFreshTimeoutMs
+    ) {
       return false;
     }
     if (this.fleetRuntimeMode() === "robots") {
@@ -3118,35 +3164,14 @@ class OperatorApp {
     return robots.map((robot) => this.fleetRenderRobot(robot));
   }
 
-  fleetVisualRouteKey(robot, trajectory = null) {
-    const points = Array.isArray(trajectory) ? trajectory : (Array.isArray(robot?.trajectory) ? robot.trajectory : []);
-    const nodes = Array.isArray(robot?.planNodes) ? robot.planNodes : [];
-    const samplePoint = (point) => {
-      if (!point) {
-        return "";
-      }
-      const x = Number(point.x || 0).toFixed(3);
-      const y = Number(point.y || 0).toFixed(3);
-      const t = Number(point.t || 0).toFixed(3);
-      return `${x},${y},${t}`;
-    };
-    const sampleNode = (index) => {
-      if (!nodes.length) {
-        return "";
-      }
-      const normalized = Math.max(0, Math.min(nodes.length - 1, index));
-      return String(nodes[normalized] || "");
-    };
-    const middlePoint = points.length ? points[Math.floor((points.length - 1) / 2)] : null;
-    const middleNodeIndex = nodes.length ? Math.floor((nodes.length - 1) / 2) : 0;
+  fleetVisualRouteKey(robot) {
+    // Keep the visual clock across an atomic rolling append or a route
+    // revision for the same order. A revision is control-plane metadata, not
+    // a reason to stop the rendered robot for one frame.
     return [
       String(robot?.name || ""),
-      String(robot?.routeRevision || 0),
       String(robot?.activeOrderId || ""),
-      String(robot?.targetLm || robot?.targetName || ""),
       String(robot?.routeFinalLm || robot?.routeChunkGoalLm || ""),
-      `${nodes.length}:${sampleNode(0)}:${sampleNode(middleNodeIndex)}:${sampleNode(nodes.length - 1)}`,
-      `${points.length}:${samplePoint(points[0])}:${samplePoint(middlePoint)}:${samplePoint(points[points.length - 1])}`,
     ].join("|");
   }
 
@@ -3171,7 +3196,7 @@ class OperatorApp {
       const status = String(robot?.status || "");
       const trajectory = Array.isArray(robot?.trajectory) ? robot.trajectory : [];
       if (status === "MOVING" && trajectory.length >= 2) {
-        activeKeys.add(this.fleetVisualRouteKey(robot, trajectory));
+        activeKeys.add(this.fleetVisualRouteKey(robot));
       }
     }
     for (const key of this.fleetVisualClocks.keys()) {
@@ -3204,26 +3229,52 @@ class OperatorApp {
     }
     const last = trajectory[trajectory.length - 1];
     const finalTime = Math.max(0, Number(last.t ?? trajectory.length - 1));
-    const key = this.fleetVisualRouteKey(robot, trajectory);
+    const key = this.fleetVisualRouteKey(robot);
     const prior = this.fleetVisualClocks.get(key) || null;
     const now = performance.now();
     const priorServerClock = prior ? Math.max(0, Number(prior.serverClock || 0)) : 0;
     const routeClockReset = Boolean(prior && baseClock < priorServerClock - 0.25);
     let visualClock = baseClock;
+    let serverUpdatedAt = now;
     if (prior && !routeClockReset) {
-      // Render with a small confirmation lag. Never extrapolate beyond the
-      // server clock: MAPF/collision checking may have stopped the robot while
-      // a websocket tick was delayed by planning work.
-      const priorClock = Math.min(baseClock, Math.max(0, Number(prior.clock || 0)));
+      const priorClock = Math.max(0, Number(prior.clock || 0));
+      const timeScale = Math.max(1, Number(this.currentStatus?.simulationTimeScale || 1));
+      // Collision checks run ahead of committed motion. Continue at nominal
+      // speed between confirmed clocks instead of freezing and then driving
+      // 15% faster to compensate for a delayed packet. The lead is bounded
+      // and never leaves the already committed graph trajectory.
+      serverUpdatedAt = Math.abs(baseClock - priorServerClock) > 0.0001
+        ? now
+        : Number(prior.serverUpdatedAt || prior.updatedAt || now);
+      const packetAgeSec = Math.max(
+        0,
+        (now - serverUpdatedAt) / 1000,
+      );
+      const maximumLeadClock = Math.min(
+        1.2,
+        this.fleetNavigationPredictionMaxSec * timeScale,
+      );
+      const visualLeadSec = Math.min(
+        maximumLeadClock,
+        packetAgeSec * timeScale,
+      );
+      const targetClock = Math.min(finalTime, baseClock + visualLeadSec);
       const frameDelta = status === "MOVING"
-        ? Math.min(0.08, Math.max(0, (now - Number(prior.updatedAt || now)) / 1000))
+        ? Math.min(
+          0.12 * timeScale,
+          Math.max(0, (now - Number(prior.updatedAt || now)) / 1000)
+            * timeScale,
+        )
         : 0;
-      visualClock = Math.min(baseClock, priorClock + frameDelta);
+      visualClock = targetClock >= priorClock
+        ? Math.min(targetClock, priorClock + frameDelta)
+        : priorClock;
     }
     visualClock = Math.min(finalTime, Math.max(0, visualClock));
     this.fleetVisualClocks.set(key, {
       clock: visualClock,
       serverClock: baseClock,
+      serverUpdatedAt,
       updatedAt: now,
     });
     return visualClock;
@@ -3249,7 +3300,10 @@ class OperatorApp {
     if (String(robot.status || "") !== "MANUAL" && !this.manualKeys.size) {
       return null;
     }
-    const elapsed = Math.min(0.28, Math.max(0, (performance.now() - animation.startedAt) / 1000));
+    // Manual rendering is driven locally while the safety ACK is in flight.
+    // A bounded 0.75 s window absorbs a busy fleet tick without allowing the
+    // visual pose to run indefinitely ahead of backend collision validation.
+    const elapsed = Math.min(0.75, Math.max(0, (performance.now() - animation.startedAt) / 1000));
     return this.integratePose(animation.pose, animation.linear, animation.angular, elapsed);
   }
 
@@ -3604,7 +3658,7 @@ class OperatorApp {
       return;
     }
     const now = performance.now();
-    if (now - this.fleetHttpFallbackLastAt < 250) {
+    if (now - this.fleetHttpFallbackLastAt < 80) {
       return;
     }
     this.fleetHttpFallbackLastAt = now;
@@ -3652,6 +3706,26 @@ class OperatorApp {
         ? tickState.events
         : (Array.isArray(previous.events) ? previous.events : []),
     };
+  }
+
+  mergeFleetRobotUpdate(robotUpdate) {
+    if (!robotUpdate || typeof robotUpdate !== "object" || !robotUpdate.name) {
+      return this.currentStatus || {};
+    }
+    const previous = this.currentStatus || {};
+    const robots = Array.isArray(previous.robots) ? previous.robots : [];
+    let replaced = false;
+    const nextRobots = robots.map((robot) => {
+      if (robot.name !== robotUpdate.name) {
+        return robot;
+      }
+      replaced = true;
+      return { ...robot, ...robotUpdate };
+    });
+    if (!replaced) {
+      nextRobots.push(robotUpdate);
+    }
+    return { ...previous, robots: nextRobots };
   }
 
   render() {
@@ -4393,7 +4467,12 @@ class OperatorApp {
     this.syncModeButtons();
     this.syncManualButtons();
     this.syncDynamicBenchmarkControls();
-    if (this.isFleetManagerSim() && status.dynamicBenchmark?.active && this.fleetBenchmarkStatus) {
+    if (
+      this.isFleetManagerSim()
+      && status.dynamicBenchmark?.scenario
+      && (status.dynamicBenchmark?.active || Number(status.dynamicBenchmark?.ordersGenerated || 0) > 0)
+      && this.fleetBenchmarkStatus
+    ) {
       this.fleetBenchmarkStatus.className = "probe-result success compact";
       this.fleetBenchmarkStatus.textContent = this.fleetBenchmarkSummary(
         { benchmark: status.dynamicBenchmark },
@@ -4421,9 +4500,23 @@ class OperatorApp {
       return;
     }
     const dynamic = this.currentStatus?.dynamicBenchmark || {};
-    this.fleetBenchmarkPlanButton.textContent = dynamic.active
+    const packageMode = String(dynamic.generationMode || "continuous") === "package_waves";
+    const continuousActive = Boolean(dynamic.active) && !packageMode;
+    const packageActive = Boolean(dynamic.active) && packageMode;
+    this.fleetBenchmarkPlanButton.textContent = continuousActive
       ? "Stop Dynamic Orders"
       : "Start Dynamic Orders";
+    this.fleetBenchmarkPlanButton.disabled = Boolean(this.fleetBenchmarkBusy || packageActive);
+    if (this.fleetBenchmarkPackageButton) {
+      this.fleetBenchmarkPackageButton.textContent = packageActive
+        ? "Stop Package Orders"
+        : "Generate Package Orders";
+      this.fleetBenchmarkPackageButton.disabled = Boolean(this.fleetBenchmarkBusy || continuousActive);
+    }
+    if (this.fleetSimulationTimeScaleSelect) {
+      const scale = Math.max(1, Number(this.currentStatus?.simulationTimeScale || dynamic.timeScale || 1));
+      this.fleetSimulationTimeScaleSelect.value = String(scale);
+    }
   }
 
   selectedFleetRobot(robots = null) {
@@ -4433,6 +4526,102 @@ class OperatorApp {
     }
     const selected = items.find((robot) => robot.name === this.selectedFleetRobotName);
     return selected || items[0];
+  }
+
+  fleetRobotWaitBlockerName(robot) {
+    if (!robot || typeof robot !== "object") {
+      return "";
+    }
+    const dependency = robot.waitDependency;
+    if (dependency && typeof dependency === "object" && dependency.robot) {
+      return String(dependency.robot).trim();
+    }
+    const reason = String(robot.reason || "").trim();
+    for (const prefix of ["yield to ", "occupied by ", "keep clearance from "]) {
+      if (reason.startsWith(prefix)) {
+        return reason.slice(prefix.length).trim();
+      }
+    }
+    return "";
+  }
+
+  fleetRobotWaitLabel(robot) {
+    if (!robot || String(robot.status || "") !== "WAITING") {
+      return "";
+    }
+    const blocker = this.fleetRobotWaitBlockerName(robot);
+    if (blocker) {
+      return `waiting for ${blocker}`;
+    }
+    const reason = String(robot.reason || robot.routeNote || "").trim();
+    if (reason.startsWith("traffic admission wait at ")) {
+      return "waiting for traffic zone";
+    }
+    if (reason.startsWith("planned traffic wait")) {
+      return "planned traffic wait";
+    }
+    if (/obstacle|blocked edge/i.test(reason)) {
+      return "blocked by obstacle";
+    }
+    return reason ? `waiting: ${reason.slice(0, 34)}` : "waiting for route clearance";
+  }
+
+  fleetRobotAlertLabel(robot) {
+    if (!robot || typeof robot !== "object") {
+      return "";
+    }
+    const status = String(robot.status || "").trim().toUpperCase();
+    const remoteError = String(robot.remoteError || "").trim();
+    const reason = String(remoteError || robot.reason || robot.routeNote || "").trim();
+    const blocker = this.fleetRobotWaitBlockerName(robot);
+    if (remoteError) {
+      return `error: ${remoteError.slice(0, 34)}`;
+    }
+    if (["OFFLINE", "ERROR"].includes(status)) {
+      return reason ? `error: ${reason.slice(0, 34)}` : status.toLowerCase();
+    }
+    if (status === "RETREATING") {
+      return "deadlock: retreating";
+    }
+    if (status === "BLOCKED" || status === "MANUAL_BLOCKED") {
+      return /deadlock/i.test(reason)
+        ? "deadlock: route blocked"
+        : (reason ? `blocked: ${reason.slice(0, 32)}` : "route blocked");
+    }
+    if (reason === "route replan queued") {
+      return "replanning route";
+    }
+    if (/deadlock/i.test(reason)) {
+      return ["WAITING", "MOVING", "RETREATING"].includes(status)
+        ? "deadlock: resolving"
+        : "replanning route";
+    }
+    if (status !== "WAITING") {
+      return "";
+    }
+    if (blocker) {
+      return `waiting for ${blocker}`;
+    }
+    if (reason.startsWith("planned traffic wait")) {
+      return "planned traffic wait";
+    }
+    if (reason.startsWith("traffic admission wait")) {
+      return "waiting for traffic zone";
+    }
+    if (/obstacle|blocked edge/i.test(reason)) {
+      return "blocked by obstacle";
+    }
+    return reason ? `waiting: ${reason.slice(0, 34)}` : "waiting for clearance";
+  }
+
+  fleetRobotAlertSeverity(robot) {
+    const status = String(robot?.status || "").trim().toUpperCase();
+    const reason = String(robot?.remoteError || robot?.reason || "");
+    return Boolean(String(robot?.remoteError || "").trim())
+      || ["OFFLINE", "ERROR", "BLOCKED", "MANUAL_BLOCKED", "RETREATING"].includes(status)
+      || /deadlock/i.test(reason)
+      ? "error"
+      : "warning";
   }
 
   fleetRobotColor(robotName) {
@@ -5597,28 +5786,38 @@ class OperatorApp {
     if (targetTime >= lastTime) {
       return last;
     }
-    for (let index = 0; index < points.length - 1; index += 1) {
-      const start = points[index];
-      const goal = points[index + 1];
-      const t0 = Number(start.t ?? index);
-      const t1 = Number(goal.t ?? index + 1);
-      if (targetTime < t0 || targetTime > t1) {
-        continue;
+    // Trajectory timestamps are monotonic. Binary search avoids scanning the
+    // complete rolling trajectory for every robot on every animation frame.
+    let low = 0;
+    let high = points.length - 1;
+    while (low + 1 < high) {
+      const middle = Math.floor((low + high) / 2);
+      const middleTime = Number(points[middle].t ?? middle);
+      if (middleTime <= targetTime) {
+        low = middle;
+      } else {
+        high = middle;
       }
-      const ratio = (targetTime - t0) / Math.max(0.000001, t1 - t0);
-      return {
-        ...start,
-        x: Number(start.x || 0) + ((Number(goal.x || 0) - Number(start.x || 0)) * ratio),
-        y: Number(start.y || 0) + ((Number(goal.y || 0) - Number(start.y || 0)) * ratio),
-        yaw: this.interpolateAngle(Number(start.yaw || 0), Number(goal.yaw || 0), ratio),
-        t: targetTime,
-      };
     }
-    return last;
+    const start = points[low];
+    const goal = points[high];
+    const t0 = Number(start.t ?? low);
+    const t1 = Number(goal.t ?? high);
+    const ratio = (targetTime - t0) / Math.max(0.000001, t1 - t0);
+    return {
+      ...start,
+      x: Number(start.x || 0) + ((Number(goal.x || 0) - Number(start.x || 0)) * ratio),
+      y: Number(start.y || 0) + ((Number(goal.y || 0) - Number(start.y || 0)) * ratio),
+      yaw: this.interpolateAngle(Number(start.yaw || 0), Number(goal.yaw || 0), ratio),
+      t: targetTime,
+    };
   }
 
   interpolateAngle(start, goal, ratio) {
-    const delta = ((goal - start + Math.PI) % (Math.PI * 2)) - Math.PI;
+    // JavaScript's % keeps the dividend sign, so the common modulo formula
+    // can turn a +90 degree wrap across -PI/PI into a visual -270 degree spin.
+    const rawDelta = goal - start;
+    const delta = Math.atan2(Math.sin(rawDelta), Math.cos(rawDelta));
     return start + (delta * ratio);
   }
 
@@ -5812,86 +6011,9 @@ class OperatorApp {
     };
   }
 
-  drawRobot() {
+  drawRobotUncached() {
     this.operatorRobotLayer.innerHTML = "";
     const robotStyle = this.robotRenderStyle();
-    if (this.isFleetManager()) {
-      const robots = this.fleetRenderRobots();
-      let focused = false;
-      for (const robot of robots) {
-        const pose = robot && robot.pose ? robot.pose : null;
-        if (!pose) {
-          continue;
-        }
-        const center = this.worldToPixel(pose);
-        if (!focused && this.mapView.follow && robot.name === this.selectedFleetRobotName) {
-          this.focusMapOn(center);
-          focused = true;
-        }
-        const group = document.createElementNS("http://www.w3.org/2000/svg", "g");
-        group.setAttribute("class", robot.name === this.selectedFleetRobotName ? "fleet-robot active" : "fleet-robot");
-        group.dataset.robotName = robot.name || "";
-        const selectRobot = (event) => {
-          if (this.fleetMapEditorActive) {
-            return;
-          }
-          event.preventDefault();
-          event.stopPropagation();
-          this.selectFleetRobotByName(robot.name || "");
-        };
-        group.addEventListener("pointerdown", (event) => {
-          if (event.button !== 0) {
-            return;
-          }
-          selectRobot(event);
-        });
-        group.addEventListener("click", selectRobot);
-        const footprintPoints = this.robotFootprintPoints(pose);
-        if (robot.name === this.selectedFleetRobotName) {
-          const halo = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
-          halo.setAttribute("class", "robot-selection-halo");
-          halo.setAttribute("points", footprintPoints);
-          halo.style.stroke = this.fleetRobotColor(robot.name);
-          halo.style.strokeWidth = String(robotStyle.footprintStrokeWidth * 3.6);
-          group.append(halo);
-        }
-        const footprint = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
-        footprint.setAttribute("class", "robot-footprint");
-        footprint.setAttribute("points", footprintPoints);
-        footprint.style.strokeWidth = String(robotStyle.footprintStrokeWidth);
-        if (robot.name === this.selectedFleetRobotName) {
-          const robotColor = this.fleetRobotColor(robot.name);
-          footprint.style.stroke = robotColor;
-          footprint.style.fill = `${robotColor}2e`;
-        }
-        group.append(footprint);
-        const centerDot = document.createElementNS("http://www.w3.org/2000/svg", "circle");
-        centerDot.setAttribute("class", "robot-center-dot");
-        centerDot.setAttribute("cx", String(center.x));
-        centerDot.setAttribute("cy", String(center.y));
-        centerDot.setAttribute("r", String(robotStyle.centerRadius));
-        centerDot.style.strokeWidth = String(robotStyle.centerStrokeWidth);
-        group.append(centerDot);
-        const heading = document.createElementNS("http://www.w3.org/2000/svg", "line");
-        heading.setAttribute("class", "robot-heading");
-        heading.setAttribute("x1", String(center.x));
-        heading.setAttribute("y1", String(center.y));
-        heading.setAttribute("x2", String(center.x + Math.cos(Number(pose.yaw || 0)) * robotStyle.headingLength));
-        heading.setAttribute("y2", String(center.y + Math.sin(Number(pose.yaw || 0)) * robotStyle.headingLength));
-        heading.style.strokeWidth = String(robotStyle.headingStrokeWidth);
-        group.append(heading);
-        const label = document.createElementNS("http://www.w3.org/2000/svg", "text");
-        label.setAttribute("class", "robot-label");
-        label.setAttribute("x", String(center.x));
-        label.setAttribute("y", String(center.y + robotStyle.labelOffset));
-        label.style.fontSize = String(robotStyle.labelFontSize);
-        label.style.strokeWidth = String(robotStyle.labelStrokeWidth);
-        label.textContent = robot.name || "";
-        group.append(label);
-        this.operatorRobotLayer.append(group);
-      }
-      return;
-    }
     const robot = this.statusForRobotDisplay(this.currentStatus && this.currentStatus.robot ? this.currentStatus.robot : null);
     const rawPose = this.slamActive && this.slamMapFrame?.pose
       ? this.slamMapFrame.pose
@@ -5929,6 +6051,266 @@ class OperatorApp {
     heading.style.strokeWidth = String(robotStyle.headingStrokeWidth);
     group.append(heading);
     this.operatorRobotLayer.append(group);
+  }
+
+  drawRobot(motionOnly = false) {
+    if (!this.isFleetManager()) {
+      this.fleetRobotSvgEntries?.clear();
+      this.fleetWaitDependencyLine = null;
+      this.drawRobotUncached();
+      return;
+    }
+    if (motionOnly && this.drawFleetRobotMotionLayer(this.robotRenderStyle())) {
+      return;
+    }
+    this.drawFleetRobotLayer(this.robotRenderStyle());
+  }
+
+  drawFleetRobotMotionLayer(robotStyle) {
+    const robots = this.fleetRenderRobots();
+    const drawableRobots = robots.filter((robot) => robot?.name && robot?.pose);
+    if (
+      !this.fleetRobotSvgEntries
+      || drawableRobots.length !== this.fleetRobotSvgEntries.size
+      || drawableRobots.some((robot) => !this.fleetRobotSvgEntries.has(String(robot.name)))
+    ) {
+      return false;
+    }
+
+    const selectedRobot = this.selectedFleetRobot(robots);
+    const waitBlockerName = this.fleetRobotWaitBlockerName(selectedRobot);
+    const waitBlocker = waitBlockerName
+      ? robots.find((robot) => robot.name === waitBlockerName)
+      : null;
+    const dependencyLine = this.fleetWaitDependencyLine;
+    if (dependencyLine && selectedRobot?.pose && waitBlocker?.pose) {
+      const waitingCenter = this.worldToPixel(selectedRobot.pose);
+      const blockerCenter = this.worldToPixel(waitBlocker.pose);
+      dependencyLine.setAttribute("x1", String(waitingCenter.x));
+      dependencyLine.setAttribute("y1", String(waitingCenter.y));
+      dependencyLine.setAttribute("x2", String(blockerCenter.x));
+      dependencyLine.setAttribute("y2", String(blockerCenter.y));
+    }
+
+    let focused = false;
+    for (const robot of drawableRobots) {
+      const name = String(robot.name);
+      const pose = robot.pose;
+      const entry = this.fleetRobotSvgEntries.get(name);
+      const center = this.worldToPixel(pose);
+      if (!focused && this.mapView.follow && name === this.selectedFleetRobotName) {
+        this.focusMapOn(center);
+        focused = true;
+      }
+      const footprintPoints = this.robotFootprintPoints(pose);
+      entry.blockerHalo.setAttribute("points", footprintPoints);
+      entry.selectionHalo.setAttribute("points", footprintPoints);
+      entry.footprint.setAttribute("points", footprintPoints);
+      entry.centerDot.setAttribute("cx", String(center.x));
+      entry.centerDot.setAttribute("cy", String(center.y));
+      entry.heading.setAttribute("x1", String(center.x));
+      entry.heading.setAttribute("y1", String(center.y));
+      entry.heading.setAttribute(
+        "x2",
+        String(center.x + Math.cos(Number(pose.yaw || 0)) * robotStyle.headingLength),
+      );
+      entry.heading.setAttribute(
+        "y2",
+        String(center.y + Math.sin(Number(pose.yaw || 0)) * robotStyle.headingLength),
+      );
+      entry.label.setAttribute("x", String(center.x));
+      entry.label.setAttribute("y", String(center.y + robotStyle.labelOffset));
+      entry.alertLabel.setAttribute("x", String(center.x));
+      entry.alertLabel.setAttribute("y", String(center.y - robotStyle.labelOffset));
+      entry.waitLabel.setAttribute("x", String(center.x));
+      entry.waitLabel.setAttribute(
+        "y",
+        String(center.y + robotStyle.labelOffset + (robotStyle.labelFontSize * 1.15)),
+      );
+    }
+    return true;
+  }
+
+  drawFleetRobotLayer(robotStyle) {
+    const layer = this.operatorRobotLayer;
+    if (!this.fleetRobotSvgEntries) {
+      this.fleetRobotSvgEntries = new Map();
+    }
+    if (this.fleetWaitDependencyLine?.parentNode !== layer) {
+      this.fleetWaitDependencyLine = document.createElementNS(
+        "http://www.w3.org/2000/svg",
+        "line",
+      );
+      this.fleetWaitDependencyLine.setAttribute("class", "robot-wait-dependency-link");
+      layer.prepend(this.fleetWaitDependencyLine);
+    }
+
+    const robots = this.fleetRenderRobots();
+    const selectedRobot = this.selectedFleetRobot(robots);
+    const waitBlockerName = this.fleetRobotWaitBlockerName(selectedRobot);
+    const waitBlocker = waitBlockerName
+      ? robots.find((robot) => robot.name === waitBlockerName)
+      : null;
+    const dependencyLine = this.fleetWaitDependencyLine;
+    if (selectedRobot?.pose && waitBlocker?.pose) {
+      const waitingCenter = this.worldToPixel(selectedRobot.pose);
+      const blockerCenter = this.worldToPixel(waitBlocker.pose);
+      dependencyLine.style.display = "";
+      dependencyLine.setAttribute("x1", String(waitingCenter.x));
+      dependencyLine.setAttribute("y1", String(waitingCenter.y));
+      dependencyLine.setAttribute("x2", String(blockerCenter.x));
+      dependencyLine.setAttribute("y2", String(blockerCenter.y));
+      dependencyLine.style.stroke = this.fleetRobotColor(selectedRobot.name);
+    } else {
+      dependencyLine.style.display = "none";
+    }
+
+    const incoming = new Set();
+    let focused = false;
+    for (const robot of robots) {
+      const name = String(robot?.name || "");
+      const pose = robot?.pose;
+      if (!name || !pose) {
+        continue;
+      }
+      incoming.add(name);
+      const center = this.worldToPixel(pose);
+      if (!focused && this.mapView.follow && name === this.selectedFleetRobotName) {
+        this.focusMapOn(center);
+        focused = true;
+      }
+
+      let entry = this.fleetRobotSvgEntries.get(name);
+      if (entry?.group?.parentNode !== layer) {
+        if (entry) {
+          this.fleetRobotSvgEntries.delete(name);
+        }
+        const element = (tag, className) => {
+          const node = document.createElementNS("http://www.w3.org/2000/svg", tag);
+          node.setAttribute("class", className);
+          return node;
+        };
+        const group = element("g", "fleet-robot");
+        group.dataset.robotName = name;
+        const selectRobot = (event) => {
+          if (this.fleetMapEditorActive) {
+            return;
+          }
+          event.preventDefault();
+          event.stopPropagation();
+          this.selectFleetRobotByName(name);
+        };
+        group.addEventListener("pointerdown", (event) => {
+          if (event.button === 0) {
+            selectRobot(event);
+          }
+        });
+        group.addEventListener("click", selectRobot);
+        entry = {
+          group,
+          blockerHalo: element("polygon", "robot-wait-blocker-halo"),
+          selectionHalo: element("polygon", "robot-selection-halo"),
+          footprint: element("polygon", "robot-footprint"),
+          centerDot: element("circle", "robot-center-dot"),
+          heading: element("line", "robot-heading"),
+          label: element("text", "robot-label"),
+          alertLabel: element("text", "robot-alert-label warning"),
+          waitLabel: element("text", "robot-wait-label"),
+        };
+        group.append(
+          entry.blockerHalo,
+          entry.selectionHalo,
+          entry.footprint,
+          entry.centerDot,
+          entry.heading,
+          entry.label,
+          entry.alertLabel,
+          entry.waitLabel,
+        );
+        layer.append(group);
+        this.fleetRobotSvgEntries.set(name, entry);
+      }
+
+      const active = name === this.selectedFleetRobotName;
+      const waitBlockerActive = Boolean(waitBlockerName && name === waitBlockerName);
+      const footprintPoints = this.robotFootprintPoints(pose);
+      entry.group.setAttribute("class", [
+        "fleet-robot",
+        active ? "active" : "",
+        waitBlockerActive ? "wait-blocker" : "",
+      ].filter(Boolean).join(" "));
+
+      entry.blockerHalo.style.display = waitBlockerActive ? "" : "none";
+      entry.blockerHalo.setAttribute("points", footprintPoints);
+      entry.blockerHalo.style.strokeWidth = String(robotStyle.footprintStrokeWidth * 4.4);
+      entry.selectionHalo.style.display = active ? "" : "none";
+      entry.selectionHalo.setAttribute("points", footprintPoints);
+      entry.selectionHalo.style.stroke = this.fleetRobotColor(name);
+      entry.selectionHalo.style.strokeWidth = String(robotStyle.footprintStrokeWidth * 3.6);
+
+      entry.footprint.setAttribute("points", footprintPoints);
+      entry.footprint.style.strokeWidth = String(robotStyle.footprintStrokeWidth);
+      entry.footprint.style.stroke = active ? this.fleetRobotColor(name) : "";
+      entry.footprint.style.fill = active ? `${this.fleetRobotColor(name)}2e` : "";
+      entry.centerDot.setAttribute("cx", String(center.x));
+      entry.centerDot.setAttribute("cy", String(center.y));
+      entry.centerDot.setAttribute("r", String(robotStyle.centerRadius));
+      entry.centerDot.style.strokeWidth = String(robotStyle.centerStrokeWidth);
+      entry.heading.setAttribute("x1", String(center.x));
+      entry.heading.setAttribute("y1", String(center.y));
+      entry.heading.setAttribute(
+        "x2",
+        String(center.x + Math.cos(Number(pose.yaw || 0)) * robotStyle.headingLength),
+      );
+      entry.heading.setAttribute(
+        "y2",
+        String(center.y + Math.sin(Number(pose.yaw || 0)) * robotStyle.headingLength),
+      );
+      entry.heading.style.strokeWidth = String(robotStyle.headingStrokeWidth);
+
+      entry.label.setAttribute("x", String(center.x));
+      entry.label.setAttribute("y", String(center.y + robotStyle.labelOffset));
+      entry.label.style.fontSize = String(robotStyle.labelFontSize);
+      entry.label.style.strokeWidth = String(robotStyle.labelStrokeWidth);
+      if (entry.label.textContent !== name) {
+        entry.label.textContent = name;
+      }
+
+      const alertText = this.fleetRobotAlertLabel(robot);
+      entry.alertLabel.style.display = alertText ? "" : "none";
+      entry.alertLabel.setAttribute(
+        "class",
+        `robot-alert-label ${this.fleetRobotAlertSeverity(robot)}`,
+      );
+      entry.alertLabel.setAttribute("x", String(center.x));
+      entry.alertLabel.setAttribute("y", String(center.y - robotStyle.labelOffset));
+      entry.alertLabel.style.fontSize = String(robotStyle.labelFontSize * 0.86);
+      entry.alertLabel.style.strokeWidth = String(robotStyle.labelStrokeWidth * 0.9);
+      if (entry.alertLabel.textContent !== alertText) {
+        entry.alertLabel.textContent = alertText;
+      }
+
+      const waitText = active ? this.fleetRobotWaitLabel(robot) : "";
+      entry.waitLabel.style.display = waitText ? "" : "none";
+      entry.waitLabel.setAttribute("x", String(center.x));
+      entry.waitLabel.setAttribute(
+        "y",
+        String(center.y + robotStyle.labelOffset + (robotStyle.labelFontSize * 1.15)),
+      );
+      entry.waitLabel.style.fontSize = String(robotStyle.labelFontSize * 0.82);
+      entry.waitLabel.style.strokeWidth = String(robotStyle.labelStrokeWidth * 0.82);
+      if (entry.waitLabel.textContent !== waitText) {
+        entry.waitLabel.textContent = waitText;
+      }
+    }
+
+    for (const [name, entry] of this.fleetRobotSvgEntries.entries()) {
+      if (incoming.has(name)) {
+        continue;
+      }
+      entry.group.remove();
+      this.fleetRobotSvgEntries.delete(name);
+    }
   }
 
   robotRenderStyle(payload = this.activeOperatorMapPayload()) {
@@ -7301,26 +7683,35 @@ class OperatorApp {
     }
   }
 
-  refreshOperatorScene3d() {
+  refreshOperatorScene3d(options = {}) {
     if (this.mapViewMode !== "3d") {
       return;
     }
-    if (!this.updateOperatorScene3dRobots()) {
+    if (!this.updateOperatorScene3dRobots(this.scene3d, options)) {
       this.renderOperatorScene3d();
     }
   }
 
-  updateOperatorScene3dRobots(scene = this.scene3d) {
+  updateOperatorScene3dRobots(scene = this.scene3d, options = {}) {
     if (!this.isFleetManager() || this.mapViewMode !== "3d" || !scene) {
       return false;
     }
     if (this.scene3dStaticKey !== this.scene3dKey()) {
       return false;
     }
-    scene.setTargetArmed(this.scene3dTargetArmed());
     const robots = this.fleetRenderRobots();
-    const selectedName = this.selectedFleetRobot(robots)?.name || "";
-    scene.updateRobots(robots, selectedName);
+    if (
+      options.motionOnly
+      && typeof scene.updateRobotPoses === "function"
+      && scene.updateRobotPoses(robots)
+    ) {
+      return true;
+    }
+    scene.setTargetArmed(this.scene3dTargetArmed());
+    const selectedRobot = this.selectedFleetRobot(robots);
+    const selectedName = selectedRobot?.name || "";
+    const waitBlockerName = this.fleetRobotWaitBlockerName(selectedRobot);
+    scene.updateRobots(robots, selectedName, waitBlockerName);
     return true;
   }
 
@@ -8367,6 +8758,7 @@ class OperatorApp {
   }
 
   setFleetBenchmarkBusy(busy) {
+    this.fleetBenchmarkBusy = Boolean(busy);
     for (const button of this.fleetBenchmarkButtons || []) {
       button.disabled = Boolean(busy);
     }
@@ -8376,11 +8768,17 @@ class OperatorApp {
     if (this.fleetBenchmarkPlanButton) {
       this.fleetBenchmarkPlanButton.disabled = Boolean(busy);
     }
+    if (this.fleetBenchmarkPackageButton) {
+      this.fleetBenchmarkPackageButton.disabled = Boolean(busy);
+    }
     if (this.fleetBenchmarkHorizonInput) {
       this.fleetBenchmarkHorizonInput.disabled = Boolean(busy);
     }
     if (this.fleetBenchmarkIntervalInput) {
       this.fleetBenchmarkIntervalInput.disabled = Boolean(busy);
+    }
+    if (this.fleetSimulationTimeScaleSelect) {
+      this.fleetSimulationTimeScaleSelect.disabled = Boolean(busy);
     }
     if (this.fleetSimLoadMapButton) {
       this.fleetSimLoadMapButton.disabled = Boolean(busy) || this.fleetSimLoadMapButton.textContent === "Active";
@@ -8391,6 +8789,7 @@ class OperatorApp {
     if (this.fleetBenchmarkOpenLoadButton) {
       this.fleetBenchmarkOpenLoadButton.disabled = Boolean(busy);
     }
+    this.syncDynamicBenchmarkControls();
   }
 
   fleetBenchmarkSummary(result, robotCount) {
@@ -8409,8 +8808,9 @@ class OperatorApp {
     const priorityRepairs = Number(benchmark.resolvedPriorityConflicts || 0);
     const averageSteps = Number(benchmark.averageRouteSteps || 0);
     const scenario = String(benchmark.scenario || "");
-    if (scenario === "continuous_random_orders") {
+    if (["continuous_random_orders", "package_order_waves"].includes(scenario)) {
       const active = Boolean(benchmark.active);
+      const packageMode = scenario === "package_order_waves";
       const generated = Number(benchmark.ordersGenerated || 0);
       const completed = Number(benchmark.ordersCompleted || 0);
       const queued = Number(benchmark.ordersQueued || 0);
@@ -8420,11 +8820,24 @@ class OperatorApp {
       const safetyRollbacks = Number(benchmark.runtimeSafetyRollbacks || 0);
       const averageDistance = Number(benchmark.averageOrderDistanceM || 0);
       const horizon = Number(benchmark.horizonSec || 0);
+      const timeScale = Math.max(1, Number(benchmark.timeScale || this.currentStatus?.simulationTimeScale || 1));
+      const throughput = Number(benchmark.throughputOrdersPerMin || 0);
+      const elapsedSimSec = Number(benchmark.elapsedSimSec || 0);
+      const averageOrderSec = Number(benchmark.averageOrderDurationSec || 0);
+      const waveIndex = Number(benchmark.waveIndex || 0);
+      const wavesCompleted = Number(benchmark.wavesCompleted || 0);
       return [
-        active ? "dynamic orders active" : "dynamic orders stopped",
+        active
+          ? (packageMode ? "package waves active" : "dynamic orders active")
+          : (packageMode ? "package waves stopped" : "dynamic orders stopped"),
         `${robotCount} robots`,
+        `${timeScale}x time`,
         `horizon ${horizon.toFixed(1)} s`,
         `orders ${generated} generated / ${completed} completed`,
+        `throughput ${throughput.toFixed(2)} orders/min`,
+        elapsedSimSec ? `elapsed ${(elapsedSimSec / 60).toFixed(1)} sim min` : "",
+        averageOrderSec ? `avg order ${averageOrderSec.toFixed(1)} s` : "",
+        packageMode && waveIndex ? `wave ${waveIndex} / ${wavesCompleted} completed` : "",
         averageDistance ? `avg goal ${averageDistance.toFixed(1)} m` : "",
         `executing ${executing} / queued ${queued}`,
         waitingRobots ? `waiting ${waitingRobots}` : "",
@@ -8620,6 +9033,107 @@ class OperatorApp {
     }
   }
 
+  async planFleetPackageOrders() {
+    if (!this.isFleetManagerSim()) {
+      return;
+    }
+    if (!Array.isArray(this.currentStatus?.robots) || !this.currentStatus.robots.length) {
+      this.currentStatus = await this.getJson(this.fleetApiPath("/state")).catch(() => this.currentStatus);
+    }
+    const robots = Array.isArray(this.currentStatus?.robots) ? this.currentStatus.robots : [];
+    const robotCount = robots.length;
+    if (!robotCount) {
+      if (this.fleetBenchmarkStatus) {
+        this.fleetBenchmarkStatus.className = "probe-result error compact";
+        this.fleetBenchmarkStatus.textContent = "Add robots before generating package orders.";
+      }
+      return;
+    }
+    const dynamic = this.currentStatus?.dynamicBenchmark || {};
+    const packageActive = Boolean(dynamic.active)
+      && String(dynamic.generationMode || "") === "package_waves";
+    if (dynamic.active && !packageActive) {
+      return;
+    }
+    this.setFleetBenchmarkBusy(true);
+    if (this.fleetBenchmarkStatus) {
+      this.fleetBenchmarkStatus.className = "probe-result neutral compact";
+      this.fleetBenchmarkStatus.textContent = packageActive
+        ? "Stopping new package waves; active orders will finish..."
+        : `Generating a ${robotCount}-order package wave to the map perimeter...`;
+    }
+    try {
+      await new Promise((resolve) => window.requestAnimationFrame(resolve));
+      const result = await this.postJsonRaw(this.fleetApiPath("/benchmark"), {
+        action: packageActive ? "stop" : "package_waves",
+        count: robotCount,
+        reset: false,
+        seed: 42,
+        horizonSec: Math.max(1, Number(this.fleetBenchmarkHorizonInput?.value || 10)),
+        queueDepth: 1,
+        ...this.fleetMotionParams(),
+        fast: true,
+      });
+      this.currentStatus = result.state || result.fleetState || result;
+      if (!Array.isArray(this.currentStatus?.robots)) {
+        this.currentStatus = await this.getJson(this.fleetApiPath("/state"));
+      }
+      this.lastFleetPlanDebug = {
+        ...(result.debug || {}),
+        benchmark: result.benchmark || this.currentStatus?.dynamicBenchmark || {},
+      };
+      if (this.fleetBenchmarkStatus) {
+        this.fleetBenchmarkStatus.className = "probe-result success compact";
+        this.fleetBenchmarkStatus.textContent = this.fleetBenchmarkSummary(result, robotCount);
+      }
+      this.renderFleetStateImmediately();
+      this.refreshRobots({ quiet: true, lightweight: true, probe: false }).catch(() => {});
+    } catch (error) {
+      if (this.fleetBenchmarkStatus) {
+        this.fleetBenchmarkStatus.className = "probe-result error compact";
+        this.fleetBenchmarkStatus.textContent = error.message || String(error);
+      }
+    } finally {
+      this.setFleetBenchmarkBusy(false);
+    }
+  }
+
+  async setFleetSimulationTimeScale() {
+    if (!this.isFleetManagerSim() || !this.fleetSimulationTimeScaleSelect) {
+      return;
+    }
+    const previous = Math.max(1, Number(this.currentStatus?.simulationTimeScale || 1));
+    const requested = Math.max(1, Number(this.fleetSimulationTimeScaleSelect.value || 1));
+    this.fleetSimulationTimeScaleSelect.disabled = true;
+    try {
+      const result = await this.postJson(this.fleetApiPath("/benchmark"), {
+        action: "time_scale",
+        timeScale: requested,
+        reset: false,
+      });
+      const state = result.state || result.fleetState || result;
+      this.currentStatus = Array.isArray(state?.robots)
+        ? state
+        : await this.getJson(this.fleetApiPath("/state"));
+      const applied = Math.max(1, Number(this.currentStatus?.simulationTimeScale || requested));
+      this.fleetVisualClocks.clear();
+      if (this.fleetBenchmarkStatus) {
+        this.fleetBenchmarkStatus.className = "probe-result success compact";
+        this.fleetBenchmarkStatus.textContent = `Simulation time: ${applied}x. CPU load increases with the multiplier.`;
+      }
+      this.renderFleetStateImmediately();
+    } catch (error) {
+      this.fleetSimulationTimeScaleSelect.value = String(previous);
+      if (this.fleetBenchmarkStatus) {
+        this.fleetBenchmarkStatus.className = "probe-result error compact";
+        this.fleetBenchmarkStatus.textContent = error.message || String(error);
+      }
+    } finally {
+      this.fleetSimulationTimeScaleSelect.disabled = false;
+      this.syncDynamicBenchmarkControls();
+    }
+  }
+
   async handleFleetAddRobot(spawnLmOverride = "") {
     const requestedName = String(this.fleetRobotNameInput.value || "").trim();
     const spawnLm = String(spawnLmOverride || this.fleetSpawnLmSelect.value || "").trim();
@@ -8752,6 +9266,7 @@ class OperatorApp {
       return;
     }
     if (active) {
+      const wasIdle = this.manualKeys.size === 0;
       this.manualKeys.add(key);
       if (this.isFleetManager()) {
         this.navigateMode = false;
@@ -8759,9 +9274,13 @@ class OperatorApp {
         this.pendingFleetRobotName = "";
         this.syncModeButtons();
       }
+      if (wasIdle && this.isFleetManagerSim()) {
+        this.startFleetSimManualCommandLoop();
+      }
     } else {
       this.manualKeys.delete(key);
       if (!this.manualKeys.size) {
+        this.stopFleetSimManualCommandLoop();
         if (this.isFleetManager()) {
           this.releaseFleetManualControl().catch(() => {});
         } else {
@@ -8769,7 +9288,64 @@ class OperatorApp {
         }
       }
     }
+    if (this.isFleetManagerSim() && this.manualKeys.size) {
+      const robot = this.selectedFleetRobot();
+      const pose = robot
+        ? (
+          this.animatedFleetManualPose(robot)
+          || robot.pose
+          || this.poseForLm(robot.currentLm)
+        )
+        : null;
+      if (robot && pose) {
+        // Keyboard direction changes affect the visual controller immediately;
+        // the HTTP loop remains an asynchronous safety/authority channel.
+        this.setFleetManualAnimation(robot.name, pose, this.manualTwist());
+      }
+    }
     this.syncManualButtons();
+  }
+
+  startFleetSimManualCommandLoop() {
+    if (
+      !this.isFleetManagerSim()
+      || this.fleetSimManualFrame
+      || typeof window.requestAnimationFrame !== "function"
+    ) {
+      return;
+    }
+    this.fleetSimManualLastAt = 0;
+    const publish = (now) => {
+      this.fleetSimManualFrame = null;
+      if (!this.isFleetManagerSim() || !this.manualKeys.size || !this.selectedRobot()) {
+        this.fleetSimManualLastAt = 0;
+        return;
+      }
+      // Fifteen milliseconds admits every frame on a 60 Hz display while
+      // capping 120/144 Hz monitors close to the simulator's 60 Hz target.
+      if (!this.fleetSimManualLastAt || now - this.fleetSimManualLastAt >= 15) {
+        this.fleetSimManualLastAt = now;
+        this.sendTeleopIfNeeded().catch(() => {});
+      }
+      this.fleetSimManualFrame = window.requestAnimationFrame(publish);
+    };
+    this.fleetSimManualFrame = window.requestAnimationFrame(publish);
+  }
+
+  stopFleetSimManualCommandLoop() {
+    if (this.fleetSimManualFrame && typeof window.cancelAnimationFrame === "function") {
+      window.cancelAnimationFrame(this.fleetSimManualFrame);
+    }
+    this.fleetSimManualFrame = null;
+    this.fleetSimManualLastAt = 0;
+    this.fleetSimManualGeneration += 1;
+  }
+
+  async waitForFleetSimManualIdle(timeoutMs = 600) {
+    const deadline = performance.now() + Math.max(0, Number(timeoutMs || 0));
+    while (this.teleopPending && performance.now() < deadline) {
+      await new Promise((resolve) => window.setTimeout(resolve, 4));
+    }
   }
 
   syncManualButtons() {
@@ -8788,9 +9364,13 @@ class OperatorApp {
     const backward = this.manualKeys.has("s") ? 1 : 0;
     const left = this.manualKeys.has("a") ? 1 : 0;
     const right = this.manualKeys.has("d") ? 1 : 0;
+    // Fleet Manager Sim uses the map_top_left frame where positive yaw turns
+    // clockwise on screen. ROS cmd_vel keeps the standard positive-left
+    // convention, including remote robots supervised by Fleet Manager.
+    const simulatedMapTurn = this.isFleetManager() && !this.isFleetRobotsMode();
     return {
       linear: (forward - backward) * linearSpeed,
-      angular: (left - right) * angularSpeed,
+      angular: (simulatedMapTurn ? right - left : left - right) * angularSpeed,
       params: manual,
     };
   }
@@ -8820,6 +9400,7 @@ class OperatorApp {
 
   releaseManualControl() {
     this.manualKeys.clear();
+    this.stopFleetSimManualCommandLoop();
     this.syncManualButtons();
     if (this.selectedRobot() && !this.isFleetManager()) {
       this.closeTeleopSocket(true);
@@ -8830,6 +9411,7 @@ class OperatorApp {
   }
 
   async sendFleetManualStep(twist) {
+    const generation = this.fleetSimManualGeneration;
     const robot = this.selectedFleetRobot();
     if (!robot) {
       this.robotMessageText.textContent = "Select a fleet robot for manual control.";
@@ -8840,10 +9422,18 @@ class OperatorApp {
       return;
     }
     if (this.fleetManualRobotName !== robot.name) {
-      await this.postJson(this.fleetApiPath("/robots/stop"), { name: robot.name });
+      const stopped = await this.postJson(this.fleetApiPath("/robots/stop"), {
+        name: robot.name,
+        includeState: false,
+      });
+      if (generation !== this.fleetSimManualGeneration || !this.manualKeys.size) {
+        return;
+      }
       this.fleetManualRobotName = robot.name;
       this.fleetManualLastAt = performance.now();
-      this.currentStatus = await this.getJson(this.fleetApiPath("/state"));
+      this.currentStatus = stopped.robot
+        ? this.mergeFleetRobotUpdate(stopped.robot)
+        : this.currentStatus;
     }
     const pose = this.animatedFleetManualPose(robot) || robot.pose || this.poseForLm(robot.currentLm);
     if (!pose) {
@@ -8851,7 +9441,7 @@ class OperatorApp {
       return;
     }
     const now = performance.now();
-    const dt = Math.min(0.16, Math.max(0.02, (now - (this.fleetManualLastAt || now)) / 1000));
+    const dt = Math.min(0.16, Math.max(1 / 120, (now - (this.fleetManualLastAt || now)) / 1000));
     this.fleetManualLastAt = now;
 
     const prediction = this.predictManualTrajectory(
@@ -8863,6 +9453,9 @@ class OperatorApp {
     );
     const nextPose = this.integratePose(pose, twist.linear, twist.angular, dt);
     const currentLm = this.currentLmForPose(nextPose, 0.25);
+    // Start visual motion before awaiting HTTP. Previously every command
+    // froze the model until the global fleet lock became available.
+    this.setFleetManualAnimation(robot.name, pose, twist);
     const result = await this.postJson(this.fleetApiPath("/manual-step"), {
       name: robot.name,
       poses: prediction,
@@ -8871,12 +9464,21 @@ class OperatorApp {
       blockedCurrentLm: this.currentLmForPose(pose, 0.25),
       currentLm,
     });
+    if (generation !== this.fleetSimManualGeneration || !this.manualKeys.size) {
+      return;
+    }
+    // The old animation kept moving while the HTTP request was in flight.
+    // Restarting from `pose` here moved the model backwards on every ACK.
+    // Continue from the pose currently visible on screen instead.
+    const visualPoseAtAck = this.animatedFleetManualPose(robot) || nextPose;
     this.fleetManualLookahead = {
       poses: prediction,
       blocked: Boolean(result.blocked),
       reason: result.reason || "",
     };
-    this.currentStatus = result.state || await this.getJson(this.fleetApiPath("/state"));
+    this.currentStatus = result.state
+      ? this.mergeFleetTickState(result.state)
+      : this.mergeFleetRobotUpdate(result.robot);
     this.fleetStatusReceivedAt = performance.now();
     this.fleetStatusObjectRef = this.currentStatus;
     if (result.blocked) {
@@ -8885,9 +9487,8 @@ class OperatorApp {
       this.renderFleetRuntimeTick();
       return;
     }
-    this.setFleetManualAnimation(robot.name, pose, twist);
+    this.setFleetManualAnimation(robot.name, visualPoseAtAck, twist);
     this.robotMessageText.textContent = `${robot.name} manual control active.`;
-    this.renderFleetRuntimeTick();
   }
 
   async sendFleetRemoteTeleop(robot, twist) {
@@ -8907,7 +9508,9 @@ class OperatorApp {
       angular: twist.angular,
       timeoutMs: 350,
     });
-    this.currentStatus = result.state || await this.getJson(this.fleetApiPath("/state"));
+    this.currentStatus = result.state
+      ? this.mergeFleetTickState(result.state)
+      : this.mergeFleetRobotUpdate(result.robot);
     this.fleetStatusReceivedAt = performance.now();
     this.fleetStatusObjectRef = this.currentStatus;
     this.robotMessageText.textContent = `${robot.name} remote manual control active.`;
@@ -8919,6 +9522,9 @@ class OperatorApp {
       this.fleetManualLookahead = null;
       this.renderOperatorMap();
       return;
+    }
+    if (this.isFleetManagerSim()) {
+      await this.waitForFleetSimManualIdle();
     }
     const robot = this.selectedFleetRobot();
     if (robot && robot.name === this.fleetManualRobotName) {
@@ -8934,7 +9540,7 @@ class OperatorApp {
         this.renderFleetStateImmediately();
         return;
       }
-      const pose = robot.pose || null;
+      const pose = this.animatedFleetManualPose(robot) || robot.pose || null;
       const payload = {
         name: robot.name,
         status: "IDLE",

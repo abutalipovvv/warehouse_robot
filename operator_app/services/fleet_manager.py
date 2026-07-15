@@ -264,10 +264,38 @@ class OperatorFleetManager:
         action = str(payload.get("action") or "").strip().lower()
         add_only = action in {"add", "add_robots", "ensure"} or bool(payload.get("addOnly", False))
         plan_existing = action in {"plan", "plan_existing"} or bool(payload.get("planExisting", False))
+        package_existing = action in {
+            "package",
+            "package_orders",
+            "package_waves",
+        }
         stop_dynamic = action in {"stop", "stop_dynamic", "pause_dynamic"}
-        reset_default = not (add_only or plan_existing or stop_dynamic)
+        set_time_scale = action in {"time_scale", "set_time_scale"}
+        reset_default = not (
+            add_only
+            or plan_existing
+            or package_existing
+            or stop_dynamic
+            or set_time_scale
+        )
         if payload.get("reset", reset_default):
             self._clear_simulation_runtime()
+        if set_time_scale:
+            # Finish the elapsed slice at the old rate first. This keeps a
+            # live robot continuous when the operator changes, for example,
+            # from 8x back to 1x between two physics ticks.
+            self._pump_dynamic_benchmark()
+            self.manager.advance_runtime()
+            scale = self.manager.set_simulation_time_scale(
+                payload.get("timeScale", payload.get("scale", 1.0))
+            )
+            return self._state_with_context({
+                **self.manager.snapshot(include_trajectories=True),
+                "benchmark": {
+                    "action": "time_scale",
+                    "timeScale": scale,
+                },
+            })
         if count <= 0:
             return self._state_with_context({
                 **self.manager.state(include_trajectories=True),
@@ -285,6 +313,20 @@ class OperatorFleetManager:
 
         if stop_dynamic:
             return self._stop_dynamic_benchmark_payload()
+
+        if package_existing:
+            return self._start_dynamic_benchmark_payload(
+                count=count,
+                seed=seed,
+                horizon_sec=float(payload.get("horizonSec", 10.0) or 10.0),
+                order_interval_sec=0.0,
+                queue_depth=1,
+                speed=speed,
+                acceleration=acceleration,
+                rotate=rotate,
+                turn_speed=turn_speed,
+                generation_mode="package_waves",
+            )
 
         if plan_existing:
             return self._start_dynamic_benchmark_payload(
@@ -453,13 +495,17 @@ class OperatorFleetManager:
         *,
         advance_runtime: bool = True,
         route_revisions: dict[str, int] | None = None,
+        include_runtime_details: bool = True,
     ) -> dict[str, Any]:
         self._sync_manager_mode()
         if advance_runtime:
             self._pump_dynamic_benchmark()
             state = self.manager.tick(payload or {})
         else:
-            state = self.manager.stream_tick(route_revisions=route_revisions)
+            state = self.manager.stream_tick(
+                route_revisions=route_revisions,
+                include_runtime_details=include_runtime_details,
+            )
         return self._state_with_context(state)
 
     def world_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
@@ -482,14 +528,15 @@ class OperatorFleetManager:
                     "linear": float(payload.get("linear", 0.0) or 0.0),
                     "angular": float(payload.get("angular", 0.0) or 0.0),
                     "timeoutMs": int(payload.get("timeoutMs", 350) or 350),
-                }
+                },
+                include_state=False,
             )
             return {
                 "ok": True,
                 "blocked": False,
                 "reason": "",
                 "robot": result.get("robot"),
-                "state": self._state_with_context(result.get("state")),
+                "state": None,
             }
         poses = payload.get("poses", [])
         check = self.manager.check_path({"name": name, "poses": poses})
@@ -507,7 +554,11 @@ class OperatorFleetManager:
         pose = payload.get(pose_key)
         if isinstance(pose, dict):
             update_payload["pose"] = pose
-        result = self.manager.update_robot(update_payload)
+        # Manual commands arrive at 30 Hz while rendering runs at 60 FPS. Do
+        # not serialize the complete 50-robot fleet (including routes/orders)
+        # into every command response; the fleet websocket remains the source
+        # of full snapshots and this response carries only the changed robot.
+        result = self.manager.update_robot(update_payload, include_state=False)
         return {
             "ok": True,
             "blocked": bool(check.get("blocked")),
@@ -515,7 +566,7 @@ class OperatorFleetManager:
             "index": check.get("index"),
             "pose": check.get("pose"),
             "robot": result.get("robot"),
-            "state": self._state_with_context(result.get("state")),
+            "state": None,
         }
 
     def manual_stop_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
@@ -579,7 +630,10 @@ class OperatorFleetManager:
 
     def stop_robot_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
         self._sync_manager_mode()
-        return self._result_with_context(self.manager.stop_robot(payload))
+        include_state = bool(payload.get("includeState", True))
+        return self._result_with_context(
+            self.manager.stop_robot(payload, include_state=include_state)
+        )
 
     def reset_robot_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
         self._sync_manager_mode()
@@ -591,6 +645,7 @@ class OperatorFleetManager:
         self.manager.robots.clear()
         self.manager.orders.clear()
         self.manager.events.clear()
+        self.manager.reset_traffic_flow_state()
         for key in getattr(self.manager, "traffic_metrics", {}):
             self.manager.traffic_metrics[key] = 0
         self._reset_dynamic_benchmark()
@@ -673,15 +728,36 @@ class OperatorFleetManager:
         acceleration: float,
         rotate: bool,
         turn_speed: float,
+        generation_mode: str = "continuous",
     ) -> dict[str, Any]:
         robots = self._benchmark_sim_robots()
         if count > 0:
             robots = robots[:count]
         if not robots:
             raise ValueError("add robots before starting dynamic orders")
+        pending_benchmark_orders = [
+            order
+            for order in self.manager.orders.values()
+            if order.order_id.startswith("dynamic-")
+            and order.status not in {"COMPLETED", "FAILED", "CANCELED"}
+        ]
+        if pending_benchmark_orders:
+            raise ValueError(
+                f"wait for {len(pending_benchmark_orders)} active benchmark order(s) "
+                "to finish before starting a new generator"
+            )
 
         horizon_sec = max(1.0, min(120.0, float(horizon_sec)))
-        order_interval_sec = max(0.25, min(120.0, float(order_interval_sec)))
+        generation_mode = (
+            "package_waves"
+            if str(generation_mode).strip().lower() == "package_waves"
+            else "continuous"
+        )
+        order_interval_sec = (
+            0.0
+            if generation_mode == "package_waves"
+            else max(0.25, min(120.0, float(order_interval_sec)))
+        )
         queue_depth = max(1, min(5, int(queue_depth)))
         fleet = self.manager.params.setdefault("fleet", {})
         if not isinstance(fleet, dict):
@@ -689,13 +765,20 @@ class OperatorFleetManager:
             self.manager.params["fleet"] = fleet
         fleet["rolling_horizon_sec"] = horizon_sec
         fleet["reservation_horizon_sec"] = horizon_sec
+        self.manager.reset_traffic_flow_state()
         for key in getattr(self.manager, "traffic_metrics", {}):
             self.manager.traffic_metrics[key] = 0
 
-        now = time()
+        now = self._runtime_now()
         self._dynamic_rng = random.Random(seed)
         self._dynamic_benchmark = {
             "active": True,
+            "generationMode": generation_mode,
+            "scenario": (
+                "package_order_waves"
+                if generation_mode == "package_waves"
+                else "continuous_random_orders"
+            ),
             "seed": seed,
             "startedAt": now,
             "stoppedAt": 0.0,
@@ -715,25 +798,41 @@ class OperatorFleetManager:
             "orderSequence": 0,
             "sessionId": int(now * 1000),
             "countedTerminalOrders": set(),
+            "completedDurationsSec": [],
+            "completedDurationTotalSec": 0.0,
+            "lastTerminalAt": 0.0,
+            "measurementFinishedAt": 0.0,
             "speed": speed,
             "acceleration": acceleration,
             "rotate": rotate,
             "turnSpeed": turn_speed,
             "initialWaveQueued": False,
+            "waveOrderIds": set(),
+            "waveIndex": 0,
+            "wavesStarted": 0,
+            "wavesCompleted": 0,
+            "waveStartedAt": 0.0,
+            "lastWaveDurationSec": 0.0,
+            "waveDurationTotalSec": 0.0,
         }
         # Queue the first order for every robot atomically.  Dispatch is
         # intentionally deferred so MAPF can see small coupled groups instead
         # of treating the rest of the fleet as permanently parked obstacles.
-        for robot in robots:
-            self._dynamic_benchmark["nextOrderAt"][robot.name] = now
+        if generation_mode == "continuous":
+            for robot in robots:
+                self._dynamic_benchmark["nextOrderAt"][robot.name] = now
 
         started = perf_counter()
         generated = self._pump_dynamic_benchmark(now=now)
         elapsed_ms = (perf_counter() - started) * 1000.0
         benchmark = self._dynamic_benchmark_payload()
         benchmark.update({
-            "action": "start_dynamic",
-            "scenario": "continuous_random_orders",
+            "action": (
+                "start_package_waves"
+                if generation_mode == "package_waves"
+                else "start_dynamic"
+            ),
+            "scenario": self._dynamic_benchmark["scenario"],
             "count": len(robots),
             "planned": len(robots),
             "generatedNow": generated,
@@ -749,7 +848,7 @@ class OperatorFleetManager:
     def _stop_dynamic_benchmark_payload(self) -> dict[str, Any]:
         if self._dynamic_benchmark.get("active"):
             self._dynamic_benchmark["active"] = False
-            self._dynamic_benchmark["stoppedAt"] = time()
+            self._dynamic_benchmark["stoppedAt"] = self._runtime_now()
         benchmark = self._dynamic_benchmark_payload()
         benchmark["action"] = "stop_dynamic"
         state = self._state_with_context(self.manager.state(include_trajectories=True))
@@ -760,10 +859,22 @@ class OperatorFleetManager:
         })
 
     def _pump_dynamic_benchmark(self, now: float | None = None) -> int:
-        if self.mode != "simulation" or not getattr(self, "_dynamic_benchmark", {}).get("active"):
+        if self.mode != "simulation" or not hasattr(self, "manager"):
             return 0
-        now = time() if now is None else float(now)
-        config = self._dynamic_benchmark
+        now = self._runtime_now() if now is None else float(now)
+        config = getattr(self, "_dynamic_benchmark", {})
+        self._prune_dynamic_order_history()
+        if str(config.get("generationMode") or "continuous") == "package_waves":
+            wave_ready = self._finish_package_wave_if_terminal(now)
+            if not config.get("active") or not wave_ready:
+                config["lastPumpAt"] = now
+                return 0
+            generated = self._generate_package_order_wave(now)
+            config["lastPumpAt"] = now
+            return generated
+        if not config.get("active"):
+            config["lastPumpAt"] = now
+            return 0
         robots = self._benchmark_sim_robots()
         next_order_at = config.setdefault("nextOrderAt", {})
         interval = float(config.get("orderIntervalSec", 3.0) or 3.0)
@@ -790,13 +901,7 @@ class OperatorFleetManager:
                 else:
                     self.manager.set_order(order_payload, dispatch=False)
                     generated += 1
-                    config["ordersGenerated"] = int(config.get("ordersGenerated", 0) or 0) + 1
-                    distance_m = float(order_payload.get("benchmarkDistanceM", 0.0) or 0.0)
-                    config["generatedDistanceMTotal"] = float(
-                        config.get("generatedDistanceMTotal", 0.0) or 0.0
-                    ) + distance_m
-                    config["lastOrderDistanceM"] = distance_m
-                    config["lastOrderAt"] = now
+                    self._record_generated_dynamic_order(order_payload, now)
             except (RuntimeError, ValueError) as exc:
                 config["generationFailures"] = int(config.get("generationFailures", 0) or 0) + 1
                 self.manager._event(
@@ -813,6 +918,106 @@ class OperatorFleetManager:
             config["initialWaveQueued"] = True
         config["lastPumpAt"] = now
         self._prune_dynamic_order_history()
+        return generated
+
+    def _finish_package_wave_if_terminal(self, now: float) -> bool:
+        config = self._dynamic_benchmark
+        wave_ids = set(config.get("waveOrderIds", set()))
+        if not wave_ids:
+            return True
+        pending = [
+            order_id
+            for order_id in wave_ids
+            if (
+                order_id in self.manager.orders
+                and self.manager.orders[order_id].status
+                not in {"COMPLETED", "FAILED", "CANCELED"}
+            )
+        ]
+        if pending:
+            return False
+        started_at = float(config.get("waveStartedAt", now) or now)
+        duration = max(0.0, now - started_at)
+        config["wavesCompleted"] = int(config.get("wavesCompleted", 0) or 0) + 1
+        config["lastWaveDurationSec"] = duration
+        config["waveDurationTotalSec"] = float(
+            config.get("waveDurationTotalSec", 0.0) or 0.0
+        ) + duration
+        config["waveOrderIds"] = set()
+        self.manager._event(
+            "info",
+            f"package wave {int(config.get('waveIndex', 0) or 0)} completed: "
+            f"{len(wave_ids)} orders in {duration:.1f} simulated seconds",
+        )
+        return True
+
+    def _generate_package_order_wave(self, now: float) -> int:
+        config = self._dynamic_benchmark
+        robots = self._benchmark_sim_robots()
+        if not robots:
+            return 0
+        wave_index = int(config.get("waveIndex", 0) or 0) + 1
+        assignments = self._package_wave_assignments(robots, wave_index)
+        if len(assignments) != len(robots):
+            last_failure = float(config.get("lastWaveFailureAt", 0.0) or 0.0)
+            if now - last_failure >= 5.0:
+                self.manager._event(
+                    "warn",
+                    f"package wave {wave_index} pending: assigned "
+                    f"{len(assignments)}/{len(robots)} peripheral goals",
+                )
+                config["lastWaveFailureAt"] = now
+            config["generationFailures"] = int(
+                config.get("generationFailures", 0) or 0
+            ) + max(1, len(robots) - len(assignments))
+            return 0
+
+        order_ids: set[str] = set()
+        generated = 0
+        started = perf_counter()
+        for index, (robot, target_lm) in enumerate(assignments):
+            priority = (wave_index + index) % 3
+            order_payload = self._dynamic_order_payload(
+                robot,
+                target_lm,
+                now,
+                priority=priority,
+                external_prefix=f"package-wave-{wave_index}",
+            )
+            try:
+                self.manager.set_order(order_payload, dispatch=False)
+            except (RuntimeError, ValueError) as exc:
+                config["generationFailures"] = int(
+                    config.get("generationFailures", 0) or 0
+                ) + 1
+                self.manager._event(
+                    "warn",
+                    f"package order pending for {robot.name}: {exc}",
+                )
+                continue
+            order_ids.add(str(order_payload["id"]))
+            generated += 1
+            self._record_generated_dynamic_order(order_payload, now)
+        config["dispatchElapsedMs"] = float(
+            config.get("dispatchElapsedMs", 0.0) or 0.0
+        ) + ((perf_counter() - started) * 1000.0)
+        if generated != len(robots):
+            # Keep the partial wave authoritative. It must drain before a new
+            # wave is attempted; duplicate orders are never generated for the
+            # robots that were successfully queued.
+            config["generationFailures"] = int(
+                config.get("generationFailures", 0) or 0
+            ) + (len(robots) - generated)
+        config["waveIndex"] = wave_index
+        config["wavesStarted"] = int(config.get("wavesStarted", 0) or 0) + 1
+        config["waveStartedAt"] = now
+        config["waveOrderIds"] = order_ids
+        config["initialWaveQueued"] = True
+        self.manager._event(
+            "info",
+            f"package wave {wave_index} queued: {generated}/{len(robots)} "
+            "orders to map perimeter",
+        )
         return generated
 
     def _next_dynamic_order_payload(self, robot: Any, now: float) -> dict[str, Any] | None:
@@ -852,14 +1057,34 @@ class OperatorFleetManager:
         if not candidates:
             return None
         target_lm = self._far_dynamic_goal(origin, candidates)
+        sequence = int(config.get("orderSequence", 0) or 0) + 1
+        priority = self._dynamic_rng.choice((0, 0, 1, 1, 2, 3))
+        if sequence % 10 == 0:
+            priority = 5
+        return self._dynamic_order_payload(
+            robot,
+            target_lm,
+            now,
+            priority=priority,
+            external_prefix="benchmark",
+        )
+
+    def _dynamic_order_payload(
+        self,
+        robot: Any,
+        target_lm: str,
+        now: float,
+        *,
+        priority: int,
+        external_prefix: str,
+    ) -> dict[str, Any]:
+        config = self._dynamic_benchmark
+        origin = self._dynamic_order_origin(robot.name) or str(robot.current_lm)
         origin_lm = self.loaded_map.landmarks[origin]
         target = self.loaded_map.landmarks[target_lm]
         distance_m = math.hypot(target.x - origin_lm.x, target.y - origin_lm.y)
         sequence = int(config.get("orderSequence", 0) or 0) + 1
         config["orderSequence"] = sequence
-        priority = self._dynamic_rng.choice((0, 0, 1, 1, 2, 3))
-        if sequence % 10 == 0:
-            priority = 5
         return {
             "id": f"dynamic-{int(config.get('sessionId', 0) or 0)}-{sequence:07d}-{robot.name}",
             "vehicle": robot.name,
@@ -870,9 +1095,24 @@ class OperatorFleetManager:
             "rotate": bool(config.get("rotate", False)),
             "turnSpeed": float(config.get("turnSpeed", 0.0) or 0.0),
             "stretchMotionToReservationTicks": True,
-            "externalId": f"benchmark-{int(now * 1000)}-{sequence}",
+            "externalId": f"{external_prefix}-{int(now * 1000)}-{sequence}",
             "benchmarkDistanceM": round(distance_m, 3),
         }
+
+    def _record_generated_dynamic_order(
+        self,
+        order_payload: dict[str, Any],
+        now: float,
+    ) -> None:
+        config = self._dynamic_benchmark
+        config["ordersGenerated"] = int(config.get("ordersGenerated", 0) or 0) + 1
+        distance_m = float(order_payload.get("benchmarkDistanceM", 0.0) or 0.0)
+        config["generatedDistanceMTotal"] = float(
+            config.get("generatedDistanceMTotal", 0.0) or 0.0
+        ) + distance_m
+        config["lastOrderDistanceM"] = distance_m
+        config["lastOrderAt"] = now
+        config["measurementFinishedAt"] = 0.0
 
     def _dynamic_goal_hop_window(self) -> tuple[int, int]:
         fleet = self.manager.params.get("fleet", {})
@@ -905,6 +1145,132 @@ class OperatorFleetManager:
         fraction = max(0.05, min(1.0, fraction))
         pool_size = max(1, int(math.ceil(len(ranked) * fraction)))
         return self._dynamic_rng.choice(ranked[-pool_size:])
+
+    def _package_wave_assignments(
+        self,
+        robots: list[Any],
+        wave_index: int,
+    ) -> list[tuple[Any, str]]:
+        peripheral = self._benchmark_peripheral_lms(len(robots))
+        if not peripheral:
+            return []
+        perimeter_rank = {name: index for index, name in enumerate(peripheral)}
+        occupied_lms = {
+            str(robot.current_lm)
+            for robot in self._benchmark_sim_robots()
+            if str(robot.current_lm) in self.loaded_map.landmarks
+        }
+        used_goals = {
+            str(order.target_lm)
+            for order in self.manager.orders.values()
+            if order.status not in {"COMPLETED", "FAILED", "CANCELED"}
+            and str(order.target_lm) in self.loaded_map.landmarks
+        }
+        assignments: list[tuple[Any, str]] = []
+        min_hops, max_hops = self._dynamic_goal_hop_window()
+        robot_count = max(1, len(robots))
+        # Half-slot rotation prevents every wave from assigning the same edge
+        # cells to the same robot while keeping targets uniformly distributed.
+        wave_phase = (max(0, wave_index - 1) * 0.5) % robot_count
+        for index, robot in enumerate(sorted(robots, key=lambda item: str(item.name))):
+            origin = self._dynamic_order_origin(robot.name) or str(robot.current_lm)
+            if origin not in self.loaded_map.landmarks:
+                continue
+            reachable = self._forward_benchmark_goals(
+                origin,
+                used_goals,
+                occupied_lms,
+                self._dynamic_rng,
+                min_hops=min_hops,
+                max_hops=max_hops,
+            )
+            candidates = [name for name in reachable if name in perimeter_rank]
+            if not candidates:
+                reachable = self._forward_benchmark_goals(
+                    origin,
+                    used_goals,
+                    occupied_lms,
+                    self._dynamic_rng,
+                    min_hops=2,
+                    max_hops=min(300, max(max_hops, len(self.loaded_map.landmarks))),
+                )
+                candidates = [name for name in reachable if name in perimeter_rank]
+            if not candidates:
+                continue
+
+            desired_fraction = ((index + wave_phase) % robot_count) / robot_count
+            desired_rank = desired_fraction * len(peripheral)
+            origin_lm = self.loaded_map.landmarks[origin]
+
+            def candidate_key(name: str) -> tuple[float, float, str]:
+                rank = float(perimeter_rank[name])
+                rank_distance = abs(rank - desired_rank)
+                circular_distance = min(
+                    rank_distance,
+                    len(peripheral) - rank_distance,
+                )
+                target = self.loaded_map.landmarks[name]
+                distance = math.hypot(target.x - origin_lm.x, target.y - origin_lm.y)
+                return circular_distance, -distance, name
+
+            target_lm = min(candidates, key=candidate_key)
+            assignments.append((robot, target_lm))
+            used_goals.add(target_lm)
+        return assignments
+
+    def _benchmark_peripheral_lms(self, robot_count: int) -> list[str]:
+        names = [
+            name
+            for name in self._largest_benchmark_component()
+            if name in self.loaded_map.landmarks
+        ]
+        if not names:
+            return []
+        landmarks = self.loaded_map.landmarks
+        min_x = min(landmarks[name].x for name in names)
+        max_x = max(landmarks[name].x for name in names)
+        min_y = min(landmarks[name].y for name in names)
+        max_y = max(landmarks[name].y for name in names)
+        width = max(0.001, max_x - min_x)
+        height = max(0.001, max_y - min_y)
+
+        def edge_distance(name: str) -> float:
+            lm = landmarks[name]
+            return min(
+                lm.x - min_x,
+                max_x - lm.x,
+                lm.y - min_y,
+                max_y - lm.y,
+            )
+
+        # Use a broad outer ring so 100-robot waves still have enough unique,
+        # footprint-separated destinations after excluding occupied cells.
+        pool_size = min(len(names), max(64, int(robot_count) * 8))
+        by_edge_distance = sorted(
+            names,
+            key=lambda name: (edge_distance(name), name),
+        )
+        distance_limit = edge_distance(by_edge_distance[pool_size - 1])
+        # Include the complete distance band at the cutoff. Without this, a
+        # lexicographic tie on the outermost row could select the top edge but
+        # accidentally omit the bottom edge from small waves.
+        outer_ring = [
+            name
+            for name in by_edge_distance
+            if edge_distance(name) <= distance_limit + 0.000001
+        ]
+
+        def perimeter_position(name: str) -> float:
+            lm = landmarks[name]
+            distances = (
+                (abs(lm.y - min_y), lm.x - min_x),
+                (abs(lm.x - max_x), width + (lm.y - min_y)),
+                (abs(lm.y - max_y), width + height + (max_x - lm.x)),
+                (abs(lm.x - min_x), (2.0 * width) + height + (max_y - lm.y)),
+            )
+            return min(distances, key=lambda item: item[0])[1]
+
+        return sorted(outer_ring, key=lambda name: (perimeter_position(name), name))
 
     def _dynamic_order_origin(self, robot_name: str) -> str:
         orders = [
@@ -945,8 +1311,20 @@ class OperatorFleetManager:
             counted.add(order.order_id)
             if order.status == "COMPLETED":
                 config["ordersCompleted"] = int(config.get("ordersCompleted", 0) or 0) + 1
+                duration = max(0.0, float(order.updated_at) - float(order.created_at))
+                durations = config.setdefault("completedDurationsSec", [])
+                if isinstance(durations, list):
+                    durations.append(duration)
+                    del durations[:-1000]
+                config["completedDurationTotalSec"] = float(
+                    config.get("completedDurationTotalSec", 0.0) or 0.0
+                ) + duration
             else:
                 config["ordersTerminated"] = int(config.get("ordersTerminated", 0) or 0) + 1
+            config["lastTerminalAt"] = max(
+                float(config.get("lastTerminalAt", 0.0) or 0.0),
+                float(order.updated_at),
+            )
         for order in terminal[240:]:
             self.manager.orders.pop(order.order_id, None)
             counted.discard(order.order_id)
@@ -966,9 +1344,51 @@ class OperatorFleetManager:
         traffic = dict(getattr(self.manager, "traffic_metrics", {})) if hasattr(self, "manager") else {}
         dispatch_ms = float(config.get("dispatchElapsedMs", 0.0) or 0.0)
         distance_total = float(config.get("generatedDistanceMTotal", 0.0) or 0.0)
+        terminated = int(config.get("ordersTerminated", 0) or 0)
+        outstanding = max(0, generated - completed - terminated)
+        started_at = float(config.get("startedAt", 0.0) or 0.0)
+        now = self._runtime_now() if started_at > 0.0 else 0.0
+        if not config.get("active") and outstanding <= 0 and generated > 0:
+            finished_at = float(config.get("measurementFinishedAt", 0.0) or 0.0)
+            if finished_at <= 0.0:
+                finished_at = max(
+                    started_at,
+                    float(config.get("lastTerminalAt", 0.0) or 0.0),
+                    float(config.get("stoppedAt", 0.0) or 0.0),
+                )
+                config["measurementFinishedAt"] = finished_at
+        else:
+            finished_at = 0.0
+        elapsed_sim_sec = max(
+            0.0,
+            (finished_at or now or started_at) - started_at,
+        ) if started_at > 0.0 else 0.0
+        throughput = (
+            (completed * 60.0) / elapsed_sim_sec
+            if completed > 0 and elapsed_sim_sec > 0.000001
+            else 0.0
+        )
+        completed_durations = [
+            float(value)
+            for value in config.get("completedDurationsSec", [])
+            if isinstance(value, (int, float))
+        ]
+        completed_durations.sort()
+        p95_duration = (
+            completed_durations[
+                min(
+                    len(completed_durations) - 1,
+                    max(0, int(math.ceil(len(completed_durations) * 0.95)) - 1),
+                )
+            ]
+            if completed_durations
+            else 0.0
+        )
+        waves_completed = int(config.get("wavesCompleted", 0) or 0)
         return {
             "active": bool(config.get("active", False)),
-            "scenario": "continuous_random_orders",
+            "generationMode": str(config.get("generationMode") or "continuous"),
+            "scenario": str(config.get("scenario") or "continuous_random_orders"),
             "seed": int(config.get("seed", 42) or 42),
             "horizonSec": float(config.get("horizonSec", 10.0) or 10.0),
             "orderIntervalSec": float(config.get("orderIntervalSec", 3.0) or 3.0),
@@ -977,18 +1397,47 @@ class OperatorFleetManager:
             "ordersCompleted": completed,
             "ordersQueued": queued,
             "ordersExecuting": executing,
+            "ordersOutstanding": outstanding,
             "waitingRobots": waiting,
             "generationFailures": int(config.get("generationFailures", 0) or 0),
             "averageDispatchMs": round(dispatch_ms / generated, 3) if generated else 0.0,
             "averageOrderDistanceM": round(distance_total / generated, 2) if generated else 0.0,
             "lastOrderDistanceM": round(float(config.get("lastOrderDistanceM", 0.0) or 0.0), 2),
+            "elapsedSimSec": round(elapsed_sim_sec, 3),
+            "throughputOrdersPerMin": round(throughput, 3),
+            "averageOrderDurationSec": round(
+                float(config.get("completedDurationTotalSec", 0.0) or 0.0) / completed,
+                3,
+            ) if completed else 0.0,
+            "p95OrderDurationSec": round(p95_duration, 3),
+            "waveIndex": int(config.get("waveIndex", 0) or 0),
+            "wavesStarted": int(config.get("wavesStarted", 0) or 0),
+            "wavesCompleted": waves_completed,
+            "waveOrders": len(set(config.get("waveOrderIds", set()))),
+            "lastWaveDurationSec": round(
+                float(config.get("lastWaveDurationSec", 0.0) or 0.0),
+                3,
+            ),
+            "averageWaveDurationSec": round(
+                float(config.get("waveDurationTotalSec", 0.0) or 0.0)
+                / waves_completed,
+                3,
+            ) if waves_completed else 0.0,
+            "timeScale": self.manager.simulation_time_scale() if hasattr(self, "manager") else 1.0,
             **traffic,
         }
+
+    def _runtime_now(self) -> float:
+        if self.mode == "simulation" and hasattr(self, "manager"):
+            return self.manager.simulation_time()
+        return time()
 
     def _reset_dynamic_benchmark(self) -> None:
         self._dynamic_rng = random.Random(42)
         self._dynamic_benchmark = {
             "active": False,
+            "generationMode": "continuous",
+            "scenario": "continuous_random_orders",
             "seed": 42,
             "horizonSec": 10.0,
             "orderIntervalSec": 3.0,
@@ -1004,7 +1453,18 @@ class OperatorFleetManager:
             "orderSequence": 0,
             "sessionId": 0,
             "countedTerminalOrders": set(),
+            "completedDurationsSec": [],
+            "completedDurationTotalSec": 0.0,
+            "lastTerminalAt": 0.0,
+            "measurementFinishedAt": 0.0,
             "initialWaveQueued": False,
+            "waveOrderIds": set(),
+            "waveIndex": 0,
+            "wavesStarted": 0,
+            "wavesCompleted": 0,
+            "waveStartedAt": 0.0,
+            "lastWaveDurationSec": 0.0,
+            "waveDurationTotalSec": 0.0,
         }
 
     def _benchmark_spawn_lms(self, count: int, seed: int) -> list[str]:
@@ -1636,7 +2096,12 @@ class OperatorFleetManager:
         state["mapName"] = self.map_dir.stem.replace(".smap", "")
         state["managerId"] = self.manager_id
         state["managerName"] = self.display_name
-        if self.mode == "simulation":
+        # High-rate websocket ticks intentionally omit slow collections. Keep
+        # benchmark aggregation on the same 5 Hz control-plane cadence; the
+        # browser retains the previous value while consuming pose deltas.
+        if self.mode == "simulation" and (
+            "orders" in state or "events" in state
+        ):
             state["dynamicBenchmark"] = self._dynamic_benchmark_payload()
         return state
 

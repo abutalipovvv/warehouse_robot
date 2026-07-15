@@ -128,6 +128,8 @@ class OperatorRequestHandler(SimpleHTTPRequestHandler):
         state = self._require_state()
         interval_sec = self._fleet_ws_interval_sec(parsed)
         route_revisions: dict[str, int] = {}
+        runtime_details_interval_sec = 0.20
+        next_runtime_details_at = time.monotonic() + runtime_details_interval_sec
         try:
             initial_payload = state.fleet_manager_stream_payload(initial=True, manager_id=manager_id)
             if initial_payload is not None:
@@ -146,10 +148,15 @@ class OperatorRequestHandler(SimpleHTTPRequestHandler):
                     initial=False,
                     manager_id=manager_id,
                     route_revisions=route_revisions,
+                    include_runtime_details=time.monotonic() >= next_runtime_details_at,
                 )
                 if payload is not None:
                     self._send_ws_json(payload)
                     self._update_stream_route_revisions(route_revisions, payload)
+                    if "orders" in payload.get("state", {}):
+                        next_runtime_details_at = (
+                            time.monotonic() + runtime_details_interval_sec
+                        )
                 next_tick_at += interval_sec
                 now = time.monotonic()
                 while next_tick_at <= now:

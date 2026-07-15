@@ -28,6 +28,29 @@ Runtime transport rule:
 - Operator App/Fleet Manager <-> robots: gRPC over TCP.
 - Inside each robot: local ROS 2/Nav2/topics/services, not exposed to the server.
 
+## Fleet traffic planning
+
+Fleet Manager uses a hierarchy instead of running fleet-wide CBS for every
+order:
+
+1. Congestion-aware A* assigns a stable spatial route. Its cost includes the
+   remaining committed routes of other robots and a larger penalty for
+   opposing traffic, so equal shortest paths are distributed across the map.
+2. Dynamic traffic zones admit a capacity-limited group of compatible robots.
+   Other robots hold at the last graph LM outside the overloaded zone. Zone
+   phases and waiting age prevent alternating-direction thrashing and
+   starvation.
+3. Rolling SIPP reserves exact graph resources over the configured temporal
+   horizon and schedules ordinary waits.
+4. Local CBS resolves only the small coupled component that SIPP could not
+   separate. Persistent stalls may retreat one robot and request a global
+   congestion-aware detour to the same goal.
+
+Traffic tuning is under `fleet` in `fleet_manager/params.yaml`. The principal
+settings are `congestion_*`, `traffic_zone_*`, `rolling_horizon_sec`, and
+`local_cbs_max_robots`. Runtime state exposes zone demand, occupancy, queue and
+phase in `trafficFlow`.
+
 Install gRPC runtime on the operator/server and on each robot:
 
 ```bash

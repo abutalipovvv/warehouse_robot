@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import Counter
 from time import monotonic, sleep
 
 import fleet_manager.web_simulator.manager as runtime_module
@@ -87,6 +88,130 @@ def test_plan_action_starts_continuous_random_orders_for_every_robot(monkeypatch
     assert service._dynamic_benchmark_payload()["averageOrderDistanceM"] >= 6.0
 
 
+def test_time_scale_action_keeps_simulation_and_uses_virtual_order_time(monkeypatch) -> None:
+    clock = [1_000.0]
+    monkeypatch.setattr(runtime_module, "time", lambda: clock[0])
+    monkeypatch.setattr(service_module, "time", lambda: clock[0])
+    service = OperatorFleetManager(
+        DEFAULT_FLEET_MAP_DIR,
+        DEFAULT_FLEET_MAP_DIR.parents[2] / "params.yaml",
+        manager_id=FLEET_MANAGER_SIM_ID,
+        mode="simulation",
+    )
+    service.benchmark_payload(
+        {"action": "add", "count": 1, "seed": 42, "reset": False}
+    )
+
+    scaled = service.benchmark_payload({
+        "action": "time_scale",
+        "timeScale": 4,
+        "reset": False,
+    })
+
+    assert scaled["simulationTimeScale"] == 4.0
+    assert scaled["simulationTimeScaleMax"] == 8.0
+    assert list(service.manager.robots) == ["bench_001"]
+
+    service.benchmark_payload({
+        "action": "plan",
+        "count": 1,
+        "seed": 42,
+        "reset": False,
+        "horizonSec": 5,
+        "orderIntervalSec": 10,
+        "queueDepth": 1,
+    })
+    first_generated = int(service._dynamic_benchmark["ordersGenerated"])
+    for order in service.manager.orders.values():
+        if order.order_id.startswith("dynamic-"):
+            order.status = "COMPLETED"
+    deadline = float(service._dynamic_benchmark["nextOrderAt"]["bench_001"])
+    current = service._runtime_now()
+    clock[0] += max(0.0, (deadline - current) / 4.0) + 0.01
+
+    generated = service._pump_dynamic_benchmark()
+
+    assert generated == 1
+    assert int(service._dynamic_benchmark["ordersGenerated"]) == first_generated + 1
+    assert service._dynamic_benchmark_payload()["timeScale"] == 4.0
+
+
+def test_package_order_waves_use_perimeter_and_keep_metrics_after_stop(monkeypatch) -> None:
+    clock = [1_000.0]
+    monkeypatch.setattr(runtime_module, "time", lambda: clock[0])
+    monkeypatch.setattr(service_module, "time", lambda: clock[0])
+    service = OperatorFleetManager(
+        DEFAULT_FLEET_SIM_MAP_DIR,
+        DEFAULT_FLEET_MAP_DIR.parents[2] / "params.yaml",
+        manager_id=FLEET_MANAGER_SIM_ID,
+        mode="simulation",
+    )
+    service.benchmark_payload(
+        {"action": "add", "count": 8, "seed": 42, "reset": False}
+    )
+
+    result = service.benchmark_payload({
+        "action": "package_waves",
+        "count": 8,
+        "seed": 42,
+        "reset": False,
+        "horizonSec": 10,
+        "queueDepth": 1,
+    })
+
+    benchmark = result["benchmark"]
+    assert benchmark["scenario"] == "package_order_waves"
+    assert benchmark["generationMode"] == "package_waves"
+    assert benchmark["ordersGenerated"] == 8
+    assert benchmark["waveIndex"] == 1
+    assert benchmark["wavesStarted"] == 1
+    first_wave_ids = set(service._dynamic_benchmark["waveOrderIds"])
+    assert len(first_wave_ids) == 8
+    perimeter = set(service._benchmark_peripheral_lms(8))
+    first_targets = {
+        service.manager.orders[order_id].target_lm
+        for order_id in first_wave_ids
+    }
+    assert len(first_targets) == 8
+    assert first_targets <= perimeter
+
+    clock[0] += 20.0
+    completed_at = service._runtime_now()
+    for order_id in first_wave_ids:
+        order = service.manager.orders[order_id]
+        order.status = "COMPLETED"
+        order.updated_at = completed_at
+
+    assert service._pump_dynamic_benchmark() == 8
+    assert service._dynamic_benchmark["waveIndex"] == 2
+    assert service._dynamic_benchmark["wavesCompleted"] == 1
+    assert service._dynamic_benchmark["ordersGenerated"] == 16
+
+    stopped = service.benchmark_payload({
+        "action": "stop",
+        "count": 8,
+        "reset": False,
+    })
+    assert not stopped["benchmark"]["active"]
+    second_wave_ids = set(service._dynamic_benchmark["waveOrderIds"])
+    clock[0] += 30.0
+    completed_at = service._runtime_now()
+    for order_id in second_wave_ids:
+        order = service.manager.orders[order_id]
+        order.status = "COMPLETED"
+        order.updated_at = completed_at
+
+    assert service._pump_dynamic_benchmark() == 0
+    metrics = service._dynamic_benchmark_payload()
+    assert not metrics["active"]
+    assert metrics["ordersGenerated"] == 16
+    assert metrics["ordersCompleted"] == 16
+    assert metrics["ordersOutstanding"] == 0
+    assert metrics["wavesCompleted"] == 2
+    assert metrics["throughputOrdersPerMin"] == 19.2
+    assert metrics["elapsedSimSec"] == 50.0
+
+
 def test_simulated_order_replans_after_rolling_horizon_without_completing() -> None:
     service = OperatorFleetManager(
         DEFAULT_FLEET_MAP_DIR,
@@ -135,7 +260,7 @@ def test_simulated_order_replans_after_rolling_horizon_without_completing() -> N
     assert order.status == "EXECUTING"
 
 
-def test_rolling_prefetch_hands_off_without_idle_frame() -> None:
+def test_rolling_prefetch_is_appended_without_resetting_active_motion() -> None:
     service = OperatorFleetManager(
         DEFAULT_FLEET_MAP_DIR,
         DEFAULT_FLEET_MAP_DIR.parents[2] / "params.yaml",
@@ -163,16 +288,29 @@ def test_rolling_prefetch_hands_off_without_idle_frame() -> None:
     order_id = robot.active_order_id
     first_revision = robot.route_revision
     first_chunk = robot.route_chunk_goal_lm
+    first_trajectory_length = len(robot.trajectory)
+    first_chunk_end = float(robot.trajectory[-1]["t"])
     handoff_yaw = float(robot.trajectory[-1]["yaw"])
-    robot.route_clock = max(0.0, float(robot.trajectory[-1]["t"]) - 0.5)
+    robot.route_clock = max(0.0, first_chunk_end - 0.5)
+    clock_before_prefetch = robot.route_clock
     service.manager._advance_runtime()
     _pump_until(
         service,
-        lambda: service.manager.robots["bench_001"].pending_route is not None,
+        lambda: service.manager.robots["bench_001"].route_revision > first_revision,
     )
 
     robot = service.manager.robots["bench_001"]
-    robot.route_clock = float(robot.trajectory[-1]["t"])
+    assert robot.active_order_id == order_id
+    assert robot.status == "MOVING"
+    assert robot.route_clock >= clock_before_prefetch
+    assert len(robot.trajectory) > first_trajectory_length
+    assert robot.route_chunk_goal_lm != first_chunk
+    assert abs(float(robot.trajectory[first_trajectory_length - 1]["yaw"]) - handoff_yaw) < 1e-6
+    assert robot.pending_route is None
+
+    # Crossing the old horizon boundary remains part of one continuous clock;
+    # it does not switch through a zero-clock/IDLE route revision.
+    robot.route_clock = first_chunk_end
     service.manager._advance_runtime()
 
     robot = service.manager.robots["bench_001"]
@@ -180,7 +318,6 @@ def test_rolling_prefetch_hands_off_without_idle_frame() -> None:
     assert robot.current_lm == first_chunk
     assert robot.status == "MOVING"
     assert robot.trajectory
-    assert abs(float(robot.trajectory[0]["yaw"]) - handoff_yaw) < 1e-6
     assert robot.route_revision > first_revision
     assert robot.pending_route is None
     assert service.manager.orders[order_id].status == "EXECUTING"
@@ -285,6 +422,26 @@ def test_50_robot_runtime_never_exposes_route_less_moving_blockers(
     assert len(service.manager.robots) == 50
     assert service._dynamic_benchmark_payload()["ordersGenerated"] >= 50
     assert service.manager.traffic_metrics["runtimeSafetyRollbacks"] == 0
+    route_node_load: Counter[str] = Counter()
+    for order in service.manager.orders.values():
+        if order.status in {"COMPLETED", "FAILED", "CANCELED"}:
+            continue
+        route_node_load.update(set(order.spatial_route_nodes))
+    assert max(route_node_load.values(), default=0) <= 8
+
+    central_robots = []
+    for robot in service.manager.robots.values():
+        lm_name = str(robot.current_lm)
+        if len(lm_name) != 5 or not lm_name.startswith("B"):
+            continue
+        try:
+            row = int(lm_name[1:3])
+            column = int(lm_name[3:5])
+        except ValueError:
+            continue
+        if 11 <= row <= 21 and 14 <= column <= 24:
+            central_robots.append(robot.name)
+    assert len(central_robots) <= 20
 
 
 def _pump_until(service: OperatorFleetManager, predicate, timeout: float = 6.0) -> None:

@@ -89,6 +89,31 @@ def test_adjacent_rotations_share_turn_only_resource() -> None:
     assert not any(resource.kind == "rotation_clearance" for resource in a_vertex)
 
 
+def test_adjacent_rotations_outside_turn_radius_do_not_share_resource() -> None:
+    landmarks = {
+        "A": Landmark(name="A", x=0.0, y=0.0),
+        "B": Landmark(name="B", x=1.2, y=0.0),
+    }
+    graph = TrafficGraph.from_route_core(
+        landmarks,
+        [],
+        default_speed_mps=1.0,
+        min_robot_center_distance_m=1.15,
+        rotation_min_robot_center_distance_m=1.10,
+    )
+
+    shared_turn_resources = {
+        resource
+        for resource in (
+            set(graph.rotation_resources("A"))
+            & set(graph.rotation_resources("B"))
+        )
+        if resource.kind == "rotation_clearance"
+    }
+
+    assert not shared_turn_resources
+
+
 def test_fleet_cbs_uses_same_mutex_resources_as_commit_validator() -> None:
     landmarks = {
         "A": Landmark(name="A", x=0.0, y=0.0),
@@ -532,6 +557,22 @@ def test_rotation_is_an_explicit_reserved_action_with_real_start_yaw() -> None:
     assert rotate_sample["t"] == pytest.approx(4.0)
     assert rotate_sample["x"] == pytest.approx(0.0)
     assert rotate_sample["y"] == pytest.approx(0.0)
+
+
+def test_rotation_duration_uses_short_wrap_across_pi_boundary() -> None:
+    planner = FleetMapfPlanner(
+        _landmarks("A", "B"),
+        [],
+        params=_rolling_params(),
+    )
+
+    duration = planner._rotation_duration(
+        math.radians(135.0),
+        math.radians(-135.0),
+        1.0,
+    )
+
+    assert duration == pytest.approx(math.pi / 2.0)
 
 
 def _rolling_params() -> dict[str, object]:

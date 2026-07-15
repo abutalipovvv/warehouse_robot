@@ -167,9 +167,20 @@
                         Orders s
                         <input id="fleetBenchmarkIntervalInput" type="number" min="0.25" max="120" step="0.25" value="3" />
                       </label>
+                      <label class="fleet-benchmark-setting" title="Accelerates the complete simulation clock. Higher values also increase CPU load.">
+                        Time
+                        <select id="fleetSimulationTimeScaleSelect">
+                          <option value="1">1x</option>
+                          <option value="2">2x</option>
+                          <option value="4">4x</option>
+                          <option value="6">6x</option>
+                          <option value="8">8x</option>
+                        </select>
+                      </label>
                     </div>
                     <div class="fleet-action-row">
                       <button id="fleetBenchmarkPlanButton" class="primary" type="button">Start Dynamic Orders</button>
+                      <button id="fleetBenchmarkPackageButton" type="button">Generate Package Orders</button>
                       <button id="fleetBenchmarkClearButton" type="button">Clear Sim</button>
                       <button id="fleetBenchmarkRefreshMapsButton" type="button">Refresh Maps</button>
                       <button id="fleetBenchmarkOpenLoadButton" type="button">Map Library</button>

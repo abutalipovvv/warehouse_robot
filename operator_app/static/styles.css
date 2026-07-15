@@ -702,7 +702,8 @@ body[data-fleet-page="fleet"] .robot-control-actions {
   font-size: 0.68rem;
 }
 
-.fleet-benchmark-setting input {
+.fleet-benchmark-setting input,
+.fleet-benchmark-setting select {
   width: 100%;
   min-width: 0;
   padding: 0.32rem 0.38rem;
@@ -2132,6 +2133,55 @@ body[data-fleet-page="fleet"] .robot-control-actions {
   animation: fleet-robot-selection-pulse 1.15s ease-in-out infinite;
 }
 
+.robot-wait-blocker-halo {
+  fill: rgba(255, 138, 0, 0.16);
+  stroke: #ff7a00;
+  stroke-linejoin: round;
+  stroke-dasharray: 4 3;
+  pointer-events: none;
+  animation: fleet-wait-blocker-pulse 0.72s ease-in-out infinite;
+}
+
+.robot-wait-dependency-link {
+  fill: none;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-dasharray: 6 5;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+  opacity: 0.72;
+  animation: fleet-wait-link-flow 0.8s linear infinite;
+}
+
+.fleet-robot.wait-blocker .robot-footprint {
+  fill: rgba(255, 138, 0, 0.2);
+  stroke: #ff7a00;
+}
+
+.fleet-robot .robot-wait-label {
+  fill: #b54708;
+  stroke: rgba(255, 255, 255, 0.92);
+  paint-order: stroke;
+  font-weight: 900;
+}
+
+.fleet-robot .robot-alert-label {
+  text-anchor: middle;
+  pointer-events: none;
+  stroke: rgba(255, 255, 255, 0.96);
+  paint-order: stroke;
+  font-weight: 900;
+  letter-spacing: 0.01em;
+}
+
+.fleet-robot .robot-alert-label.warning {
+  fill: #b54708;
+}
+
+.fleet-robot .robot-alert-label.error {
+  fill: #c51f2d;
+}
+
 @keyframes fleet-robot-selection-pulse {
   0%, 100% {
     stroke-opacity: 0.28;
@@ -2141,6 +2191,24 @@ body[data-fleet-page="fleet"] .robot-control-actions {
   50% {
     stroke-opacity: 0.82;
     stroke-dashoffset: -12;
+  }
+}
+
+@keyframes fleet-wait-blocker-pulse {
+  0%, 100% {
+    fill-opacity: 0.1;
+    stroke-opacity: 0.4;
+  }
+
+  50% {
+    fill-opacity: 0.32;
+    stroke-opacity: 1;
+  }
+}
+
+@keyframes fleet-wait-link-flow {
+  to {
+    stroke-dashoffset: -22;
   }
 }
 

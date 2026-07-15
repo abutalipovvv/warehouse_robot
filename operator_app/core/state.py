@@ -729,6 +729,7 @@ class OperatorAppState:
         initial: bool = False,
         manager_id: str = FLEET_MANAGER_ID,
         route_revisions: dict[str, int] | None = None,
+        include_runtime_details: bool = True,
     ) -> dict[str, Any] | None:
         if initial or manager_id == FLEET_MANAGER_SIM_ID:
             self._fleet_lock.acquire()
@@ -746,6 +747,7 @@ class OperatorAppState:
                     {},
                     advance_runtime=manager_id != FLEET_MANAGER_SIM_ID,
                     route_revisions=route_revisions,
+                    include_runtime_details=include_runtime_details,
                 )
             )
             return {

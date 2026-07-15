@@ -68,32 +68,45 @@ fleet:
   planner_backend: hybrid
   reservation_time_step_sec: 1
   reservation_horizon_sec: 10
-  # Only this graph-safe prefix is committed. The remaining order route is
-  # replanned at the next horizon boundary against fresh robot reservations.
+  # Only this graph-safe prefix is committed. The next prefix is prepared
+  # before the horizon boundary against fresh robot reservations.
   rolling_horizon_sec: 10
   # Optional discrete cap; 0 means the time horizon is authoritative.
   rolling_horizon_steps: 0
-  # Start computing the next chunk before the current one ends. The old
-  # committed trajectory remains authoritative until the graph-LM handoff.
-  rolling_prefetch_lead_sec: 3
+  # Start the next 10 s MAPF window early. This gives the serialized planner
+  # enough deadline slack for 50 robots. Continuations are appended atomically
+  # and are planned before releasing additional queued robots.
+  rolling_prefetch_lead_sec: 8
   # Simulation advances on the server independently from browser/websocket
-  # clients. A 10 Hz physics clock keeps 50 robots visually smooth.
-  simulation_tick_interval_sec: 0.1
+  # clients. Physics stays at 10 Hz so dense 50-robot collision checks leave
+  # GIL time for manual commands and websocket I/O. The browser renders at its
+  # display rate with a tightly bounded look-ahead on the committed trajectory.
+  simulation_tick_interval_sec: 0.10
+  # Fleet Manager Sim can accelerate its complete virtual clock from the web
+  # benchmark panel. Eight times is the hard safety cap for CPU-heavy fleets.
+  simulation_time_scale: 1.0
+  simulation_time_scale_max: 8.0
   reservation_safety_time_sec: 0.35
-  # The Ecom body is one metre long. A 0.10 m traffic envelope leaves safe
-  # room on the 1.20 m benchmark graph without pretending it is still TRP1.
-  robot_clearance_m: 0.10
+  # Do not add a second soft envelope around the Ecom body. The exact oriented
+  # footprint plus navigation.collision_margin is already the runtime safety
+  # boundary; an extra 0.10 m made safe turns on neighbouring 1.20 m LMs block.
+  robot_clearance_m: 0.0
   # Explicit graph reservation distance; exact rectangle overlap remains the
   # final authority for spawn and continuous runtime collision checks.
-  mapf_min_robot_center_distance_m: 1.15
-  # Only simultaneous in-place ROTATE actions share this circumscribed-body
-  # resource. Turn-vs-stationary/moving traffic uses exact footprint geometry,
-  # so adjacent 1.20 m graph cells do not become an artificial wall.
-  mapf_rotation_center_distance_m: 1.304
+  mapf_min_robot_center_distance_m: 0.8
+  # Coarse turn-only serialization is intentionally smaller than the full
+  # circumscribed-circle diameter. Robots on neighbouring 1.20 m LMs may turn
+  # together; exact oriented footprints below still stop a genuinely unsafe
+  # pair of yaw angles before the bodies intersect.
+  mapf_rotation_center_distance_m: 0.632
   # null derives the runtime preview from route speed, acceleration and the
   # spatial footprint lookahead. Set seconds explicitly to tune field robots.
   runtime_collision_lookahead_sec: null
   continuous_collision_step_sec: 0.1
+  # Exact next-step collision checks still run on every physics tick. The
+  # heavier full-horizon scan is refreshed independently to avoid synchronized
+  # O(robots^2) CPU spikes that make the visual stream stop and catch up.
+  runtime_collision_preflight_interval_sec: 0.20
   wait_time_sec: 1
   wait_cost: 6
   order_dispatch_retry_sec: 0.5
@@ -112,28 +125,58 @@ fleet:
   dynamic_order_min_hops: 30
   dynamic_order_max_hops: 160
   dynamic_order_far_fraction: 0.08
+  # Whole-route demand is a soft A* cost. It spreads equal shortest paths
+  # before the local ten-second SIPP window reaches the same central cells.
+  congestion_routing_enabled: true
+  congestion_edge_load_penalty_m: 0.55
+  congestion_opposing_load_penalty_m: 1.20
+  congestion_node_load_penalty_m: 0.15
+  congestion_tie_break_penalty_m: 0.002
+  # Dynamic admission zones work like traffic lights. Robots wait at the last
+  # LM outside an overloaded tile; up to three compatible entrants receive a
+  # short lease while SIPP remains the exact space-time collision authority.
+  traffic_zone_control_enabled: true
+  traffic_zone_size_m: 6.0
+  traffic_zone_demand_threshold: 6
+  traffic_zone_capacity: 3
+  traffic_zone_batch_size: 3
+  traffic_zone_entry_lookahead_sec: 3.0
+  traffic_zone_phase_sec: 2.0
+  traffic_zone_admission_lease_sec: 4.0
+  traffic_zone_starvation_sec: 5.0
+  # Wait at the graph LM first. If a saturated zone still cannot admit the
+  # robot, recompute a spatial suffix around that zone instead of waiting
+  # forever behind an optimistic temporal forecast.
+  traffic_zone_replan_after_sec: 6.0
   replan_interval_sec: 1
   runtime_replan_lm_tolerance_m: 0.1
   # A new MAPF route may start only while the localized robot is at its LM.
   # The planner never creates a straight off-graph connector to that LM.
   start_pose_lm_tolerance_m: 0.1
-  deadlock_wait_timeout_sec: 3
+  deadlock_wait_timeout_sec: 1.0
   # Keep following the committed route while a predicted blocker is expected
-  # to leave. Spatial replanning is allowed only after a persistent stall.
-  traffic_replan_after_sec: 8
-  deadlock_priority_lease_sec: 2.5
+  # to leave. After this hard bound the forecast no longer suppresses a
+  # spatial replan, so an individual robot cannot yield forever.
+  traffic_replan_after_sec: 3.0
+  # A robot with no active trajectory will not clear by waiting. Replan around
+  # its graph LM quickly, while moving peers still use the longer wait policy.
+  parked_robot_replan_after_sec: 1.0
+  deadlock_priority_lease_sec: 1.5
   # Wait/priority ordering is cheaper and more stable than changing routes.
   # Escalate only the coupled wait-cycle to CBS, then retreat as a last resort.
-  deadlock_coupled_replan_after_sec: 5
-  deadlock_coupled_replan_interval_sec: 4
-  deadlock_retreat_after_sec: 12
+  # Wait cycles receive a deterministic winner immediately. If that grant
+  # makes no progress, local CBS starts quickly and corridor evacuation is the
+  # bounded fallback instead of leaving the whole component WAITING.
+  deadlock_coupled_replan_after_sec: 1.5
+  deadlock_coupled_replan_interval_sec: 1.5
+  deadlock_retreat_after_sec: 4.5
   remote_route_chunk_lms: 5
   remote_poll_interval_sec: 0.25
   remote_timeout_sec: 0.8
   remote_dispatch_lead_sec: 0.75
   cbs_low_level_max_time: 160
   cbs_max_high_level_nodes: 2000
-  cbs_max_planning_time_sec: 5
+  cbs_max_planning_time_sec: 2.5
   # CBS is a local coupled-component solver, never a 50-robot global fallback.
   local_cbs_max_robots: 8
   reservation_detour_horizon_sec: 8

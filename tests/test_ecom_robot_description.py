@@ -177,6 +177,15 @@ def test_stage_launch_uses_ecom_description_and_keeps_stage_hardware_contract() 
     assert "new THREE.RingGeometry(0.61, 0.68, 56)" in web_scene
     assert "group.userData.selectionHaloMesh = selectionHaloMesh" in web_scene
     assert "updateSelectionAnimation(timestamp)" in web_scene
+    assert "updateRobotMotion(timestamp)" in web_scene
+    assert "const alpha = 1 - Math.exp(-32 * dt);" in web_scene
+    assert "const robotAnimating = this.updateRobotMotion(timestamp);" in web_scene
+    assert "const cap = Number(robotCount || 0) >= 40 ? 1.0 : 1.35;" in web_scene
+    assert 'updateRobots(robots, selectedName = "", waitBlockerName = "")' in web_scene
+    assert "updateRobotPoses(robots)" in web_scene
+    assert "robotAlertLabel(robot)" in web_scene
+    assert 'label.visible = showLabel || active || Boolean(alertText);' in web_scene
+    assert "waitBlocker ? 0xff7a00" in web_scene
     assert "this.routeRibbonGeometry(points, 0.105)" in web_scene
     assert "addExtrudedPolygon(bodyOutline, 0.170, 0.0, body)" in web_scene
     assert "addExtrudedPolygon(deckOutline, 0.045, 0.160, deck)" in web_scene
@@ -192,11 +201,48 @@ def test_stage_launch_uses_ecom_description_and_keeps_stage_hardware_contract() 
     assert "this.clearFleetRobotSelection();" in web_app
     assert '"fleet-route-preview active"' in web_app
     assert "this.fleetRobotColor(robot.name)" in web_app
+    assert "const frameIntervalMs = 1000 / 60;" not in web_app
+    assert "this.drawFleetAnimationFrame(now);" in web_app
+    assert (
+        "const simulatedMapTurn = this.isFleetManager() && "
+        "!this.isFleetRobotsMode();"
+    ) in web_app
+    assert (
+        "angular: (simulatedMapTurn ? right - left : left - right) * "
+        "angularSpeed"
+    ) in web_app
+    assert "startFleetSimManualCommandLoop()" in web_app
+    assert "now - this.fleetSimManualLastAt >= 15" in web_app
+    assert "this.fleetSimManualFrame = window.requestAnimationFrame(publish);" in web_app
+    assert "const visualPoseAtAck = this.animatedFleetManualPose(robot) || nextPose;" in web_app
+    assert "generation !== this.fleetSimManualGeneration" in web_app
+    assert "this.fleetStreamIntervalMs = 50;" in web_app
+    assert "this.fleetStatusFreshTimeoutMs = 1500;" in web_app
+    assert "this.fleetNavigationPredictionMaxSec = 0.4;" in web_app
+    assert "drawFleetRobotMotionLayer(robotStyle)" in web_app
+    assert "while (low + 1 < high)" in web_app
+    assert "baseClock + visualLeadSec" in web_app
+    assert "catchUpRate" not in web_app
+    assert "const elapsed = Math.min(0.75" in web_app
+    assert "this.setFleetManualAnimation(robot.name, pose, twist);" in web_app
+    assert "drawFleetRobotLayer(robotStyle)" in web_app
+    assert "this.fleetRobotSvgEntries = new Map();" in web_app
+    assert "fleetRobotWaitBlockerName(robot)" in web_app
+    assert "fleetRobotAlertLabel(robot)" in web_app
+    assert "`robot-alert-label ${this.fleetRobotAlertSeverity(robot)}`" in web_app
+    assert '"robot-wait-dependency-link"' in web_app
+    assert '"robot-wait-blocker-halo"' in web_app
+    assert "scene.updateRobots(robots, selectedName, waitBlockerName);" in web_app
+    assert "scene.updateRobotPoses(robots)" in web_app
 
     web_styles = (
         PROJECT_ROOT / "operator_app" / "static" / "styles.css"
     ).read_text(encoding="utf-8")
     assert ".robot-selection-halo" in web_styles
+    assert ".robot-wait-blocker-halo" in web_styles
+    assert ".robot-wait-dependency-link" in web_styles
+    assert ".fleet-robot .robot-alert-label.warning" in web_styles
+    assert ".fleet-robot .robot-alert-label.error" in web_styles
     assert "@keyframes fleet-robot-selection-pulse" in web_styles
 
     legacy_launch = (

@@ -685,9 +685,12 @@ class FleetMapfPlanner:
         except (TypeError, ValueError):
             collision_margin = 0.04
         try:
+            configured_clearance = fleet_params.get("robot_clearance_m", 0.35)
             clearance = max(
                 0.0,
-                float(fleet_params.get("robot_clearance_m", 0.35) or 0.35),
+                0.35
+                if configured_clearance is None
+                else float(configured_clearance),
             )
         except (TypeError, ValueError):
             clearance = 0.35

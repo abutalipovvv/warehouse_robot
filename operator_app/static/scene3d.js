@@ -37,7 +37,8 @@ export class OperatorScene3D {
     this.orthoCamera = new THREE.OrthographicCamera(-10, 10, 10, -10, 0.05, 400);
     this.activeCamera = this.camera;
     this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
-    this.renderer.setPixelRatio(Math.min(1.35, window.devicePixelRatio || 1));
+    this.renderPixelRatio = Math.min(1.35, window.devicePixelRatio || 1);
+    this.renderer.setPixelRatio(this.renderPixelRatio);
     this.renderer.shadowMap.enabled = false;
     this.container.append(this.renderer.domElement);
 
@@ -71,6 +72,7 @@ export class OperatorScene3D {
     this.maxInactiveRoutePoints = 48;
     this.maxActiveRoutePoints = 220;
     this.lastAnimationRenderAt = 0;
+    this.lastRobotMotionAt = 0;
     this.needsRender = true;
     this.disposed = false;
 
@@ -555,31 +557,48 @@ export class OperatorScene3D {
     return mesh;
   }
 
-  labelSprite(text, position, yOffset) {
+  labelSprite(text, position, yOffset, alertSeverity = "") {
     const canvas = document.createElement("canvas");
     canvas.width = 256;
     canvas.height = 96;
     const context = canvas.getContext("2d");
-    context.font = "600 34px system-ui, sans-serif";
+    const lines = String(text || "").split("\n").slice(0, 2);
+    const multiline = lines.length > 1;
+    context.font = `${multiline ? 700 : 600} ${multiline ? 25 : 34}px system-ui, sans-serif`;
     context.textAlign = "center";
     context.textBaseline = "middle";
     context.fillStyle = "rgba(255,255,255,0.88)";
-    context.fillRect(12, 18, 232, 60);
+    context.fillRect(8, multiline ? 7 : 18, 240, multiline ? 82 : 60);
     context.strokeStyle = "rgba(15,23,42,0.22)";
-    context.strokeRect(12, 18, 232, 60);
+    context.strokeRect(8, multiline ? 7 : 18, 240, multiline ? 82 : 60);
     context.fillStyle = "#0f172a";
-    context.fillText(text, 128, 50);
+    if (multiline) {
+      context.fillText(lines[0], 128, 32);
+      context.fillStyle = alertSeverity === "error" ? "#c51f2d" : "#b54708";
+      context.fillText(lines[1], 128, 65);
+    } else {
+      context.fillText(lines[0] || "", 128, 50);
+    }
     const texture = new THREE.CanvasTexture(canvas);
     texture.colorSpace = THREE.SRGBColorSpace;
-    const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, transparent: true, depthWrite: false }));
+    const sprite = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: texture,
+      transparent: true,
+      depthTest: false,
+      depthWrite: false,
+    }));
     sprite.position.set(position.x, position.y + yOffset, position.z);
-    sprite.scale.set(0.85, 0.32, 1);
+    sprite.scale.set(multiline ? 1.18 : 0.85, multiline ? 0.44 : 0.32, 1);
+    sprite.userData.labelText = String(text || "");
+    sprite.userData.alertSeverity = String(alertSeverity || "");
+    sprite.renderOrder = 20;
     return sprite;
   }
 
-  updateRobots(robots, selectedName = "") {
+  updateRobots(robots, selectedName = "", waitBlockerName = "") {
     const incoming = new Set();
     const robotList = Array.isArray(robots) ? robots : [];
+    this.updateRenderQuality(robotList.length);
     const showLabels = robotList.length <= 50;
     for (const robot of robots || []) {
       const pose = this.robotPose(robot);
@@ -592,14 +611,24 @@ export class OperatorScene3D {
       }
       incoming.add(name);
       const active = String(robot.name || "") === String(selectedName || "");
+      const waitBlocker = Boolean(waitBlockerName && name === String(waitBlockerName));
       let entry = this.robotObjects.get(name);
       if (!entry) {
         const group = this.robotMesh({ ...robot, pose }, active);
         this.robotGroup.add(group);
-        entry = { group, active: null };
+        entry = {
+          group,
+          active: null,
+          waitBlocker: null,
+          targetPose: {
+            x: Number(pose.x || 0),
+            y: Number(pose.y || 0),
+            yaw: Number(pose.yaw || 0),
+          },
+        };
         this.robotObjects.set(name, entry);
       }
-      this.updateRobotObject(entry, { ...robot, pose }, active, showLabels);
+      this.updateRobotObject(entry, { ...robot, pose }, active, waitBlocker, showLabels);
       this.updateRobotRoute(robot, active);
     }
     for (const [name, entry] of Array.from(this.robotObjects.entries())) {
@@ -614,26 +643,94 @@ export class OperatorScene3D {
     this.requestRender();
   }
 
-  updateRobotObject(entry, robot, active, showLabel) {
-    const pose = robot.pose || {};
-    entry.group.position.set(Number(pose.x || 0), 0, Number(pose.y || 0));
-    entry.group.rotation.y = -Number(pose.yaw || 0);
-    const label = entry.group.userData.label;
-    if (label) {
-      label.visible = showLabel || active;
+  updateRobotPoses(robots) {
+    const robotList = Array.isArray(robots) ? robots : [];
+    if (robotList.length !== this.robotObjects.size) {
+      return false;
     }
-    if (entry.active === active) {
+    for (const robot of robotList) {
+      const name = String(robot?.name || "");
+      const entry = this.robotObjects.get(name);
+      const pose = this.robotPose(robot);
+      if (
+        !entry
+        || !Number.isFinite(Number(pose.x))
+        || !Number.isFinite(Number(pose.y))
+      ) {
+        return false;
+      }
+      entry.targetPose = {
+        x: Number(pose.x || 0),
+        y: Number(pose.y || 0),
+        yaw: Number(pose.yaw || 0),
+      };
+    }
+    return true;
+  }
+
+  updateRenderQuality(robotCount) {
+    // At benchmark density fill-rate matters more than supersampling. Keep
+    // antialiasing, but avoid rendering almost twice as many physical pixels
+    // on HiDPI screens when forty or more full robot models are visible.
+    const cap = Number(robotCount || 0) >= 40 ? 1.0 : 1.35;
+    const desired = Math.min(cap, window.devicePixelRatio || 1);
+    if (Math.abs(desired - this.renderPixelRatio) < 0.01) {
+      return;
+    }
+    this.renderPixelRatio = desired;
+    this.renderer.setPixelRatio(desired);
+    this.resize();
+  }
+
+  updateRobotObject(entry, robot, active, waitBlocker, showLabel) {
+    const pose = robot.pose || {};
+    entry.targetPose = {
+      x: Number(pose.x || 0),
+      y: Number(pose.y || 0),
+      yaw: Number(pose.yaw || 0),
+    };
+    const alertText = this.robotAlertLabel(robot);
+    const alertSeverity = this.robotAlertSeverity(robot);
+    const labelText = alertText
+      ? `${String(robot.name || "")}\n${alertText}`
+      : String(robot.name || "");
+    let label = entry.group.userData.label;
+    if (label && (
+      label.userData.labelText !== labelText
+      || label.userData.alertSeverity !== alertSeverity
+    )) {
+      entry.group.remove(label);
+      this.disposeGroup(label);
+      label = this.labelSprite(
+        labelText,
+        new THREE.Vector3(0, 0.46, 0),
+        0,
+        alertSeverity,
+      );
+      if (!alertText) {
+        label.scale.set(0.7, 0.26, 1);
+      }
+      entry.group.userData.label = label;
+      entry.group.add(label);
+    }
+    if (label) {
+      label.visible = showLabel || active || Boolean(alertText);
+    }
+    if (entry.active === active && entry.waitBlocker === waitBlocker) {
       return;
     }
     entry.active = active;
+    entry.waitBlocker = waitBlocker;
     const bodyMaterial = entry.group.userData.bodyMaterial;
     if (bodyMaterial) {
       bodyMaterial.color.setHex(COLORS.ecomBody);
     }
     const underglowMaterial = entry.group.userData.underglowMaterial;
     if (underglowMaterial) {
-      underglowMaterial.color.setHex(entry.group.userData.selectionColor || COLORS.robot);
-      underglowMaterial.opacity = active ? 0.72 : 0.12;
+      underglowMaterial.color.setHex(
+        waitBlocker ? 0xff7a00 : (entry.group.userData.selectionColor || COLORS.robot),
+      );
+      underglowMaterial.opacity = active ? 0.72 : (waitBlocker ? 0.5 : 0.12);
     }
     const underglowMesh = entry.group.userData.underglowMesh;
     if (underglowMesh && !active) {
@@ -641,14 +738,119 @@ export class OperatorScene3D {
     }
     const selectionHaloMesh = entry.group.userData.selectionHaloMesh;
     const selectionRingMesh = entry.group.userData.selectionRingMesh;
+    const haloColor = waitBlocker
+      ? 0xff7a00
+      : (entry.group.userData.selectionColor || COLORS.robot);
+    entry.group.userData.selectionHaloMaterial?.color.setHex(haloColor);
+    entry.group.userData.selectionRingMaterial?.color.setHex(haloColor);
     if (selectionHaloMesh) {
-      selectionHaloMesh.visible = active;
+      selectionHaloMesh.visible = active || waitBlocker;
       selectionHaloMesh.scale.set(1, 1, 1);
     }
     if (selectionRingMesh) {
-      selectionRingMesh.visible = active;
+      selectionRingMesh.visible = active || waitBlocker;
       selectionRingMesh.scale.set(1, 1, 1);
     }
+  }
+
+  robotAlertLabel(robot) {
+    const status = String(robot?.status || "").trim().toUpperCase();
+    const remoteError = String(robot?.remoteError || "").trim();
+    const reason = String(remoteError || robot?.reason || robot?.routeNote || "").trim();
+    if (remoteError) {
+      return `error: ${remoteError.slice(0, 28)}`;
+    }
+    if (["OFFLINE", "ERROR"].includes(status)) {
+      return reason ? `error: ${reason.slice(0, 28)}` : status.toLowerCase();
+    }
+    if (status === "RETREATING") {
+      return "deadlock: retreating";
+    }
+    if (status === "BLOCKED" || status === "MANUAL_BLOCKED") {
+      return /deadlock/i.test(reason)
+        ? "deadlock: route blocked"
+        : (reason ? `blocked: ${reason.slice(0, 27)}` : "route blocked");
+    }
+    if (reason === "route replan queued") {
+      return "replanning route";
+    }
+    if (/deadlock/i.test(reason)) {
+      return ["WAITING", "MOVING", "RETREATING"].includes(status)
+        ? "deadlock: resolving"
+        : "replanning route";
+    }
+    if (status !== "WAITING") {
+      return "";
+    }
+    const dependency = robot?.waitDependency;
+    const blocker = dependency && typeof dependency === "object"
+      ? String(dependency.robot || "").trim()
+      : "";
+    if (blocker) {
+      return `waiting for ${blocker}`;
+    }
+    if (reason.startsWith("traffic admission wait")) {
+      return "waiting for traffic zone";
+    }
+    if (reason.startsWith("planned traffic wait")) {
+      return "planned traffic wait";
+    }
+    return reason ? `waiting: ${reason.slice(0, 28)}` : "waiting for clearance";
+  }
+
+  robotAlertSeverity(robot) {
+    const status = String(robot?.status || "").trim().toUpperCase();
+    const reason = String(robot?.remoteError || robot?.reason || "");
+    return Boolean(String(robot?.remoteError || "").trim())
+      || ["OFFLINE", "ERROR", "BLOCKED", "MANUAL_BLOCKED", "RETREATING"].includes(status)
+      || /deadlock/i.test(reason)
+      ? "error"
+      : "warning";
+  }
+
+  updateRobotMotion(timestamp = 0) {
+    const now = Number(timestamp || 0);
+    const dt = this.lastRobotMotionAt > 0 && now > this.lastRobotMotionAt
+      ? Math.min(0.05, Math.max(0.001, (now - this.lastRobotMotionAt) / 1000))
+      : (1 / 60);
+    this.lastRobotMotionAt = now;
+    // A short critically-damped visual follow removes websocket/manual-step
+    // quantisation while remaining behind confirmed poses. At 60 Hz this
+    // applies about 41% of the remaining correction per rendered frame.
+    const alpha = 1 - Math.exp(-32 * dt);
+    let animating = false;
+    for (const entry of this.robotObjects.values()) {
+      const target = entry.targetPose;
+      if (!target) {
+        continue;
+      }
+      const group = entry.group;
+      const dx = Number(target.x || 0) - group.position.x;
+      const dz = Number(target.y || 0) - group.position.z;
+      const targetRotation = -Number(target.yaw || 0);
+      const rotationDelta = Math.atan2(
+        Math.sin(targetRotation - group.rotation.y),
+        Math.cos(targetRotation - group.rotation.y),
+      );
+      const distanceSq = (dx * dx) + (dz * dz);
+      if (distanceSq <= 0.00000001 && Math.abs(rotationDelta) <= 0.0001) {
+        group.position.set(Number(target.x || 0), 0, Number(target.y || 0));
+        group.rotation.y = targetRotation;
+        continue;
+      }
+      animating = true;
+      // Spawn/reset is a discontinuity, not vehicle motion. Do not animate a
+      // robot across the warehouse after an explicit relocation.
+      if (distanceSq > 4.0) {
+        group.position.set(Number(target.x || 0), 0, Number(target.y || 0));
+        group.rotation.y = targetRotation;
+        continue;
+      }
+      group.position.x += dx * alpha;
+      group.position.z += dz * alpha;
+      group.rotation.y += rotationDelta * alpha;
+    }
+    return animating;
   }
 
   robotColor(robotName) {
@@ -1027,13 +1229,13 @@ export class OperatorScene3D {
     for (const entry of this.robotObjects.values()) {
       const mesh = entry.group.userData.underglowMesh;
       const material = entry.group.userData.underglowMaterial;
-      if (!entry.active || !mesh || !material) {
+      if ((!entry.active && !entry.waitBlocker) || !mesh || !material) {
         continue;
       }
       animating = true;
-      const scale = 1.02 + (pulse * 0.1);
+      const scale = 1.02 + (pulse * (entry.waitBlocker ? 0.14 : 0.1));
       mesh.scale.set(scale, 1, scale);
-      material.opacity = 0.58 + (pulse * 0.24);
+      material.opacity = (entry.waitBlocker ? 0.42 : 0.58) + (pulse * 0.24);
       const selectionHaloMesh = entry.group.userData.selectionHaloMesh;
       const selectionHaloMaterial = entry.group.userData.selectionHaloMaterial;
       if (selectionHaloMesh && selectionHaloMaterial) {
@@ -1057,11 +1259,18 @@ export class OperatorScene3D {
       return;
     }
     window.requestAnimationFrame((nextTimestamp) => this.animate(nextTimestamp));
+    const robotAnimating = this.updateRobotMotion(timestamp);
     const selectionAnimating = this.updateSelectionAnimation(timestamp);
-    if (!this.needsRender && !this.drag && !selectionAnimating) {
+    if (!this.needsRender && !this.drag && !selectionAnimating && !robotAnimating) {
       return;
     }
-    if (selectionAnimating && !this.needsRender && !this.drag && timestamp - this.lastAnimationRenderAt < 32) {
+    if (
+      selectionAnimating
+      && !robotAnimating
+      && !this.needsRender
+      && !this.drag
+      && timestamp - this.lastAnimationRenderAt < 66
+    ) {
       return;
     }
     this.needsRender = false;
