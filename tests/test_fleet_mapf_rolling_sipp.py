@@ -3,16 +3,16 @@ from __future__ import annotations
 import math
 import pytest
 
-from fleet_manager.mapf import (
-    FleetMapfPlanner,
-    LmRobotRequest,
+from fleet_manager.core.mapf.fleet_planner import FleetMapfPlanner
+from fleet_manager.core.mapf.lm_cbs import LmRobotRequest
+from fleet_manager.core.mapf.reservations import (
     ReservationInterval,
     ReservationTable,
     ResourceId,
-    RollingSippPlanner,
-    TrafficGraph,
 )
-from fleet_manager.route_core import GraphEdge, Landmark, WorldPoint
+from fleet_manager.core.mapf.rolling_sipp import RollingSippPlanner
+from fleet_manager.core.mapf.traffic_graph import TrafficGraph
+from fleet_manager.core.route_core.models import GraphEdge, Landmark, WorldPoint
 
 
 def test_traffic_graph_groups_reverse_lanes_as_same_resource() -> None:

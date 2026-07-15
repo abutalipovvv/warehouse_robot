@@ -54,7 +54,7 @@ def _params_path(project_root: Path) -> Path:
     candidates = [
         project_root / "params.yaml",
         project_root / "sim_robot" / "ws" / "src" / "params.yaml",
-        project_root / "fleet_manager" / "params.yaml",
+        project_root / "fleet_manager" / "config" / "params.yaml",
     ]
     for candidate in candidates:
         if candidate.is_file():

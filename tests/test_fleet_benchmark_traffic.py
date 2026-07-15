@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections import Counter
 from time import monotonic, sleep
 
-import fleet_manager.web_simulator.manager as runtime_module
+import fleet_manager.core.manager as runtime_module
 import operator_app.services.fleet_manager as service_module
 
 from operator_app.services.fleet_manager import (
@@ -17,7 +17,7 @@ from operator_app.services.fleet_manager import (
 def test_plan_action_starts_continuous_random_orders_for_every_robot(monkeypatch) -> None:
     service = OperatorFleetManager(
         DEFAULT_FLEET_MAP_DIR,
-        DEFAULT_FLEET_MAP_DIR.parents[2] / "params.yaml",
+        DEFAULT_FLEET_MAP_DIR.parents[2] / "config" / "params.yaml",
         manager_id=FLEET_MANAGER_SIM_ID,
         mode="simulation",
     )
@@ -94,7 +94,7 @@ def test_time_scale_action_keeps_simulation_and_uses_virtual_order_time(monkeypa
     monkeypatch.setattr(service_module, "time", lambda: clock[0])
     service = OperatorFleetManager(
         DEFAULT_FLEET_MAP_DIR,
-        DEFAULT_FLEET_MAP_DIR.parents[2] / "params.yaml",
+        DEFAULT_FLEET_MAP_DIR.parents[2] / "config" / "params.yaml",
         manager_id=FLEET_MANAGER_SIM_ID,
         mode="simulation",
     )
@@ -142,7 +142,7 @@ def test_package_order_waves_use_perimeter_and_keep_metrics_after_stop(monkeypat
     monkeypatch.setattr(service_module, "time", lambda: clock[0])
     service = OperatorFleetManager(
         DEFAULT_FLEET_SIM_MAP_DIR,
-        DEFAULT_FLEET_MAP_DIR.parents[2] / "params.yaml",
+        DEFAULT_FLEET_MAP_DIR.parents[2] / "config" / "params.yaml",
         manager_id=FLEET_MANAGER_SIM_ID,
         mode="simulation",
     )
@@ -215,7 +215,7 @@ def test_package_order_waves_use_perimeter_and_keep_metrics_after_stop(monkeypat
 def test_simulated_order_replans_after_rolling_horizon_without_completing() -> None:
     service = OperatorFleetManager(
         DEFAULT_FLEET_MAP_DIR,
-        DEFAULT_FLEET_MAP_DIR.parents[2] / "params.yaml",
+        DEFAULT_FLEET_MAP_DIR.parents[2] / "config" / "params.yaml",
         manager_id=FLEET_MANAGER_SIM_ID,
         mode="simulation",
     )
@@ -263,7 +263,7 @@ def test_simulated_order_replans_after_rolling_horizon_without_completing() -> N
 def test_rolling_prefetch_is_appended_without_resetting_active_motion() -> None:
     service = OperatorFleetManager(
         DEFAULT_FLEET_MAP_DIR,
-        DEFAULT_FLEET_MAP_DIR.parents[2] / "params.yaml",
+        DEFAULT_FLEET_MAP_DIR.parents[2] / "config" / "params.yaml",
         manager_id=FLEET_MANAGER_SIM_ID,
         mode="simulation",
     )
@@ -331,7 +331,7 @@ def test_dynamic_runtime_keeps_robots_collision_free_and_wait_graph_acyclic(
     monkeypatch.setattr(service_module, "time", lambda: clock[0])
     service = OperatorFleetManager(
         DEFAULT_FLEET_MAP_DIR,
-        DEFAULT_FLEET_MAP_DIR.parents[2] / "params.yaml",
+        DEFAULT_FLEET_MAP_DIR.parents[2] / "config" / "params.yaml",
         manager_id=FLEET_MANAGER_SIM_ID,
         mode="simulation",
     )
@@ -386,7 +386,7 @@ def test_50_robot_runtime_never_exposes_route_less_moving_blockers(
         # The field map has 0.44 m LM spacing and cannot physically park 50
         # one-metre Ecom robots at once without overlapping their footprints.
         DEFAULT_FLEET_SIM_MAP_DIR,
-        DEFAULT_FLEET_MAP_DIR.parents[2] / "params.yaml",
+        DEFAULT_FLEET_MAP_DIR.parents[2] / "config" / "params.yaml",
         manager_id=FLEET_MANAGER_SIM_ID,
         mode="simulation",
     )

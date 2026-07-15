@@ -4,7 +4,7 @@ from dataclasses import dataclass
 import math
 from typing import Mapping
 
-from fleet_manager.route_core import GraphEdge, Landmark
+from fleet_manager.core.route_core.models import GraphEdge, Landmark
 
 from .reservations import ResourceId
 

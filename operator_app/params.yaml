@@ -11,5 +11,5 @@ paths:
   static_dir: static
 
 fleet:
-  params_path: ../fleet_manager/params.yaml
+  params_path: ../fleet_manager/config/params.yaml
   map_dir: ../fleet_manager/map_data/maps_out/22.05.26_smap.smap

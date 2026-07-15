@@ -12,7 +12,7 @@ from time import monotonic, perf_counter
 from typing import Any
 from urllib.parse import urlparse
 
-from fleet_manager.route_core import build_editable_map_bundle_payload
+from fleet_manager.core.route_core.map_exchange import build_editable_map_bundle_payload
 
 from ..config import GRPC_ROBOT_TYPES
 from ..services.fleet_manager import (

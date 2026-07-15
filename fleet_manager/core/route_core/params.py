@@ -9,7 +9,7 @@ from typing import Any
 import yaml
 
 
-DEFAULT_PARAMS_PATH = Path(__file__).resolve().parents[1] / "params.yaml"
+DEFAULT_PARAMS_PATH = Path(__file__).resolve().parents[2] / "config" / "params.yaml"
 DEFAULT_NAV2_ROBOT_RADIUS = 0.22
 DEFAULT_NAV2_FOOTPRINT_SEGMENTS = 16
 

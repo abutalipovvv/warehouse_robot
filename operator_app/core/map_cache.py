@@ -8,12 +8,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
-from fleet_manager.route_core import (
+from fleet_manager.core.route_core.map_exchange import (
     build_editable_map_payload,
     list_editable_maps,
     restore_editable_map_bundle,
-    save_editable_map,
 )
+from fleet_manager.core.route_core.map_writer import save_editable_map
 
 
 def default_maps_cache_root() -> Path:

@@ -6,14 +6,12 @@ from time import perf_counter, sleep, time
 
 import pytest
 
-import fleet_manager.web_simulator.manager as runtime_module
-from fleet_manager.route_core import GraphEdge, Landmark, WorldPoint
-from fleet_manager.web_simulator.manager import (
-    FLEET_CONTROL_OWNER_ID,
-    FleetOrder,
-    FleetRobot,
-    WebFleetManager,
-)
+import fleet_manager.core.manager as runtime_module
+from fleet_manager.core.constants import FLEET_CONTROL_OWNER_ID
+from fleet_manager.core.models import FleetOrder, FleetRobot
+from fleet_manager.core.route_core.models import GraphEdge, Landmark, WorldPoint
+from fleet_manager.runtime.grpc.manager import FleetManagerROS
+from fleet_manager.runtime.simulation.manager import FleetManagerSim
 
 
 def test_runtime_replan_is_deferred_while_robot_is_mid_edge() -> None:
@@ -1059,7 +1057,7 @@ def test_deadlock_detour_keeps_goal_and_takes_longer_alternate_path() -> None:
             world_points=(WorldPoint(start.x, start.y), WorldPoint(end.x, end.y)),
             properties={"direction": 2},
         ))
-    manager = WebFleetManager(
+    manager = FleetManagerSim(
         landmarks,
         edges,
         params={
@@ -1619,7 +1617,7 @@ def test_deadlock_recovery_dispatch_preempts_nonurgent_prefetch(monkeypatch) -> 
 
 
 def test_remote_route_payload_contains_absolute_timed_segment_contract() -> None:
-    manager = _manager()
+    manager = _remote_manager()
     robot = FleetRobot(name="r1", current_lm="A", mode="remote")
     order = FleetOrder(order_id="order-1", target_lm="B", vehicle="r1")
     before = time()
@@ -1652,7 +1650,7 @@ def test_remote_route_payload_contains_absolute_timed_segment_contract() -> None
 
 
 def test_remote_timed_contract_keeps_explicit_rotation_action() -> None:
-    manager = _manager()
+    manager = _remote_manager()
 
     segments = manager._timed_segments_from_trajectory(
         [
@@ -1696,7 +1694,7 @@ def test_remote_timed_contract_keeps_explicit_rotation_action() -> None:
 
 
 def test_remote_robot_owned_by_operator_is_not_available_to_fleet() -> None:
-    manager = _manager()
+    manager = _remote_manager()
     adapter = _RemoteControlAdapter(owner_id="operator-app", owner_name="Operator App")
     manager.remote_adapter = adapter
     robot = FleetRobot(
@@ -1712,7 +1710,7 @@ def test_remote_robot_owned_by_operator_is_not_available_to_fleet() -> None:
 
 
 def test_remote_order_pauses_for_operator_and_replans_after_release(monkeypatch) -> None:
-    manager = _manager()
+    manager = _remote_manager()
     adapter = _RemoteControlAdapter(owner_id="operator-app", owner_name="Operator App")
     manager.remote_adapter = adapter
     now = time()
@@ -1765,7 +1763,7 @@ def test_remote_order_pauses_for_operator_and_replans_after_release(monkeypatch)
 
 
 def test_direct_takeover_is_mirrored_before_next_remote_poll() -> None:
-    manager = _manager()
+    manager = _remote_manager()
     robot = FleetRobot(
         name="r1",
         current_lm="A",
@@ -1800,7 +1798,7 @@ def test_direct_takeover_is_mirrored_before_next_remote_poll() -> None:
 
 
 def test_fleet_control_acquire_never_forces_operator_takeover() -> None:
-    manager = _manager()
+    manager = _remote_manager()
     adapter = _RemoteControlAdapter()
     manager.remote_adapter = adapter
     robot = FleetRobot(
@@ -1912,7 +1910,7 @@ def test_spatial_route_stays_committed_across_rolling_chunks() -> None:
                 properties={"direction": 2},
             )
         )
-    manager = WebFleetManager(
+    manager = FleetManagerSim(
         landmarks,
         edges,
         params={
@@ -2088,7 +2086,7 @@ def test_forced_spatial_replan_prefers_global_low_congestion_route() -> None:
                 properties={"direction": 1},
             )
         )
-    manager = WebFleetManager(landmarks, edges, params={"fleet": {}})
+    manager = FleetManagerSim(landmarks, edges, params={"fleet": {}})
     manager.robots["parked"] = FleetRobot(
         name="parked",
         current_lm="B",
@@ -2135,7 +2133,7 @@ def test_committed_spatial_route_is_invalidated_when_robot_parks_on_it() -> None
             ),
             properties={"direction": 1},
         ))
-    manager = WebFleetManager(
+    manager = FleetManagerSim(
         landmarks,
         edges,
         params={"fleet": {"congestion_tie_break_penalty_m": 0.0}},
@@ -2292,7 +2290,7 @@ def test_queued_idle_robots_invalidate_cached_route_and_force_free_detour() -> N
                 properties={"direction": 1},
             )
         )
-    manager = WebFleetManager(
+    manager = FleetManagerSim(
         landmarks,
         edges,
         params={"fleet": {"congestion_tie_break_penalty_m": 0.0}},
@@ -2374,7 +2372,7 @@ def test_new_spatial_route_avoids_other_committed_route_demand() -> None:
                 properties={"direction": 1},
             )
         )
-    manager = WebFleetManager(
+    manager = FleetManagerSim(
         landmarks,
         edges,
         params={
@@ -2472,7 +2470,7 @@ def test_parked_detour_blocks_the_conflicted_segment_not_single_exit() -> None:
             ),
             properties={"direction": 1},
         ))
-    manager = WebFleetManager(
+    manager = FleetManagerSim(
         landmarks,
         edges,
         params={"fleet": {"congestion_routing_enabled": True}},
@@ -2517,7 +2515,7 @@ def test_zone_admission_releases_compatible_batch_and_prevents_starvation() -> N
                 properties={"direction": 1},
             )
         )
-    manager = WebFleetManager(
+    manager = FleetManagerSim(
         landmarks,
         edges,
         params={
@@ -2732,7 +2730,7 @@ def test_simulation_time_scale_is_clamped_to_safe_range() -> None:
     assert manager.set_simulation_time_scale(0) == 1.0
 
 
-def _manager() -> WebFleetManager:
+def _manager() -> FleetManagerSim:
     landmarks = {
         "A": Landmark(name="A", x=0.0, y=0.0),
         "B": Landmark(name="B", x=2.0, y=0.0),
@@ -2746,7 +2744,7 @@ def _manager() -> WebFleetManager:
         world_points=(WorldPoint(0.0, 0.0), WorldPoint(2.0, 0.0)),
         properties={"direction": 1},
     )
-    return WebFleetManager(
+    return FleetManagerSim(
         landmarks,
         [edge],
         params={
@@ -2759,7 +2757,17 @@ def _manager() -> WebFleetManager:
     )
 
 
-def _long_line_manager(edge_count: int) -> WebFleetManager:
+def _remote_manager() -> FleetManagerROS:
+    simulation = _manager()
+    return FleetManagerROS(
+        simulation.landmarks,
+        simulation.edges,
+        params=simulation.params,
+        remote_adapter=_RemoteControlAdapter(),
+    )
+
+
+def _long_line_manager(edge_count: int) -> FleetManagerSim:
     landmarks = {
         f"N{index}": Landmark(name=f"N{index}", x=index * 1.2, y=0.0)
         for index in range(edge_count + 1)
@@ -2779,7 +2787,7 @@ def _long_line_manager(edge_count: int) -> WebFleetManager:
         )
         for index in range(edge_count)
     ]
-    return WebFleetManager(
+    return FleetManagerSim(
         landmarks,
         edges,
         params={

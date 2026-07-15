@@ -8,29 +8,29 @@ if str(ROBOT_PLANNER_SRC) not in sys.path:
 
 
 def test_route_core_packages_are_owned_by_their_applications() -> None:
-    from fleet_manager.route_core import Landmark as FleetLandmark
-    from fleet_manager.route_core import WarehouseMapLoader as FleetLoader
+    from fleet_manager.core.route_core.map_loader import WarehouseMapLoader as FleetLoader
+    from fleet_manager.core.route_core.models import Landmark as FleetLandmark
     from robot_planner.route_core import Landmark as RobotLandmark
     from robot_planner.route_core import WarehouseMapLoader as RobotLoader
 
-    assert FleetLoader.__module__.startswith("fleet_manager.route_core")
+    assert FleetLoader.__module__.startswith("fleet_manager.core.route_core")
     assert RobotLoader.__module__.startswith("robot_planner.route_core")
-    assert FleetLandmark.__module__.startswith("fleet_manager.route_core")
+    assert FleetLandmark.__module__.startswith("fleet_manager.core.route_core")
     assert RobotLandmark.__module__.startswith("robot_planner.route_core")
     assert FleetLoader is not RobotLoader
     assert FleetLandmark is not RobotLandmark
 
 
 def test_contextual_default_params_paths_are_separate() -> None:
-    from fleet_manager.route_core import DEFAULT_PARAMS_PATH as fleet_params_path
+    from fleet_manager.core.route_core.params import DEFAULT_PARAMS_PATH as fleet_params_path
     from robot_planner.route_core import DEFAULT_PARAMS_PATH as robot_params_path
 
-    assert fleet_params_path == ROOT / "fleet_manager" / "params.yaml"
+    assert fleet_params_path == ROOT / "fleet_manager" / "config" / "params.yaml"
     assert robot_params_path == ROOT / "sim_robot" / "ws" / "src" / "params.yaml"
 
 
 def test_fleet_and_robot_params_keep_separate_defaults() -> None:
-    from fleet_manager.route_core import load_route_params as load_fleet_params
+    from fleet_manager.core.route_core.params import load_route_params as load_fleet_params
     from robot_planner.route_core import load_route_params as load_robot_params
 
     fleet_params = load_fleet_params()
@@ -43,7 +43,8 @@ def test_fleet_and_robot_params_keep_separate_defaults() -> None:
 
 
 def test_contextual_route_planners_load_local_params() -> None:
-    from fleet_manager.route_core import GraphEdge, Landmark, LmRoutePlanner, WorldPoint
+    from fleet_manager.core.route_core.models import GraphEdge, Landmark, WorldPoint
+    from fleet_manager.core.route_core.planner import LmRoutePlanner
     from robot_planner.route_core import GraphEdge as RobotGraphEdge
     from robot_planner.route_core import Landmark as RobotLandmark
     from robot_planner.route_core import LmRoutePlanner as RobotLmRoutePlanner

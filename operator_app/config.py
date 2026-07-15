@@ -17,7 +17,7 @@ PROJECT_ROOT = PACKAGE_ROOT.parent
 
 DEFAULT_CONFIG_PATH = PACKAGE_ROOT / "params.yaml"
 DEFAULT_STATIC_DIR = PACKAGE_ROOT / "static"
-DEFAULT_FLEET_PARAMS_PATH = PROJECT_ROOT / "fleet_manager" / "params.yaml"
+DEFAULT_FLEET_PARAMS_PATH = PROJECT_ROOT / "fleet_manager" / "config" / "params.yaml"
 
 GRPC_ROBOT_TYPES = {"grpc", "aivison_grpc", "real_grpc"}
 WEBSOCKET_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"

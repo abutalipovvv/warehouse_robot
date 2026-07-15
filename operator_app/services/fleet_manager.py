@@ -18,16 +18,16 @@ FLEET_MANAGER_ID = "__fleet_manager__"
 FLEET_MANAGER_SIM_ID = "__fleet_manager_sim__"
 FLEET_MANAGER_IDS = {FLEET_MANAGER_ID, FLEET_MANAGER_SIM_ID}
 
-from fleet_manager.web_simulator import FleetManager
-from fleet_manager.route_core import (
-    WarehouseMapLoader,
+from fleet_manager.runtime.grpc.manager import FleetManagerROS
+from fleet_manager.runtime.simulation.manager import FleetManagerSim
+from fleet_manager.core.route_core.map_exchange import (
     build_editable_map_bundle_payload,
     build_editable_map_payload,
     list_editable_maps,
-    load_route_params,
-    save_route_params,
-    save_editable_map,
 )
+from fleet_manager.core.route_core.map_loader import WarehouseMapLoader
+from fleet_manager.core.route_core.map_writer import save_editable_map
+from fleet_manager.core.route_core.params import load_route_params, save_route_params
 
 
 class OperatorFleetManager:
@@ -1927,7 +1927,12 @@ class OperatorFleetManager:
         self.map_dir = loaded_map.map_dir.resolve()
         self.maps_root = self.map_dir.parent
         self._scene3d_cache = None
-        self.manager = FleetManager(
+        manager_class = (
+            FleetManagerROS
+            if self.mode == "robots"
+            else FleetManagerSim
+        )
+        self.manager = manager_class(
             loaded_map.landmarks,
             loaded_map.edges,
             params=params,

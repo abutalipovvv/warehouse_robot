@@ -15,7 +15,8 @@ from time import monotonic, sleep
 from typing import Any
 
 import yaml
-from fleet_manager.route_core import WarehouseMapLoader, WorldPoint
+from fleet_manager.core.route_core.map_loader import WarehouseMapLoader
+from fleet_manager.core.route_core.models import WorldPoint
 
 from .contracts import (
     DEFAULT_GRPC_MAP_LOAD_TIMEOUT_SEC,

@@ -11,7 +11,6 @@ Main runtime split:
 - `operator_app/robot_grpc_api` - local Operator App copy of the robot gRPC client contract.
 - `fleet_manager/robot_grpc_api` - local Fleet Manager copy of the robot gRPC client contract.
 - `operator_app` - desktop/web operator application. Browser talks to it over HTTP/WebSocket; robot communication uses gRPC.
-- `fleet_manager/web_simulator` - web/no-ROS fleet simulator runtime.
 - `fleet_manager` - Fleet Manager map/MAPF/runtime code.
 
 Map/planning ownership:
@@ -46,7 +45,7 @@ order:
    separate. Persistent stalls may retreat one robot and request a global
    congestion-aware detour to the same goal.
 
-Traffic tuning is under `fleet` in `fleet_manager/params.yaml`. The principal
+Traffic tuning is under `fleet` in `fleet_manager/config/params.yaml`. The principal
 settings are `congestion_*`, `traffic_zone_*`, `rolling_horizon_sec`, and
 `local_cbs_max_robots`. Runtime state exposes zone demand, occupancy, queue and
 phase in `trafficFlow`.

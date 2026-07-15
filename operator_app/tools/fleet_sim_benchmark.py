@@ -14,13 +14,15 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from fleet_manager.mapf import FleetMapfPlanner
-from fleet_manager.route_core import Landmark, WarehouseMapLoader, load_route_params
+from fleet_manager.core.mapf.fleet_planner import FleetMapfPlanner
+from fleet_manager.core.route_core.map_loader import WarehouseMapLoader
+from fleet_manager.core.route_core.models import Landmark
+from fleet_manager.core.route_core.params import load_route_params
 
 
 DEFAULT_MAP_NAME = "benchmark_open_kiva"
 DEFAULT_MAP_ROOT = PROJECT_ROOT / "fleet_manager" / "map_data" / "maps_out"
-DEFAULT_PARAMS = PROJECT_ROOT / "fleet_manager" / "params.yaml"
+DEFAULT_PARAMS = PROJECT_ROOT / "fleet_manager" / "config" / "params.yaml"
 
 
 def _resolve_map_dir(map_root: Path, map_name: str) -> Path:

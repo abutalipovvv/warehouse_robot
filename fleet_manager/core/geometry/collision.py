@@ -1,0 +1,397 @@
+"""Footprint, obstacle and occupancy collision geometry."""
+
+from __future__ import annotations
+
+import math
+from pathlib import Path
+from typing import Any
+
+from fleet_manager.core.route_core.map_loader import WarehouseMapLoader
+from fleet_manager.core.route_core.models import MapMetadata
+
+
+class FleetCollisionChecker:
+    def __init__(
+        self,
+        params: dict[str, Any],
+        map_dir: Path | None,
+        map_metadata: MapMetadata | None,
+    ) -> None:
+        self.params = params
+        self.map_metadata = map_metadata
+        self.map_pixels: bytes | None = None
+        self.map_width = 0
+        self.map_height = 0
+        self._footprint_cache: list[dict[str, float]] | None = None
+        self._footprint_diameter_cache: float | None = None
+        self._pose_sample_local_points_cache: list[dict[str, float]] | None = None
+        if map_dir is not None:
+            self._load_map_pixels(map_dir)
+
+    def set_params(self, params: dict[str, Any]) -> None:
+        self.params = params
+        self._footprint_cache = None
+        self._footprint_diameter_cache = None
+        self._pose_sample_local_points_cache = None
+
+    def lookahead_time(self) -> float:
+        navigation = self._dict_param("navigation")
+        fleet = self._dict_param("fleet")
+        speed = max(0.05, float(navigation.get("route_speed", 0.35) or 0.35))
+        stop_distance = max(0.08, float(navigation.get("stop_distance", 0.40) or 0.40))
+        footprint_lookahead = max(
+            stop_distance,
+            float(navigation.get("footprint_lookahead", 0.80) or 0.80),
+        )
+        try:
+            configured = float(fleet.get("runtime_collision_lookahead_sec") or 0.0)
+        except (TypeError, ValueError):
+            configured = 0.0
+        if configured > 0.0:
+            return max(0.25, min(4.0, configured))
+
+        # Auto mode covers both the configured spatial preview and a full
+        # braking interval. At warehouse speed this is intentionally much
+        # earlier than the final footprint-overlap guard.
+        try:
+            acceleration = max(
+                0.10,
+                float(navigation.get("route_acceleration", 0.60) or 0.60),
+            )
+        except (TypeError, ValueError):
+            acceleration = 0.60
+        braking_time = speed / acceleration
+        distance_time = footprint_lookahead / speed
+        reaction_time = max(
+            0.05,
+            float(fleet.get("continuous_collision_step_sec", 0.10) or 0.10),
+        )
+        return max(0.35, min(3.0, max(braking_time, distance_time) + reaction_time))
+
+    def sample_time_step(self) -> float:
+        manual = self._dict_param("manual")
+        return max(0.04, min(0.14, float(manual.get("prediction_step", 0.10) or 0.10)))
+
+    def blocked_reason(
+        self,
+        pose: dict[str, float],
+        obstacles: list[dict[str, float]],
+        obstacle_areas: list[dict[str, float]],
+    ) -> str:
+        points = self.pose_sample_points(pose)
+        for point in points:
+            if self.map_occupied(point):
+                return "map occupancy under footprint"
+            for area in obstacle_areas:
+                if self.area_contains(area, point):
+                    return "obstacle area under footprint"
+        for obstacle in obstacles:
+            if self.obstacle_hits_pose(obstacle, pose):
+                return "point obstacle hits footprint"
+        return ""
+
+    def dynamic_blocked_reason(
+        self,
+        pose: dict[str, float],
+        obstacles: list[dict[str, float]],
+        obstacle_areas: list[dict[str, float]],
+    ) -> str:
+        points = self.pose_sample_points(pose)
+        for point in points:
+            for area in obstacle_areas:
+                if self.area_contains(area, point):
+                    return "obstacle area under footprint"
+        for obstacle in obstacles:
+            if self.obstacle_hits_pose(obstacle, pose):
+                return "point obstacle hits footprint"
+        return ""
+
+    def footprints_overlap(self, first_pose: dict[str, float], second_pose: dict[str, float]) -> bool:
+        margin = self.collision_margin()
+        if not self._footprint_bounds_may_overlap(first_pose, second_pose, margin):
+            return False
+        return self.polygons_overlap(
+            self.footprint_corners(first_pose),
+            self.footprint_corners(second_pose),
+            margin,
+        )
+
+    def robot_footprints_conflict(self, first_pose: dict[str, float], second_pose: dict[str, float]) -> bool:
+        margin = self.robot_collision_margin()
+        if not self._footprint_bounds_may_overlap(first_pose, second_pose, margin):
+            return False
+        return self.polygons_overlap(
+            self.footprint_corners(first_pose),
+            self.footprint_corners(second_pose),
+            margin,
+        )
+
+    def _footprint_bounds_may_overlap(
+        self,
+        first_pose: dict[str, float],
+        second_pose: dict[str, float],
+        margin: float,
+    ) -> bool:
+        dx = float(first_pose.get("x", 0.0) or 0.0) - float(
+            second_pose.get("x", 0.0) or 0.0
+        )
+        dy = float(first_pose.get("y", 0.0) or 0.0) - float(
+            second_pose.get("y", 0.0) or 0.0
+        )
+        threshold = self._footprint_diameter() + max(0.0, margin)
+        return (dx * dx) + (dy * dy) <= threshold * threshold
+
+    def robot_broadphase_distance(self) -> float:
+        return self._footprint_diameter() + self.robot_collision_margin()
+
+    def physical_broadphase_distance(self) -> float:
+        return self._footprint_diameter() + self.collision_margin()
+
+    def _footprint_diameter(self) -> float:
+        if self._footprint_diameter_cache is not None:
+            return self._footprint_diameter_cache
+        radius = max(
+            (
+                math.hypot(point["x"], point["y"])
+                for point in self.footprint()
+            ),
+            default=0.22,
+        )
+        self._footprint_diameter_cache = radius * 2.0
+        return self._footprint_diameter_cache
+
+    def pose_sample_points(self, pose: dict[str, float]) -> list[dict[str, float]]:
+        return self._local_points_to_world(pose, self._pose_sample_local_points())
+
+    def _pose_sample_local_points(self) -> list[dict[str, float]]:
+        if self._pose_sample_local_points_cache is not None:
+            return self._pose_sample_local_points_cache
+        footprint = self.footprint()
+        margin = self.collision_margin()
+        min_x = min(point["x"] for point in footprint) - margin
+        max_x = max(point["x"] for point in footprint) + margin
+        min_y = min(point["y"] for point in footprint) - margin
+        max_y = max(point["y"] for point in footprint) + margin
+        resolution = self.map_metadata.resolution if self.map_metadata is not None else 0.02
+        step = max(0.04, resolution * 2.0)
+        points: list[dict[str, float]] = []
+        x = min_x
+        while x <= max_x + 0.000001:
+            y = min_y
+            while y <= max_y + 0.000001:
+                local = {"x": x, "y": y}
+                if self.point_in_polygon(local, footprint) or self.distance_to_polygon(local, footprint) <= margin:
+                    points.append(local)
+                y += step
+            x += step
+        points.append({"x": 0.0, "y": 0.0})
+        for point in footprint:
+            points.append(point)
+        self._pose_sample_local_points_cache = points
+        return self._pose_sample_local_points_cache
+
+    def obstacle_hits_pose(self, obstacle: dict[str, float], pose: dict[str, float]) -> bool:
+        local = self.world_to_local(pose, obstacle)
+        radius = float(obstacle.get("radius", 0.08) or 0.08) + self.collision_margin()
+        footprint = self.footprint()
+        return self.point_in_polygon(local, footprint) or self.distance_to_polygon(local, footprint) <= radius
+
+    def map_occupied(self, point: dict[str, float]) -> bool:
+        if self.map_pixels is None or self.map_metadata is None:
+            return False
+        pixel = self.world_to_image(point)
+        if pixel["x"] < 0 or pixel["y"] < 0 or pixel["x"] >= self.map_width or pixel["y"] >= self.map_height:
+            return True
+        value = self.map_pixels[(pixel["y"] * self.map_width) + pixel["x"]]
+        return value < 82
+
+    def area_contains(self, area: dict[str, float], point: dict[str, float]) -> bool:
+        x1 = min(area["x1"], area["x2"])
+        x2 = max(area["x1"], area["x2"])
+        y1 = min(area["y1"], area["y2"])
+        y2 = max(area["y1"], area["y2"])
+        return x1 <= point["x"] <= x2 and y1 <= point["y"] <= y2
+
+    def footprint_corners(self, pose: dict[str, float]) -> list[dict[str, float]]:
+        return self._local_points_to_world(pose, self.footprint())
+
+    @staticmethod
+    def _local_points_to_world(
+        pose: dict[str, float],
+        points: list[dict[str, float]],
+    ) -> list[dict[str, float]]:
+        yaw = float(pose.get("yaw", 0.0) or 0.0)
+        cos_yaw = math.cos(yaw)
+        sin_yaw = math.sin(yaw)
+        center_x = float(pose.get("x", 0.0) or 0.0)
+        center_y = float(pose.get("y", 0.0) or 0.0)
+        return [
+            {
+                "x": center_x + (point["x"] * cos_yaw) - (point["y"] * sin_yaw),
+                "y": center_y + (point["x"] * sin_yaw) + (point["y"] * cos_yaw),
+            }
+            for point in points
+        ]
+
+    def local_to_world(self, pose: dict[str, float], point: dict[str, float]) -> dict[str, float]:
+        yaw = float(pose.get("yaw", 0.0) or 0.0)
+        cos_yaw = math.cos(yaw)
+        sin_yaw = math.sin(yaw)
+        return {
+            "x": float(pose.get("x", 0.0) or 0.0) + (point["x"] * cos_yaw) - (point["y"] * sin_yaw),
+            "y": float(pose.get("y", 0.0) or 0.0) + (point["x"] * sin_yaw) + (point["y"] * cos_yaw),
+        }
+
+    def world_to_local(self, pose: dict[str, float], point: dict[str, float]) -> dict[str, float]:
+        yaw = float(pose.get("yaw", 0.0) or 0.0)
+        cos_yaw = math.cos(yaw)
+        sin_yaw = math.sin(yaw)
+        dx = point["x"] - float(pose.get("x", 0.0) or 0.0)
+        dy = point["y"] - float(pose.get("y", 0.0) or 0.0)
+        return {
+            "x": (dx * cos_yaw) + (dy * sin_yaw),
+            "y": (-dx * sin_yaw) + (dy * cos_yaw),
+        }
+
+    def world_to_image(self, point: dict[str, float]) -> dict[str, int]:
+        assert self.map_metadata is not None
+        resolution = self.map_metadata.resolution
+        return {
+            "x": round(point["x"] / resolution),
+            "y": round(point["y"] / resolution),
+        }
+
+    def polygons_overlap(
+        self,
+        first: list[dict[str, float]],
+        second: list[dict[str, float]],
+        margin: float,
+    ) -> bool:
+        axes = self.polygon_axes(first) + self.polygon_axes(second)
+        for axis in axes:
+            first_projection = self.project_polygon(first, axis)
+            second_projection = self.project_polygon(second, axis)
+            if (
+                first_projection["max"] + margin < second_projection["min"]
+                or second_projection["max"] + margin < first_projection["min"]
+            ):
+                return False
+        return True
+
+    def polygon_axes(self, polygon: list[dict[str, float]]) -> list[dict[str, float]]:
+        axes: list[dict[str, float]] = []
+        for index, start in enumerate(polygon):
+            end = polygon[(index + 1) % len(polygon)]
+            dx = end["x"] - start["x"]
+            dy = end["y"] - start["y"]
+            length = math.hypot(dx, dy)
+            if length > 0.000001:
+                axes.append({"x": -dy / length, "y": dx / length})
+        return axes
+
+    def project_polygon(self, polygon: list[dict[str, float]], axis: dict[str, float]) -> dict[str, float]:
+        values = [(point["x"] * axis["x"]) + (point["y"] * axis["y"]) for point in polygon]
+        return {"min": min(values), "max": max(values)}
+
+    def point_in_polygon(self, point: dict[str, float], polygon: list[dict[str, float]]) -> bool:
+        inside = False
+        j = len(polygon) - 1
+        for i, a in enumerate(polygon):
+            b = polygon[j]
+            crosses = (
+                (a["y"] > point["y"]) != (b["y"] > point["y"])
+                and point["x"]
+                < ((b["x"] - a["x"]) * (point["y"] - a["y"])) / ((b["y"] - a["y"]) or 0.000001)
+                + a["x"]
+            )
+            if crosses:
+                inside = not inside
+            j = i
+        return inside
+
+    def distance_to_polygon(self, point: dict[str, float], polygon: list[dict[str, float]]) -> float:
+        return min(
+            self.distance_to_segment(point, polygon[index], polygon[(index + 1) % len(polygon)])
+            for index in range(len(polygon))
+        )
+
+    def distance_to_segment(
+        self,
+        point: dict[str, float],
+        start: dict[str, float],
+        end: dict[str, float],
+    ) -> float:
+        dx = end["x"] - start["x"]
+        dy = end["y"] - start["y"]
+        length_sq = (dx * dx) + (dy * dy)
+        if length_sq <= 0.000001:
+            return math.hypot(point["x"] - start["x"], point["y"] - start["y"])
+        ratio = max(0.0, min(1.0, (((point["x"] - start["x"]) * dx) + ((point["y"] - start["y"]) * dy)) / length_sq))
+        closest = {"x": start["x"] + (dx * ratio), "y": start["y"] + (dy * ratio)}
+        return math.hypot(point["x"] - closest["x"], point["y"] - closest["y"])
+
+    def footprint(self) -> list[dict[str, float]]:
+        if self._footprint_cache is not None:
+            return self._footprint_cache
+        robot_model = self._dict_param("robot_model")
+        raw_footprint = robot_model.get("footprint")
+        if not isinstance(raw_footprint, list) or len(raw_footprint) < 3:
+            raw_footprint = [
+                {"x": 0.220000, "y": 0.000000},
+                {"x": 0.203253, "y": 0.084190},
+                {"x": 0.155563, "y": 0.155563},
+                {"x": 0.084190, "y": 0.203253},
+                {"x": 0.000000, "y": 0.220000},
+                {"x": -0.084190, "y": 0.203253},
+                {"x": -0.155563, "y": 0.155563},
+                {"x": -0.203253, "y": 0.084190},
+                {"x": -0.220000, "y": 0.000000},
+                {"x": -0.203253, "y": -0.084190},
+                {"x": -0.155563, "y": -0.155563},
+                {"x": -0.084190, "y": -0.203253},
+                {"x": 0.000000, "y": -0.220000},
+                {"x": 0.084190, "y": -0.203253},
+                {"x": 0.155563, "y": -0.155563},
+                {"x": 0.203253, "y": -0.084190},
+            ]
+        self._footprint_cache = [
+            {
+                "x": float(point.get("x", 0.0) or 0.0),
+                "y": float(point.get("y", 0.0) or 0.0),
+            }
+            for point in raw_footprint
+            if isinstance(point, dict)
+        ]
+        return self._footprint_cache
+
+    def collision_margin(self) -> float:
+        navigation = self._dict_param("navigation")
+        return max(0.0, float(navigation.get("collision_margin", 0.04) or 0.04))
+
+    def robot_collision_margin(self) -> float:
+        fleet = self._dict_param("fleet")
+        try:
+            configured = fleet.get("robot_clearance_m", 0.35)
+            clearance = 0.35 if configured is None else float(configured)
+        except (TypeError, ValueError):
+            clearance = 0.35
+        return self.collision_margin() + max(0.0, clearance)
+
+    def _dict_param(self, key: str) -> dict[str, Any]:
+        value = self.params.get(key, {})
+        return value if isinstance(value, dict) else {}
+
+    def _load_map_pixels(self, map_dir: Path) -> None:
+        try:
+            loader = WarehouseMapLoader(map_dir)
+            ros_map_yaml = loader._find_ros_map_yaml()
+            ros_map = loader._read_yaml(ros_map_yaml)
+            if not isinstance(ros_map, dict):
+                return
+            image_path = (map_dir / str(ros_map["image"])).resolve()
+            width, height, pixels = loader._load_pgm(image_path)
+        except Exception:
+            return
+        self.map_width = width
+        self.map_height = height
+        self.map_pixels = pixels
