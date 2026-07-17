@@ -44,7 +44,7 @@
             <div>
               <div class="eyebrow">Home</div>
               <h2>Robots</h2>
-              <p>Connect to a robot by IP address, then open its workspace.</p>
+              <p>Single-click a card to select it. Double-click to open its workspace.</p>
             </div>
             <div class="home-page-actions">
               <button id="homeRefreshButton" type="button">Refresh All</button>
@@ -58,7 +58,15 @@
           <div id="homeRobotGrid" class="home-robot-grid"></div>
         </section>
 
-        <div id="emptyState" class="empty-state">
+        <div id="workspaceLoadingState" class="workspace-loading" role="status" aria-live="polite">
+          <span class="workspace-loading-spinner" aria-hidden="true"></span>
+          <div>
+            <h2 id="workspaceLoadingTitle">Loading Operator App</h2>
+            <p id="workspaceLoadingText">Reading systems, robots, and active map contexts...</p>
+          </div>
+        </div>
+
+        <div id="emptyState" class="empty-state hidden">
           <h2>Select a robot</h2>
           <p>Add a robot by IP address, then open its control view or map editor here.</p>
         </div>
@@ -148,11 +156,7 @@
                     <button id="fleetPlaceRobotButton" type="button">Place</button>
                   </div>
                   <div id="fleetSimTools" class="fleet-sim-tools hidden">
-                    <div class="block-title">Sim Maps & Benchmark</div>
-                    <div class="fleet-sim-map-row">
-                      <select id="fleetSimMapSelect"></select>
-                      <button id="fleetSimLoadMapButton" type="button">Use</button>
-                    </div>
+                    <div class="block-title">Simulation Benchmark</div>
                     <div class="fleet-action-row">
                       <button data-fleet-benchmark-count="20" type="button">Add 20</button>
                       <button data-fleet-benchmark-count="50" type="button">Add 50</button>
@@ -182,10 +186,8 @@
                       <button id="fleetBenchmarkPlanButton" class="primary" type="button">Start Dynamic Orders</button>
                       <button id="fleetBenchmarkPackageButton" type="button">Generate Package Orders</button>
                       <button id="fleetBenchmarkClearButton" type="button">Clear Sim</button>
-                      <button id="fleetBenchmarkRefreshMapsButton" type="button">Refresh Maps</button>
-                      <button id="fleetBenchmarkOpenLoadButton" type="button">Map Library</button>
                     </div>
-                    <div id="fleetBenchmarkStatus" class="probe-result neutral compact">Choose a map or run a benchmark.</div>
+                    <div id="fleetBenchmarkStatus" class="probe-result neutral compact">Benchmark idle. Use Map / Load above to change the simulation map.</div>
                   </div>
                   <div class="fleet-list-block">
                     <div class="block-title">Robots</div>
@@ -281,7 +283,6 @@
                       Y
                       <input id="fleetEditorLmYInput" type="number" step="0.001" />
                     </label>
-                    <button id="fleetEditorApplyLmButton" type="button">Apply LM</button>
                   </div>
                   <div class="fleet-map-editor-grid">
                     <label>
@@ -295,7 +296,8 @@
                     <label>
                       Traffic
                       <select id="fleetEditorEdgeTrafficSelect">
-                        <option value="one_way">One way</option>
+                        <option value="one_way">One way: From → To</option>
+                        <option value="reverse">One way: To → From</option>
                         <option value="bidirectional">Bidirectional</option>
                       </select>
                     </label>
@@ -304,11 +306,11 @@
                       <select id="fleetEditorEdgeMotionSelect">
                         <option value="0">Forward</option>
                         <option value="1">Backward</option>
-                        <option value="2">Not specified</option>
+                        <option value="-1">Not specified</option>
                       </select>
                     </label>
-                    <button id="fleetEditorApplyEdgeButton" type="button">Apply Edge</button>
                   </div>
+                  <div class="fleet-editor-auto-save-hint">LM and edge field changes apply automatically.</div>
                   <div class="fleet-action-row">
                     <button id="fleetMapSaveButton" class="primary" type="button">Save</button>
                     <button id="fleetMapSaveAsButton" type="button">Save As</button>
@@ -344,6 +346,13 @@
                 <button id="fleetModelSaveButton" class="primary robot-model-save-button" type="button">Save Robot Model</button>
               </section>
               <section class="operator-map-panel">
+                <div id="operatorMapLoading" class="operator-map-loading hidden" role="status" aria-live="polite">
+                  <span class="workspace-loading-spinner" aria-hidden="true"></span>
+                  <div>
+                    <strong id="operatorMapLoadingTitle">Loading map</strong>
+                    <span id="operatorMapLoadingText">Reading this workspace's local map...</span>
+                  </div>
+                </div>
                 <div class="map-toolbar">
                   <button id="operatorMap2dButton" type="button">2D</button>
                   <button id="operatorMap3dButton" type="button">3D</button>
@@ -351,6 +360,7 @@
                   <button id="operatorZoomOutButton" type="button">Zoom -</button>
                   <button id="operatorResetViewButton" type="button">Reset View</button>
                   <button id="operatorLmNamesButton" type="button">LM names: On</button>
+                  <button id="operatorEdgeDirectionsButton" type="button">Edge directions: On</button>
                   <button id="operatorFollowRobotButton" type="button">Follow Robot</button>
                 </div>
                 <svg id="operatorMapSvg" aria-label="Selected robot map">

@@ -1,3 +1,8 @@
+function normalizeEdgeMotionCode(value) {
+  const numeric = Number(value);
+  return numeric === 0 || numeric === 1 ? numeric : -1;
+}
+
 class RobotMapEditorApp {
   constructor() {
     const params = new URLSearchParams(window.location.search);
@@ -25,6 +30,7 @@ class RobotMapEditorApp {
     this.babylonRenderedRevision = -1;
     this.babylonFailed = false;
     this.lmNamesVisible = window.localStorage.getItem("operator:lmNamesVisible") !== "0";
+    this.edgeDirectionsVisible = window.localStorage.getItem("operator:edgeDirectionsVisible") !== "0";
 
     this.editorRobotTitle = document.getElementById("editorRobotTitle");
     this.editorStatusText = document.getElementById("editorStatusText");
@@ -54,6 +60,7 @@ class RobotMapEditorApp {
     this.zoomOutButton = document.getElementById("zoomOutButton");
     this.resetViewButton = document.getElementById("resetViewButton");
     this.lmNamesButton = document.getElementById("lmNamesButton");
+    this.edgeDirectionsButton = document.getElementById("edgeDirectionsButton");
     this.deleteSelectionButton = document.getElementById("deleteSelectionButton");
 
     this.editorSvg = document.getElementById("editorSvg");
@@ -76,6 +83,7 @@ class RobotMapEditorApp {
     this.edgeToText = document.getElementById("edgeToText");
     this.edgeKindSelect = document.getElementById("edgeKindSelect");
     this.edgeTypeInput = document.getElementById("edgeTypeInput");
+    this.edgeTrafficSelect = document.getElementById("edgeTrafficSelect");
     this.edgeDirectionSelect = document.getElementById("edgeDirectionSelect");
     this.edgeLengthText = document.getElementById("edgeLengthText");
     this.edgeCurveHint = document.getElementById("edgeCurveHint");
@@ -115,6 +123,7 @@ class RobotMapEditorApp {
     this.zoomOutButton.addEventListener("click", () => this.zoomView(1.14));
     this.resetViewButton.addEventListener("click", () => this.resetView());
     this.lmNamesButton?.addEventListener("click", () => this.toggleLmNames());
+    this.edgeDirectionsButton?.addEventListener("click", () => this.toggleEdgeDirections());
     this.deleteSelectionButton.addEventListener("click", () => this.deleteSelection());
     this.toolButtons.forEach((button) => {
       button.addEventListener("click", () => this.setTool(button.dataset.tool || "select"));
@@ -126,6 +135,7 @@ class RobotMapEditorApp {
     this.landmarkIgnoreDirInput.addEventListener("change", () => this.applyLandmarkInspector());
     this.edgeKindSelect.addEventListener("change", () => this.applyEdgeInspector());
     this.edgeTypeInput.addEventListener("change", () => this.applyEdgeInspector());
+    this.edgeTrafficSelect.addEventListener("change", () => this.applyEdgeInspector());
     this.edgeDirectionSelect.addEventListener("change", () => this.applyEdgeInspector());
 
     this.editorSvg.addEventListener("pointerdown", (event) => this.onPointerDown(event));
@@ -160,6 +170,7 @@ class RobotMapEditorApp {
     });
     scene.setViewMode("2d");
     scene.setLandmarkLabelsVisible(this.lmNamesVisible);
+    scene.setEdgeDirectionsVisible(this.edgeDirectionsVisible);
     this.babylonScene = scene;
     await scene.readyPromise;
     if (scene.initError || !scene.scene) {
@@ -422,7 +433,7 @@ class RobotMapEditorApp {
     this.toolButtons.forEach((button) => {
       button.classList.toggle("active", button.dataset.tool === this.selectedTool);
     });
-    this.render();
+    this.renderInteraction();
   }
 
   resetView() {
@@ -488,6 +499,28 @@ class RobotMapEditorApp {
     this.lmNamesButton.setAttribute("aria-pressed", String(this.lmNamesVisible));
   }
 
+  toggleEdgeDirections() {
+    this.edgeDirectionsVisible = !this.edgeDirectionsVisible;
+    window.localStorage.setItem(
+      "operator:edgeDirectionsVisible",
+      this.edgeDirectionsVisible ? "1" : "0",
+    );
+    this.babylonScene?.setEdgeDirectionsVisible(this.edgeDirectionsVisible);
+    this.syncEdgeDirectionsButton();
+    if (!this.babylonScene || this.babylonFailed) {
+      this.renderEdges();
+    }
+  }
+
+  syncEdgeDirectionsButton() {
+    if (!this.edgeDirectionsButton) {
+      return;
+    }
+    this.edgeDirectionsButton.classList.toggle("active", this.edgeDirectionsVisible);
+    this.edgeDirectionsButton.textContent = `Edge directions: ${this.edgeDirectionsVisible ? "On" : "Off"}`;
+    this.edgeDirectionsButton.setAttribute("aria-pressed", String(this.edgeDirectionsVisible));
+  }
+
   applyViewBox() {
     this.editorSvg.setAttribute("viewBox", `${this.view.x} ${this.view.y} ${this.view.width} ${this.view.height}`);
   }
@@ -531,7 +564,7 @@ class RobotMapEditorApp {
         this.previewWorld = world;
         this.previewSnapName = lmName;
         this.editorSvg.setPointerCapture(event.pointerId);
-        this.render();
+        this.renderInteraction();
         return;
       }
       this.selection = { type: "lm", key: lmName };
@@ -542,14 +575,14 @@ class RobotMapEditorApp {
         };
         this.editorSvg.setPointerCapture(event.pointerId);
       }
-      this.render();
+      this.renderInteraction();
       return;
     }
 
     const edgeNode = event.target.closest("[data-edge-key]");
     if (edgeNode && this.selectedTool === "select") {
       this.selection = { type: "edge", key: edgeNode.dataset.edgeKey || "" };
-      this.render();
+      this.renderInteraction();
       return;
     }
 
@@ -570,7 +603,7 @@ class RobotMapEditorApp {
         this.previewWorld = world;
         this.previewSnapName = nearest.name;
         this.editorSvg.setPointerCapture(event.pointerId);
-        this.render();
+        this.renderInteraction();
         return;
       }
     }
@@ -582,7 +615,7 @@ class RobotMapEditorApp {
       origin: { ...this.view },
     };
     this.editorSvg.setPointerCapture(event.pointerId);
-    this.render();
+    this.renderInteraction();
   }
 
   onPointerMove(event) {
@@ -634,7 +667,7 @@ class RobotMapEditorApp {
     if (this.dragState?.type === "edge_chain") {
       this.previewWorld = null;
       this.previewSnapName = "";
-      this.render();
+      this.renderInteraction();
     }
     this.dragState = null;
   }
@@ -651,7 +684,7 @@ class RobotMapEditorApp {
         handleIndex: Number(hit.bezierIndex),
         pointerId: hit.pointerId,
       };
-      this.render();
+      this.renderInteraction();
       return true;
     }
     if (hit.lmName) {
@@ -668,12 +701,12 @@ class RobotMapEditorApp {
       } else if (this.selectedTool === "select") {
         this.dragState = { type: "landmark", name: hit.lmName, pointerId: hit.pointerId };
       }
-      this.render();
+      this.renderInteraction();
       return true;
     }
     if (hit.edgeKey && this.selectedTool === "select") {
       this.selection = { type: "edge", key: hit.edgeKey };
-      this.render();
+      this.renderInteraction();
       return true;
     }
     if (this.selectedTool === "lm") {
@@ -681,7 +714,7 @@ class RobotMapEditorApp {
       return true;
     }
     this.selection = { type: "none", key: "" };
-    this.render();
+    this.renderInteraction();
     return false;
   }
 
@@ -750,19 +783,19 @@ class RobotMapEditorApp {
       this.edgeStartLm = lmName;
       this.selection = { type: "lm", key: lmName };
       this.log("info", `Edge start selected: ${lmName}. Click the destination LM.`);
-      this.render();
+      this.renderInteraction({ logs: true });
       return;
     }
     if (this.edgeStartLm === lmName) {
       this.edgeStartLm = "";
       this.previewWorld = null;
-      this.render();
+      this.renderInteraction();
       return;
     }
     this.createEdge(this.edgeStartLm, lmName);
     this.edgeStartLm = "";
     this.previewWorld = null;
-    this.render();
+    this.renderInteraction();
   }
 
   addLandmark(world) {
@@ -827,7 +860,7 @@ class RobotMapEditorApp {
       to: toName,
       kind: "line",
       type: "FeatureLine",
-      properties: { direction: 2 },
+      properties: { direction: -1 },
       length: this.distance(start, end),
       world_points: [
         { x: start.x, y: start.y },
@@ -912,11 +945,11 @@ class RobotMapEditorApp {
     }
     const nextKind = this.edgeKindSelect.value === "curve" ? "curve" : "line";
     const nextType = String(this.edgeTypeInput.value || "").trim() || (nextKind === "curve" ? "DegenerateBezier" : "FeatureLine");
-    const direction = Number(this.edgeDirectionSelect.value || "2");
+    const direction = normalizeEdgeMotionCode(this.edgeDirectionSelect.value);
     edge.kind = nextKind;
     edge.type = nextType;
     edge.properties = typeof edge.properties === "object" && edge.properties ? edge.properties : {};
-    edge.properties.direction = Number.isFinite(direction) ? direction : 2;
+    edge.properties.direction = direction;
     if (nextKind === "curve") {
       this.ensureCurveGeometry(edge);
     } else {
@@ -926,6 +959,47 @@ class RobotMapEditorApp {
     }
     edge.world_points = this.edgeWorldPoints(edge);
     edge.length = this.round(this.edgeLength(edge));
+    let reverse = this.edgeByNames(edge.to, edge.from);
+    const traffic = this.edgeTrafficSelect.value;
+    if (traffic === "bidirectional" || traffic === "reverse") {
+      const reverseEdge = reverse || {
+        from: edge.to,
+        to: edge.from,
+        kind: edge.kind,
+        type: edge.type,
+        properties: {},
+      };
+      reverseEdge.kind = edge.kind;
+      reverseEdge.type = edge.type;
+      reverseEdge.properties = {
+        ...(reverseEdge.properties || {}),
+        ...edge.properties,
+      };
+      if (Array.isArray(edge.control_points) && edge.control_points.length === 4) {
+        reverseEdge.geometry = "bezier";
+        reverseEdge.curve_type = edge.curve_type;
+        reverseEdge.control_points = [...edge.control_points]
+          .reverse()
+          .map((point) => ({ x: Number(point.x), y: Number(point.y) }));
+      } else {
+        delete reverseEdge.geometry;
+        delete reverseEdge.control_points;
+        delete reverseEdge.curve_type;
+      }
+      reverseEdge.world_points = this.edgeWorldPoints(reverseEdge);
+      reverseEdge.length = this.round(this.edgeLength(reverseEdge));
+      if (!reverse) {
+        this.currentMap.edges.push(reverseEdge);
+        reverse = reverseEdge;
+      }
+    }
+    if (traffic === "one_way" && reverse) {
+      this.currentMap.edges = this.currentMap.edges.filter((item) => item !== reverse);
+    }
+    if (traffic === "reverse" && reverse) {
+      this.currentMap.edges = this.currentMap.edges.filter((item) => item !== edge);
+      this.selection = { type: "edge", key: this.edgeKey(reverse) };
+    }
     this.markDirty(`Updated edge ${edge.from} -> ${edge.to}.`, { quietLog: true });
   }
 
@@ -990,11 +1064,22 @@ class RobotMapEditorApp {
 
   render() {
     this.syncLmNamesButton();
+    this.syncEdgeDirectionsButton();
     this.renderHeader();
     this.renderWorkflowSummary();
     this.renderCanvas();
     this.renderInspector();
     this.renderLogs();
+  }
+
+  renderInteraction(options = {}) {
+    this.syncLmNamesButton();
+    this.syncEdgeDirectionsButton();
+    this.renderCanvas();
+    this.renderInspector();
+    if (options.logs) {
+      this.renderLogs();
+    }
   }
 
   renderHeader() {
@@ -1132,6 +1217,7 @@ class RobotMapEditorApp {
     }
     this.babylonScene.setViewMode("2d");
     this.babylonScene.setLandmarkLabelsVisible(this.lmNamesVisible);
+    this.babylonScene.setEdgeDirectionsVisible(this.edgeDirectionsVisible);
     this.babylonScene.setEditorState(this.babylonEditorState());
     this.babylonScene.updateRobots([], "", "");
     this.editorBabylon.dataset.mapName = String(this.currentLocalMapName || this.currentMap?.mapName || "");
@@ -1176,6 +1262,9 @@ class RobotMapEditorApp {
 
   renderEdges() {
     this.editorEdgeLayer.innerHTML = "";
+    const directedKeys = new Set(
+      this.currentMap.edges.map((edge) => this.edgeKey(edge)),
+    );
     for (const edge of this.currentMap.edges) {
       const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
       path.setAttribute("fill", "none");
@@ -1185,7 +1274,10 @@ class RobotMapEditorApp {
       path.dataset.edgeKey = this.edgeKey(edge);
       path.setAttribute("d", this.edgePath(edge));
       this.editorEdgeLayer.append(path);
-      const arrow = this.drawEdgeDirectionArrow(edge);
+      const hasReverse = directedKeys.has(`${edge.to}->${edge.from}`);
+      const arrow = this.edgeDirectionsVisible
+        ? this.drawEdgeDirectionArrow(edge, hasReverse ? 0.56 : 0.5)
+        : null;
       if (arrow) {
         this.editorEdgeLayer.append(arrow);
       }
@@ -1352,8 +1444,8 @@ class RobotMapEditorApp {
     this.editorPreviewLayer.append(label);
   }
 
-  drawEdgeDirectionArrow(edge) {
-    const segment = this.graphDirectionSegment(edge);
+  drawEdgeDirectionArrow(edge, fraction = 0.5) {
+    const segment = this.graphDirectionSegment(edge, fraction);
     if (!segment) {
       return null;
     }
@@ -1369,12 +1461,12 @@ class RobotMapEditorApp {
     return arrow;
   }
 
-  graphDirectionSegment(edge) {
+  graphDirectionSegment(edge, fraction = 0.5) {
     let mid;
     let tangent;
     if (Array.isArray(edge.control_points) && edge.control_points.length === 4) {
-      mid = this.bezierPoint(edge.control_points, 0.5);
-      tangent = this.bezierDerivative(edge.control_points, 0.5);
+      mid = this.bezierPoint(edge.control_points, fraction);
+      tangent = this.bezierDerivative(edge.control_points, fraction);
     } else {
       const start = this.landmarkByName(edge.from);
       const goal = this.landmarkByName(edge.to);
@@ -1382,8 +1474,8 @@ class RobotMapEditorApp {
         return null;
       }
       mid = {
-        x: start.x + ((goal.x - start.x) * 0.5),
-        y: start.y + ((goal.y - start.y) * 0.5),
+        x: start.x + ((goal.x - start.x) * fraction),
+        y: start.y + ((goal.y - start.y) * fraction),
       };
       tangent = {
         x: goal.x - start.x,
@@ -1438,7 +1530,12 @@ class RobotMapEditorApp {
       this.edgeToText.textContent = edge.to;
       this.edgeKindSelect.value = edge.kind === "curve" ? "curve" : "line";
       this.edgeTypeInput.value = String(edge.type || "");
-      this.edgeDirectionSelect.value = String((edge.properties && edge.properties.direction) ?? 2);
+      this.edgeTrafficSelect.value = this.edgeByNames(edge.to, edge.from)
+        ? "bidirectional"
+        : "one_way";
+      this.edgeDirectionSelect.value = String(
+        normalizeEdgeMotionCode(edge.properties && edge.properties.direction),
+      );
       this.edgeLengthText.textContent = `${Number(edge.length || 0).toFixed(2)} m`;
       this.edgeCurveHint.classList.toggle("hidden", !(Array.isArray(edge.control_points) && edge.control_points.length === 4));
       return;

@@ -1340,7 +1340,15 @@ class OperatorFleetManager:
         completed = int(config.get("ordersCompleted", 0) or 0)
         queued = sum(order.status == "QUEUED" for order in dynamic_orders)
         executing = sum(order.status not in {"QUEUED", "COMPLETED", "FAILED", "CANCELED"} for order in dynamic_orders)
-        waiting = sum(robot.status == "WAITING" for robot in self._benchmark_sim_robots()) if hasattr(self, "manager") else 0
+        benchmark_robots = self._benchmark_sim_robots() if hasattr(self, "manager") else []
+        waiting = sum(robot.status == "WAITING" for robot in benchmark_robots)
+        robots_with_orders = {
+            str(order.vehicle or order.assigned_robot)
+            for order in dynamic_orders
+            if order.status not in {"COMPLETED", "FAILED", "CANCELED"}
+            and str(order.vehicle or order.assigned_robot)
+        }
+        robots_with_orders &= {str(robot.name) for robot in benchmark_robots}
         traffic = dict(getattr(self.manager, "traffic_metrics", {})) if hasattr(self, "manager") else {}
         dispatch_ms = float(config.get("dispatchElapsedMs", 0.0) or 0.0)
         distance_total = float(config.get("generatedDistanceMTotal", 0.0) or 0.0)
@@ -1398,6 +1406,11 @@ class OperatorFleetManager:
             "ordersQueued": queued,
             "ordersExecuting": executing,
             "ordersOutstanding": outstanding,
+            "robotsWithOrders": len(robots_with_orders),
+            "robotsWithoutOrders": max(
+                0,
+                len(benchmark_robots) - len(robots_with_orders),
+            ),
             "waitingRobots": waiting,
             "generationFailures": int(config.get("generationFailures", 0) or 0),
             "averageDispatchMs": round(dispatch_ms / generated, 3) if generated else 0.0,
@@ -1468,11 +1481,15 @@ class OperatorFleetManager:
         }
 
     def _benchmark_spawn_lms(self, count: int, seed: int) -> list[str]:
-        names = self._largest_benchmark_component()
+        names = [
+            name
+            for name in self._largest_benchmark_component()
+            if self._benchmark_spawn_lm_is_safe(name)
+        ]
         if len(names) < count:
             raise ValueError(
-                f"add robots needs at least {count} connected LMs; "
-                f"largest component has {len(names)}"
+                f"add robots needs at least {count} collision-safe connected LMs; "
+                f"largest component has {len(names)} safe spawn positions"
             )
         rng = random.Random(seed + 7919)
         shuffled = list(names)
@@ -1484,6 +1501,20 @@ class OperatorFleetManager:
                 f"with {self._benchmark_min_separation():.2f} m center spacing"
             )
         return spaced
+
+    def _benchmark_spawn_lm_is_safe(self, name: str) -> bool:
+        landmark = self.loaded_map.landmarks.get(name)
+        if landmark is None:
+            return False
+        return not self.manager.collision.blocked_reason(
+            {
+                "x": float(landmark.x),
+                "y": float(landmark.y),
+                "yaw": 0.0,
+            },
+            self.manager.obstacles,
+            self.manager.obstacle_areas,
+        )
 
     def _next_benchmark_robot_index(self) -> int:
         max_index = 0

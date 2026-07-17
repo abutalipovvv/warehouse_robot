@@ -8,10 +8,24 @@ const loadBabylon = () => {
   return new Promise((resolve, reject) => {
     const existing = document.querySelector("script[data-babylon-runtime]");
     const script = existing || document.createElement("script");
-    const onLoad = () => globalThis.BABYLON
+    let settled = false;
+    const finish = (callback) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      window.clearTimeout(timeout);
+      script.removeEventListener("load", onLoad);
+      script.removeEventListener("error", onError);
+      callback();
+    };
+    const onLoad = () => finish(() => globalThis.BABYLON
       ? resolve(globalThis.BABYLON)
-      : reject(new Error("Babylon.js loaded without exposing its runtime."));
-    const onError = () => reject(new Error("Could not load the Babylon.js runtime."));
+      : reject(new Error("Babylon.js loaded without exposing its runtime.")));
+    const onError = () => finish(() => reject(new Error("Could not load the Babylon.js runtime.")));
+    const timeout = window.setTimeout(() => {
+      finish(() => reject(new Error("Babylon.js loading timed out; SVG fallback remains active.")));
+    }, 8000);
     script.addEventListener("load", onLoad, { once: true });
     script.addEventListener("error", onError, { once: true });
     if (!existing) {
@@ -28,10 +42,16 @@ const loadBabylon = () => {
 // HTML/CSS remains responsible only for controls and inspector panels.
 const B = globalThis.BABYLON || await loadBabylon();
 
+// PGM rows, LM coordinates and graph coordinates all use map_top_left.
+// Babylon ground UV v=0 is placed at map z=0, so the source must not be
+// vertically flipped during upload.
+const MAP_TEXTURE_INVERT_Y = false;
+
 const COLORS = {
   floor: 0xf8fbff,
   wall: 0x718493,
   edge: 0x8bb4ff,
+  edgeDirection: 0x405b83,
   edgeActive: 0x2368ff,
   lm: 0x2368ff,
   lmHover: 0x5298ff,
@@ -106,6 +126,8 @@ export class OperatorScene3D {
     this.wallMaterial = null;
     this.wallMesh = null;
     this.graphMesh = null;
+    this.edgeDirectionMesh = null;
+    this.edgeDirectionsVisible = true;
     this.graphFaceMap = [];
     this.lms = [];
     this.landmarkObjects = new Map();
@@ -125,6 +147,9 @@ export class OperatorScene3D {
     this.robotObjects = new Map();
     this.robotRouteObjects = new Map();
     this.robotRouteKeys = new Map();
+    this.latestRobots = [];
+    this.latestSelectedRobotName = "";
+    this.latestWaitBlockerName = "";
     this.maxInactiveRoutePoints = 48;
     this.maxActiveRoutePoints = 220;
     this.renderPixelRatio = Math.min(1.35, window.devicePixelRatio || 1);
@@ -475,6 +500,14 @@ export class OperatorScene3D {
     }
     this.viewMode = nextMode;
     this.wallMesh?.setEnabled(nextMode === "3d");
+    if (this.robotObjects.size || this.latestRobots.length) {
+      this.clearRobotObjects();
+      this.updateRobots(
+        this.latestRobots,
+        this.latestSelectedRobotName,
+        this.latestWaitBlockerName,
+      );
+    }
     this.lastCameraModeTopDown = null;
     this.updateCamera();
     this.refreshLandmarkLabels(true);
@@ -538,6 +571,16 @@ export class OperatorScene3D {
     this.landmarkLabelsVisible = nextVisible;
     this.landmarkLabelSignature = "";
     this.refreshLandmarkLabels(true);
+    this.requestRender();
+  }
+
+  setEdgeDirectionsVisible(visible) {
+    const nextVisible = Boolean(visible);
+    if (nextVisible === this.edgeDirectionsVisible) {
+      return;
+    }
+    this.edgeDirectionsVisible = nextVisible;
+    this.edgeDirectionMesh?.setEnabled(nextVisible);
     this.requestRender();
   }
 
@@ -780,6 +823,7 @@ export class OperatorScene3D {
     this.wallMaterial = null;
     this.wallMesh = null;
     this.graphMesh = null;
+    this.edgeDirectionMesh = null;
     this.graphFaceMap = [];
     this.landmarkMesh = null;
     this.landmarkLabelMesh = null;
@@ -879,7 +923,7 @@ export class OperatorScene3D {
         String(floor.imageDataUrl),
         this.scene,
         false,
-        true,
+        MAP_TEXTURE_INVERT_Y,
         B.Texture.NEAREST_SAMPLINGMODE,
         () => this.requestRender(),
       );
@@ -946,6 +990,99 @@ export class OperatorScene3D {
       this.graphMesh.metadata = { editorKind: "edges" };
       this.graphMesh.isPickable = Boolean(this.editorState?.active);
     }
+    this.addEdgeDirections(edges);
+  }
+
+  addEdgeDirections(edges) {
+    const positions = [];
+    const indices = [];
+    const normals = [];
+    const directedKeys = new Set(
+      edges.map((edge) => `${String(edge.from || "")}->${String(edge.to || "")}`),
+    );
+    const maxDimension = Math.max(this.bounds.width, this.bounds.depth);
+    const arrowLength = Math.max(0.12, Math.min(0.30, maxDimension / 135));
+    const arrowHalfWidth = arrowLength * 0.42;
+    const sampleCount = edges.length >= 1200 ? 8 : 18;
+
+    for (const edge of edges) {
+      const points = this.edgePoints(edge, sampleCount);
+      if (points.length < 2) {
+        continue;
+      }
+      const hasReverse = directedKeys.has(
+        `${String(edge.to || "")}->${String(edge.from || "")}`,
+      );
+      const marker = this.pointAndTangentOnPolyline(points, hasReverse ? 0.56 : 0.5);
+      if (!marker) {
+        continue;
+      }
+      const tangent = marker.tangent;
+      const normalX = -tangent.z;
+      const normalZ = tangent.x;
+      const tipX = marker.point.x + (tangent.x * arrowLength * 0.58);
+      const tipZ = marker.point.z + (tangent.z * arrowLength * 0.58);
+      const backX = marker.point.x - (tangent.x * arrowLength * 0.42);
+      const backZ = marker.point.z - (tangent.z * arrowLength * 0.42);
+      const base = positions.length / 3;
+      positions.push(
+        tipX, 0.082, tipZ,
+        backX + (normalX * arrowHalfWidth), 0.082, backZ + (normalZ * arrowHalfWidth),
+        backX - (normalX * arrowHalfWidth), 0.082, backZ - (normalZ * arrowHalfWidth),
+      );
+      indices.push(base, base + 1, base + 2);
+    }
+    if (!indices.length) {
+      return;
+    }
+    B.VertexData.ComputeNormals(positions, indices, normals);
+    const mesh = new B.Mesh("graph-edge-directions", this.scene);
+    const vertexData = new B.VertexData();
+    vertexData.positions = positions;
+    vertexData.indices = indices;
+    vertexData.normals = normals;
+    vertexData.applyToMesh(mesh, false);
+    mesh.material = this.unlitMaterial("graph-edge-direction-material", COLORS.edgeDirection, 0.9);
+    mesh.parent = this.staticRoot;
+    mesh.isPickable = false;
+    mesh.metadata = { edgeDirections: true };
+    mesh.setEnabled(this.edgeDirectionsVisible);
+    this.edgeDirectionMesh = mesh;
+  }
+
+  pointAndTangentOnPolyline(points, fraction) {
+    const lengths = [];
+    let total = 0;
+    for (let index = 0; index < points.length - 1; index += 1) {
+      const length = B.Vector3.Distance(points[index], points[index + 1]);
+      lengths.push(length);
+      total += length;
+    }
+    if (total <= 0.000001) {
+      return null;
+    }
+    const target = Math.max(0, Math.min(1, Number(fraction || 0))) * total;
+    let walked = 0;
+    for (let index = 0; index < lengths.length; index += 1) {
+      const length = lengths[index];
+      if (length <= 0.000001) {
+        continue;
+      }
+      if (walked + length >= target || index === lengths.length - 1) {
+        const ratio = Math.max(0, Math.min(1, (target - walked) / length));
+        const start = points[index];
+        const goal = points[index + 1];
+        const tangent = goal.subtract(start);
+        tangent.y = 0;
+        tangent.normalize();
+        return {
+          point: B.Vector3.Lerp(start, goal, ratio),
+          tangent,
+        };
+      }
+      walked += length;
+    }
+    return null;
   }
 
   addLineSystem(name, lines, color, alpha, parent) {
@@ -1299,7 +1436,16 @@ export class OperatorScene3D {
         && z >= viewport.top
         && z <= viewport.bottom;
     });
-    return visible;
+    const selectedName = String(this.editorState?.selectedLmName || "");
+    return [...visible].sort((first, second) => {
+      if (String(first.name || "") === selectedName) {
+        return -1;
+      }
+      if (String(second.name || "") === selectedName) {
+        return 1;
+      }
+      return String(first.name || "").localeCompare(String(second.name || ""));
+    });
   }
 
   refreshLandmarkLabels(force = false) {
@@ -1309,8 +1455,8 @@ export class OperatorScene3D {
     const viewport = this.landmarkLabelViewport();
     const candidates = this.landmarkLabelCandidates(viewport);
     const worldPerPixel = viewport.height / viewport.canvasHeight;
-    const labelWidth = Math.max(0.70, Math.min(4.2, worldPerPixel * 62));
-    const labelHeight = Math.max(0.24, Math.min(1.45, worldPerPixel * 21));
+    const labelWidth = Math.max(0.42, Math.min(2.4, worldPerPixel * 44));
+    const labelHeight = Math.max(0.16, Math.min(0.72, worldPerPixel * 14));
     const signature = [
       this.viewMode,
       this.landmarkLabelsVisible ? "labels-on" : "labels-off",
@@ -1328,10 +1474,13 @@ export class OperatorScene3D {
       return;
     }
 
-    const atlasColumns = Math.min(16, candidates.length);
+    // One batched mesh keeps every visible LM name available without
+    // thousands of individual Babylon planes. The largest bundled map has
+    // fewer than 1,200 LMs, which fits inside a 4096 px-wide atlas.
+    const atlasColumns = Math.min(32, candidates.length);
     const atlasRows = Math.ceil(candidates.length / atlasColumns);
-    const cellWidth = 192;
-    const cellHeight = 64;
+    const cellWidth = 128;
+    const cellHeight = 40;
     const textureWidth = atlasColumns * cellWidth;
     const textureHeight = atlasRows * cellHeight;
     const texture = new B.DynamicTexture(
@@ -1355,23 +1504,23 @@ export class OperatorScene3D {
       const cellY = row * cellHeight;
 
       const text = String(lm.name || "");
-      let fontSize = 32;
+      let fontSize = 18;
       context.font = `700 ${fontSize}px "Segoe UI", system-ui, sans-serif`;
-      while (fontSize > 18 && context.measureText(text).width > cellWidth - 24) {
-        fontSize -= 2;
+      while (fontSize > 10 && context.measureText(text).width > cellWidth - 14) {
+        fontSize -= 1;
         context.font = `700 ${fontSize}px "Segoe UI", system-ui, sans-serif`;
       }
       context.textAlign = "center";
       context.textBaseline = "middle";
       context.lineJoin = "round";
       context.strokeStyle = "rgba(255,255,255,0.96)";
-      context.lineWidth = 7;
+      context.lineWidth = 3;
       context.strokeText(text, cellX + (cellWidth / 2), cellY + (cellHeight / 2));
       context.fillStyle = "#143158";
       context.fillText(text, cellX + (cellWidth / 2), cellY + (cellHeight / 2));
 
       const x = Number(lm.x || 0);
-      const z = Number(lm.y || 0) + (labelHeight * 0.82);
+      const z = Number(lm.y || 0) + (labelHeight * 0.76);
       const halfWidth = labelWidth / 2;
       const halfHeight = labelHeight / 2;
       const base = positions.length / 3;
@@ -1452,6 +1601,9 @@ export class OperatorScene3D {
 
   updateRobots(robots, selectedName = "", waitBlockerName = "") {
     const robotList = Array.isArray(robots) ? robots : [];
+    this.latestRobots = robotList;
+    this.latestSelectedRobotName = String(selectedName || "");
+    this.latestWaitBlockerName = String(waitBlockerName || "");
     if (!this.scene) {
       this.pendingRobots = { robots: robotList, selectedName, waitBlockerName };
       return;
@@ -1476,11 +1628,19 @@ export class OperatorScene3D {
       incoming.add(name);
       const active = name === String(selectedName || "");
       const waitBlocker = Boolean(waitBlockerName && name === String(waitBlockerName));
+      const footprintKey = this.robotFootprintKey(robot);
       let entry = this.robotObjects.get(name);
+      if (entry && entry.footprintKey !== footprintKey) {
+        entry.group.dispose(false, true);
+        this.robotObjects.delete(name);
+        this.removeRobotRoute(name);
+        entry = null;
+      }
       if (!entry) {
         const group = this.robotMesh({ ...robot, pose }, active);
         entry = {
           group,
+          footprintKey,
           active: null,
           waitBlocker: null,
           targetPose: {
@@ -1580,6 +1740,13 @@ export class OperatorScene3D {
     const metadata = entry.group.metadata;
     setMaterialColor(metadata.bodyMaterial, COLORS.ecomBody);
     const selectionColor = waitBlocker ? 0xff7a00 : (metadata.selectionColor || COLORS.robot);
+    if (metadata.footprintOutline) {
+      metadata.footprintOutline.color = toColor3(selectionColor);
+      metadata.footprintOutline.alpha = active || waitBlocker ? 1 : 0.82;
+    }
+    if (metadata.footprintHeading) {
+      metadata.footprintHeading.color = toColor3(selectionColor);
+    }
     setMaterialColor(metadata.underglowMaterial, selectionColor);
     metadata.underglowMaterial.alpha = active ? 0.72 : (waitBlocker ? 0.5 : 0.12);
     if (!active) {
@@ -1715,6 +1882,32 @@ export class OperatorScene3D {
     } : {};
   }
 
+  robotFootprint(robot) {
+    const raw = Array.isArray(robot?.footprint)
+      ? robot.footprint
+      : (Array.isArray(robot?.robotModel?.footprint) ? robot.robotModel.footprint : []);
+    const footprint = raw
+      .map((point) => ({
+        x: Number(point?.x),
+        y: Number(point?.y),
+      }))
+      .filter((point) => Number.isFinite(point.x) && Number.isFinite(point.y));
+    return footprint.length >= 3
+      ? footprint
+      : [
+        { x: -0.523, y: -0.3532 },
+        { x: 0.477, y: -0.3532 },
+        { x: 0.477, y: 0.3468 },
+        { x: -0.523, y: 0.3468 },
+      ];
+  }
+
+  robotFootprintKey(robot) {
+    return this.robotFootprint(robot)
+      .map((point) => `${point.x.toFixed(4)},${point.y.toFixed(4)}`)
+      .join(";");
+  }
+
   robotMesh(robot, active) {
     const pose = robot.pose || {};
     const group = new B.TransformNode(`robot-${String(robot.name || "robot")}`, this.scene);
@@ -1723,7 +1916,11 @@ export class OperatorScene3D {
     group.parent = this.robotRoot;
     group.metadata = { robotName: String(robot.name || "") };
 
-    this.addEcomModel(group, robot, active);
+    if (this.viewMode === "2d") {
+      this.addFootprintModel(group, robot, active);
+    } else {
+      this.addEcomModel(group, robot, active);
+    }
     return group;
   }
 
@@ -1732,6 +1929,138 @@ export class OperatorScene3D {
     mesh.isPickable = true;
     mesh.metadata = { robotName: String(group.metadata?.robotName || "") };
     return mesh;
+  }
+
+  flatFootprintMesh(name, footprint, height, material, group, pickable = false) {
+    const positions = [];
+    const indices = [];
+    for (const point of footprint) {
+      // Robot-local +Y points to screen-left in the legacy SVG convention.
+      // Babylon's local Z is therefore the negated robot-model Y coordinate.
+      positions.push(Number(point.x), height, -Number(point.y));
+    }
+    for (let index = 1; index < footprint.length - 1; index += 1) {
+      indices.push(0, index, index + 1);
+    }
+    const normals = [];
+    B.VertexData.ComputeNormals(positions, indices, normals);
+    const mesh = new B.Mesh(name, this.scene);
+    const vertexData = new B.VertexData();
+    vertexData.positions = positions;
+    vertexData.indices = indices;
+    vertexData.normals = normals;
+    vertexData.applyToMesh(mesh);
+    mesh.material = material;
+    mesh.parent = group;
+    mesh.isPickable = pickable;
+    mesh.metadata = { robotName: String(group.metadata?.robotName || "") };
+    return mesh;
+  }
+
+  addFootprintModel(group, robot, active) {
+    const footprint = this.robotFootprint(robot);
+    const selectionColor = this.robotColor(robot?.name);
+    const body = this.unlitMaterial(`${group.name}-footprint-body`, COLORS.ecomBody, 0.86);
+    const underglow = this.unlitMaterial(
+      `${group.name}-footprint-underglow`,
+      selectionColor,
+      active ? 0.62 : 0.10,
+    );
+    const selectionHalo = this.unlitMaterial(`${group.name}-footprint-halo`, selectionColor, 0.34);
+    const selectionRing = this.unlitMaterial(`${group.name}-footprint-ring`, selectionColor, 0.88);
+    const underglowMesh = this.flatFootprintMesh(
+      `${group.name}-footprint-underglow`,
+      footprint,
+      0.014,
+      underglow,
+      group,
+      false,
+    );
+    underglowMesh.scaling.set(1.10, 1, 1.10);
+    const footprintMesh = this.flatFootprintMesh(
+      `${group.name}-footprint`,
+      footprint,
+      0.028,
+      body,
+      group,
+      true,
+    );
+
+    const outlinePoints = footprint.map(
+      (point) => new B.Vector3(Number(point.x), 0.034, -Number(point.y)),
+    );
+    outlinePoints.push(outlinePoints[0].clone());
+    const outline = B.MeshBuilder.CreateLines(`${group.name}-footprint-outline`, {
+      points: outlinePoints,
+      updatable: false,
+    }, this.scene);
+    outline.color = toColor3(selectionColor);
+    outline.alpha = active ? 1 : 0.82;
+    outline.parent = group;
+    outline.isPickable = false;
+
+    const frontX = Math.max(...footprint.map((point) => Number(point.x)));
+    const minY = Math.min(...footprint.map((point) => Number(point.y)));
+    const maxY = Math.max(...footprint.map((point) => Number(point.y)));
+    const arrowHalfWidth = Math.max(0.035, Math.min(0.10, (maxY - minY) * 0.18));
+    const arrowTip = Math.max(0.08, frontX * 0.78);
+    const arrowBase = arrowTip - Math.max(0.06, Math.abs(frontX) * 0.20);
+    const heading = B.MeshBuilder.CreateLineSystem(`${group.name}-footprint-heading`, {
+      lines: [
+        [
+          new B.Vector3(Math.min(0, arrowBase), 0.038, 0),
+          new B.Vector3(arrowTip, 0.038, 0),
+        ],
+        [
+          new B.Vector3(arrowBase, 0.038, arrowHalfWidth),
+          new B.Vector3(arrowTip, 0.038, 0),
+          new B.Vector3(arrowBase, 0.038, -arrowHalfWidth),
+        ],
+      ],
+    }, this.scene);
+    heading.color = toColor3(selectionColor);
+    heading.alpha = 0.92;
+    heading.parent = group;
+    heading.isPickable = false;
+
+    const radius = Math.max(
+      0.22,
+      ...footprint.map((point) => Math.hypot(Number(point.x), Number(point.y))),
+    );
+    const selectionHaloMesh = B.MeshBuilder.CreateDisc(`${group.name}-selection-halo`, {
+      radius: radius + 0.08,
+      tessellation: 48,
+      sideOrientation: B.Mesh.DOUBLESIDE,
+    }, this.scene);
+    selectionHaloMesh.rotation.x = -Math.PI / 2;
+    selectionHaloMesh.position.y = 0.010;
+    selectionHaloMesh.material = selectionHalo;
+    selectionHaloMesh.isVisible = active;
+    selectionHaloMesh.isPickable = false;
+    selectionHaloMesh.parent = group;
+
+    const selectionRingMesh = this.createRing(
+      `${group.name}-selection-ring`,
+      radius + 0.055,
+      radius + 0.09,
+      48,
+      selectionRing,
+    );
+    selectionRingMesh.position.y = 0.040;
+    selectionRingMesh.isVisible = active;
+    selectionRingMesh.parent = group;
+
+    group.metadata.bodyMaterial = body;
+    group.metadata.footprintMesh = footprintMesh;
+    group.metadata.footprintOutline = outline;
+    group.metadata.footprintHeading = heading;
+    group.metadata.underglowMaterial = underglow;
+    group.metadata.underglowMesh = underglowMesh;
+    group.metadata.selectionColor = selectionColor;
+    group.metadata.selectionHaloMaterial = selectionHalo;
+    group.metadata.selectionHaloMesh = selectionHaloMesh;
+    group.metadata.selectionRingMaterial = selectionRing;
+    group.metadata.selectionRingMesh = selectionRingMesh;
   }
 
   addEcomModel(group, robot, active) {
@@ -1913,28 +2242,87 @@ export class OperatorScene3D {
       this.removeRobotRoute(name);
       return;
     }
-    const routePreview = Array.isArray(robot?.routePreview) ? robot.routePreview : [];
-    const trajectory = active && routePreview.length >= 2
-      ? routePreview
-      : (Array.isArray(robot?.trajectory) ? robot.trajectory : []);
+    const trajectory = this.futureRobotTrajectory(robot, active);
     if (trajectory.length < 2) {
       this.removeRobotRoute(name);
       return;
     }
-    const routeKey = this.robotRouteKey(robot, active);
+    const routeKey = this.robotRouteKey(robot, active, trajectory);
     if (this.robotRouteKeys.get(name) === routeKey) {
       return;
     }
     this.removeRobotRoute(name);
     const maxPoints = this.maxActiveRoutePoints;
+    const routeHeight = this.viewMode === "2d" ? 0.048 : 0.095;
     const points = this.sampleTrajectory(trajectory, maxPoints)
-      .map((point) => new B.Vector3(Number(point.x || 0), 0.095, Number(point.y || 0)));
-    const material = this.unlitMaterial(`route-${name}-material`, this.robotColor(name), 0.82);
-    const routeObject = this.routeRibbonGeometry(points, 0.105, material, `route-${name}`);
+      .map((point) => new B.Vector3(Number(point.x || 0), routeHeight, Number(point.y || 0)));
+    const material = this.unlitMaterial(
+      `route-${name}-material`,
+      this.robotColor(name),
+      this.viewMode === "2d" ? 0.94 : 0.82,
+    );
+    const routeObject = this.routeRibbonGeometry(
+      points,
+      this.viewMode === "2d" ? 0.13 : 0.105,
+      material,
+      `route-${name}`,
+    );
     routeObject.isPickable = false;
     routeObject.parent = this.routeRoot;
     this.robotRouteObjects.set(name, routeObject);
     this.robotRouteKeys.set(name, routeKey);
+  }
+
+  futureRobotTrajectory(robot, active) {
+    const trajectory = Array.isArray(robot?.trajectory) ? robot.trajectory : [];
+    const preview = active && Array.isArray(robot?.routePreview) ? robot.routePreview : [];
+    const clock = Math.max(0, Number(robot?.routeClock || 0));
+    const pose = this.robotPose(robot);
+    const result = [];
+    const append = (point) => {
+      const next = {
+        ...point,
+        x: Number(point?.x),
+        y: Number(point?.y),
+      };
+      if (!Number.isFinite(next.x) || !Number.isFinite(next.y)) {
+        return;
+      }
+      const previous = result[result.length - 1];
+      if (
+        previous
+        && Math.hypot(next.x - previous.x, next.y - previous.y) < 0.001
+      ) {
+        return;
+      }
+      result.push(next);
+    };
+    if (Number.isFinite(Number(pose.x)) && Number.isFinite(Number(pose.y))) {
+      append(pose);
+    }
+
+    if (preview.some((point) => String(point?.phase || "") === "forecast")) {
+      for (const point of trajectory) {
+        if (Number(point?.t || 0) + 0.0001 >= clock) {
+          append(point);
+        }
+      }
+      for (const point of preview) {
+        if (String(point?.phase || "") === "forecast") {
+          append(point);
+        }
+      }
+      return result;
+    }
+
+    const source = preview.length >= 2 ? preview : trajectory;
+    const hasClock = source.some((point) => Number.isFinite(Number(point?.t)));
+    for (const point of source) {
+      if (!hasClock || Number(point?.t || 0) + 0.0001 >= clock) {
+        append(point);
+      }
+    }
+    return result;
   }
 
   routeRibbonGeometry(points, width, material, name) {
@@ -1985,18 +2373,21 @@ export class OperatorScene3D {
     return mesh;
   }
 
-  robotRouteKey(robot, active) {
-    const routePreview = Array.isArray(robot?.routePreview) ? robot.routePreview : [];
-    const trajectory = active && routePreview.length >= 2
-      ? routePreview
-      : (Array.isArray(robot?.trajectory) ? robot.trajectory : []);
-    const first = trajectory[0] || {};
-    const last = trajectory[trajectory.length - 1] || {};
+  robotRouteKey(robot, active, trajectory = null) {
+    const route = Array.isArray(trajectory)
+      ? trajectory
+      : this.futureRobotTrajectory(robot, active);
+    const first = route[0] || {};
+    const last = route[route.length - 1] || {};
     return [
       active ? "active" : "idle",
+      this.viewMode,
       robot?.routeRevision || "",
-      trajectory.length,
+      Math.floor(Math.max(0, Number(robot?.routeClock || 0)) * 2),
+      route.length,
       first.t ?? "",
+      Number(first.x || 0).toFixed(3),
+      Number(first.y || 0).toFixed(3),
       last.t ?? "",
       Number(last.x || 0).toFixed(3),
       Number(last.y || 0).toFixed(3),

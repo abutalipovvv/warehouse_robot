@@ -129,6 +129,7 @@ class RosRobotRuntime:
         slam_params_file: str | None = None,
         slam_launch_file: str | None = None,
         params_path: str | None = None,
+        autostart: bool = True,
     ) -> None:
         self.robot_id = robot_id
         self.robot_name = robot_name
@@ -237,6 +238,14 @@ class RosRobotRuntime:
         self._slam_trail: list[dict[str, float]] = []
         self._nav2_param_clients: dict[str, Any] = {}
         self._nav2_list_param_clients: dict[str, Any] = {}
+        self._startup_attempted = False
+        if autostart:
+            self.start()
+
+    def start(self) -> None:
+        if self._startup_attempted:
+            return
+        self._startup_attempted = True
         self._start()
 
     @property
@@ -2068,6 +2077,7 @@ class RosRobotRuntime:
         self._node = node
         self._executor = executor
         self._thread = thread
+        self._error = ""
         self._available = True
 
     def wait_for_status(self, timeout_sec: float = 0.8) -> bool:

@@ -79,10 +79,20 @@ class GraphEdge:
         return payload
 
     def motion_direction_code(self) -> int:
+        raw = self.properties.get("direction", -1)
+        if isinstance(raw, str):
+            label = raw.strip().lower().replace("-", "_")
+            if label == "forward":
+                return 0
+            if label == "backward":
+                return 1
+            if label in {"not_specified", "unspecified", "none", ""}:
+                return -1
         try:
-            return int(self.properties.get("direction", 2))
+            value = int(raw)
         except (TypeError, ValueError):
-            return 2
+            return -1
+        return value if value in {0, 1} else -1
 
     @staticmethod
     def motion_direction_label(code: int) -> str:

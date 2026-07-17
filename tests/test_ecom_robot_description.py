@@ -206,7 +206,8 @@ def test_stage_launch_uses_ecom_description_and_keeps_stage_hardware_contract() 
     assert 'const needsLabel = showLabel || active || Boolean(alertText);' in web_scene
     assert "label.isVisible = needsLabel;" in web_scene
     assert "waitBlocker ? 0xff7a00" in web_scene
-    assert "this.routeRibbonGeometry(points, 0.105, material" in web_scene
+    assert 'this.viewMode === "2d" ? 0.13 : 0.105' in web_scene
+    assert "futureRobotTrajectory(robot, active)" in web_scene
     assert 'addExtrudedPolygon("body", bodyOutline, 0.170, 0.0, body)' in web_scene
     assert 'addExtrudedPolygon("deck", deckOutline, 0.045, 0.160, deck)' in web_scene
     assert "y: 0.300, z: 0.060" in web_scene

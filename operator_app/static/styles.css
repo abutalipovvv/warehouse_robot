@@ -214,6 +214,13 @@ button.danger {
   border-radius: 18px;
   padding: 1rem;
   text-align: left;
+  cursor: pointer;
+  transition: border-color 140ms ease, box-shadow 140ms ease, transform 140ms ease;
+}
+
+.robot-card:hover {
+  border-color: rgba(35, 104, 255, 0.34);
+  transform: translateY(-1px);
 }
 
 .robot-card.active {
@@ -373,6 +380,91 @@ button.danger {
   align-content: space-between;
 }
 
+.home-robot-card.active::after {
+  content: "Selected · double-click to open";
+  margin-top: 0.7rem;
+  color: #2368ff;
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.workspace-loading {
+  margin: auto;
+  max-width: 520px;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1.35rem 1.5rem;
+  border: 1px solid rgba(35, 104, 255, 0.18);
+  border-radius: 16px;
+  background: rgba(246, 249, 255, 0.96);
+  box-shadow: 0 18px 45px rgba(35, 104, 255, 0.1);
+}
+
+.workspace-loading h2,
+.workspace-loading p {
+  margin: 0;
+}
+
+.workspace-loading h2 {
+  font-size: 1.05rem;
+}
+
+.workspace-loading p {
+  margin-top: 0.3rem;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.workspace-loading-spinner {
+  flex: 0 0 auto;
+  width: 2rem;
+  height: 2rem;
+  border: 3px solid rgba(35, 104, 255, 0.16);
+  border-top-color: #2368ff;
+  border-radius: 50%;
+  animation: workspace-spin 0.75s linear infinite;
+}
+
+.operator-map-loading {
+  position: absolute;
+  z-index: 12;
+  left: 50%;
+  top: 50%;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  width: min(390px, calc(100% - 2rem));
+  padding: 0.9rem 1rem;
+  border: 1px solid rgba(35, 104, 255, 0.2);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 16px 38px rgba(35, 104, 255, 0.14);
+  transform: translate(-50%, -50%);
+  backdrop-filter: blur(8px);
+}
+
+.operator-map-loading > div {
+  display: grid;
+  gap: 0.18rem;
+  min-width: 0;
+}
+
+.operator-map-loading strong {
+  font-size: 0.84rem;
+}
+
+.operator-map-loading span:not(.workspace-loading-spinner) {
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+@keyframes workspace-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .empty-state {
   margin: auto;
   max-width: 440px;
@@ -449,6 +541,46 @@ body[data-fleet-page="robot-model"] #mapSyncStatus {
 
 body[data-fleet-page="fleet"] #mapSyncStatus {
   display: none;
+}
+
+.map-sync-status {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(110px, auto)) minmax(180px, 1fr);
+  align-items: center;
+  gap: 0.45rem;
+  text-align: left;
+}
+
+.map-sync-field {
+  display: grid;
+  gap: 0.08rem;
+  min-width: 0;
+  padding: 0.18rem 0.55rem 0.18rem 0;
+  border-right: 1px solid rgba(20, 49, 88, 0.12);
+}
+
+.map-sync-field small {
+  color: var(--muted);
+  font-size: 0.62rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.map-sync-field strong,
+.map-sync-detail {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.map-sync-field strong {
+  font-size: 0.74rem;
+}
+
+.map-sync-detail {
+  color: var(--muted);
+  font-size: 0.7rem;
+  padding-left: 0.2rem;
 }
 
 .robot-control-actions {
@@ -589,24 +721,15 @@ body[data-fleet-page="map"] .robot-control-actions {
   min-height: 0;
 }
 
-.fleet-sim-map-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 0.32rem;
-}
-
-.fleet-sim-map-row select,
-.fleet-sim-map-row button {
-  min-height: 2rem;
-  padding: 0.38rem 0.44rem;
-  border-radius: 8px;
-  font-size: 0.74rem;
-}
-
 .fleet-list {
   display: grid;
   gap: 0.35rem;
   min-height: 0;
+  max-height: min(46vh, 32rem);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  padding-right: 0.18rem;
 }
 
 .fleet-queue-block,
@@ -1138,6 +1261,16 @@ body[data-fleet-page="map"] .robot-control-actions {
   border-radius: 11px;
 }
 
+.fleet-editor-auto-save-hint {
+  padding: 0.46rem 0.56rem;
+  border: 1px solid rgba(35, 104, 255, 0.16);
+  border-radius: 9px;
+  background: rgba(35, 104, 255, 0.06);
+  color: var(--muted);
+  font-size: 0.7rem;
+  line-height: 1.35;
+}
+
 .fleet-list-item {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 34px;
@@ -1152,6 +1285,25 @@ body[data-fleet-page="map"] .robot-control-actions {
 .fleet-list-item.active {
   background: rgba(35, 104, 255, 0.09);
   border-color: rgba(35, 104, 255, 0.38);
+}
+
+.robot-card.loading {
+  position: relative;
+  pointer-events: none;
+  opacity: 0.78;
+}
+
+.robot-card.loading::after {
+  content: "Loading workspace…";
+  position: absolute;
+  inset: auto 0.8rem 0.7rem;
+  padding: 0.38rem 0.55rem;
+  border-radius: 8px;
+  background: rgba(35, 104, 255, 0.92);
+  color: #fff;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-align: center;
 }
 
 .fleet-list-main {
@@ -1223,6 +1375,102 @@ body[data-fleet-page="map"] .robot-control-actions {
   font-size: 0.86rem;
 }
 
+.fleet-benchmark-dashboard {
+  display: grid;
+  gap: 0.48rem;
+  color: var(--text);
+}
+
+.fleet-benchmark-dashboard-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.fleet-benchmark-dashboard-head > strong {
+  color: var(--text);
+  font-size: 0.76rem;
+}
+
+.fleet-benchmark-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.18rem 0.42rem;
+  border-radius: 999px;
+  font-size: 0.62rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.fleet-benchmark-state::before {
+  content: "";
+  width: 0.42rem;
+  height: 0.42rem;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.fleet-benchmark-state.active {
+  color: #168353;
+  background: rgba(30, 157, 98, 0.12);
+}
+
+.fleet-benchmark-state.stopped {
+  color: var(--muted);
+  background: rgba(113, 128, 150, 0.12);
+}
+
+.fleet-benchmark-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.28rem;
+}
+
+.fleet-benchmark-metric {
+  min-width: 0;
+  padding: 0.32rem 0.38rem;
+  border: 1px solid rgba(20, 49, 88, 0.1);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.86);
+}
+
+.fleet-benchmark-metric span,
+.fleet-benchmark-metric strong {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fleet-benchmark-metric span {
+  color: var(--muted);
+  font-size: 0.56rem;
+  font-weight: 700;
+}
+
+.fleet-benchmark-metric strong {
+  margin-top: 0.06rem;
+  color: var(--text);
+  font-size: 0.68rem;
+}
+
+.fleet-benchmark-metric.tone-accent {
+  border-color: rgba(35, 104, 255, 0.24);
+  background: rgba(35, 104, 255, 0.07);
+}
+
+.fleet-benchmark-metric.tone-success {
+  border-color: rgba(30, 157, 98, 0.22);
+  background: rgba(30, 157, 98, 0.07);
+}
+
+.fleet-benchmark-metric.tone-warning {
+  border-color: rgba(211, 122, 34, 0.28);
+  background: rgba(211, 122, 34, 0.09);
+}
+
 .summary-card {
   min-width: 132px;
   padding: 0.38rem 0.52rem;
@@ -1292,7 +1540,10 @@ body[data-fleet-page="map"] .robot-control-actions {
 .operator-console.fleet-page-fleet #fleetControlPanel {
   grid-column: 2;
   grid-row: 1;
-  overflow: visible;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
 }
 
 .operator-console.fleet-page-fleet .operator-inspector {
@@ -1301,7 +1552,8 @@ body[data-fleet-page="map"] .robot-control-actions {
 }
 
 .operator-console.fleet-page-fleet {
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) minmax(340px, 390px);
+  grid-template-rows: minmax(0, 1.35fr) minmax(220px, 0.65fr);
 }
 
 .operator-console.fleet-page-fleet .robot-message,
@@ -1313,9 +1565,20 @@ body[data-fleet-page="map"] .robot-control-actions {
   gap: 0.42rem;
 }
 
-.operator-console.fleet-page-fleet .fleet-queue-list {
-  max-height: 4.8rem;
-  overflow: hidden;
+.operator-console.fleet-page-fleet #fleetTabFleet .fleet-control-row {
+  order: 0;
+}
+
+.operator-console.fleet-page-fleet #fleetTabFleet .fleet-sim-tools {
+  order: 1;
+}
+
+.operator-console.fleet-page-fleet #fleetTabFleet .fleet-queue-block {
+  order: 2;
+}
+
+.operator-console.fleet-page-fleet #fleetTabFleet .fleet-list-block {
+  order: 3;
 }
 
 .operator-console.fleet-page-fleet #fleetControlPanel {
@@ -1392,12 +1655,22 @@ body[data-fleet-page="map"] .robot-control-actions {
 
 .operator-console.fleet-page-fleet .fleet-queue-list {
   font-size: 0.7rem;
-  max-height: 1.4rem;
+  max-height: 7rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.operator-console.fleet-page-fleet .fleet-list {
+  max-height: 10rem;
 }
 
 .operator-console.fleet-page-fleet .operator-inspector {
   padding: 0.44rem;
   gap: 0.36rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
 }
 
 .operator-console.fleet-page-fleet .operator-inspector .panel-block {
@@ -2536,6 +2809,24 @@ select {
     grid-template-columns: 1fr;
   }
 
+  .operator-console.fleet-page-fleet {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto auto auto;
+    overflow-y: auto;
+  }
+
+  .operator-console.fleet-page-fleet #fleetControlPanel,
+  .operator-console.fleet-page-fleet .operator-map-panel,
+  .operator-console.fleet-page-fleet .operator-inspector {
+    grid-column: 1;
+    grid-row: auto;
+  }
+
+  .operator-console.fleet-page-fleet #fleetControlPanel,
+  .operator-console.fleet-page-fleet .operator-inspector {
+    max-height: none;
+  }
+
   .operator-console.robot-page-model {
     grid-template-columns: minmax(0, 1fr);
     grid-template-rows: minmax(0, 1fr);
@@ -2598,6 +2889,15 @@ select {
 }
 
 @media (max-width: 720px) {
+  .map-sync-status {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .map-sync-detail {
+    grid-column: 1 / -1;
+    padding-left: 0;
+  }
+
   .app-shell {
     height: auto;
     min-height: 100vh;

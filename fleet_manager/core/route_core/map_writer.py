@@ -119,8 +119,15 @@ def _normalize_edges(raw_items: Any, landmarks: list[dict[str, Any]]) -> list[di
         seen.add(key)
 
         properties = dict(item.get("properties") or {})
-        if "direction" not in properties:
-            properties["direction"] = int(item.get("motionDirectionCode", 2) or 2)
+        raw_direction = properties.get(
+            "direction",
+            item.get("motionDirectionCode", -1),
+        )
+        try:
+            direction = int(raw_direction)
+        except (TypeError, ValueError):
+            direction = -1
+        properties["direction"] = direction if direction in {0, 1} else -1
         kind = str(item.get("kind") or ("curve" if item.get("geometry") == "bezier" else "line"))
         edge_type = str(item.get("type") or item.get("curve_type") or item.get("line_type") or "FeatureLine")
         geometry = _normalize_geometry(item, start, goal, landmarks)

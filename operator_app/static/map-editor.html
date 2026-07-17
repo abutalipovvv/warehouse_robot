@@ -87,6 +87,7 @@
             <button id="zoomOutButton" type="button">Zoom -</button>
             <button id="resetViewButton" type="button">Reset View</button>
             <button id="lmNamesButton" type="button">LM names: On</button>
+            <button id="edgeDirectionsButton" type="button">Edge directions: On</button>
             <button id="deleteSelectionButton" class="danger" type="button">Delete Selected</button>
           </div>
         </div>
@@ -160,9 +161,17 @@
               <input id="edgeTypeInput" type="text" />
             </label>
             <label>
-              Direction
+              Traffic
+              <select id="edgeTrafficSelect">
+                <option value="one_way">one_way: From → To</option>
+                <option value="reverse">one_way: To → From</option>
+                <option value="bidirectional">bidirectional</option>
+              </select>
+            </label>
+            <label>
+              Motion
               <select id="edgeDirectionSelect">
-                <option value="2">not_specified</option>
+                <option value="-1">not_specified</option>
                 <option value="0">forward</option>
                 <option value="1">backward</option>
               </select>

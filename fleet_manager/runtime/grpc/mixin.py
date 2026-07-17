@@ -385,10 +385,16 @@ class GrpcRobotRuntimeMixin:
             if parsed is None or edge_id.startswith("WAIT@") or parsed[0] == parsed[1]:
                 continue
             src, dst = parsed
+            motion_direction = str(
+                end.get("motionDirection")
+                or start.get("motionDirection")
+                or "not_specified"
+            )
             if (
                 segments
                 and segments[-1].get("from") == src
                 and segments[-1].get("to") == dst
+                and segments[-1].get("motionDirection") == motion_direction
                 and abs(float(segments[-1].get("plannedArrivalSec", 0.0)) - start_time) < 1e-6
             ):
                 segments[-1]["plannedArrivalSec"] = end_time
@@ -398,6 +404,7 @@ class GrpcRobotRuntimeMixin:
                     "kind": "move",
                     "from": src,
                     "to": dst,
+                    "motionDirection": motion_direction,
                     "notBeforeSec": start_time,
                     "plannedArrivalSec": end_time,
                 }

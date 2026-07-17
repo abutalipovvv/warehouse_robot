@@ -1,305 +1,9 @@
 mapName: smart_kiva_large_w_mode
 coordinateFrame: map_top_left
 LMs:
-- name: S001001
-  x: 0.5
-  y: 0.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S001002
-  x: 1.5
-  y: 0.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S001003
-  x: 2.5
-  y: 0.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S001004
-  x: 3.5
-  y: 0.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S001005
-  x: 4.5
-  y: 0.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S001006
-  x: 5.5
-  y: 0.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S001007
-  x: 6.5
-  y: 0.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S001008
-  x: 7.5
-  y: 0.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S001009
-  x: 8.5
-  y: 0.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S001010
-  x: 9.5
-  y: 0.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S001011
-  x: 10.5
-  y: 0.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S001012
-  x: 11.5
-  y: 0.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S001013
-  x: 12.5
-  y: 0.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S001014
-  x: 13.5
-  y: 0.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S001015
-  x: 14.5
-  y: 0.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S001016
-  x: 15.5
-  y: 0.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S001017
-  x: 16.5
-  y: 0.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S001018
-  x: 17.5
-  y: 0.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S001019
-  x: 18.5
-  y: 0.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S001020
-  x: 19.5
-  y: 0.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S001021
-  x: 20.5
-  y: 0.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S001022
-  x: 21.5
-  y: 0.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S001023
-  x: 22.5
-  y: 0.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S001024
-  x: 23.5
-  y: 0.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S001025
-  x: 24.5
-  y: 0.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S001026
-  x: 25.5
-  y: 0.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S001027
-  x: 26.5
-  y: 0.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S001028
-  x: 27.5
-  y: 0.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S001029
-  x: 28.5
-  y: 0.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S001030
-  x: 29.5
-  y: 0.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S001031
-  x: 30.5
-  y: 0.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S001032
-  x: 31.5
-  y: 0.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S001033
-  x: 32.5
-  y: 0.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S001034
-  x: 33.5
-  y: 0.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S001035
-  x: 34.5
-  y: 0.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S001036
-  x: 35.5
-  y: 0.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S002001
-  x: 0.5
-  y: 1.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: w
-    waitAllowed: true
 - name: S002002
-  x: 1.5
-  y: 1.5
+  x: 1.0
+  y: 1.0
   ignoreDir: null
   properties:
     spin: false
@@ -307,7 +11,7 @@ LMs:
     waitAllowed: true
 - name: S002003
   x: 2.5
-  y: 1.5
+  y: 1.0
   ignoreDir: null
   properties:
     spin: false
@@ -315,7 +19,7 @@ LMs:
     waitAllowed: true
 - name: S002004
   x: 3.5
-  y: 1.5
+  y: 1.0
   ignoreDir: null
   properties:
     spin: false
@@ -323,7 +27,7 @@ LMs:
     waitAllowed: true
 - name: S002005
   x: 4.5
-  y: 1.5
+  y: 1.0
   ignoreDir: null
   properties:
     spin: false
@@ -331,7 +35,7 @@ LMs:
     waitAllowed: true
 - name: S002006
   x: 5.5
-  y: 1.5
+  y: 1.0
   ignoreDir: null
   properties:
     spin: false
@@ -339,7 +43,7 @@ LMs:
     waitAllowed: true
 - name: S002007
   x: 6.5
-  y: 1.5
+  y: 1.0
   ignoreDir: null
   properties:
     spin: false
@@ -347,7 +51,7 @@ LMs:
     waitAllowed: true
 - name: S002008
   x: 7.5
-  y: 1.5
+  y: 1.0
   ignoreDir: null
   properties:
     spin: false
@@ -355,7 +59,7 @@ LMs:
     waitAllowed: true
 - name: S002009
   x: 8.5
-  y: 1.5
+  y: 1.0
   ignoreDir: null
   properties:
     spin: false
@@ -363,7 +67,7 @@ LMs:
     waitAllowed: true
 - name: S002010
   x: 9.5
-  y: 1.5
+  y: 1.0
   ignoreDir: null
   properties:
     spin: false
@@ -371,7 +75,7 @@ LMs:
     waitAllowed: true
 - name: S002011
   x: 10.5
-  y: 1.5
+  y: 1.0
   ignoreDir: null
   properties:
     spin: false
@@ -379,7 +83,7 @@ LMs:
     waitAllowed: true
 - name: S002012
   x: 11.5
-  y: 1.5
+  y: 1.0
   ignoreDir: null
   properties:
     spin: false
@@ -387,7 +91,7 @@ LMs:
     waitAllowed: true
 - name: S002013
   x: 12.5
-  y: 1.5
+  y: 1.0
   ignoreDir: null
   properties:
     spin: false
@@ -395,7 +99,7 @@ LMs:
     waitAllowed: true
 - name: S002014
   x: 13.5
-  y: 1.5
+  y: 1.0
   ignoreDir: null
   properties:
     spin: false
@@ -403,7 +107,7 @@ LMs:
     waitAllowed: true
 - name: S002015
   x: 14.5
-  y: 1.5
+  y: 1.0
   ignoreDir: null
   properties:
     spin: false
@@ -411,7 +115,7 @@ LMs:
     waitAllowed: true
 - name: S002016
   x: 15.5
-  y: 1.5
+  y: 1.0
   ignoreDir: null
   properties:
     spin: false
@@ -419,7 +123,7 @@ LMs:
     waitAllowed: true
 - name: S002017
   x: 16.5
-  y: 1.5
+  y: 1.0
   ignoreDir: null
   properties:
     spin: false
@@ -427,7 +131,7 @@ LMs:
     waitAllowed: true
 - name: S002018
   x: 17.5
-  y: 1.5
+  y: 1.0
   ignoreDir: null
   properties:
     spin: false
@@ -435,7 +139,7 @@ LMs:
     waitAllowed: true
 - name: S002019
   x: 18.5
-  y: 1.5
+  y: 1.0
   ignoreDir: null
   properties:
     spin: false
@@ -443,7 +147,7 @@ LMs:
     waitAllowed: true
 - name: S002020
   x: 19.5
-  y: 1.5
+  y: 1.0
   ignoreDir: null
   properties:
     spin: false
@@ -451,7 +155,7 @@ LMs:
     waitAllowed: true
 - name: S002021
   x: 20.5
-  y: 1.5
+  y: 1.0
   ignoreDir: null
   properties:
     spin: false
@@ -459,7 +163,7 @@ LMs:
     waitAllowed: true
 - name: S002022
   x: 21.5
-  y: 1.5
+  y: 1.0
   ignoreDir: null
   properties:
     spin: false
@@ -467,7 +171,7 @@ LMs:
     waitAllowed: true
 - name: S002023
   x: 22.5
-  y: 1.5
+  y: 1.0
   ignoreDir: null
   properties:
     spin: false
@@ -475,7 +179,7 @@ LMs:
     waitAllowed: true
 - name: S002024
   x: 23.5
-  y: 1.5
+  y: 1.0
   ignoreDir: null
   properties:
     spin: false
@@ -483,7 +187,7 @@ LMs:
     waitAllowed: true
 - name: S002025
   x: 24.5
-  y: 1.5
+  y: 1.0
   ignoreDir: null
   properties:
     spin: false
@@ -491,7 +195,7 @@ LMs:
     waitAllowed: true
 - name: S002026
   x: 25.5
-  y: 1.5
+  y: 1.0
   ignoreDir: null
   properties:
     spin: false
@@ -499,7 +203,7 @@ LMs:
     waitAllowed: true
 - name: S002027
   x: 26.5
-  y: 1.5
+  y: 1.0
   ignoreDir: null
   properties:
     spin: false
@@ -507,7 +211,7 @@ LMs:
     waitAllowed: true
 - name: S002028
   x: 27.5
-  y: 1.5
+  y: 1.0
   ignoreDir: null
   properties:
     spin: false
@@ -515,7 +219,7 @@ LMs:
     waitAllowed: true
 - name: S002029
   x: 28.5
-  y: 1.5
+  y: 1.0
   ignoreDir: null
   properties:
     spin: false
@@ -523,7 +227,7 @@ LMs:
     waitAllowed: true
 - name: S002030
   x: 29.5
-  y: 1.5
+  y: 1.0
   ignoreDir: null
   properties:
     spin: false
@@ -531,7 +235,7 @@ LMs:
     waitAllowed: true
 - name: S002031
   x: 30.5
-  y: 1.5
+  y: 1.0
   ignoreDir: null
   properties:
     spin: false
@@ -539,7 +243,7 @@ LMs:
     waitAllowed: true
 - name: S002032
   x: 31.5
-  y: 1.5
+  y: 1.0
   ignoreDir: null
   properties:
     spin: false
@@ -547,7 +251,7 @@ LMs:
     waitAllowed: true
 - name: S002033
   x: 32.5
-  y: 1.5
+  y: 1.0
   ignoreDir: null
   properties:
     spin: false
@@ -555,38 +259,22 @@ LMs:
     waitAllowed: true
 - name: S002034
   x: 33.5
-  y: 1.5
+  y: 1.0
   ignoreDir: null
   properties:
     spin: false
     smartCell: e
     waitAllowed: true
 - name: S002035
-  x: 34.5
-  y: 1.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S002036
-  x: 35.5
-  y: 1.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: w
-    waitAllowed: true
-- name: S003001
-  x: 0.5
-  y: 2.5
+  x: 35.0
+  y: 1.0
   ignoreDir: null
   properties:
     spin: false
     smartCell: .
     waitAllowed: true
 - name: S003002
-  x: 1.5
+  x: 1.0
   y: 2.5
   ignoreDir: null
   properties:
@@ -610,32 +298,16 @@ LMs:
     smartCell: .
     waitAllowed: true
 - name: S003035
-  x: 34.5
+  x: 35.0
   y: 2.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S003036
-  x: 35.5
-  y: 2.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S004001
-  x: 0.5
-  y: 3.5
   ignoreDir: null
   properties:
     spin: false
     smartCell: .
     waitAllowed: true
 - name: S004002
-  x: 1.5
-  y: 3.5
+  x: 1.0
+  y: 3.8
   ignoreDir: null
   properties:
     spin: false
@@ -643,7 +315,7 @@ LMs:
     waitAllowed: true
 - name: S004003
   x: 2.5
-  y: 3.5
+  y: 3.8
   ignoreDir: null
   properties:
     spin: false
@@ -651,7 +323,7 @@ LMs:
     waitAllowed: true
 - name: S004004
   x: 3.5
-  y: 3.5
+  y: 3.8
   ignoreDir: null
   properties:
     spin: false
@@ -659,7 +331,7 @@ LMs:
     waitAllowed: true
 - name: S004005
   x: 4.5
-  y: 3.5
+  y: 3.8
   ignoreDir: null
   properties:
     spin: false
@@ -667,7 +339,7 @@ LMs:
     waitAllowed: true
 - name: S004006
   x: 5.5
-  y: 3.5
+  y: 3.8
   ignoreDir: null
   properties:
     spin: false
@@ -675,7 +347,7 @@ LMs:
     waitAllowed: true
 - name: S004007
   x: 6.5
-  y: 3.5
+  y: 3.8
   ignoreDir: null
   properties:
     spin: false
@@ -683,7 +355,7 @@ LMs:
     waitAllowed: true
 - name: S004008
   x: 7.5
-  y: 3.5
+  y: 3.8
   ignoreDir: null
   properties:
     spin: false
@@ -691,7 +363,7 @@ LMs:
     waitAllowed: true
 - name: S004009
   x: 8.5
-  y: 3.5
+  y: 3.8
   ignoreDir: null
   properties:
     spin: false
@@ -699,7 +371,7 @@ LMs:
     waitAllowed: true
 - name: S004010
   x: 9.5
-  y: 3.5
+  y: 3.8
   ignoreDir: null
   properties:
     spin: false
@@ -707,7 +379,7 @@ LMs:
     waitAllowed: true
 - name: S004011
   x: 10.5
-  y: 3.5
+  y: 3.8
   ignoreDir: null
   properties:
     spin: false
@@ -715,7 +387,7 @@ LMs:
     waitAllowed: true
 - name: S004012
   x: 11.5
-  y: 3.5
+  y: 3.8
   ignoreDir: null
   properties:
     spin: false
@@ -723,7 +395,7 @@ LMs:
     waitAllowed: true
 - name: S004013
   x: 12.5
-  y: 3.5
+  y: 3.8
   ignoreDir: null
   properties:
     spin: false
@@ -731,7 +403,7 @@ LMs:
     waitAllowed: true
 - name: S004014
   x: 13.5
-  y: 3.5
+  y: 3.8
   ignoreDir: null
   properties:
     spin: false
@@ -739,7 +411,7 @@ LMs:
     waitAllowed: true
 - name: S004015
   x: 14.5
-  y: 3.5
+  y: 3.8
   ignoreDir: null
   properties:
     spin: false
@@ -747,7 +419,7 @@ LMs:
     waitAllowed: true
 - name: S004016
   x: 15.5
-  y: 3.5
+  y: 3.8
   ignoreDir: null
   properties:
     spin: false
@@ -755,7 +427,7 @@ LMs:
     waitAllowed: true
 - name: S004017
   x: 16.5
-  y: 3.5
+  y: 3.8
   ignoreDir: null
   properties:
     spin: false
@@ -763,7 +435,7 @@ LMs:
     waitAllowed: true
 - name: S004018
   x: 17.5
-  y: 3.5
+  y: 3.8
   ignoreDir: null
   properties:
     spin: false
@@ -771,7 +443,7 @@ LMs:
     waitAllowed: true
 - name: S004019
   x: 18.5
-  y: 3.5
+  y: 3.8
   ignoreDir: null
   properties:
     spin: false
@@ -779,7 +451,7 @@ LMs:
     waitAllowed: true
 - name: S004020
   x: 19.5
-  y: 3.5
+  y: 3.8
   ignoreDir: null
   properties:
     spin: false
@@ -787,7 +459,7 @@ LMs:
     waitAllowed: true
 - name: S004021
   x: 20.5
-  y: 3.5
+  y: 3.8
   ignoreDir: null
   properties:
     spin: false
@@ -795,7 +467,7 @@ LMs:
     waitAllowed: true
 - name: S004022
   x: 21.5
-  y: 3.5
+  y: 3.8
   ignoreDir: null
   properties:
     spin: false
@@ -803,7 +475,7 @@ LMs:
     waitAllowed: true
 - name: S004023
   x: 22.5
-  y: 3.5
+  y: 3.8
   ignoreDir: null
   properties:
     spin: false
@@ -811,7 +483,7 @@ LMs:
     waitAllowed: true
 - name: S004024
   x: 23.5
-  y: 3.5
+  y: 3.8
   ignoreDir: null
   properties:
     spin: false
@@ -819,7 +491,7 @@ LMs:
     waitAllowed: true
 - name: S004025
   x: 24.5
-  y: 3.5
+  y: 3.8
   ignoreDir: null
   properties:
     spin: false
@@ -827,7 +499,7 @@ LMs:
     waitAllowed: true
 - name: S004026
   x: 25.5
-  y: 3.5
+  y: 3.8
   ignoreDir: null
   properties:
     spin: false
@@ -835,7 +507,7 @@ LMs:
     waitAllowed: true
 - name: S004027
   x: 26.5
-  y: 3.5
+  y: 3.8
   ignoreDir: null
   properties:
     spin: false
@@ -843,7 +515,7 @@ LMs:
     waitAllowed: true
 - name: S004028
   x: 27.5
-  y: 3.5
+  y: 3.8
   ignoreDir: null
   properties:
     spin: false
@@ -851,7 +523,7 @@ LMs:
     waitAllowed: true
 - name: S004029
   x: 28.5
-  y: 3.5
+  y: 3.8
   ignoreDir: null
   properties:
     spin: false
@@ -859,7 +531,7 @@ LMs:
     waitAllowed: true
 - name: S004030
   x: 29.5
-  y: 3.5
+  y: 3.8
   ignoreDir: null
   properties:
     spin: false
@@ -867,7 +539,7 @@ LMs:
     waitAllowed: true
 - name: S004031
   x: 30.5
-  y: 3.5
+  y: 3.8
   ignoreDir: null
   properties:
     spin: false
@@ -875,7 +547,7 @@ LMs:
     waitAllowed: true
 - name: S004032
   x: 31.5
-  y: 3.5
+  y: 3.8
   ignoreDir: null
   properties:
     spin: false
@@ -883,7 +555,7 @@ LMs:
     waitAllowed: true
 - name: S004033
   x: 32.5
-  y: 3.5
+  y: 3.8
   ignoreDir: null
   properties:
     spin: false
@@ -891,327 +563,23 @@ LMs:
     waitAllowed: true
 - name: S004034
   x: 33.5
-  y: 3.5
+  y: 3.8
   ignoreDir: null
   properties:
     spin: false
     smartCell: e
     waitAllowed: true
 - name: S004035
-  x: 34.5
-  y: 3.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S004036
-  x: 35.5
-  y: 3.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S005001
-  x: 0.5
-  y: 4.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: w
-    waitAllowed: true
-- name: S005002
-  x: 1.5
-  y: 4.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S005003
-  x: 2.5
-  y: 4.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S005004
-  x: 3.5
-  y: 4.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S005005
-  x: 4.5
-  y: 4.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S005006
-  x: 5.5
-  y: 4.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S005007
-  x: 6.5
-  y: 4.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S005008
-  x: 7.5
-  y: 4.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S005009
-  x: 8.5
-  y: 4.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S005010
-  x: 9.5
-  y: 4.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S005011
-  x: 10.5
-  y: 4.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S005012
-  x: 11.5
-  y: 4.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S005013
-  x: 12.5
-  y: 4.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S005014
-  x: 13.5
-  y: 4.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S005015
-  x: 14.5
-  y: 4.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S005016
-  x: 15.5
-  y: 4.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S005017
-  x: 16.5
-  y: 4.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S005018
-  x: 17.5
-  y: 4.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S005019
-  x: 18.5
-  y: 4.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S005020
-  x: 19.5
-  y: 4.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S005021
-  x: 20.5
-  y: 4.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S005022
-  x: 21.5
-  y: 4.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S005023
-  x: 22.5
-  y: 4.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S005024
-  x: 23.5
-  y: 4.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S005025
-  x: 24.5
-  y: 4.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S005026
-  x: 25.5
-  y: 4.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S005027
-  x: 26.5
-  y: 4.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S005028
-  x: 27.5
-  y: 4.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S005029
-  x: 28.5
-  y: 4.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S005030
-  x: 29.5
-  y: 4.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S005031
-  x: 30.5
-  y: 4.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S005032
-  x: 31.5
-  y: 4.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S005033
-  x: 32.5
-  y: 4.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S005034
-  x: 33.5
-  y: 4.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S005035
-  x: 34.5
-  y: 4.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S005036
-  x: 35.5
-  y: 4.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: w
-    waitAllowed: true
-- name: S006001
-  x: 0.5
-  y: 5.5
+  x: 35.0
+  y: 3.8
   ignoreDir: null
   properties:
     spin: false
     smartCell: .
     waitAllowed: true
 - name: S006002
-  x: 1.5
-  y: 5.5
+  x: 1.0
+  y: 5.2
   ignoreDir: null
   properties:
     spin: false
@@ -1219,7 +587,7 @@ LMs:
     waitAllowed: true
 - name: S006003
   x: 2.5
-  y: 5.5
+  y: 5.2
   ignoreDir: null
   properties:
     spin: false
@@ -1227,7 +595,7 @@ LMs:
     waitAllowed: true
 - name: S006004
   x: 3.5
-  y: 5.5
+  y: 5.2
   ignoreDir: null
   properties:
     spin: false
@@ -1235,7 +603,7 @@ LMs:
     waitAllowed: true
 - name: S006005
   x: 4.5
-  y: 5.5
+  y: 5.2
   ignoreDir: null
   properties:
     spin: false
@@ -1243,7 +611,7 @@ LMs:
     waitAllowed: true
 - name: S006006
   x: 5.5
-  y: 5.5
+  y: 5.2
   ignoreDir: null
   properties:
     spin: false
@@ -1251,7 +619,7 @@ LMs:
     waitAllowed: true
 - name: S006007
   x: 6.5
-  y: 5.5
+  y: 5.2
   ignoreDir: null
   properties:
     spin: false
@@ -1259,7 +627,7 @@ LMs:
     waitAllowed: true
 - name: S006008
   x: 7.5
-  y: 5.5
+  y: 5.2
   ignoreDir: null
   properties:
     spin: false
@@ -1267,7 +635,7 @@ LMs:
     waitAllowed: true
 - name: S006009
   x: 8.5
-  y: 5.5
+  y: 5.2
   ignoreDir: null
   properties:
     spin: false
@@ -1275,7 +643,7 @@ LMs:
     waitAllowed: true
 - name: S006010
   x: 9.5
-  y: 5.5
+  y: 5.2
   ignoreDir: null
   properties:
     spin: false
@@ -1283,7 +651,7 @@ LMs:
     waitAllowed: true
 - name: S006011
   x: 10.5
-  y: 5.5
+  y: 5.2
   ignoreDir: null
   properties:
     spin: false
@@ -1291,7 +659,7 @@ LMs:
     waitAllowed: true
 - name: S006012
   x: 11.5
-  y: 5.5
+  y: 5.2
   ignoreDir: null
   properties:
     spin: false
@@ -1299,7 +667,7 @@ LMs:
     waitAllowed: true
 - name: S006013
   x: 12.5
-  y: 5.5
+  y: 5.2
   ignoreDir: null
   properties:
     spin: false
@@ -1307,7 +675,7 @@ LMs:
     waitAllowed: true
 - name: S006014
   x: 13.5
-  y: 5.5
+  y: 5.2
   ignoreDir: null
   properties:
     spin: false
@@ -1315,7 +683,7 @@ LMs:
     waitAllowed: true
 - name: S006015
   x: 14.5
-  y: 5.5
+  y: 5.2
   ignoreDir: null
   properties:
     spin: false
@@ -1323,7 +691,7 @@ LMs:
     waitAllowed: true
 - name: S006016
   x: 15.5
-  y: 5.5
+  y: 5.2
   ignoreDir: null
   properties:
     spin: false
@@ -1331,7 +699,7 @@ LMs:
     waitAllowed: true
 - name: S006017
   x: 16.5
-  y: 5.5
+  y: 5.2
   ignoreDir: null
   properties:
     spin: false
@@ -1339,7 +707,7 @@ LMs:
     waitAllowed: true
 - name: S006018
   x: 17.5
-  y: 5.5
+  y: 5.2
   ignoreDir: null
   properties:
     spin: false
@@ -1347,7 +715,7 @@ LMs:
     waitAllowed: true
 - name: S006019
   x: 18.5
-  y: 5.5
+  y: 5.2
   ignoreDir: null
   properties:
     spin: false
@@ -1355,7 +723,7 @@ LMs:
     waitAllowed: true
 - name: S006020
   x: 19.5
-  y: 5.5
+  y: 5.2
   ignoreDir: null
   properties:
     spin: false
@@ -1363,7 +731,7 @@ LMs:
     waitAllowed: true
 - name: S006021
   x: 20.5
-  y: 5.5
+  y: 5.2
   ignoreDir: null
   properties:
     spin: false
@@ -1371,7 +739,7 @@ LMs:
     waitAllowed: true
 - name: S006022
   x: 21.5
-  y: 5.5
+  y: 5.2
   ignoreDir: null
   properties:
     spin: false
@@ -1379,7 +747,7 @@ LMs:
     waitAllowed: true
 - name: S006023
   x: 22.5
-  y: 5.5
+  y: 5.2
   ignoreDir: null
   properties:
     spin: false
@@ -1387,7 +755,7 @@ LMs:
     waitAllowed: true
 - name: S006024
   x: 23.5
-  y: 5.5
+  y: 5.2
   ignoreDir: null
   properties:
     spin: false
@@ -1395,7 +763,7 @@ LMs:
     waitAllowed: true
 - name: S006025
   x: 24.5
-  y: 5.5
+  y: 5.2
   ignoreDir: null
   properties:
     spin: false
@@ -1403,7 +771,7 @@ LMs:
     waitAllowed: true
 - name: S006026
   x: 25.5
-  y: 5.5
+  y: 5.2
   ignoreDir: null
   properties:
     spin: false
@@ -1411,7 +779,7 @@ LMs:
     waitAllowed: true
 - name: S006027
   x: 26.5
-  y: 5.5
+  y: 5.2
   ignoreDir: null
   properties:
     spin: false
@@ -1419,7 +787,7 @@ LMs:
     waitAllowed: true
 - name: S006028
   x: 27.5
-  y: 5.5
+  y: 5.2
   ignoreDir: null
   properties:
     spin: false
@@ -1427,7 +795,7 @@ LMs:
     waitAllowed: true
 - name: S006029
   x: 28.5
-  y: 5.5
+  y: 5.2
   ignoreDir: null
   properties:
     spin: false
@@ -1435,7 +803,7 @@ LMs:
     waitAllowed: true
 - name: S006030
   x: 29.5
-  y: 5.5
+  y: 5.2
   ignoreDir: null
   properties:
     spin: false
@@ -1443,7 +811,7 @@ LMs:
     waitAllowed: true
 - name: S006031
   x: 30.5
-  y: 5.5
+  y: 5.2
   ignoreDir: null
   properties:
     spin: false
@@ -1451,7 +819,7 @@ LMs:
     waitAllowed: true
 - name: S006032
   x: 31.5
-  y: 5.5
+  y: 5.2
   ignoreDir: null
   properties:
     spin: false
@@ -1459,7 +827,7 @@ LMs:
     waitAllowed: true
 - name: S006033
   x: 32.5
-  y: 5.5
+  y: 5.2
   ignoreDir: null
   properties:
     spin: false
@@ -1467,38 +835,22 @@ LMs:
     waitAllowed: true
 - name: S006034
   x: 33.5
-  y: 5.5
+  y: 5.2
   ignoreDir: null
   properties:
     spin: false
     smartCell: e
     waitAllowed: true
 - name: S006035
-  x: 34.5
-  y: 5.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S006036
-  x: 35.5
-  y: 5.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S007001
-  x: 0.5
-  y: 6.5
+  x: 35.0
+  y: 5.2
   ignoreDir: null
   properties:
     spin: false
     smartCell: .
     waitAllowed: true
 - name: S007002
-  x: 1.5
+  x: 1.0
   y: 6.5
   ignoreDir: null
   properties:
@@ -1522,32 +874,16 @@ LMs:
     smartCell: .
     waitAllowed: true
 - name: S007035
-  x: 34.5
+  x: 35.0
   y: 6.5
   ignoreDir: null
   properties:
     spin: false
     smartCell: .
-    waitAllowed: true
-- name: S007036
-  x: 35.5
-  y: 6.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S008001
-  x: 0.5
-  y: 7.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: w
     waitAllowed: true
 - name: S008002
-  x: 1.5
-  y: 7.5
+  x: 1.0
+  y: 7.8
   ignoreDir: null
   properties:
     spin: false
@@ -1555,7 +891,7 @@ LMs:
     waitAllowed: true
 - name: S008003
   x: 2.5
-  y: 7.5
+  y: 7.8
   ignoreDir: null
   properties:
     spin: false
@@ -1563,7 +899,7 @@ LMs:
     waitAllowed: true
 - name: S008004
   x: 3.5
-  y: 7.5
+  y: 7.8
   ignoreDir: null
   properties:
     spin: false
@@ -1571,7 +907,7 @@ LMs:
     waitAllowed: true
 - name: S008005
   x: 4.5
-  y: 7.5
+  y: 7.8
   ignoreDir: null
   properties:
     spin: false
@@ -1579,7 +915,7 @@ LMs:
     waitAllowed: true
 - name: S008006
   x: 5.5
-  y: 7.5
+  y: 7.8
   ignoreDir: null
   properties:
     spin: false
@@ -1587,7 +923,7 @@ LMs:
     waitAllowed: true
 - name: S008007
   x: 6.5
-  y: 7.5
+  y: 7.8
   ignoreDir: null
   properties:
     spin: false
@@ -1595,7 +931,7 @@ LMs:
     waitAllowed: true
 - name: S008008
   x: 7.5
-  y: 7.5
+  y: 7.8
   ignoreDir: null
   properties:
     spin: false
@@ -1603,7 +939,7 @@ LMs:
     waitAllowed: true
 - name: S008009
   x: 8.5
-  y: 7.5
+  y: 7.8
   ignoreDir: null
   properties:
     spin: false
@@ -1611,7 +947,7 @@ LMs:
     waitAllowed: true
 - name: S008010
   x: 9.5
-  y: 7.5
+  y: 7.8
   ignoreDir: null
   properties:
     spin: false
@@ -1619,7 +955,7 @@ LMs:
     waitAllowed: true
 - name: S008011
   x: 10.5
-  y: 7.5
+  y: 7.8
   ignoreDir: null
   properties:
     spin: false
@@ -1627,7 +963,7 @@ LMs:
     waitAllowed: true
 - name: S008012
   x: 11.5
-  y: 7.5
+  y: 7.8
   ignoreDir: null
   properties:
     spin: false
@@ -1635,7 +971,7 @@ LMs:
     waitAllowed: true
 - name: S008013
   x: 12.5
-  y: 7.5
+  y: 7.8
   ignoreDir: null
   properties:
     spin: false
@@ -1643,7 +979,7 @@ LMs:
     waitAllowed: true
 - name: S008014
   x: 13.5
-  y: 7.5
+  y: 7.8
   ignoreDir: null
   properties:
     spin: false
@@ -1651,7 +987,7 @@ LMs:
     waitAllowed: true
 - name: S008015
   x: 14.5
-  y: 7.5
+  y: 7.8
   ignoreDir: null
   properties:
     spin: false
@@ -1659,7 +995,7 @@ LMs:
     waitAllowed: true
 - name: S008016
   x: 15.5
-  y: 7.5
+  y: 7.8
   ignoreDir: null
   properties:
     spin: false
@@ -1667,7 +1003,7 @@ LMs:
     waitAllowed: true
 - name: S008017
   x: 16.5
-  y: 7.5
+  y: 7.8
   ignoreDir: null
   properties:
     spin: false
@@ -1675,7 +1011,7 @@ LMs:
     waitAllowed: true
 - name: S008018
   x: 17.5
-  y: 7.5
+  y: 7.8
   ignoreDir: null
   properties:
     spin: false
@@ -1683,7 +1019,7 @@ LMs:
     waitAllowed: true
 - name: S008019
   x: 18.5
-  y: 7.5
+  y: 7.8
   ignoreDir: null
   properties:
     spin: false
@@ -1691,7 +1027,7 @@ LMs:
     waitAllowed: true
 - name: S008020
   x: 19.5
-  y: 7.5
+  y: 7.8
   ignoreDir: null
   properties:
     spin: false
@@ -1699,7 +1035,7 @@ LMs:
     waitAllowed: true
 - name: S008021
   x: 20.5
-  y: 7.5
+  y: 7.8
   ignoreDir: null
   properties:
     spin: false
@@ -1707,7 +1043,7 @@ LMs:
     waitAllowed: true
 - name: S008022
   x: 21.5
-  y: 7.5
+  y: 7.8
   ignoreDir: null
   properties:
     spin: false
@@ -1715,7 +1051,7 @@ LMs:
     waitAllowed: true
 - name: S008023
   x: 22.5
-  y: 7.5
+  y: 7.8
   ignoreDir: null
   properties:
     spin: false
@@ -1723,7 +1059,7 @@ LMs:
     waitAllowed: true
 - name: S008024
   x: 23.5
-  y: 7.5
+  y: 7.8
   ignoreDir: null
   properties:
     spin: false
@@ -1731,7 +1067,7 @@ LMs:
     waitAllowed: true
 - name: S008025
   x: 24.5
-  y: 7.5
+  y: 7.8
   ignoreDir: null
   properties:
     spin: false
@@ -1739,7 +1075,7 @@ LMs:
     waitAllowed: true
 - name: S008026
   x: 25.5
-  y: 7.5
+  y: 7.8
   ignoreDir: null
   properties:
     spin: false
@@ -1747,7 +1083,7 @@ LMs:
     waitAllowed: true
 - name: S008027
   x: 26.5
-  y: 7.5
+  y: 7.8
   ignoreDir: null
   properties:
     spin: false
@@ -1755,7 +1091,7 @@ LMs:
     waitAllowed: true
 - name: S008028
   x: 27.5
-  y: 7.5
+  y: 7.8
   ignoreDir: null
   properties:
     spin: false
@@ -1763,7 +1099,7 @@ LMs:
     waitAllowed: true
 - name: S008029
   x: 28.5
-  y: 7.5
+  y: 7.8
   ignoreDir: null
   properties:
     spin: false
@@ -1771,7 +1107,7 @@ LMs:
     waitAllowed: true
 - name: S008030
   x: 29.5
-  y: 7.5
+  y: 7.8
   ignoreDir: null
   properties:
     spin: false
@@ -1779,7 +1115,7 @@ LMs:
     waitAllowed: true
 - name: S008031
   x: 30.5
-  y: 7.5
+  y: 7.8
   ignoreDir: null
   properties:
     spin: false
@@ -1787,7 +1123,7 @@ LMs:
     waitAllowed: true
 - name: S008032
   x: 31.5
-  y: 7.5
+  y: 7.8
   ignoreDir: null
   properties:
     spin: false
@@ -1795,7 +1131,7 @@ LMs:
     waitAllowed: true
 - name: S008033
   x: 32.5
-  y: 7.5
+  y: 7.8
   ignoreDir: null
   properties:
     spin: false
@@ -1803,327 +1139,23 @@ LMs:
     waitAllowed: true
 - name: S008034
   x: 33.5
-  y: 7.5
+  y: 7.8
   ignoreDir: null
   properties:
     spin: false
     smartCell: e
     waitAllowed: true
 - name: S008035
-  x: 34.5
-  y: 7.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S008036
-  x: 35.5
-  y: 7.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: w
-    waitAllowed: true
-- name: S009001
-  x: 0.5
-  y: 8.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S009002
-  x: 1.5
-  y: 8.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S009003
-  x: 2.5
-  y: 8.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S009004
-  x: 3.5
-  y: 8.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S009005
-  x: 4.5
-  y: 8.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S009006
-  x: 5.5
-  y: 8.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S009007
-  x: 6.5
-  y: 8.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S009008
-  x: 7.5
-  y: 8.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S009009
-  x: 8.5
-  y: 8.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S009010
-  x: 9.5
-  y: 8.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S009011
-  x: 10.5
-  y: 8.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S009012
-  x: 11.5
-  y: 8.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S009013
-  x: 12.5
-  y: 8.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S009014
-  x: 13.5
-  y: 8.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S009015
-  x: 14.5
-  y: 8.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S009016
-  x: 15.5
-  y: 8.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S009017
-  x: 16.5
-  y: 8.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S009018
-  x: 17.5
-  y: 8.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S009019
-  x: 18.5
-  y: 8.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S009020
-  x: 19.5
-  y: 8.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S009021
-  x: 20.5
-  y: 8.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S009022
-  x: 21.5
-  y: 8.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S009023
-  x: 22.5
-  y: 8.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S009024
-  x: 23.5
-  y: 8.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S009025
-  x: 24.5
-  y: 8.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S009026
-  x: 25.5
-  y: 8.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S009027
-  x: 26.5
-  y: 8.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S009028
-  x: 27.5
-  y: 8.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S009029
-  x: 28.5
-  y: 8.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S009030
-  x: 29.5
-  y: 8.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S009031
-  x: 30.5
-  y: 8.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S009032
-  x: 31.5
-  y: 8.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S009033
-  x: 32.5
-  y: 8.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S009034
-  x: 33.5
-  y: 8.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S009035
-  x: 34.5
-  y: 8.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S009036
-  x: 35.5
-  y: 8.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S010001
-  x: 0.5
-  y: 9.5
+  x: 35.0
+  y: 7.8
   ignoreDir: null
   properties:
     spin: false
     smartCell: .
     waitAllowed: true
 - name: S010002
-  x: 1.5
-  y: 9.5
+  x: 1.0
+  y: 9.2
   ignoreDir: null
   properties:
     spin: false
@@ -2131,7 +1163,7 @@ LMs:
     waitAllowed: true
 - name: S010003
   x: 2.5
-  y: 9.5
+  y: 9.2
   ignoreDir: null
   properties:
     spin: false
@@ -2139,7 +1171,7 @@ LMs:
     waitAllowed: true
 - name: S010004
   x: 3.5
-  y: 9.5
+  y: 9.2
   ignoreDir: null
   properties:
     spin: false
@@ -2147,7 +1179,7 @@ LMs:
     waitAllowed: true
 - name: S010005
   x: 4.5
-  y: 9.5
+  y: 9.2
   ignoreDir: null
   properties:
     spin: false
@@ -2155,7 +1187,7 @@ LMs:
     waitAllowed: true
 - name: S010006
   x: 5.5
-  y: 9.5
+  y: 9.2
   ignoreDir: null
   properties:
     spin: false
@@ -2163,7 +1195,7 @@ LMs:
     waitAllowed: true
 - name: S010007
   x: 6.5
-  y: 9.5
+  y: 9.2
   ignoreDir: null
   properties:
     spin: false
@@ -2171,7 +1203,7 @@ LMs:
     waitAllowed: true
 - name: S010008
   x: 7.5
-  y: 9.5
+  y: 9.2
   ignoreDir: null
   properties:
     spin: false
@@ -2179,7 +1211,7 @@ LMs:
     waitAllowed: true
 - name: S010009
   x: 8.5
-  y: 9.5
+  y: 9.2
   ignoreDir: null
   properties:
     spin: false
@@ -2187,7 +1219,7 @@ LMs:
     waitAllowed: true
 - name: S010010
   x: 9.5
-  y: 9.5
+  y: 9.2
   ignoreDir: null
   properties:
     spin: false
@@ -2195,7 +1227,7 @@ LMs:
     waitAllowed: true
 - name: S010011
   x: 10.5
-  y: 9.5
+  y: 9.2
   ignoreDir: null
   properties:
     spin: false
@@ -2203,7 +1235,7 @@ LMs:
     waitAllowed: true
 - name: S010012
   x: 11.5
-  y: 9.5
+  y: 9.2
   ignoreDir: null
   properties:
     spin: false
@@ -2211,7 +1243,7 @@ LMs:
     waitAllowed: true
 - name: S010013
   x: 12.5
-  y: 9.5
+  y: 9.2
   ignoreDir: null
   properties:
     spin: false
@@ -2219,7 +1251,7 @@ LMs:
     waitAllowed: true
 - name: S010014
   x: 13.5
-  y: 9.5
+  y: 9.2
   ignoreDir: null
   properties:
     spin: false
@@ -2227,7 +1259,7 @@ LMs:
     waitAllowed: true
 - name: S010015
   x: 14.5
-  y: 9.5
+  y: 9.2
   ignoreDir: null
   properties:
     spin: false
@@ -2235,7 +1267,7 @@ LMs:
     waitAllowed: true
 - name: S010016
   x: 15.5
-  y: 9.5
+  y: 9.2
   ignoreDir: null
   properties:
     spin: false
@@ -2243,7 +1275,7 @@ LMs:
     waitAllowed: true
 - name: S010017
   x: 16.5
-  y: 9.5
+  y: 9.2
   ignoreDir: null
   properties:
     spin: false
@@ -2251,7 +1283,7 @@ LMs:
     waitAllowed: true
 - name: S010018
   x: 17.5
-  y: 9.5
+  y: 9.2
   ignoreDir: null
   properties:
     spin: false
@@ -2259,7 +1291,7 @@ LMs:
     waitAllowed: true
 - name: S010019
   x: 18.5
-  y: 9.5
+  y: 9.2
   ignoreDir: null
   properties:
     spin: false
@@ -2267,7 +1299,7 @@ LMs:
     waitAllowed: true
 - name: S010020
   x: 19.5
-  y: 9.5
+  y: 9.2
   ignoreDir: null
   properties:
     spin: false
@@ -2275,7 +1307,7 @@ LMs:
     waitAllowed: true
 - name: S010021
   x: 20.5
-  y: 9.5
+  y: 9.2
   ignoreDir: null
   properties:
     spin: false
@@ -2283,7 +1315,7 @@ LMs:
     waitAllowed: true
 - name: S010022
   x: 21.5
-  y: 9.5
+  y: 9.2
   ignoreDir: null
   properties:
     spin: false
@@ -2291,7 +1323,7 @@ LMs:
     waitAllowed: true
 - name: S010023
   x: 22.5
-  y: 9.5
+  y: 9.2
   ignoreDir: null
   properties:
     spin: false
@@ -2299,7 +1331,7 @@ LMs:
     waitAllowed: true
 - name: S010024
   x: 23.5
-  y: 9.5
+  y: 9.2
   ignoreDir: null
   properties:
     spin: false
@@ -2307,7 +1339,7 @@ LMs:
     waitAllowed: true
 - name: S010025
   x: 24.5
-  y: 9.5
+  y: 9.2
   ignoreDir: null
   properties:
     spin: false
@@ -2315,7 +1347,7 @@ LMs:
     waitAllowed: true
 - name: S010026
   x: 25.5
-  y: 9.5
+  y: 9.2
   ignoreDir: null
   properties:
     spin: false
@@ -2323,7 +1355,7 @@ LMs:
     waitAllowed: true
 - name: S010027
   x: 26.5
-  y: 9.5
+  y: 9.2
   ignoreDir: null
   properties:
     spin: false
@@ -2331,7 +1363,7 @@ LMs:
     waitAllowed: true
 - name: S010028
   x: 27.5
-  y: 9.5
+  y: 9.2
   ignoreDir: null
   properties:
     spin: false
@@ -2339,7 +1371,7 @@ LMs:
     waitAllowed: true
 - name: S010029
   x: 28.5
-  y: 9.5
+  y: 9.2
   ignoreDir: null
   properties:
     spin: false
@@ -2347,7 +1379,7 @@ LMs:
     waitAllowed: true
 - name: S010030
   x: 29.5
-  y: 9.5
+  y: 9.2
   ignoreDir: null
   properties:
     spin: false
@@ -2355,7 +1387,7 @@ LMs:
     waitAllowed: true
 - name: S010031
   x: 30.5
-  y: 9.5
+  y: 9.2
   ignoreDir: null
   properties:
     spin: false
@@ -2363,7 +1395,7 @@ LMs:
     waitAllowed: true
 - name: S010032
   x: 31.5
-  y: 9.5
+  y: 9.2
   ignoreDir: null
   properties:
     spin: false
@@ -2371,7 +1403,7 @@ LMs:
     waitAllowed: true
 - name: S010033
   x: 32.5
-  y: 9.5
+  y: 9.2
   ignoreDir: null
   properties:
     spin: false
@@ -2379,38 +1411,22 @@ LMs:
     waitAllowed: true
 - name: S010034
   x: 33.5
-  y: 9.5
+  y: 9.2
   ignoreDir: null
   properties:
     spin: false
     smartCell: e
     waitAllowed: true
 - name: S010035
-  x: 34.5
-  y: 9.5
+  x: 35.0
+  y: 9.2
   ignoreDir: null
   properties:
     spin: false
     smartCell: .
-    waitAllowed: true
-- name: S010036
-  x: 35.5
-  y: 9.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S011001
-  x: 0.5
-  y: 10.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: w
     waitAllowed: true
 - name: S011002
-  x: 1.5
+  x: 1.0
   y: 10.5
   ignoreDir: null
   properties:
@@ -2434,32 +1450,16 @@ LMs:
     smartCell: .
     waitAllowed: true
 - name: S011035
-  x: 34.5
+  x: 35.0
   y: 10.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S011036
-  x: 35.5
-  y: 10.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: w
-    waitAllowed: true
-- name: S012001
-  x: 0.5
-  y: 11.5
   ignoreDir: null
   properties:
     spin: false
     smartCell: .
     waitAllowed: true
 - name: S012002
-  x: 1.5
-  y: 11.5
+  x: 1.0
+  y: 11.8
   ignoreDir: null
   properties:
     spin: false
@@ -2467,7 +1467,7 @@ LMs:
     waitAllowed: true
 - name: S012003
   x: 2.5
-  y: 11.5
+  y: 11.8
   ignoreDir: null
   properties:
     spin: false
@@ -2475,7 +1475,7 @@ LMs:
     waitAllowed: true
 - name: S012004
   x: 3.5
-  y: 11.5
+  y: 11.8
   ignoreDir: null
   properties:
     spin: false
@@ -2483,7 +1483,7 @@ LMs:
     waitAllowed: true
 - name: S012005
   x: 4.5
-  y: 11.5
+  y: 11.8
   ignoreDir: null
   properties:
     spin: false
@@ -2491,7 +1491,7 @@ LMs:
     waitAllowed: true
 - name: S012006
   x: 5.5
-  y: 11.5
+  y: 11.8
   ignoreDir: null
   properties:
     spin: false
@@ -2499,7 +1499,7 @@ LMs:
     waitAllowed: true
 - name: S012007
   x: 6.5
-  y: 11.5
+  y: 11.8
   ignoreDir: null
   properties:
     spin: false
@@ -2507,7 +1507,7 @@ LMs:
     waitAllowed: true
 - name: S012008
   x: 7.5
-  y: 11.5
+  y: 11.8
   ignoreDir: null
   properties:
     spin: false
@@ -2515,7 +1515,7 @@ LMs:
     waitAllowed: true
 - name: S012009
   x: 8.5
-  y: 11.5
+  y: 11.8
   ignoreDir: null
   properties:
     spin: false
@@ -2523,7 +1523,7 @@ LMs:
     waitAllowed: true
 - name: S012010
   x: 9.5
-  y: 11.5
+  y: 11.8
   ignoreDir: null
   properties:
     spin: false
@@ -2531,7 +1531,7 @@ LMs:
     waitAllowed: true
 - name: S012011
   x: 10.5
-  y: 11.5
+  y: 11.8
   ignoreDir: null
   properties:
     spin: false
@@ -2539,7 +1539,7 @@ LMs:
     waitAllowed: true
 - name: S012012
   x: 11.5
-  y: 11.5
+  y: 11.8
   ignoreDir: null
   properties:
     spin: false
@@ -2547,7 +1547,7 @@ LMs:
     waitAllowed: true
 - name: S012013
   x: 12.5
-  y: 11.5
+  y: 11.8
   ignoreDir: null
   properties:
     spin: false
@@ -2555,7 +1555,7 @@ LMs:
     waitAllowed: true
 - name: S012014
   x: 13.5
-  y: 11.5
+  y: 11.8
   ignoreDir: null
   properties:
     spin: false
@@ -2563,7 +1563,7 @@ LMs:
     waitAllowed: true
 - name: S012015
   x: 14.5
-  y: 11.5
+  y: 11.8
   ignoreDir: null
   properties:
     spin: false
@@ -2571,7 +1571,7 @@ LMs:
     waitAllowed: true
 - name: S012016
   x: 15.5
-  y: 11.5
+  y: 11.8
   ignoreDir: null
   properties:
     spin: false
@@ -2579,7 +1579,7 @@ LMs:
     waitAllowed: true
 - name: S012017
   x: 16.5
-  y: 11.5
+  y: 11.8
   ignoreDir: null
   properties:
     spin: false
@@ -2587,7 +1587,7 @@ LMs:
     waitAllowed: true
 - name: S012018
   x: 17.5
-  y: 11.5
+  y: 11.8
   ignoreDir: null
   properties:
     spin: false
@@ -2595,7 +1595,7 @@ LMs:
     waitAllowed: true
 - name: S012019
   x: 18.5
-  y: 11.5
+  y: 11.8
   ignoreDir: null
   properties:
     spin: false
@@ -2603,7 +1603,7 @@ LMs:
     waitAllowed: true
 - name: S012020
   x: 19.5
-  y: 11.5
+  y: 11.8
   ignoreDir: null
   properties:
     spin: false
@@ -2611,7 +1611,7 @@ LMs:
     waitAllowed: true
 - name: S012021
   x: 20.5
-  y: 11.5
+  y: 11.8
   ignoreDir: null
   properties:
     spin: false
@@ -2619,7 +1619,7 @@ LMs:
     waitAllowed: true
 - name: S012022
   x: 21.5
-  y: 11.5
+  y: 11.8
   ignoreDir: null
   properties:
     spin: false
@@ -2627,7 +1627,7 @@ LMs:
     waitAllowed: true
 - name: S012023
   x: 22.5
-  y: 11.5
+  y: 11.8
   ignoreDir: null
   properties:
     spin: false
@@ -2635,7 +1635,7 @@ LMs:
     waitAllowed: true
 - name: S012024
   x: 23.5
-  y: 11.5
+  y: 11.8
   ignoreDir: null
   properties:
     spin: false
@@ -2643,7 +1643,7 @@ LMs:
     waitAllowed: true
 - name: S012025
   x: 24.5
-  y: 11.5
+  y: 11.8
   ignoreDir: null
   properties:
     spin: false
@@ -2651,7 +1651,7 @@ LMs:
     waitAllowed: true
 - name: S012026
   x: 25.5
-  y: 11.5
+  y: 11.8
   ignoreDir: null
   properties:
     spin: false
@@ -2659,7 +1659,7 @@ LMs:
     waitAllowed: true
 - name: S012027
   x: 26.5
-  y: 11.5
+  y: 11.8
   ignoreDir: null
   properties:
     spin: false
@@ -2667,7 +1667,7 @@ LMs:
     waitAllowed: true
 - name: S012028
   x: 27.5
-  y: 11.5
+  y: 11.8
   ignoreDir: null
   properties:
     spin: false
@@ -2675,7 +1675,7 @@ LMs:
     waitAllowed: true
 - name: S012029
   x: 28.5
-  y: 11.5
+  y: 11.8
   ignoreDir: null
   properties:
     spin: false
@@ -2683,7 +1683,7 @@ LMs:
     waitAllowed: true
 - name: S012030
   x: 29.5
-  y: 11.5
+  y: 11.8
   ignoreDir: null
   properties:
     spin: false
@@ -2691,7 +1691,7 @@ LMs:
     waitAllowed: true
 - name: S012031
   x: 30.5
-  y: 11.5
+  y: 11.8
   ignoreDir: null
   properties:
     spin: false
@@ -2699,7 +1699,7 @@ LMs:
     waitAllowed: true
 - name: S012032
   x: 31.5
-  y: 11.5
+  y: 11.8
   ignoreDir: null
   properties:
     spin: false
@@ -2707,7 +1707,7 @@ LMs:
     waitAllowed: true
 - name: S012033
   x: 32.5
-  y: 11.5
+  y: 11.8
   ignoreDir: null
   properties:
     spin: false
@@ -2715,327 +1715,23 @@ LMs:
     waitAllowed: true
 - name: S012034
   x: 33.5
-  y: 11.5
+  y: 11.8
   ignoreDir: null
   properties:
     spin: false
     smartCell: e
     waitAllowed: true
 - name: S012035
-  x: 34.5
-  y: 11.5
+  x: 35.0
+  y: 11.8
   ignoreDir: null
   properties:
     spin: false
     smartCell: .
-    waitAllowed: true
-- name: S012036
-  x: 35.5
-  y: 11.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S013001
-  x: 0.5
-  y: 12.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S013002
-  x: 1.5
-  y: 12.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S013003
-  x: 2.5
-  y: 12.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S013004
-  x: 3.5
-  y: 12.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S013005
-  x: 4.5
-  y: 12.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S013006
-  x: 5.5
-  y: 12.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S013007
-  x: 6.5
-  y: 12.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S013008
-  x: 7.5
-  y: 12.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S013009
-  x: 8.5
-  y: 12.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S013010
-  x: 9.5
-  y: 12.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S013011
-  x: 10.5
-  y: 12.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S013012
-  x: 11.5
-  y: 12.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S013013
-  x: 12.5
-  y: 12.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S013014
-  x: 13.5
-  y: 12.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S013015
-  x: 14.5
-  y: 12.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S013016
-  x: 15.5
-  y: 12.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S013017
-  x: 16.5
-  y: 12.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S013018
-  x: 17.5
-  y: 12.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S013019
-  x: 18.5
-  y: 12.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S013020
-  x: 19.5
-  y: 12.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S013021
-  x: 20.5
-  y: 12.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S013022
-  x: 21.5
-  y: 12.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S013023
-  x: 22.5
-  y: 12.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S013024
-  x: 23.5
-  y: 12.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S013025
-  x: 24.5
-  y: 12.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S013026
-  x: 25.5
-  y: 12.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S013027
-  x: 26.5
-  y: 12.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S013028
-  x: 27.5
-  y: 12.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S013029
-  x: 28.5
-  y: 12.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S013030
-  x: 29.5
-  y: 12.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S013031
-  x: 30.5
-  y: 12.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S013032
-  x: 31.5
-  y: 12.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S013033
-  x: 32.5
-  y: 12.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S013034
-  x: 33.5
-  y: 12.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S013035
-  x: 34.5
-  y: 12.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S013036
-  x: 35.5
-  y: 12.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S014001
-  x: 0.5
-  y: 13.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: w
     waitAllowed: true
 - name: S014002
-  x: 1.5
-  y: 13.5
+  x: 1.0
+  y: 13.2
   ignoreDir: null
   properties:
     spin: false
@@ -3043,7 +1739,7 @@ LMs:
     waitAllowed: true
 - name: S014003
   x: 2.5
-  y: 13.5
+  y: 13.2
   ignoreDir: null
   properties:
     spin: false
@@ -3051,7 +1747,7 @@ LMs:
     waitAllowed: true
 - name: S014004
   x: 3.5
-  y: 13.5
+  y: 13.2
   ignoreDir: null
   properties:
     spin: false
@@ -3059,7 +1755,7 @@ LMs:
     waitAllowed: true
 - name: S014005
   x: 4.5
-  y: 13.5
+  y: 13.2
   ignoreDir: null
   properties:
     spin: false
@@ -3067,7 +1763,7 @@ LMs:
     waitAllowed: true
 - name: S014006
   x: 5.5
-  y: 13.5
+  y: 13.2
   ignoreDir: null
   properties:
     spin: false
@@ -3075,7 +1771,7 @@ LMs:
     waitAllowed: true
 - name: S014007
   x: 6.5
-  y: 13.5
+  y: 13.2
   ignoreDir: null
   properties:
     spin: false
@@ -3083,7 +1779,7 @@ LMs:
     waitAllowed: true
 - name: S014008
   x: 7.5
-  y: 13.5
+  y: 13.2
   ignoreDir: null
   properties:
     spin: false
@@ -3091,7 +1787,7 @@ LMs:
     waitAllowed: true
 - name: S014009
   x: 8.5
-  y: 13.5
+  y: 13.2
   ignoreDir: null
   properties:
     spin: false
@@ -3099,7 +1795,7 @@ LMs:
     waitAllowed: true
 - name: S014010
   x: 9.5
-  y: 13.5
+  y: 13.2
   ignoreDir: null
   properties:
     spin: false
@@ -3107,7 +1803,7 @@ LMs:
     waitAllowed: true
 - name: S014011
   x: 10.5
-  y: 13.5
+  y: 13.2
   ignoreDir: null
   properties:
     spin: false
@@ -3115,7 +1811,7 @@ LMs:
     waitAllowed: true
 - name: S014012
   x: 11.5
-  y: 13.5
+  y: 13.2
   ignoreDir: null
   properties:
     spin: false
@@ -3123,7 +1819,7 @@ LMs:
     waitAllowed: true
 - name: S014013
   x: 12.5
-  y: 13.5
+  y: 13.2
   ignoreDir: null
   properties:
     spin: false
@@ -3131,7 +1827,7 @@ LMs:
     waitAllowed: true
 - name: S014014
   x: 13.5
-  y: 13.5
+  y: 13.2
   ignoreDir: null
   properties:
     spin: false
@@ -3139,7 +1835,7 @@ LMs:
     waitAllowed: true
 - name: S014015
   x: 14.5
-  y: 13.5
+  y: 13.2
   ignoreDir: null
   properties:
     spin: false
@@ -3147,7 +1843,7 @@ LMs:
     waitAllowed: true
 - name: S014016
   x: 15.5
-  y: 13.5
+  y: 13.2
   ignoreDir: null
   properties:
     spin: false
@@ -3155,7 +1851,7 @@ LMs:
     waitAllowed: true
 - name: S014017
   x: 16.5
-  y: 13.5
+  y: 13.2
   ignoreDir: null
   properties:
     spin: false
@@ -3163,7 +1859,7 @@ LMs:
     waitAllowed: true
 - name: S014018
   x: 17.5
-  y: 13.5
+  y: 13.2
   ignoreDir: null
   properties:
     spin: false
@@ -3171,7 +1867,7 @@ LMs:
     waitAllowed: true
 - name: S014019
   x: 18.5
-  y: 13.5
+  y: 13.2
   ignoreDir: null
   properties:
     spin: false
@@ -3179,7 +1875,7 @@ LMs:
     waitAllowed: true
 - name: S014020
   x: 19.5
-  y: 13.5
+  y: 13.2
   ignoreDir: null
   properties:
     spin: false
@@ -3187,7 +1883,7 @@ LMs:
     waitAllowed: true
 - name: S014021
   x: 20.5
-  y: 13.5
+  y: 13.2
   ignoreDir: null
   properties:
     spin: false
@@ -3195,7 +1891,7 @@ LMs:
     waitAllowed: true
 - name: S014022
   x: 21.5
-  y: 13.5
+  y: 13.2
   ignoreDir: null
   properties:
     spin: false
@@ -3203,7 +1899,7 @@ LMs:
     waitAllowed: true
 - name: S014023
   x: 22.5
-  y: 13.5
+  y: 13.2
   ignoreDir: null
   properties:
     spin: false
@@ -3211,7 +1907,7 @@ LMs:
     waitAllowed: true
 - name: S014024
   x: 23.5
-  y: 13.5
+  y: 13.2
   ignoreDir: null
   properties:
     spin: false
@@ -3219,7 +1915,7 @@ LMs:
     waitAllowed: true
 - name: S014025
   x: 24.5
-  y: 13.5
+  y: 13.2
   ignoreDir: null
   properties:
     spin: false
@@ -3227,7 +1923,7 @@ LMs:
     waitAllowed: true
 - name: S014026
   x: 25.5
-  y: 13.5
+  y: 13.2
   ignoreDir: null
   properties:
     spin: false
@@ -3235,7 +1931,7 @@ LMs:
     waitAllowed: true
 - name: S014027
   x: 26.5
-  y: 13.5
+  y: 13.2
   ignoreDir: null
   properties:
     spin: false
@@ -3243,7 +1939,7 @@ LMs:
     waitAllowed: true
 - name: S014028
   x: 27.5
-  y: 13.5
+  y: 13.2
   ignoreDir: null
   properties:
     spin: false
@@ -3251,7 +1947,7 @@ LMs:
     waitAllowed: true
 - name: S014029
   x: 28.5
-  y: 13.5
+  y: 13.2
   ignoreDir: null
   properties:
     spin: false
@@ -3259,7 +1955,7 @@ LMs:
     waitAllowed: true
 - name: S014030
   x: 29.5
-  y: 13.5
+  y: 13.2
   ignoreDir: null
   properties:
     spin: false
@@ -3267,7 +1963,7 @@ LMs:
     waitAllowed: true
 - name: S014031
   x: 30.5
-  y: 13.5
+  y: 13.2
   ignoreDir: null
   properties:
     spin: false
@@ -3275,7 +1971,7 @@ LMs:
     waitAllowed: true
 - name: S014032
   x: 31.5
-  y: 13.5
+  y: 13.2
   ignoreDir: null
   properties:
     spin: false
@@ -3283,7 +1979,7 @@ LMs:
     waitAllowed: true
 - name: S014033
   x: 32.5
-  y: 13.5
+  y: 13.2
   ignoreDir: null
   properties:
     spin: false
@@ -3291,38 +1987,22 @@ LMs:
     waitAllowed: true
 - name: S014034
   x: 33.5
-  y: 13.5
+  y: 13.2
   ignoreDir: null
   properties:
     spin: false
     smartCell: e
     waitAllowed: true
 - name: S014035
-  x: 34.5
-  y: 13.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S014036
-  x: 35.5
-  y: 13.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: w
-    waitAllowed: true
-- name: S015001
-  x: 0.5
-  y: 14.5
+  x: 35.0
+  y: 13.2
   ignoreDir: null
   properties:
     spin: false
     smartCell: .
     waitAllowed: true
 - name: S015002
-  x: 1.5
+  x: 1.0
   y: 14.5
   ignoreDir: null
   properties:
@@ -3346,32 +2026,16 @@ LMs:
     smartCell: .
     waitAllowed: true
 - name: S015035
-  x: 34.5
+  x: 35.0
   y: 14.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S015036
-  x: 35.5
-  y: 14.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S016001
-  x: 0.5
-  y: 15.5
   ignoreDir: null
   properties:
     spin: false
     smartCell: .
     waitAllowed: true
 - name: S016002
-  x: 1.5
-  y: 15.5
+  x: 1.0
+  y: 15.8
   ignoreDir: null
   properties:
     spin: false
@@ -3379,7 +2043,7 @@ LMs:
     waitAllowed: true
 - name: S016003
   x: 2.5
-  y: 15.5
+  y: 15.8
   ignoreDir: null
   properties:
     spin: false
@@ -3387,7 +2051,7 @@ LMs:
     waitAllowed: true
 - name: S016004
   x: 3.5
-  y: 15.5
+  y: 15.8
   ignoreDir: null
   properties:
     spin: false
@@ -3395,7 +2059,7 @@ LMs:
     waitAllowed: true
 - name: S016005
   x: 4.5
-  y: 15.5
+  y: 15.8
   ignoreDir: null
   properties:
     spin: false
@@ -3403,7 +2067,7 @@ LMs:
     waitAllowed: true
 - name: S016006
   x: 5.5
-  y: 15.5
+  y: 15.8
   ignoreDir: null
   properties:
     spin: false
@@ -3411,7 +2075,7 @@ LMs:
     waitAllowed: true
 - name: S016007
   x: 6.5
-  y: 15.5
+  y: 15.8
   ignoreDir: null
   properties:
     spin: false
@@ -3419,7 +2083,7 @@ LMs:
     waitAllowed: true
 - name: S016008
   x: 7.5
-  y: 15.5
+  y: 15.8
   ignoreDir: null
   properties:
     spin: false
@@ -3427,7 +2091,7 @@ LMs:
     waitAllowed: true
 - name: S016009
   x: 8.5
-  y: 15.5
+  y: 15.8
   ignoreDir: null
   properties:
     spin: false
@@ -3435,7 +2099,7 @@ LMs:
     waitAllowed: true
 - name: S016010
   x: 9.5
-  y: 15.5
+  y: 15.8
   ignoreDir: null
   properties:
     spin: false
@@ -3443,7 +2107,7 @@ LMs:
     waitAllowed: true
 - name: S016011
   x: 10.5
-  y: 15.5
+  y: 15.8
   ignoreDir: null
   properties:
     spin: false
@@ -3451,7 +2115,7 @@ LMs:
     waitAllowed: true
 - name: S016012
   x: 11.5
-  y: 15.5
+  y: 15.8
   ignoreDir: null
   properties:
     spin: false
@@ -3459,7 +2123,7 @@ LMs:
     waitAllowed: true
 - name: S016013
   x: 12.5
-  y: 15.5
+  y: 15.8
   ignoreDir: null
   properties:
     spin: false
@@ -3467,7 +2131,7 @@ LMs:
     waitAllowed: true
 - name: S016014
   x: 13.5
-  y: 15.5
+  y: 15.8
   ignoreDir: null
   properties:
     spin: false
@@ -3475,7 +2139,7 @@ LMs:
     waitAllowed: true
 - name: S016015
   x: 14.5
-  y: 15.5
+  y: 15.8
   ignoreDir: null
   properties:
     spin: false
@@ -3483,7 +2147,7 @@ LMs:
     waitAllowed: true
 - name: S016016
   x: 15.5
-  y: 15.5
+  y: 15.8
   ignoreDir: null
   properties:
     spin: false
@@ -3491,7 +2155,7 @@ LMs:
     waitAllowed: true
 - name: S016017
   x: 16.5
-  y: 15.5
+  y: 15.8
   ignoreDir: null
   properties:
     spin: false
@@ -3499,7 +2163,7 @@ LMs:
     waitAllowed: true
 - name: S016018
   x: 17.5
-  y: 15.5
+  y: 15.8
   ignoreDir: null
   properties:
     spin: false
@@ -3507,7 +2171,7 @@ LMs:
     waitAllowed: true
 - name: S016019
   x: 18.5
-  y: 15.5
+  y: 15.8
   ignoreDir: null
   properties:
     spin: false
@@ -3515,7 +2179,7 @@ LMs:
     waitAllowed: true
 - name: S016020
   x: 19.5
-  y: 15.5
+  y: 15.8
   ignoreDir: null
   properties:
     spin: false
@@ -3523,7 +2187,7 @@ LMs:
     waitAllowed: true
 - name: S016021
   x: 20.5
-  y: 15.5
+  y: 15.8
   ignoreDir: null
   properties:
     spin: false
@@ -3531,7 +2195,7 @@ LMs:
     waitAllowed: true
 - name: S016022
   x: 21.5
-  y: 15.5
+  y: 15.8
   ignoreDir: null
   properties:
     spin: false
@@ -3539,7 +2203,7 @@ LMs:
     waitAllowed: true
 - name: S016023
   x: 22.5
-  y: 15.5
+  y: 15.8
   ignoreDir: null
   properties:
     spin: false
@@ -3547,7 +2211,7 @@ LMs:
     waitAllowed: true
 - name: S016024
   x: 23.5
-  y: 15.5
+  y: 15.8
   ignoreDir: null
   properties:
     spin: false
@@ -3555,7 +2219,7 @@ LMs:
     waitAllowed: true
 - name: S016025
   x: 24.5
-  y: 15.5
+  y: 15.8
   ignoreDir: null
   properties:
     spin: false
@@ -3563,7 +2227,7 @@ LMs:
     waitAllowed: true
 - name: S016026
   x: 25.5
-  y: 15.5
+  y: 15.8
   ignoreDir: null
   properties:
     spin: false
@@ -3571,7 +2235,7 @@ LMs:
     waitAllowed: true
 - name: S016027
   x: 26.5
-  y: 15.5
+  y: 15.8
   ignoreDir: null
   properties:
     spin: false
@@ -3579,7 +2243,7 @@ LMs:
     waitAllowed: true
 - name: S016028
   x: 27.5
-  y: 15.5
+  y: 15.8
   ignoreDir: null
   properties:
     spin: false
@@ -3587,7 +2251,7 @@ LMs:
     waitAllowed: true
 - name: S016029
   x: 28.5
-  y: 15.5
+  y: 15.8
   ignoreDir: null
   properties:
     spin: false
@@ -3595,7 +2259,7 @@ LMs:
     waitAllowed: true
 - name: S016030
   x: 29.5
-  y: 15.5
+  y: 15.8
   ignoreDir: null
   properties:
     spin: false
@@ -3603,7 +2267,7 @@ LMs:
     waitAllowed: true
 - name: S016031
   x: 30.5
-  y: 15.5
+  y: 15.8
   ignoreDir: null
   properties:
     spin: false
@@ -3611,7 +2275,7 @@ LMs:
     waitAllowed: true
 - name: S016032
   x: 31.5
-  y: 15.5
+  y: 15.8
   ignoreDir: null
   properties:
     spin: false
@@ -3619,7 +2283,7 @@ LMs:
     waitAllowed: true
 - name: S016033
   x: 32.5
-  y: 15.5
+  y: 15.8
   ignoreDir: null
   properties:
     spin: false
@@ -3627,327 +2291,23 @@ LMs:
     waitAllowed: true
 - name: S016034
   x: 33.5
-  y: 15.5
+  y: 15.8
   ignoreDir: null
   properties:
     spin: false
     smartCell: e
     waitAllowed: true
 - name: S016035
-  x: 34.5
-  y: 15.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S016036
-  x: 35.5
-  y: 15.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S017001
-  x: 0.5
-  y: 16.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: w
-    waitAllowed: true
-- name: S017002
-  x: 1.5
-  y: 16.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S017003
-  x: 2.5
-  y: 16.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S017004
-  x: 3.5
-  y: 16.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S017005
-  x: 4.5
-  y: 16.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S017006
-  x: 5.5
-  y: 16.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S017007
-  x: 6.5
-  y: 16.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S017008
-  x: 7.5
-  y: 16.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S017009
-  x: 8.5
-  y: 16.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S017010
-  x: 9.5
-  y: 16.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S017011
-  x: 10.5
-  y: 16.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S017012
-  x: 11.5
-  y: 16.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S017013
-  x: 12.5
-  y: 16.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S017014
-  x: 13.5
-  y: 16.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S017015
-  x: 14.5
-  y: 16.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S017016
-  x: 15.5
-  y: 16.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S017017
-  x: 16.5
-  y: 16.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S017018
-  x: 17.5
-  y: 16.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S017019
-  x: 18.5
-  y: 16.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S017020
-  x: 19.5
-  y: 16.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S017021
-  x: 20.5
-  y: 16.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S017022
-  x: 21.5
-  y: 16.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S017023
-  x: 22.5
-  y: 16.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S017024
-  x: 23.5
-  y: 16.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S017025
-  x: 24.5
-  y: 16.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S017026
-  x: 25.5
-  y: 16.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S017027
-  x: 26.5
-  y: 16.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S017028
-  x: 27.5
-  y: 16.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S017029
-  x: 28.5
-  y: 16.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S017030
-  x: 29.5
-  y: 16.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S017031
-  x: 30.5
-  y: 16.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S017032
-  x: 31.5
-  y: 16.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S017033
-  x: 32.5
-  y: 16.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S017034
-  x: 33.5
-  y: 16.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S017035
-  x: 34.5
-  y: 16.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S017036
-  x: 35.5
-  y: 16.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: w
-    waitAllowed: true
-- name: S018001
-  x: 0.5
-  y: 17.5
+  x: 35.0
+  y: 15.8
   ignoreDir: null
   properties:
     spin: false
     smartCell: .
     waitAllowed: true
 - name: S018002
-  x: 1.5
-  y: 17.5
+  x: 1.0
+  y: 17.2
   ignoreDir: null
   properties:
     spin: false
@@ -3955,7 +2315,7 @@ LMs:
     waitAllowed: true
 - name: S018003
   x: 2.5
-  y: 17.5
+  y: 17.2
   ignoreDir: null
   properties:
     spin: false
@@ -3963,7 +2323,7 @@ LMs:
     waitAllowed: true
 - name: S018004
   x: 3.5
-  y: 17.5
+  y: 17.2
   ignoreDir: null
   properties:
     spin: false
@@ -3971,7 +2331,7 @@ LMs:
     waitAllowed: true
 - name: S018005
   x: 4.5
-  y: 17.5
+  y: 17.2
   ignoreDir: null
   properties:
     spin: false
@@ -3979,7 +2339,7 @@ LMs:
     waitAllowed: true
 - name: S018006
   x: 5.5
-  y: 17.5
+  y: 17.2
   ignoreDir: null
   properties:
     spin: false
@@ -3987,7 +2347,7 @@ LMs:
     waitAllowed: true
 - name: S018007
   x: 6.5
-  y: 17.5
+  y: 17.2
   ignoreDir: null
   properties:
     spin: false
@@ -3995,7 +2355,7 @@ LMs:
     waitAllowed: true
 - name: S018008
   x: 7.5
-  y: 17.5
+  y: 17.2
   ignoreDir: null
   properties:
     spin: false
@@ -4003,7 +2363,7 @@ LMs:
     waitAllowed: true
 - name: S018009
   x: 8.5
-  y: 17.5
+  y: 17.2
   ignoreDir: null
   properties:
     spin: false
@@ -4011,7 +2371,7 @@ LMs:
     waitAllowed: true
 - name: S018010
   x: 9.5
-  y: 17.5
+  y: 17.2
   ignoreDir: null
   properties:
     spin: false
@@ -4019,7 +2379,7 @@ LMs:
     waitAllowed: true
 - name: S018011
   x: 10.5
-  y: 17.5
+  y: 17.2
   ignoreDir: null
   properties:
     spin: false
@@ -4027,7 +2387,7 @@ LMs:
     waitAllowed: true
 - name: S018012
   x: 11.5
-  y: 17.5
+  y: 17.2
   ignoreDir: null
   properties:
     spin: false
@@ -4035,7 +2395,7 @@ LMs:
     waitAllowed: true
 - name: S018013
   x: 12.5
-  y: 17.5
+  y: 17.2
   ignoreDir: null
   properties:
     spin: false
@@ -4043,7 +2403,7 @@ LMs:
     waitAllowed: true
 - name: S018014
   x: 13.5
-  y: 17.5
+  y: 17.2
   ignoreDir: null
   properties:
     spin: false
@@ -4051,7 +2411,7 @@ LMs:
     waitAllowed: true
 - name: S018015
   x: 14.5
-  y: 17.5
+  y: 17.2
   ignoreDir: null
   properties:
     spin: false
@@ -4059,7 +2419,7 @@ LMs:
     waitAllowed: true
 - name: S018016
   x: 15.5
-  y: 17.5
+  y: 17.2
   ignoreDir: null
   properties:
     spin: false
@@ -4067,7 +2427,7 @@ LMs:
     waitAllowed: true
 - name: S018017
   x: 16.5
-  y: 17.5
+  y: 17.2
   ignoreDir: null
   properties:
     spin: false
@@ -4075,7 +2435,7 @@ LMs:
     waitAllowed: true
 - name: S018018
   x: 17.5
-  y: 17.5
+  y: 17.2
   ignoreDir: null
   properties:
     spin: false
@@ -4083,7 +2443,7 @@ LMs:
     waitAllowed: true
 - name: S018019
   x: 18.5
-  y: 17.5
+  y: 17.2
   ignoreDir: null
   properties:
     spin: false
@@ -4091,7 +2451,7 @@ LMs:
     waitAllowed: true
 - name: S018020
   x: 19.5
-  y: 17.5
+  y: 17.2
   ignoreDir: null
   properties:
     spin: false
@@ -4099,7 +2459,7 @@ LMs:
     waitAllowed: true
 - name: S018021
   x: 20.5
-  y: 17.5
+  y: 17.2
   ignoreDir: null
   properties:
     spin: false
@@ -4107,7 +2467,7 @@ LMs:
     waitAllowed: true
 - name: S018022
   x: 21.5
-  y: 17.5
+  y: 17.2
   ignoreDir: null
   properties:
     spin: false
@@ -4115,7 +2475,7 @@ LMs:
     waitAllowed: true
 - name: S018023
   x: 22.5
-  y: 17.5
+  y: 17.2
   ignoreDir: null
   properties:
     spin: false
@@ -4123,7 +2483,7 @@ LMs:
     waitAllowed: true
 - name: S018024
   x: 23.5
-  y: 17.5
+  y: 17.2
   ignoreDir: null
   properties:
     spin: false
@@ -4131,7 +2491,7 @@ LMs:
     waitAllowed: true
 - name: S018025
   x: 24.5
-  y: 17.5
+  y: 17.2
   ignoreDir: null
   properties:
     spin: false
@@ -4139,7 +2499,7 @@ LMs:
     waitAllowed: true
 - name: S018026
   x: 25.5
-  y: 17.5
+  y: 17.2
   ignoreDir: null
   properties:
     spin: false
@@ -4147,7 +2507,7 @@ LMs:
     waitAllowed: true
 - name: S018027
   x: 26.5
-  y: 17.5
+  y: 17.2
   ignoreDir: null
   properties:
     spin: false
@@ -4155,7 +2515,7 @@ LMs:
     waitAllowed: true
 - name: S018028
   x: 27.5
-  y: 17.5
+  y: 17.2
   ignoreDir: null
   properties:
     spin: false
@@ -4163,7 +2523,7 @@ LMs:
     waitAllowed: true
 - name: S018029
   x: 28.5
-  y: 17.5
+  y: 17.2
   ignoreDir: null
   properties:
     spin: false
@@ -4171,7 +2531,7 @@ LMs:
     waitAllowed: true
 - name: S018030
   x: 29.5
-  y: 17.5
+  y: 17.2
   ignoreDir: null
   properties:
     spin: false
@@ -4179,7 +2539,7 @@ LMs:
     waitAllowed: true
 - name: S018031
   x: 30.5
-  y: 17.5
+  y: 17.2
   ignoreDir: null
   properties:
     spin: false
@@ -4187,7 +2547,7 @@ LMs:
     waitAllowed: true
 - name: S018032
   x: 31.5
-  y: 17.5
+  y: 17.2
   ignoreDir: null
   properties:
     spin: false
@@ -4195,7 +2555,7 @@ LMs:
     waitAllowed: true
 - name: S018033
   x: 32.5
-  y: 17.5
+  y: 17.2
   ignoreDir: null
   properties:
     spin: false
@@ -4203,38 +2563,22 @@ LMs:
     waitAllowed: true
 - name: S018034
   x: 33.5
-  y: 17.5
+  y: 17.2
   ignoreDir: null
   properties:
     spin: false
     smartCell: e
     waitAllowed: true
 - name: S018035
-  x: 34.5
-  y: 17.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S018036
-  x: 35.5
-  y: 17.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S019001
-  x: 0.5
-  y: 18.5
+  x: 35.0
+  y: 17.2
   ignoreDir: null
   properties:
     spin: false
     smartCell: .
     waitAllowed: true
 - name: S019002
-  x: 1.5
+  x: 1.0
   y: 18.5
   ignoreDir: null
   properties:
@@ -4258,32 +2602,16 @@ LMs:
     smartCell: .
     waitAllowed: true
 - name: S019035
-  x: 34.5
+  x: 35.0
   y: 18.5
   ignoreDir: null
   properties:
     spin: false
     smartCell: .
-    waitAllowed: true
-- name: S019036
-  x: 35.5
-  y: 18.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S020001
-  x: 0.5
-  y: 19.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: w
     waitAllowed: true
 - name: S020002
-  x: 1.5
-  y: 19.5
+  x: 1.0
+  y: 19.8
   ignoreDir: null
   properties:
     spin: false
@@ -4291,7 +2619,7 @@ LMs:
     waitAllowed: true
 - name: S020003
   x: 2.5
-  y: 19.5
+  y: 19.8
   ignoreDir: null
   properties:
     spin: false
@@ -4299,7 +2627,7 @@ LMs:
     waitAllowed: true
 - name: S020004
   x: 3.5
-  y: 19.5
+  y: 19.8
   ignoreDir: null
   properties:
     spin: false
@@ -4307,7 +2635,7 @@ LMs:
     waitAllowed: true
 - name: S020005
   x: 4.5
-  y: 19.5
+  y: 19.8
   ignoreDir: null
   properties:
     spin: false
@@ -4315,7 +2643,7 @@ LMs:
     waitAllowed: true
 - name: S020006
   x: 5.5
-  y: 19.5
+  y: 19.8
   ignoreDir: null
   properties:
     spin: false
@@ -4323,7 +2651,7 @@ LMs:
     waitAllowed: true
 - name: S020007
   x: 6.5
-  y: 19.5
+  y: 19.8
   ignoreDir: null
   properties:
     spin: false
@@ -4331,7 +2659,7 @@ LMs:
     waitAllowed: true
 - name: S020008
   x: 7.5
-  y: 19.5
+  y: 19.8
   ignoreDir: null
   properties:
     spin: false
@@ -4339,7 +2667,7 @@ LMs:
     waitAllowed: true
 - name: S020009
   x: 8.5
-  y: 19.5
+  y: 19.8
   ignoreDir: null
   properties:
     spin: false
@@ -4347,7 +2675,7 @@ LMs:
     waitAllowed: true
 - name: S020010
   x: 9.5
-  y: 19.5
+  y: 19.8
   ignoreDir: null
   properties:
     spin: false
@@ -4355,7 +2683,7 @@ LMs:
     waitAllowed: true
 - name: S020011
   x: 10.5
-  y: 19.5
+  y: 19.8
   ignoreDir: null
   properties:
     spin: false
@@ -4363,7 +2691,7 @@ LMs:
     waitAllowed: true
 - name: S020012
   x: 11.5
-  y: 19.5
+  y: 19.8
   ignoreDir: null
   properties:
     spin: false
@@ -4371,7 +2699,7 @@ LMs:
     waitAllowed: true
 - name: S020013
   x: 12.5
-  y: 19.5
+  y: 19.8
   ignoreDir: null
   properties:
     spin: false
@@ -4379,7 +2707,7 @@ LMs:
     waitAllowed: true
 - name: S020014
   x: 13.5
-  y: 19.5
+  y: 19.8
   ignoreDir: null
   properties:
     spin: false
@@ -4387,7 +2715,7 @@ LMs:
     waitAllowed: true
 - name: S020015
   x: 14.5
-  y: 19.5
+  y: 19.8
   ignoreDir: null
   properties:
     spin: false
@@ -4395,7 +2723,7 @@ LMs:
     waitAllowed: true
 - name: S020016
   x: 15.5
-  y: 19.5
+  y: 19.8
   ignoreDir: null
   properties:
     spin: false
@@ -4403,7 +2731,7 @@ LMs:
     waitAllowed: true
 - name: S020017
   x: 16.5
-  y: 19.5
+  y: 19.8
   ignoreDir: null
   properties:
     spin: false
@@ -4411,7 +2739,7 @@ LMs:
     waitAllowed: true
 - name: S020018
   x: 17.5
-  y: 19.5
+  y: 19.8
   ignoreDir: null
   properties:
     spin: false
@@ -4419,7 +2747,7 @@ LMs:
     waitAllowed: true
 - name: S020019
   x: 18.5
-  y: 19.5
+  y: 19.8
   ignoreDir: null
   properties:
     spin: false
@@ -4427,7 +2755,7 @@ LMs:
     waitAllowed: true
 - name: S020020
   x: 19.5
-  y: 19.5
+  y: 19.8
   ignoreDir: null
   properties:
     spin: false
@@ -4435,7 +2763,7 @@ LMs:
     waitAllowed: true
 - name: S020021
   x: 20.5
-  y: 19.5
+  y: 19.8
   ignoreDir: null
   properties:
     spin: false
@@ -4443,7 +2771,7 @@ LMs:
     waitAllowed: true
 - name: S020022
   x: 21.5
-  y: 19.5
+  y: 19.8
   ignoreDir: null
   properties:
     spin: false
@@ -4451,7 +2779,7 @@ LMs:
     waitAllowed: true
 - name: S020023
   x: 22.5
-  y: 19.5
+  y: 19.8
   ignoreDir: null
   properties:
     spin: false
@@ -4459,7 +2787,7 @@ LMs:
     waitAllowed: true
 - name: S020024
   x: 23.5
-  y: 19.5
+  y: 19.8
   ignoreDir: null
   properties:
     spin: false
@@ -4467,7 +2795,7 @@ LMs:
     waitAllowed: true
 - name: S020025
   x: 24.5
-  y: 19.5
+  y: 19.8
   ignoreDir: null
   properties:
     spin: false
@@ -4475,7 +2803,7 @@ LMs:
     waitAllowed: true
 - name: S020026
   x: 25.5
-  y: 19.5
+  y: 19.8
   ignoreDir: null
   properties:
     spin: false
@@ -4483,7 +2811,7 @@ LMs:
     waitAllowed: true
 - name: S020027
   x: 26.5
-  y: 19.5
+  y: 19.8
   ignoreDir: null
   properties:
     spin: false
@@ -4491,7 +2819,7 @@ LMs:
     waitAllowed: true
 - name: S020028
   x: 27.5
-  y: 19.5
+  y: 19.8
   ignoreDir: null
   properties:
     spin: false
@@ -4499,7 +2827,7 @@ LMs:
     waitAllowed: true
 - name: S020029
   x: 28.5
-  y: 19.5
+  y: 19.8
   ignoreDir: null
   properties:
     spin: false
@@ -4507,7 +2835,7 @@ LMs:
     waitAllowed: true
 - name: S020030
   x: 29.5
-  y: 19.5
+  y: 19.8
   ignoreDir: null
   properties:
     spin: false
@@ -4515,7 +2843,7 @@ LMs:
     waitAllowed: true
 - name: S020031
   x: 30.5
-  y: 19.5
+  y: 19.8
   ignoreDir: null
   properties:
     spin: false
@@ -4523,7 +2851,7 @@ LMs:
     waitAllowed: true
 - name: S020032
   x: 31.5
-  y: 19.5
+  y: 19.8
   ignoreDir: null
   properties:
     spin: false
@@ -4531,7 +2859,7 @@ LMs:
     waitAllowed: true
 - name: S020033
   x: 32.5
-  y: 19.5
+  y: 19.8
   ignoreDir: null
   properties:
     spin: false
@@ -4539,327 +2867,23 @@ LMs:
     waitAllowed: true
 - name: S020034
   x: 33.5
-  y: 19.5
+  y: 19.8
   ignoreDir: null
   properties:
     spin: false
     smartCell: e
     waitAllowed: true
 - name: S020035
-  x: 34.5
-  y: 19.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S020036
-  x: 35.5
-  y: 19.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: w
-    waitAllowed: true
-- name: S021001
-  x: 0.5
-  y: 20.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S021002
-  x: 1.5
-  y: 20.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S021003
-  x: 2.5
-  y: 20.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S021004
-  x: 3.5
-  y: 20.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S021005
-  x: 4.5
-  y: 20.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S021006
-  x: 5.5
-  y: 20.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S021007
-  x: 6.5
-  y: 20.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S021008
-  x: 7.5
-  y: 20.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S021009
-  x: 8.5
-  y: 20.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S021010
-  x: 9.5
-  y: 20.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S021011
-  x: 10.5
-  y: 20.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S021012
-  x: 11.5
-  y: 20.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S021013
-  x: 12.5
-  y: 20.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S021014
-  x: 13.5
-  y: 20.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S021015
-  x: 14.5
-  y: 20.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S021016
-  x: 15.5
-  y: 20.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S021017
-  x: 16.5
-  y: 20.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S021018
-  x: 17.5
-  y: 20.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S021019
-  x: 18.5
-  y: 20.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S021020
-  x: 19.5
-  y: 20.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S021021
-  x: 20.5
-  y: 20.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S021022
-  x: 21.5
-  y: 20.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S021023
-  x: 22.5
-  y: 20.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S021024
-  x: 23.5
-  y: 20.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S021025
-  x: 24.5
-  y: 20.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S021026
-  x: 25.5
-  y: 20.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S021027
-  x: 26.5
-  y: 20.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S021028
-  x: 27.5
-  y: 20.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S021029
-  x: 28.5
-  y: 20.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S021030
-  x: 29.5
-  y: 20.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S021031
-  x: 30.5
-  y: 20.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S021032
-  x: 31.5
-  y: 20.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S021033
-  x: 32.5
-  y: 20.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S021034
-  x: 33.5
-  y: 20.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S021035
-  x: 34.5
-  y: 20.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S021036
-  x: 35.5
-  y: 20.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S022001
-  x: 0.5
-  y: 21.5
+  x: 35.0
+  y: 19.8
   ignoreDir: null
   properties:
     spin: false
     smartCell: .
     waitAllowed: true
 - name: S022002
-  x: 1.5
-  y: 21.5
+  x: 1.0
+  y: 21.2
   ignoreDir: null
   properties:
     spin: false
@@ -4867,7 +2891,7 @@ LMs:
     waitAllowed: true
 - name: S022003
   x: 2.5
-  y: 21.5
+  y: 21.2
   ignoreDir: null
   properties:
     spin: false
@@ -4875,7 +2899,7 @@ LMs:
     waitAllowed: true
 - name: S022004
   x: 3.5
-  y: 21.5
+  y: 21.2
   ignoreDir: null
   properties:
     spin: false
@@ -4883,7 +2907,7 @@ LMs:
     waitAllowed: true
 - name: S022005
   x: 4.5
-  y: 21.5
+  y: 21.2
   ignoreDir: null
   properties:
     spin: false
@@ -4891,7 +2915,7 @@ LMs:
     waitAllowed: true
 - name: S022006
   x: 5.5
-  y: 21.5
+  y: 21.2
   ignoreDir: null
   properties:
     spin: false
@@ -4899,7 +2923,7 @@ LMs:
     waitAllowed: true
 - name: S022007
   x: 6.5
-  y: 21.5
+  y: 21.2
   ignoreDir: null
   properties:
     spin: false
@@ -4907,7 +2931,7 @@ LMs:
     waitAllowed: true
 - name: S022008
   x: 7.5
-  y: 21.5
+  y: 21.2
   ignoreDir: null
   properties:
     spin: false
@@ -4915,7 +2939,7 @@ LMs:
     waitAllowed: true
 - name: S022009
   x: 8.5
-  y: 21.5
+  y: 21.2
   ignoreDir: null
   properties:
     spin: false
@@ -4923,7 +2947,7 @@ LMs:
     waitAllowed: true
 - name: S022010
   x: 9.5
-  y: 21.5
+  y: 21.2
   ignoreDir: null
   properties:
     spin: false
@@ -4931,7 +2955,7 @@ LMs:
     waitAllowed: true
 - name: S022011
   x: 10.5
-  y: 21.5
+  y: 21.2
   ignoreDir: null
   properties:
     spin: false
@@ -4939,7 +2963,7 @@ LMs:
     waitAllowed: true
 - name: S022012
   x: 11.5
-  y: 21.5
+  y: 21.2
   ignoreDir: null
   properties:
     spin: false
@@ -4947,7 +2971,7 @@ LMs:
     waitAllowed: true
 - name: S022013
   x: 12.5
-  y: 21.5
+  y: 21.2
   ignoreDir: null
   properties:
     spin: false
@@ -4955,7 +2979,7 @@ LMs:
     waitAllowed: true
 - name: S022014
   x: 13.5
-  y: 21.5
+  y: 21.2
   ignoreDir: null
   properties:
     spin: false
@@ -4963,7 +2987,7 @@ LMs:
     waitAllowed: true
 - name: S022015
   x: 14.5
-  y: 21.5
+  y: 21.2
   ignoreDir: null
   properties:
     spin: false
@@ -4971,7 +2995,7 @@ LMs:
     waitAllowed: true
 - name: S022016
   x: 15.5
-  y: 21.5
+  y: 21.2
   ignoreDir: null
   properties:
     spin: false
@@ -4979,7 +3003,7 @@ LMs:
     waitAllowed: true
 - name: S022017
   x: 16.5
-  y: 21.5
+  y: 21.2
   ignoreDir: null
   properties:
     spin: false
@@ -4987,7 +3011,7 @@ LMs:
     waitAllowed: true
 - name: S022018
   x: 17.5
-  y: 21.5
+  y: 21.2
   ignoreDir: null
   properties:
     spin: false
@@ -4995,7 +3019,7 @@ LMs:
     waitAllowed: true
 - name: S022019
   x: 18.5
-  y: 21.5
+  y: 21.2
   ignoreDir: null
   properties:
     spin: false
@@ -5003,7 +3027,7 @@ LMs:
     waitAllowed: true
 - name: S022020
   x: 19.5
-  y: 21.5
+  y: 21.2
   ignoreDir: null
   properties:
     spin: false
@@ -5011,7 +3035,7 @@ LMs:
     waitAllowed: true
 - name: S022021
   x: 20.5
-  y: 21.5
+  y: 21.2
   ignoreDir: null
   properties:
     spin: false
@@ -5019,7 +3043,7 @@ LMs:
     waitAllowed: true
 - name: S022022
   x: 21.5
-  y: 21.5
+  y: 21.2
   ignoreDir: null
   properties:
     spin: false
@@ -5027,7 +3051,7 @@ LMs:
     waitAllowed: true
 - name: S022023
   x: 22.5
-  y: 21.5
+  y: 21.2
   ignoreDir: null
   properties:
     spin: false
@@ -5035,7 +3059,7 @@ LMs:
     waitAllowed: true
 - name: S022024
   x: 23.5
-  y: 21.5
+  y: 21.2
   ignoreDir: null
   properties:
     spin: false
@@ -5043,7 +3067,7 @@ LMs:
     waitAllowed: true
 - name: S022025
   x: 24.5
-  y: 21.5
+  y: 21.2
   ignoreDir: null
   properties:
     spin: false
@@ -5051,7 +3075,7 @@ LMs:
     waitAllowed: true
 - name: S022026
   x: 25.5
-  y: 21.5
+  y: 21.2
   ignoreDir: null
   properties:
     spin: false
@@ -5059,7 +3083,7 @@ LMs:
     waitAllowed: true
 - name: S022027
   x: 26.5
-  y: 21.5
+  y: 21.2
   ignoreDir: null
   properties:
     spin: false
@@ -5067,7 +3091,7 @@ LMs:
     waitAllowed: true
 - name: S022028
   x: 27.5
-  y: 21.5
+  y: 21.2
   ignoreDir: null
   properties:
     spin: false
@@ -5075,7 +3099,7 @@ LMs:
     waitAllowed: true
 - name: S022029
   x: 28.5
-  y: 21.5
+  y: 21.2
   ignoreDir: null
   properties:
     spin: false
@@ -5083,7 +3107,7 @@ LMs:
     waitAllowed: true
 - name: S022030
   x: 29.5
-  y: 21.5
+  y: 21.2
   ignoreDir: null
   properties:
     spin: false
@@ -5091,7 +3115,7 @@ LMs:
     waitAllowed: true
 - name: S022031
   x: 30.5
-  y: 21.5
+  y: 21.2
   ignoreDir: null
   properties:
     spin: false
@@ -5099,7 +3123,7 @@ LMs:
     waitAllowed: true
 - name: S022032
   x: 31.5
-  y: 21.5
+  y: 21.2
   ignoreDir: null
   properties:
     spin: false
@@ -5107,7 +3131,7 @@ LMs:
     waitAllowed: true
 - name: S022033
   x: 32.5
-  y: 21.5
+  y: 21.2
   ignoreDir: null
   properties:
     spin: false
@@ -5115,38 +3139,22 @@ LMs:
     waitAllowed: true
 - name: S022034
   x: 33.5
-  y: 21.5
+  y: 21.2
   ignoreDir: null
   properties:
     spin: false
     smartCell: e
     waitAllowed: true
 - name: S022035
-  x: 34.5
-  y: 21.5
+  x: 35.0
+  y: 21.2
   ignoreDir: null
   properties:
     spin: false
     smartCell: .
-    waitAllowed: true
-- name: S022036
-  x: 35.5
-  y: 21.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S023001
-  x: 0.5
-  y: 22.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: w
     waitAllowed: true
 - name: S023002
-  x: 1.5
+  x: 1.0
   y: 22.5
   ignoreDir: null
   properties:
@@ -5170,32 +3178,16 @@ LMs:
     smartCell: .
     waitAllowed: true
 - name: S023035
-  x: 34.5
+  x: 35.0
   y: 22.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S023036
-  x: 35.5
-  y: 22.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: w
-    waitAllowed: true
-- name: S024001
-  x: 0.5
-  y: 23.5
   ignoreDir: null
   properties:
     spin: false
     smartCell: .
     waitAllowed: true
 - name: S024002
-  x: 1.5
-  y: 23.5
+  x: 1.0
+  y: 23.8
   ignoreDir: null
   properties:
     spin: false
@@ -5203,7 +3195,7 @@ LMs:
     waitAllowed: true
 - name: S024003
   x: 2.5
-  y: 23.5
+  y: 23.8
   ignoreDir: null
   properties:
     spin: false
@@ -5211,7 +3203,7 @@ LMs:
     waitAllowed: true
 - name: S024004
   x: 3.5
-  y: 23.5
+  y: 23.8
   ignoreDir: null
   properties:
     spin: false
@@ -5219,7 +3211,7 @@ LMs:
     waitAllowed: true
 - name: S024005
   x: 4.5
-  y: 23.5
+  y: 23.8
   ignoreDir: null
   properties:
     spin: false
@@ -5227,7 +3219,7 @@ LMs:
     waitAllowed: true
 - name: S024006
   x: 5.5
-  y: 23.5
+  y: 23.8
   ignoreDir: null
   properties:
     spin: false
@@ -5235,7 +3227,7 @@ LMs:
     waitAllowed: true
 - name: S024007
   x: 6.5
-  y: 23.5
+  y: 23.8
   ignoreDir: null
   properties:
     spin: false
@@ -5243,7 +3235,7 @@ LMs:
     waitAllowed: true
 - name: S024008
   x: 7.5
-  y: 23.5
+  y: 23.8
   ignoreDir: null
   properties:
     spin: false
@@ -5251,7 +3243,7 @@ LMs:
     waitAllowed: true
 - name: S024009
   x: 8.5
-  y: 23.5
+  y: 23.8
   ignoreDir: null
   properties:
     spin: false
@@ -5259,7 +3251,7 @@ LMs:
     waitAllowed: true
 - name: S024010
   x: 9.5
-  y: 23.5
+  y: 23.8
   ignoreDir: null
   properties:
     spin: false
@@ -5267,7 +3259,7 @@ LMs:
     waitAllowed: true
 - name: S024011
   x: 10.5
-  y: 23.5
+  y: 23.8
   ignoreDir: null
   properties:
     spin: false
@@ -5275,7 +3267,7 @@ LMs:
     waitAllowed: true
 - name: S024012
   x: 11.5
-  y: 23.5
+  y: 23.8
   ignoreDir: null
   properties:
     spin: false
@@ -5283,7 +3275,7 @@ LMs:
     waitAllowed: true
 - name: S024013
   x: 12.5
-  y: 23.5
+  y: 23.8
   ignoreDir: null
   properties:
     spin: false
@@ -5291,7 +3283,7 @@ LMs:
     waitAllowed: true
 - name: S024014
   x: 13.5
-  y: 23.5
+  y: 23.8
   ignoreDir: null
   properties:
     spin: false
@@ -5299,7 +3291,7 @@ LMs:
     waitAllowed: true
 - name: S024015
   x: 14.5
-  y: 23.5
+  y: 23.8
   ignoreDir: null
   properties:
     spin: false
@@ -5307,7 +3299,7 @@ LMs:
     waitAllowed: true
 - name: S024016
   x: 15.5
-  y: 23.5
+  y: 23.8
   ignoreDir: null
   properties:
     spin: false
@@ -5315,7 +3307,7 @@ LMs:
     waitAllowed: true
 - name: S024017
   x: 16.5
-  y: 23.5
+  y: 23.8
   ignoreDir: null
   properties:
     spin: false
@@ -5323,7 +3315,7 @@ LMs:
     waitAllowed: true
 - name: S024018
   x: 17.5
-  y: 23.5
+  y: 23.8
   ignoreDir: null
   properties:
     spin: false
@@ -5331,7 +3323,7 @@ LMs:
     waitAllowed: true
 - name: S024019
   x: 18.5
-  y: 23.5
+  y: 23.8
   ignoreDir: null
   properties:
     spin: false
@@ -5339,7 +3331,7 @@ LMs:
     waitAllowed: true
 - name: S024020
   x: 19.5
-  y: 23.5
+  y: 23.8
   ignoreDir: null
   properties:
     spin: false
@@ -5347,7 +3339,7 @@ LMs:
     waitAllowed: true
 - name: S024021
   x: 20.5
-  y: 23.5
+  y: 23.8
   ignoreDir: null
   properties:
     spin: false
@@ -5355,7 +3347,7 @@ LMs:
     waitAllowed: true
 - name: S024022
   x: 21.5
-  y: 23.5
+  y: 23.8
   ignoreDir: null
   properties:
     spin: false
@@ -5363,7 +3355,7 @@ LMs:
     waitAllowed: true
 - name: S024023
   x: 22.5
-  y: 23.5
+  y: 23.8
   ignoreDir: null
   properties:
     spin: false
@@ -5371,7 +3363,7 @@ LMs:
     waitAllowed: true
 - name: S024024
   x: 23.5
-  y: 23.5
+  y: 23.8
   ignoreDir: null
   properties:
     spin: false
@@ -5379,7 +3371,7 @@ LMs:
     waitAllowed: true
 - name: S024025
   x: 24.5
-  y: 23.5
+  y: 23.8
   ignoreDir: null
   properties:
     spin: false
@@ -5387,7 +3379,7 @@ LMs:
     waitAllowed: true
 - name: S024026
   x: 25.5
-  y: 23.5
+  y: 23.8
   ignoreDir: null
   properties:
     spin: false
@@ -5395,7 +3387,7 @@ LMs:
     waitAllowed: true
 - name: S024027
   x: 26.5
-  y: 23.5
+  y: 23.8
   ignoreDir: null
   properties:
     spin: false
@@ -5403,7 +3395,7 @@ LMs:
     waitAllowed: true
 - name: S024028
   x: 27.5
-  y: 23.5
+  y: 23.8
   ignoreDir: null
   properties:
     spin: false
@@ -5411,7 +3403,7 @@ LMs:
     waitAllowed: true
 - name: S024029
   x: 28.5
-  y: 23.5
+  y: 23.8
   ignoreDir: null
   properties:
     spin: false
@@ -5419,7 +3411,7 @@ LMs:
     waitAllowed: true
 - name: S024030
   x: 29.5
-  y: 23.5
+  y: 23.8
   ignoreDir: null
   properties:
     spin: false
@@ -5427,7 +3419,7 @@ LMs:
     waitAllowed: true
 - name: S024031
   x: 30.5
-  y: 23.5
+  y: 23.8
   ignoreDir: null
   properties:
     spin: false
@@ -5435,7 +3427,7 @@ LMs:
     waitAllowed: true
 - name: S024032
   x: 31.5
-  y: 23.5
+  y: 23.8
   ignoreDir: null
   properties:
     spin: false
@@ -5443,7 +3435,7 @@ LMs:
     waitAllowed: true
 - name: S024033
   x: 32.5
-  y: 23.5
+  y: 23.8
   ignoreDir: null
   properties:
     spin: false
@@ -5451,327 +3443,23 @@ LMs:
     waitAllowed: true
 - name: S024034
   x: 33.5
-  y: 23.5
+  y: 23.8
   ignoreDir: null
   properties:
     spin: false
     smartCell: e
     waitAllowed: true
 - name: S024035
-  x: 34.5
-  y: 23.5
+  x: 35.0
+  y: 23.8
   ignoreDir: null
   properties:
     spin: false
     smartCell: .
-    waitAllowed: true
-- name: S024036
-  x: 35.5
-  y: 23.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S025001
-  x: 0.5
-  y: 24.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S025002
-  x: 1.5
-  y: 24.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S025003
-  x: 2.5
-  y: 24.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S025004
-  x: 3.5
-  y: 24.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S025005
-  x: 4.5
-  y: 24.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S025006
-  x: 5.5
-  y: 24.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S025007
-  x: 6.5
-  y: 24.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S025008
-  x: 7.5
-  y: 24.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S025009
-  x: 8.5
-  y: 24.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S025010
-  x: 9.5
-  y: 24.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S025011
-  x: 10.5
-  y: 24.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S025012
-  x: 11.5
-  y: 24.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S025013
-  x: 12.5
-  y: 24.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S025014
-  x: 13.5
-  y: 24.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S025015
-  x: 14.5
-  y: 24.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S025016
-  x: 15.5
-  y: 24.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S025017
-  x: 16.5
-  y: 24.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S025018
-  x: 17.5
-  y: 24.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S025019
-  x: 18.5
-  y: 24.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S025020
-  x: 19.5
-  y: 24.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S025021
-  x: 20.5
-  y: 24.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S025022
-  x: 21.5
-  y: 24.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S025023
-  x: 22.5
-  y: 24.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S025024
-  x: 23.5
-  y: 24.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S025025
-  x: 24.5
-  y: 24.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S025026
-  x: 25.5
-  y: 24.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S025027
-  x: 26.5
-  y: 24.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S025028
-  x: 27.5
-  y: 24.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S025029
-  x: 28.5
-  y: 24.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S025030
-  x: 29.5
-  y: 24.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S025031
-  x: 30.5
-  y: 24.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S025032
-  x: 31.5
-  y: 24.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S025033
-  x: 32.5
-  y: 24.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S025034
-  x: 33.5
-  y: 24.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S025035
-  x: 34.5
-  y: 24.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S025036
-  x: 35.5
-  y: 24.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S026001
-  x: 0.5
-  y: 25.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: w
     waitAllowed: true
 - name: S026002
-  x: 1.5
-  y: 25.5
+  x: 1.0
+  y: 25.2
   ignoreDir: null
   properties:
     spin: false
@@ -5779,7 +3467,7 @@ LMs:
     waitAllowed: true
 - name: S026003
   x: 2.5
-  y: 25.5
+  y: 25.2
   ignoreDir: null
   properties:
     spin: false
@@ -5787,7 +3475,7 @@ LMs:
     waitAllowed: true
 - name: S026004
   x: 3.5
-  y: 25.5
+  y: 25.2
   ignoreDir: null
   properties:
     spin: false
@@ -5795,7 +3483,7 @@ LMs:
     waitAllowed: true
 - name: S026005
   x: 4.5
-  y: 25.5
+  y: 25.2
   ignoreDir: null
   properties:
     spin: false
@@ -5803,7 +3491,7 @@ LMs:
     waitAllowed: true
 - name: S026006
   x: 5.5
-  y: 25.5
+  y: 25.2
   ignoreDir: null
   properties:
     spin: false
@@ -5811,7 +3499,7 @@ LMs:
     waitAllowed: true
 - name: S026007
   x: 6.5
-  y: 25.5
+  y: 25.2
   ignoreDir: null
   properties:
     spin: false
@@ -5819,7 +3507,7 @@ LMs:
     waitAllowed: true
 - name: S026008
   x: 7.5
-  y: 25.5
+  y: 25.2
   ignoreDir: null
   properties:
     spin: false
@@ -5827,7 +3515,7 @@ LMs:
     waitAllowed: true
 - name: S026009
   x: 8.5
-  y: 25.5
+  y: 25.2
   ignoreDir: null
   properties:
     spin: false
@@ -5835,7 +3523,7 @@ LMs:
     waitAllowed: true
 - name: S026010
   x: 9.5
-  y: 25.5
+  y: 25.2
   ignoreDir: null
   properties:
     spin: false
@@ -5843,7 +3531,7 @@ LMs:
     waitAllowed: true
 - name: S026011
   x: 10.5
-  y: 25.5
+  y: 25.2
   ignoreDir: null
   properties:
     spin: false
@@ -5851,7 +3539,7 @@ LMs:
     waitAllowed: true
 - name: S026012
   x: 11.5
-  y: 25.5
+  y: 25.2
   ignoreDir: null
   properties:
     spin: false
@@ -5859,7 +3547,7 @@ LMs:
     waitAllowed: true
 - name: S026013
   x: 12.5
-  y: 25.5
+  y: 25.2
   ignoreDir: null
   properties:
     spin: false
@@ -5867,7 +3555,7 @@ LMs:
     waitAllowed: true
 - name: S026014
   x: 13.5
-  y: 25.5
+  y: 25.2
   ignoreDir: null
   properties:
     spin: false
@@ -5875,7 +3563,7 @@ LMs:
     waitAllowed: true
 - name: S026015
   x: 14.5
-  y: 25.5
+  y: 25.2
   ignoreDir: null
   properties:
     spin: false
@@ -5883,7 +3571,7 @@ LMs:
     waitAllowed: true
 - name: S026016
   x: 15.5
-  y: 25.5
+  y: 25.2
   ignoreDir: null
   properties:
     spin: false
@@ -5891,7 +3579,7 @@ LMs:
     waitAllowed: true
 - name: S026017
   x: 16.5
-  y: 25.5
+  y: 25.2
   ignoreDir: null
   properties:
     spin: false
@@ -5899,7 +3587,7 @@ LMs:
     waitAllowed: true
 - name: S026018
   x: 17.5
-  y: 25.5
+  y: 25.2
   ignoreDir: null
   properties:
     spin: false
@@ -5907,7 +3595,7 @@ LMs:
     waitAllowed: true
 - name: S026019
   x: 18.5
-  y: 25.5
+  y: 25.2
   ignoreDir: null
   properties:
     spin: false
@@ -5915,7 +3603,7 @@ LMs:
     waitAllowed: true
 - name: S026020
   x: 19.5
-  y: 25.5
+  y: 25.2
   ignoreDir: null
   properties:
     spin: false
@@ -5923,7 +3611,7 @@ LMs:
     waitAllowed: true
 - name: S026021
   x: 20.5
-  y: 25.5
+  y: 25.2
   ignoreDir: null
   properties:
     spin: false
@@ -5931,7 +3619,7 @@ LMs:
     waitAllowed: true
 - name: S026022
   x: 21.5
-  y: 25.5
+  y: 25.2
   ignoreDir: null
   properties:
     spin: false
@@ -5939,7 +3627,7 @@ LMs:
     waitAllowed: true
 - name: S026023
   x: 22.5
-  y: 25.5
+  y: 25.2
   ignoreDir: null
   properties:
     spin: false
@@ -5947,7 +3635,7 @@ LMs:
     waitAllowed: true
 - name: S026024
   x: 23.5
-  y: 25.5
+  y: 25.2
   ignoreDir: null
   properties:
     spin: false
@@ -5955,7 +3643,7 @@ LMs:
     waitAllowed: true
 - name: S026025
   x: 24.5
-  y: 25.5
+  y: 25.2
   ignoreDir: null
   properties:
     spin: false
@@ -5963,7 +3651,7 @@ LMs:
     waitAllowed: true
 - name: S026026
   x: 25.5
-  y: 25.5
+  y: 25.2
   ignoreDir: null
   properties:
     spin: false
@@ -5971,7 +3659,7 @@ LMs:
     waitAllowed: true
 - name: S026027
   x: 26.5
-  y: 25.5
+  y: 25.2
   ignoreDir: null
   properties:
     spin: false
@@ -5979,7 +3667,7 @@ LMs:
     waitAllowed: true
 - name: S026028
   x: 27.5
-  y: 25.5
+  y: 25.2
   ignoreDir: null
   properties:
     spin: false
@@ -5987,7 +3675,7 @@ LMs:
     waitAllowed: true
 - name: S026029
   x: 28.5
-  y: 25.5
+  y: 25.2
   ignoreDir: null
   properties:
     spin: false
@@ -5995,7 +3683,7 @@ LMs:
     waitAllowed: true
 - name: S026030
   x: 29.5
-  y: 25.5
+  y: 25.2
   ignoreDir: null
   properties:
     spin: false
@@ -6003,7 +3691,7 @@ LMs:
     waitAllowed: true
 - name: S026031
   x: 30.5
-  y: 25.5
+  y: 25.2
   ignoreDir: null
   properties:
     spin: false
@@ -6011,7 +3699,7 @@ LMs:
     waitAllowed: true
 - name: S026032
   x: 31.5
-  y: 25.5
+  y: 25.2
   ignoreDir: null
   properties:
     spin: false
@@ -6019,7 +3707,7 @@ LMs:
     waitAllowed: true
 - name: S026033
   x: 32.5
-  y: 25.5
+  y: 25.2
   ignoreDir: null
   properties:
     spin: false
@@ -6027,38 +3715,22 @@ LMs:
     waitAllowed: true
 - name: S026034
   x: 33.5
-  y: 25.5
+  y: 25.2
   ignoreDir: null
   properties:
     spin: false
     smartCell: e
     waitAllowed: true
 - name: S026035
-  x: 34.5
-  y: 25.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S026036
-  x: 35.5
-  y: 25.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: w
-    waitAllowed: true
-- name: S027001
-  x: 0.5
-  y: 26.5
+  x: 35.0
+  y: 25.2
   ignoreDir: null
   properties:
     spin: false
     smartCell: .
     waitAllowed: true
 - name: S027002
-  x: 1.5
+  x: 1.0
   y: 26.5
   ignoreDir: null
   properties:
@@ -6082,32 +3754,16 @@ LMs:
     smartCell: .
     waitAllowed: true
 - name: S027035
-  x: 34.5
+  x: 35.0
   y: 26.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S027036
-  x: 35.5
-  y: 26.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S028001
-  x: 0.5
-  y: 27.5
   ignoreDir: null
   properties:
     spin: false
     smartCell: .
     waitAllowed: true
 - name: S028002
-  x: 1.5
-  y: 27.5
+  x: 1.0
+  y: 27.8
   ignoreDir: null
   properties:
     spin: false
@@ -6115,7 +3771,7 @@ LMs:
     waitAllowed: true
 - name: S028003
   x: 2.5
-  y: 27.5
+  y: 27.8
   ignoreDir: null
   properties:
     spin: false
@@ -6123,7 +3779,7 @@ LMs:
     waitAllowed: true
 - name: S028004
   x: 3.5
-  y: 27.5
+  y: 27.8
   ignoreDir: null
   properties:
     spin: false
@@ -6131,7 +3787,7 @@ LMs:
     waitAllowed: true
 - name: S028005
   x: 4.5
-  y: 27.5
+  y: 27.8
   ignoreDir: null
   properties:
     spin: false
@@ -6139,7 +3795,7 @@ LMs:
     waitAllowed: true
 - name: S028006
   x: 5.5
-  y: 27.5
+  y: 27.8
   ignoreDir: null
   properties:
     spin: false
@@ -6147,7 +3803,7 @@ LMs:
     waitAllowed: true
 - name: S028007
   x: 6.5
-  y: 27.5
+  y: 27.8
   ignoreDir: null
   properties:
     spin: false
@@ -6155,7 +3811,7 @@ LMs:
     waitAllowed: true
 - name: S028008
   x: 7.5
-  y: 27.5
+  y: 27.8
   ignoreDir: null
   properties:
     spin: false
@@ -6163,7 +3819,7 @@ LMs:
     waitAllowed: true
 - name: S028009
   x: 8.5
-  y: 27.5
+  y: 27.8
   ignoreDir: null
   properties:
     spin: false
@@ -6171,7 +3827,7 @@ LMs:
     waitAllowed: true
 - name: S028010
   x: 9.5
-  y: 27.5
+  y: 27.8
   ignoreDir: null
   properties:
     spin: false
@@ -6179,7 +3835,7 @@ LMs:
     waitAllowed: true
 - name: S028011
   x: 10.5
-  y: 27.5
+  y: 27.8
   ignoreDir: null
   properties:
     spin: false
@@ -6187,7 +3843,7 @@ LMs:
     waitAllowed: true
 - name: S028012
   x: 11.5
-  y: 27.5
+  y: 27.8
   ignoreDir: null
   properties:
     spin: false
@@ -6195,7 +3851,7 @@ LMs:
     waitAllowed: true
 - name: S028013
   x: 12.5
-  y: 27.5
+  y: 27.8
   ignoreDir: null
   properties:
     spin: false
@@ -6203,7 +3859,7 @@ LMs:
     waitAllowed: true
 - name: S028014
   x: 13.5
-  y: 27.5
+  y: 27.8
   ignoreDir: null
   properties:
     spin: false
@@ -6211,7 +3867,7 @@ LMs:
     waitAllowed: true
 - name: S028015
   x: 14.5
-  y: 27.5
+  y: 27.8
   ignoreDir: null
   properties:
     spin: false
@@ -6219,7 +3875,7 @@ LMs:
     waitAllowed: true
 - name: S028016
   x: 15.5
-  y: 27.5
+  y: 27.8
   ignoreDir: null
   properties:
     spin: false
@@ -6227,7 +3883,7 @@ LMs:
     waitAllowed: true
 - name: S028017
   x: 16.5
-  y: 27.5
+  y: 27.8
   ignoreDir: null
   properties:
     spin: false
@@ -6235,7 +3891,7 @@ LMs:
     waitAllowed: true
 - name: S028018
   x: 17.5
-  y: 27.5
+  y: 27.8
   ignoreDir: null
   properties:
     spin: false
@@ -6243,7 +3899,7 @@ LMs:
     waitAllowed: true
 - name: S028019
   x: 18.5
-  y: 27.5
+  y: 27.8
   ignoreDir: null
   properties:
     spin: false
@@ -6251,7 +3907,7 @@ LMs:
     waitAllowed: true
 - name: S028020
   x: 19.5
-  y: 27.5
+  y: 27.8
   ignoreDir: null
   properties:
     spin: false
@@ -6259,7 +3915,7 @@ LMs:
     waitAllowed: true
 - name: S028021
   x: 20.5
-  y: 27.5
+  y: 27.8
   ignoreDir: null
   properties:
     spin: false
@@ -6267,7 +3923,7 @@ LMs:
     waitAllowed: true
 - name: S028022
   x: 21.5
-  y: 27.5
+  y: 27.8
   ignoreDir: null
   properties:
     spin: false
@@ -6275,7 +3931,7 @@ LMs:
     waitAllowed: true
 - name: S028023
   x: 22.5
-  y: 27.5
+  y: 27.8
   ignoreDir: null
   properties:
     spin: false
@@ -6283,7 +3939,7 @@ LMs:
     waitAllowed: true
 - name: S028024
   x: 23.5
-  y: 27.5
+  y: 27.8
   ignoreDir: null
   properties:
     spin: false
@@ -6291,7 +3947,7 @@ LMs:
     waitAllowed: true
 - name: S028025
   x: 24.5
-  y: 27.5
+  y: 27.8
   ignoreDir: null
   properties:
     spin: false
@@ -6299,7 +3955,7 @@ LMs:
     waitAllowed: true
 - name: S028026
   x: 25.5
-  y: 27.5
+  y: 27.8
   ignoreDir: null
   properties:
     spin: false
@@ -6307,7 +3963,7 @@ LMs:
     waitAllowed: true
 - name: S028027
   x: 26.5
-  y: 27.5
+  y: 27.8
   ignoreDir: null
   properties:
     spin: false
@@ -6315,7 +3971,7 @@ LMs:
     waitAllowed: true
 - name: S028028
   x: 27.5
-  y: 27.5
+  y: 27.8
   ignoreDir: null
   properties:
     spin: false
@@ -6323,7 +3979,7 @@ LMs:
     waitAllowed: true
 - name: S028029
   x: 28.5
-  y: 27.5
+  y: 27.8
   ignoreDir: null
   properties:
     spin: false
@@ -6331,7 +3987,7 @@ LMs:
     waitAllowed: true
 - name: S028030
   x: 29.5
-  y: 27.5
+  y: 27.8
   ignoreDir: null
   properties:
     spin: false
@@ -6339,7 +3995,7 @@ LMs:
     waitAllowed: true
 - name: S028031
   x: 30.5
-  y: 27.5
+  y: 27.8
   ignoreDir: null
   properties:
     spin: false
@@ -6347,7 +4003,7 @@ LMs:
     waitAllowed: true
 - name: S028032
   x: 31.5
-  y: 27.5
+  y: 27.8
   ignoreDir: null
   properties:
     spin: false
@@ -6355,7 +4011,7 @@ LMs:
     waitAllowed: true
 - name: S028033
   x: 32.5
-  y: 27.5
+  y: 27.8
   ignoreDir: null
   properties:
     spin: false
@@ -6363,327 +4019,23 @@ LMs:
     waitAllowed: true
 - name: S028034
   x: 33.5
-  y: 27.5
+  y: 27.8
   ignoreDir: null
   properties:
     spin: false
     smartCell: e
     waitAllowed: true
 - name: S028035
-  x: 34.5
-  y: 27.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S028036
-  x: 35.5
-  y: 27.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S029001
-  x: 0.5
-  y: 28.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: w
-    waitAllowed: true
-- name: S029002
-  x: 1.5
-  y: 28.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S029003
-  x: 2.5
-  y: 28.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S029004
-  x: 3.5
-  y: 28.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S029005
-  x: 4.5
-  y: 28.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S029006
-  x: 5.5
-  y: 28.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S029007
-  x: 6.5
-  y: 28.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S029008
-  x: 7.5
-  y: 28.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S029009
-  x: 8.5
-  y: 28.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S029010
-  x: 9.5
-  y: 28.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S029011
-  x: 10.5
-  y: 28.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S029012
-  x: 11.5
-  y: 28.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S029013
-  x: 12.5
-  y: 28.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S029014
-  x: 13.5
-  y: 28.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S029015
-  x: 14.5
-  y: 28.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S029016
-  x: 15.5
-  y: 28.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S029017
-  x: 16.5
-  y: 28.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S029018
-  x: 17.5
-  y: 28.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S029019
-  x: 18.5
-  y: 28.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S029020
-  x: 19.5
-  y: 28.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S029021
-  x: 20.5
-  y: 28.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S029022
-  x: 21.5
-  y: 28.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S029023
-  x: 22.5
-  y: 28.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S029024
-  x: 23.5
-  y: 28.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S029025
-  x: 24.5
-  y: 28.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S029026
-  x: 25.5
-  y: 28.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S029027
-  x: 26.5
-  y: 28.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S029028
-  x: 27.5
-  y: 28.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S029029
-  x: 28.5
-  y: 28.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S029030
-  x: 29.5
-  y: 28.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S029031
-  x: 30.5
-  y: 28.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S029032
-  x: 31.5
-  y: 28.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S029033
-  x: 32.5
-  y: 28.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S029034
-  x: 33.5
-  y: 28.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S029035
-  x: 34.5
-  y: 28.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S029036
-  x: 35.5
-  y: 28.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: w
-    waitAllowed: true
-- name: S030001
-  x: 0.5
-  y: 29.5
+  x: 35.0
+  y: 27.8
   ignoreDir: null
   properties:
     spin: false
     smartCell: .
     waitAllowed: true
 - name: S030002
-  x: 1.5
-  y: 29.5
+  x: 1.0
+  y: 29.2
   ignoreDir: null
   properties:
     spin: false
@@ -6691,7 +4043,7 @@ LMs:
     waitAllowed: true
 - name: S030003
   x: 2.5
-  y: 29.5
+  y: 29.2
   ignoreDir: null
   properties:
     spin: false
@@ -6699,7 +4051,7 @@ LMs:
     waitAllowed: true
 - name: S030004
   x: 3.5
-  y: 29.5
+  y: 29.2
   ignoreDir: null
   properties:
     spin: false
@@ -6707,7 +4059,7 @@ LMs:
     waitAllowed: true
 - name: S030005
   x: 4.5
-  y: 29.5
+  y: 29.2
   ignoreDir: null
   properties:
     spin: false
@@ -6715,7 +4067,7 @@ LMs:
     waitAllowed: true
 - name: S030006
   x: 5.5
-  y: 29.5
+  y: 29.2
   ignoreDir: null
   properties:
     spin: false
@@ -6723,7 +4075,7 @@ LMs:
     waitAllowed: true
 - name: S030007
   x: 6.5
-  y: 29.5
+  y: 29.2
   ignoreDir: null
   properties:
     spin: false
@@ -6731,7 +4083,7 @@ LMs:
     waitAllowed: true
 - name: S030008
   x: 7.5
-  y: 29.5
+  y: 29.2
   ignoreDir: null
   properties:
     spin: false
@@ -6739,7 +4091,7 @@ LMs:
     waitAllowed: true
 - name: S030009
   x: 8.5
-  y: 29.5
+  y: 29.2
   ignoreDir: null
   properties:
     spin: false
@@ -6747,7 +4099,7 @@ LMs:
     waitAllowed: true
 - name: S030010
   x: 9.5
-  y: 29.5
+  y: 29.2
   ignoreDir: null
   properties:
     spin: false
@@ -6755,7 +4107,7 @@ LMs:
     waitAllowed: true
 - name: S030011
   x: 10.5
-  y: 29.5
+  y: 29.2
   ignoreDir: null
   properties:
     spin: false
@@ -6763,7 +4115,7 @@ LMs:
     waitAllowed: true
 - name: S030012
   x: 11.5
-  y: 29.5
+  y: 29.2
   ignoreDir: null
   properties:
     spin: false
@@ -6771,7 +4123,7 @@ LMs:
     waitAllowed: true
 - name: S030013
   x: 12.5
-  y: 29.5
+  y: 29.2
   ignoreDir: null
   properties:
     spin: false
@@ -6779,7 +4131,7 @@ LMs:
     waitAllowed: true
 - name: S030014
   x: 13.5
-  y: 29.5
+  y: 29.2
   ignoreDir: null
   properties:
     spin: false
@@ -6787,7 +4139,7 @@ LMs:
     waitAllowed: true
 - name: S030015
   x: 14.5
-  y: 29.5
+  y: 29.2
   ignoreDir: null
   properties:
     spin: false
@@ -6795,7 +4147,7 @@ LMs:
     waitAllowed: true
 - name: S030016
   x: 15.5
-  y: 29.5
+  y: 29.2
   ignoreDir: null
   properties:
     spin: false
@@ -6803,7 +4155,7 @@ LMs:
     waitAllowed: true
 - name: S030017
   x: 16.5
-  y: 29.5
+  y: 29.2
   ignoreDir: null
   properties:
     spin: false
@@ -6811,7 +4163,7 @@ LMs:
     waitAllowed: true
 - name: S030018
   x: 17.5
-  y: 29.5
+  y: 29.2
   ignoreDir: null
   properties:
     spin: false
@@ -6819,7 +4171,7 @@ LMs:
     waitAllowed: true
 - name: S030019
   x: 18.5
-  y: 29.5
+  y: 29.2
   ignoreDir: null
   properties:
     spin: false
@@ -6827,7 +4179,7 @@ LMs:
     waitAllowed: true
 - name: S030020
   x: 19.5
-  y: 29.5
+  y: 29.2
   ignoreDir: null
   properties:
     spin: false
@@ -6835,7 +4187,7 @@ LMs:
     waitAllowed: true
 - name: S030021
   x: 20.5
-  y: 29.5
+  y: 29.2
   ignoreDir: null
   properties:
     spin: false
@@ -6843,7 +4195,7 @@ LMs:
     waitAllowed: true
 - name: S030022
   x: 21.5
-  y: 29.5
+  y: 29.2
   ignoreDir: null
   properties:
     spin: false
@@ -6851,7 +4203,7 @@ LMs:
     waitAllowed: true
 - name: S030023
   x: 22.5
-  y: 29.5
+  y: 29.2
   ignoreDir: null
   properties:
     spin: false
@@ -6859,7 +4211,7 @@ LMs:
     waitAllowed: true
 - name: S030024
   x: 23.5
-  y: 29.5
+  y: 29.2
   ignoreDir: null
   properties:
     spin: false
@@ -6867,7 +4219,7 @@ LMs:
     waitAllowed: true
 - name: S030025
   x: 24.5
-  y: 29.5
+  y: 29.2
   ignoreDir: null
   properties:
     spin: false
@@ -6875,7 +4227,7 @@ LMs:
     waitAllowed: true
 - name: S030026
   x: 25.5
-  y: 29.5
+  y: 29.2
   ignoreDir: null
   properties:
     spin: false
@@ -6883,7 +4235,7 @@ LMs:
     waitAllowed: true
 - name: S030027
   x: 26.5
-  y: 29.5
+  y: 29.2
   ignoreDir: null
   properties:
     spin: false
@@ -6891,7 +4243,7 @@ LMs:
     waitAllowed: true
 - name: S030028
   x: 27.5
-  y: 29.5
+  y: 29.2
   ignoreDir: null
   properties:
     spin: false
@@ -6899,7 +4251,7 @@ LMs:
     waitAllowed: true
 - name: S030029
   x: 28.5
-  y: 29.5
+  y: 29.2
   ignoreDir: null
   properties:
     spin: false
@@ -6907,7 +4259,7 @@ LMs:
     waitAllowed: true
 - name: S030030
   x: 29.5
-  y: 29.5
+  y: 29.2
   ignoreDir: null
   properties:
     spin: false
@@ -6915,7 +4267,7 @@ LMs:
     waitAllowed: true
 - name: S030031
   x: 30.5
-  y: 29.5
+  y: 29.2
   ignoreDir: null
   properties:
     spin: false
@@ -6923,7 +4275,7 @@ LMs:
     waitAllowed: true
 - name: S030032
   x: 31.5
-  y: 29.5
+  y: 29.2
   ignoreDir: null
   properties:
     spin: false
@@ -6931,7 +4283,7 @@ LMs:
     waitAllowed: true
 - name: S030033
   x: 32.5
-  y: 29.5
+  y: 29.2
   ignoreDir: null
   properties:
     spin: false
@@ -6939,38 +4291,22 @@ LMs:
     waitAllowed: true
 - name: S030034
   x: 33.5
-  y: 29.5
+  y: 29.2
   ignoreDir: null
   properties:
     spin: false
     smartCell: e
     waitAllowed: true
 - name: S030035
-  x: 34.5
-  y: 29.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S030036
-  x: 35.5
-  y: 29.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S031001
-  x: 0.5
-  y: 30.5
+  x: 35.0
+  y: 29.2
   ignoreDir: null
   properties:
     spin: false
     smartCell: .
     waitAllowed: true
 - name: S031002
-  x: 1.5
+  x: 1.0
   y: 30.5
   ignoreDir: null
   properties:
@@ -6994,32 +4330,16 @@ LMs:
     smartCell: .
     waitAllowed: true
 - name: S031035
-  x: 34.5
+  x: 35.0
   y: 30.5
   ignoreDir: null
   properties:
     spin: false
     smartCell: .
-    waitAllowed: true
-- name: S031036
-  x: 35.5
-  y: 30.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S032001
-  x: 0.5
-  y: 31.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: w
     waitAllowed: true
 - name: S032002
-  x: 1.5
-  y: 31.5
+  x: 1.0
+  y: 32.0
   ignoreDir: null
   properties:
     spin: false
@@ -7027,7 +4347,7 @@ LMs:
     waitAllowed: true
 - name: S032003
   x: 2.5
-  y: 31.5
+  y: 32.0
   ignoreDir: null
   properties:
     spin: false
@@ -7035,7 +4355,7 @@ LMs:
     waitAllowed: true
 - name: S032004
   x: 3.5
-  y: 31.5
+  y: 32.0
   ignoreDir: null
   properties:
     spin: false
@@ -7043,7 +4363,7 @@ LMs:
     waitAllowed: true
 - name: S032005
   x: 4.5
-  y: 31.5
+  y: 32.0
   ignoreDir: null
   properties:
     spin: false
@@ -7051,7 +4371,7 @@ LMs:
     waitAllowed: true
 - name: S032006
   x: 5.5
-  y: 31.5
+  y: 32.0
   ignoreDir: null
   properties:
     spin: false
@@ -7059,7 +4379,7 @@ LMs:
     waitAllowed: true
 - name: S032007
   x: 6.5
-  y: 31.5
+  y: 32.0
   ignoreDir: null
   properties:
     spin: false
@@ -7067,7 +4387,7 @@ LMs:
     waitAllowed: true
 - name: S032008
   x: 7.5
-  y: 31.5
+  y: 32.0
   ignoreDir: null
   properties:
     spin: false
@@ -7075,7 +4395,7 @@ LMs:
     waitAllowed: true
 - name: S032009
   x: 8.5
-  y: 31.5
+  y: 32.0
   ignoreDir: null
   properties:
     spin: false
@@ -7083,7 +4403,7 @@ LMs:
     waitAllowed: true
 - name: S032010
   x: 9.5
-  y: 31.5
+  y: 32.0
   ignoreDir: null
   properties:
     spin: false
@@ -7091,7 +4411,7 @@ LMs:
     waitAllowed: true
 - name: S032011
   x: 10.5
-  y: 31.5
+  y: 32.0
   ignoreDir: null
   properties:
     spin: false
@@ -7099,7 +4419,7 @@ LMs:
     waitAllowed: true
 - name: S032012
   x: 11.5
-  y: 31.5
+  y: 32.0
   ignoreDir: null
   properties:
     spin: false
@@ -7107,7 +4427,7 @@ LMs:
     waitAllowed: true
 - name: S032013
   x: 12.5
-  y: 31.5
+  y: 32.0
   ignoreDir: null
   properties:
     spin: false
@@ -7115,7 +4435,7 @@ LMs:
     waitAllowed: true
 - name: S032014
   x: 13.5
-  y: 31.5
+  y: 32.0
   ignoreDir: null
   properties:
     spin: false
@@ -7123,7 +4443,7 @@ LMs:
     waitAllowed: true
 - name: S032015
   x: 14.5
-  y: 31.5
+  y: 32.0
   ignoreDir: null
   properties:
     spin: false
@@ -7131,7 +4451,7 @@ LMs:
     waitAllowed: true
 - name: S032016
   x: 15.5
-  y: 31.5
+  y: 32.0
   ignoreDir: null
   properties:
     spin: false
@@ -7139,7 +4459,7 @@ LMs:
     waitAllowed: true
 - name: S032017
   x: 16.5
-  y: 31.5
+  y: 32.0
   ignoreDir: null
   properties:
     spin: false
@@ -7147,7 +4467,7 @@ LMs:
     waitAllowed: true
 - name: S032018
   x: 17.5
-  y: 31.5
+  y: 32.0
   ignoreDir: null
   properties:
     spin: false
@@ -7155,7 +4475,7 @@ LMs:
     waitAllowed: true
 - name: S032019
   x: 18.5
-  y: 31.5
+  y: 32.0
   ignoreDir: null
   properties:
     spin: false
@@ -7163,7 +4483,7 @@ LMs:
     waitAllowed: true
 - name: S032020
   x: 19.5
-  y: 31.5
+  y: 32.0
   ignoreDir: null
   properties:
     spin: false
@@ -7171,7 +4491,7 @@ LMs:
     waitAllowed: true
 - name: S032021
   x: 20.5
-  y: 31.5
+  y: 32.0
   ignoreDir: null
   properties:
     spin: false
@@ -7179,7 +4499,7 @@ LMs:
     waitAllowed: true
 - name: S032022
   x: 21.5
-  y: 31.5
+  y: 32.0
   ignoreDir: null
   properties:
     spin: false
@@ -7187,7 +4507,7 @@ LMs:
     waitAllowed: true
 - name: S032023
   x: 22.5
-  y: 31.5
+  y: 32.0
   ignoreDir: null
   properties:
     spin: false
@@ -7195,7 +4515,7 @@ LMs:
     waitAllowed: true
 - name: S032024
   x: 23.5
-  y: 31.5
+  y: 32.0
   ignoreDir: null
   properties:
     spin: false
@@ -7203,7 +4523,7 @@ LMs:
     waitAllowed: true
 - name: S032025
   x: 24.5
-  y: 31.5
+  y: 32.0
   ignoreDir: null
   properties:
     spin: false
@@ -7211,7 +4531,7 @@ LMs:
     waitAllowed: true
 - name: S032026
   x: 25.5
-  y: 31.5
+  y: 32.0
   ignoreDir: null
   properties:
     spin: false
@@ -7219,7 +4539,7 @@ LMs:
     waitAllowed: true
 - name: S032027
   x: 26.5
-  y: 31.5
+  y: 32.0
   ignoreDir: null
   properties:
     spin: false
@@ -7227,7 +4547,7 @@ LMs:
     waitAllowed: true
 - name: S032028
   x: 27.5
-  y: 31.5
+  y: 32.0
   ignoreDir: null
   properties:
     spin: false
@@ -7235,7 +4555,7 @@ LMs:
     waitAllowed: true
 - name: S032029
   x: 28.5
-  y: 31.5
+  y: 32.0
   ignoreDir: null
   properties:
     spin: false
@@ -7243,7 +4563,7 @@ LMs:
     waitAllowed: true
 - name: S032030
   x: 29.5
-  y: 31.5
+  y: 32.0
   ignoreDir: null
   properties:
     spin: false
@@ -7251,7 +4571,7 @@ LMs:
     waitAllowed: true
 - name: S032031
   x: 30.5
-  y: 31.5
+  y: 32.0
   ignoreDir: null
   properties:
     spin: false
@@ -7259,7 +4579,7 @@ LMs:
     waitAllowed: true
 - name: S032032
   x: 31.5
-  y: 31.5
+  y: 32.0
   ignoreDir: null
   properties:
     spin: false
@@ -7267,7 +4587,7 @@ LMs:
     waitAllowed: true
 - name: S032033
   x: 32.5
-  y: 31.5
+  y: 32.0
   ignoreDir: null
   properties:
     spin: false
@@ -7275,311 +4595,15 @@ LMs:
     waitAllowed: true
 - name: S032034
   x: 33.5
-  y: 31.5
+  y: 32.0
   ignoreDir: null
   properties:
     spin: false
     smartCell: e
     waitAllowed: true
 - name: S032035
-  x: 34.5
-  y: 31.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S032036
-  x: 35.5
-  y: 31.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: w
-    waitAllowed: true
-- name: S033001
-  x: 0.5
-  y: 32.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S033002
-  x: 1.5
-  y: 32.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S033003
-  x: 2.5
-  y: 32.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S033004
-  x: 3.5
-  y: 32.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S033005
-  x: 4.5
-  y: 32.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S033006
-  x: 5.5
-  y: 32.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S033007
-  x: 6.5
-  y: 32.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S033008
-  x: 7.5
-  y: 32.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S033009
-  x: 8.5
-  y: 32.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S033010
-  x: 9.5
-  y: 32.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S033011
-  x: 10.5
-  y: 32.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S033012
-  x: 11.5
-  y: 32.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S033013
-  x: 12.5
-  y: 32.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S033014
-  x: 13.5
-  y: 32.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S033015
-  x: 14.5
-  y: 32.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S033016
-  x: 15.5
-  y: 32.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S033017
-  x: 16.5
-  y: 32.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S033018
-  x: 17.5
-  y: 32.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S033019
-  x: 18.5
-  y: 32.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S033020
-  x: 19.5
-  y: 32.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S033021
-  x: 20.5
-  y: 32.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S033022
-  x: 21.5
-  y: 32.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S033023
-  x: 22.5
-  y: 32.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S033024
-  x: 23.5
-  y: 32.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S033025
-  x: 24.5
-  y: 32.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S033026
-  x: 25.5
-  y: 32.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S033027
-  x: 26.5
-  y: 32.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S033028
-  x: 27.5
-  y: 32.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S033029
-  x: 28.5
-  y: 32.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S033030
-  x: 29.5
-  y: 32.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S033031
-  x: 30.5
-  y: 32.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S033032
-  x: 31.5
-  y: 32.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S033033
-  x: 32.5
-  y: 32.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S033034
-  x: 33.5
-  y: 32.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S033035
-  x: 34.5
-  y: 32.5
-  ignoreDir: null
-  properties:
-    spin: false
-    smartCell: .
-    waitAllowed: true
-- name: S033036
-  x: 35.5
-  y: 32.5
+  x: 35.0
+  y: 32.0
   ignoreDir: null
   properties:
     spin: false

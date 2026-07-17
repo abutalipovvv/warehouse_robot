@@ -1640,10 +1640,11 @@ def test_remote_route_payload_contains_absolute_timed_segment_contract() -> None
     assert route["dispatchEpochSec"] >= before + 0.24
     assert route["timedSegments"] == [
         {
-            "kind": "move",
-            "from": "A",
-            "to": "B",
-            "notBeforeSec": 2.0,
+                "kind": "move",
+                "from": "A",
+                "to": "B",
+                "motionDirection": "not_specified",
+                "notBeforeSec": 2.0,
             "plannedArrivalSec": 4.0,
         }
     ]

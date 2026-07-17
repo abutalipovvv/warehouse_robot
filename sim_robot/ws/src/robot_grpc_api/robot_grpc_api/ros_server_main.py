@@ -76,6 +76,7 @@ def main() -> None:
         slam_params_file=args.slam_params_file or None,
         slam_launch_file=args.slam_launch_file or None,
         params_path=args.params,
+        autostart=False,
     )
     server = serve_robot_api(runtime, host=args.host, port=args.port)
     stop = False
@@ -87,8 +88,21 @@ def main() -> None:
 
     signal.signal(signal.SIGINT, _handle_signal)
     signal.signal(signal.SIGTERM, _handle_signal)
-    print(f"robot gRPC API {args.robot_id} listening on {args.host}:{args.port}", flush=True)
+    print(
+        f"robot gRPC API {args.robot_id} listening on {args.host}:{args.port}; "
+        "ROS runtime is starting",
+        flush=True,
+    )
     try:
+        runtime.start()
+        if runtime.available:
+            print(f"robot gRPC API {args.robot_id} ROS runtime ready", flush=True)
+        else:
+            print(
+                f"robot gRPC API {args.robot_id} ROS runtime unavailable: "
+                f"{runtime.error or 'unknown initialization error'}",
+                flush=True,
+            )
         while not stop:
             time.sleep(0.2)
     finally:

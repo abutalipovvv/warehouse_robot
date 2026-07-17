@@ -247,7 +247,8 @@ class FleetManagerCore(
         state = {
             "ok": True,
             "robots": [
-                robot.to_dict(
+                self._robot_snapshot_payload(
+                    robot,
                     include_trajectory=(
                         include_trajectories
                         or (
@@ -273,6 +274,51 @@ class FleetManagerCore(
                 }
             )
         return state
+
+    def _robot_snapshot_payload(
+        self,
+        robot: FleetRobot,
+        *,
+        include_trajectory: bool,
+    ) -> dict[str, Any]:
+        payload = robot.to_dict(include_trajectory=include_trajectory)
+        pending_orders = self.task_manager.pending_for_robot(robot.name)
+        if not pending_orders:
+            payload.update(
+                {
+                    "assignedOrderId": "",
+                    "assignedOrderStatus": "",
+                    "assignedOrderTargetLm": "",
+                    "orderQueueDepth": 0,
+                }
+            )
+            return payload
+
+        assigned = next(
+            (
+                order
+                for order in pending_orders
+                if order.order_id == robot.active_order_id
+            ),
+            pending_orders[0],
+        )
+        target_lm = self._active_order_target(assigned)
+        payload.update(
+            {
+                "assignedOrderId": assigned.order_id,
+                "assignedOrderStatus": assigned.status,
+                "assignedOrderTargetLm": target_lm,
+                "orderQueueDepth": len(pending_orders),
+            }
+        )
+        # A queued order already belongs to this robot even before its MAPF
+        # route is committed. Expose that destination without overloading
+        # activeOrderId, whose execution semantics are used by the motion
+        # controller and browser interpolation clock.
+        if not str(payload.get("targetLm") or ""):
+            payload["targetName"] = target_lm
+            payload["targetLm"] = target_lm
+        return payload
 
     def tick(self, payload: dict[str, Any] | None = None) -> dict[str, Any]:
         self._advance_runtime()

@@ -85,7 +85,14 @@ def test_plan_action_starts_continuous_random_orders_for_every_robot(monkeypatch
     }
     assert all(order.target_lm in service.loaded_map.landmarks for order in dynamic_orders)
     assert all(order.target_lm != order.start_lm for order in dynamic_orders if order.start_lm)
-    assert service._dynamic_benchmark_payload()["averageOrderDistanceM"] >= 6.0
+    metrics = service._dynamic_benchmark_payload()
+    assert metrics["averageOrderDistanceM"] >= 6.0
+    assert metrics["robotsWithOrders"] == 20
+    assert metrics["robotsWithoutOrders"] == 0
+    robot_states = service.manager.snapshot()["robots"]
+    assert all(robot["assignedOrderId"] for robot in robot_states)
+    assert all(robot["assignedOrderTargetLm"] == robot["targetLm"] for robot in robot_states)
+    assert all(robot["orderQueueDepth"] == 1 for robot in robot_states)
 
 
 def test_time_scale_action_keeps_simulation_and_uses_virtual_order_time(monkeypatch) -> None:
@@ -149,6 +156,15 @@ def test_package_order_waves_use_perimeter_and_keep_metrics_after_stop(monkeypat
     service.benchmark_payload(
         {"action": "add", "count": 8, "seed": 42, "reset": False}
     )
+    assert all(
+        not service.manager.collision.blocked_reason(
+            robot.pose,
+            service.manager.obstacles,
+            service.manager.obstacle_areas,
+        )
+        for robot in service.manager.robots.values()
+        if robot.pose is not None
+    )
 
     result = service.benchmark_payload({
         "action": "package_waves",
@@ -163,6 +179,8 @@ def test_package_order_waves_use_perimeter_and_keep_metrics_after_stop(monkeypat
     assert benchmark["scenario"] == "package_order_waves"
     assert benchmark["generationMode"] == "package_waves"
     assert benchmark["ordersGenerated"] == 8
+    assert benchmark["robotsWithOrders"] == 8
+    assert benchmark["robotsWithoutOrders"] == 0
     assert benchmark["waveIndex"] == 1
     assert benchmark["wavesStarted"] == 1
     first_wave_ids = set(service._dynamic_benchmark["waveOrderIds"])

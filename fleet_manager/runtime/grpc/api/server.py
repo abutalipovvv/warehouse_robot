@@ -27,9 +27,8 @@ class RobotApiService:
 
     def Health(self, request, context) -> robot_api_pb2.HealthResponse:
         del request, context
-        available = bool(getattr(self.runtime, "available", True))
         error = str(getattr(self.runtime, "error", "") or "")
-        return robot_api_pb2.HealthResponse(ok=available and not error, error=error, service=API_VERSION)
+        return robot_api_pb2.HealthResponse(ok=not error, error=error, service=API_VERSION)
 
     def Identity(self, request, context) -> robot_api_pb2.IdentityResponse:
         del request, context

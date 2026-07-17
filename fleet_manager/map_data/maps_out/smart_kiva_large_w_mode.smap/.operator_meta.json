@@ -1,15 +1,30 @@
 {
+  "aisleConnectorColumns": [
+    2,
+    13,
+    24,
+    35
+  ],
+  "aisleLaneClearanceM": 0.8,
+  "aisleLaneSpacingM": 1.4,
   "cellSizeM": 1.0,
   "cols": 36,
-  "directedEdges": 3126,
+  "crossLaneConnectionsPerAisle": 4,
+  "directedEdges": 1240,
   "imageHeightPx": 330,
   "imageWidthPx": 360,
+  "internalCrossAisleWidthM": 1.4,
   "kind": "smart_layout_benchmark",
-  "landmarks": 948,
+  "landmarks": 576,
+  "layoutVariant": "two_lane_clearance",
   "mapName": "smart_kiva_large_w_mode",
+  "perimeterLaneClearanceM": 1.0,
+  "perimeterLaneCount": 1,
+  "removedMiddleRows": 7,
   "resolutionM": 0.1,
   "rows": 33,
   "schemaVersion": 1,
+  "shelfEndTrimM": 0.2,
   "source": "lifelong-smart/maps/kiva_large_w_mode.json",
   "sourceName": "kiva_large_w_mode"
 }

@@ -282,12 +282,18 @@ class FleetMapfPlanner:
                     }
                 )
             else:
+                edge = self.edge_by_key.get((start_node, end_node))
                 segments.append(
                     {
                         **base,
                         "kind": "move",
                         "from": start_node,
                         "to": end_node,
+                        "motionDirection": (
+                            edge.motion_direction_label(edge.motion_direction_code())
+                            if edge is not None
+                            else "not_specified"
+                        ),
                     }
                 )
         return segments
@@ -1253,7 +1259,26 @@ class FleetMapfPlanner:
         goal = self.landmarks.get(to_lm)
         if start is None or goal is None:
             return 0.0
-        return math.atan2(goal.y - start.y, goal.x - start.x)
+        dx = goal.x - start.x
+        dy = goal.y - start.y
+        edge = self.edge_by_key.get((from_lm, to_lm))
+        if (
+            edge is not None
+            and edge.geometry is not None
+            and str(edge.geometry.geometry).lower() == "bezier"
+            and len(edge.geometry.control_points) >= 2
+        ):
+            first = edge.geometry.control_points[0]
+            second = edge.geometry.control_points[1]
+            tangent_x = second.x - first.x
+            tangent_y = second.y - first.y
+            if math.hypot(tangent_x, tangent_y) > 1e-9:
+                dx = tangent_x
+                dy = tangent_y
+        heading = math.atan2(dy, dx)
+        if edge is not None and edge.motion_direction_code() == 1:
+            heading += math.pi
+        return self._normalize_angle(heading)
 
     def _normalize_angle(self, value: float) -> float:
         while value > math.pi:
