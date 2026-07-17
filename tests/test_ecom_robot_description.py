@@ -168,14 +168,33 @@ def test_stage_launch_uses_ecom_description_and_keeps_stage_hardware_contract() 
     web_scene = (PROJECT_ROOT / "operator_app" / "static" / "scene3d.js").read_text(
         encoding="utf-8"
     )
+    assert 'const B = globalThis.BABYLON || await loadBabylon();' in web_scene
+    assert "babylonjs@9.16.2/babylon.js" in web_scene
+    assert "new B.WebGPUEngine" in web_scene
+    assert 'return this.engine.webGLVersion >= 2 ? "WEBGL 2" : "WEBGL";' in web_scene
+    assert "this.scene.useRightHandedSystem = true;" in web_scene
+    assert "texture.update(true);" in web_scene
+    assert "mesh.rotation.x = -Math.PI / 2;" in web_scene
+    assert "beginCameraInteraction()" in web_scene
+    assert "optimizeStaticScene()" in web_scene
+    assert "const compactMode = robotList.length >= 40;" in web_scene
     assert "this.addEcomModel(group, robot, active)" in web_scene
-    assert "ecomBody: 0xffffff" in web_scene
-    assert "color: COLORS.ecomBody" in web_scene
-    assert "group.userData.underglowMaterial = underglow" in web_scene
-    assert "group.userData.underglowMesh = underglowMesh" in web_scene
-    assert "new THREE.CircleGeometry(0.64, 56)" in web_scene
-    assert "new THREE.RingGeometry(0.61, 0.68, 56)" in web_scene
-    assert "group.userData.selectionHaloMesh = selectionHaloMesh" in web_scene
+    assert "ecomBody: 0xe8ecef" in web_scene
+    assert "COLORS.ecomBody, 0.12, 0.48" in web_scene
+    assert "addFloorGrid" not in web_scene
+    assert "B.Texture.NEAREST_SAMPLINGMODE" in web_scene
+    assert "createRibbonBatch(" in web_scene
+    assert 'addCylinder("lidar-front"' in web_scene
+    assert 'addCylinder("lidar-rear"' in web_scene
+    assert 'addBox("front-panel"' in web_scene
+    assert 'this.viewMode = "3d";' in web_scene
+    assert 'setViewMode(mode)' in web_scene
+    assert 'if (!active) {' in web_scene
+    assert "group.metadata.underglowMaterial = underglow" in web_scene
+    assert "group.metadata.underglowMesh = underglowMesh" in web_scene
+    assert 'B.MeshBuilder.CreateDisc(`${group.name}-selection-halo`' in web_scene
+    assert 'this.createRing(`${group.name}-selection-ring`, 0.61, 0.68, 56' in web_scene
+    assert "group.metadata.selectionHaloMesh = selectionHaloMesh" in web_scene
     assert "updateSelectionAnimation(timestamp)" in web_scene
     assert "updateRobotMotion(timestamp)" in web_scene
     assert "const alpha = 1 - Math.exp(-32 * dt);" in web_scene
@@ -184,13 +203,14 @@ def test_stage_launch_uses_ecom_description_and_keeps_stage_hardware_contract() 
     assert 'updateRobots(robots, selectedName = "", waitBlockerName = "")' in web_scene
     assert "updateRobotPoses(robots)" in web_scene
     assert "robotAlertLabel(robot)" in web_scene
-    assert 'label.visible = showLabel || active || Boolean(alertText);' in web_scene
+    assert 'const needsLabel = showLabel || active || Boolean(alertText);' in web_scene
+    assert "label.isVisible = needsLabel;" in web_scene
     assert "waitBlocker ? 0xff7a00" in web_scene
-    assert "this.routeRibbonGeometry(points, 0.105)" in web_scene
-    assert "addExtrudedPolygon(bodyOutline, 0.170, 0.0, body)" in web_scene
-    assert "addExtrudedPolygon(deckOutline, 0.045, 0.160, deck)" in web_scene
+    assert "this.routeRibbonGeometry(points, 0.105, material" in web_scene
+    assert 'addExtrudedPolygon("body", bodyOutline, 0.170, 0.0, body)' in web_scene
+    assert 'addExtrudedPolygon("deck", deckOutline, 0.045, 0.160, deck)' in web_scene
     assert "y: 0.300, z: 0.060" in web_scene
-    assert "new THREE.TorusGeometry" not in web_scene
+    assert "THREE" not in web_scene
     assert "const bodyOutline = [" in web_scene
     assert "this.addTrp1Model(group, active)" not in web_scene
 

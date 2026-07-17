@@ -939,6 +939,7 @@ class OperatorApp {
     this.fleetNameEdited = false;
     this.fleetTickPending = false;
     this.mapViewMode = window.localStorage.getItem("operator:mapViewMode") || "2d";
+    this.lmNamesVisible = window.localStorage.getItem("operator:lmNamesVisible") !== "0";
     this.scene3dModulePromise = null;
     this.scene3d = null;
     this.scene3dStaticKey = "";
@@ -946,6 +947,8 @@ class OperatorApp {
     this.scene3dHoverLmName = "";
     this.scene3dLoadPending = false;
     this.scene3dRenderQueued = false;
+    this.babylonMapFailed = false;
+    this.babylonMapRevision = 0;
     this.fleetStatusSocket = null;
     this.fleetStatusManagerId = "";
     this.fleetStatusStreamShouldRun = false;
@@ -989,6 +992,8 @@ class OperatorApp {
     this.fleetAnimationLastAt = 0;
     this.fleetVisualControlLastAt = 0;
     this.fleetRouteRenderLastAt = 0;
+    this.fleet2dMotionLastAt = 0;
+    this.fleetRuntimeLandmarkKey = "";
     this.fleetVisualClocks = new Map();
     this.fleetNavigationPredictionMaxSec = 0.4;
     this.fleetRobotSvgEntries = new Map();
@@ -1015,7 +1020,9 @@ class OperatorApp {
     this.fleetEditorFieldSyncing = false;
     this.fleetModelEditor = null;
     this.mapDrag = null;
+    this.mapAdaptiveLayerTimer = null;
     this.relocationDrag = null;
+    this.babylonRelocationDrag = null;
     this.mapClickConsumed = false;
     this.manualKeys = new Set();
     this.teleopPending = false;
@@ -1181,6 +1188,7 @@ class OperatorApp {
     this.operatorZoomInButton = document.getElementById("operatorZoomInButton");
     this.operatorZoomOutButton = document.getElementById("operatorZoomOutButton");
     this.operatorResetViewButton = document.getElementById("operatorResetViewButton");
+    this.operatorLmNamesButton = document.getElementById("operatorLmNamesButton");
     this.operatorFollowRobotButton = document.getElementById("operatorFollowRobotButton");
     this.manualPad = document.getElementById("manualPad");
 
@@ -1307,6 +1315,7 @@ class OperatorApp {
     this.controlLoadMapButton.addEventListener("click", () => this.handleLoadMap());
     this.operatorMap2dButton?.addEventListener("click", () => this.setMapViewMode("2d"));
     this.operatorMap3dButton?.addEventListener("click", () => this.setMapViewMode("3d"));
+    this.operatorLmNamesButton?.addEventListener("click", () => this.toggleLmNames());
     this.startSlamButton?.addEventListener("click", () => this.openSlamDialog());
     this.doneSlamButton?.addEventListener("click", () => this.finishSlam());
     this.cancelSlamButton?.addEventListener("click", () => this.cancelSlam());
@@ -1698,6 +1707,10 @@ class OperatorApp {
     }
     this.fleetTabMap.classList.toggle("active", tab === "map");
     this.fleetMapEditorActive = tab === "map";
+    if (this.fleetMapEditorActive) {
+      this.mapViewMode = "2d";
+      window.localStorage.setItem("operator:mapViewMode", "2d");
+    }
     this.syncFleetPageClass(this.isFleetManager());
     this.operatorMapSvg.classList.toggle("fleet-map-editor-active", this.fleetMapEditorActive);
     if (tab === "map") {
@@ -3049,7 +3062,7 @@ class OperatorApp {
     }
     this.fleetStatusReceivedAt = performance.now();
     if (payload.type === "state") {
-      this.currentStatus = state;
+      this.currentStatus = this.mergeFleetTickState(state);
       this.fleetRuntimeUiLastAt = performance.now();
       this.renderFleetRuntimeTick();
       this.ensureFleetAnimationLoop();
@@ -3108,14 +3121,28 @@ class OperatorApp {
     // selection state and route topology work sixty times per second. Those
     // are control-plane values and 8 Hz is already faster than a human can
     // perceive their changes. This is especially important with 50 robots:
-    // DOM and Three.js scene-graph updates run on one browser main thread.
+    // DOM and Babylon.js scene-graph updates run on one browser main thread.
+    if (!this.babylonMapFailed && !this.slamActive) {
+      const motionOnly = now - this.fleetVisualControlLastAt < 125;
+      if (!motionOnly) {
+        this.fleetVisualControlLastAt = now;
+      }
+      if (!this.updateOperatorScene3dRobots(this.scene3d, { motionOnly })) {
+        this.renderOperatorBabylonMap({ motionOnly });
+      }
+      return;
+    }
+    const robotCount = Array.isArray(this.currentStatus?.robots)
+      ? this.currentStatus.robots.length
+      : 0;
+    const minimum2dFrameMs = robotCount >= 80 ? 1000 / 30 : 0;
+    if (minimum2dFrameMs && now - this.fleet2dMotionLastAt < minimum2dFrameMs) {
+      return;
+    }
+    this.fleet2dMotionLastAt = now;
     const motionOnly = now - this.fleetVisualControlLastAt < 125;
     if (!motionOnly) {
       this.fleetVisualControlLastAt = now;
-    }
-    if (this.mapViewMode === "3d") {
-      this.refreshOperatorScene3d({ motionOnly });
-      return;
     }
     this.drawRobot(motionOnly);
     if (now - this.fleetRouteRenderLastAt >= 180) {
@@ -3498,10 +3525,17 @@ class OperatorApp {
       return;
     }
     try {
-      const [robotActive, localActive] = await Promise.all([
+      const [robotActiveResult, localActiveResult] = await Promise.allSettled([
         this.getJson(`/api/robots/${encodeURIComponent(robot.id)}/maps/active`),
         this.getJson(`/api/robots/${encodeURIComponent(robot.id)}/maps/local/active`),
       ]);
+      if (localActiveResult.status !== "fulfilled") {
+        throw localActiveResult.reason;
+      }
+      const localActive = localActiveResult.value;
+      const robotActive = robotActiveResult.status === "fulfilled"
+        ? robotActiveResult.value
+        : {};
       const nextSignature = String(localActive.signature || "").trim();
       if (nextSignature && nextSignature !== this.operatorMapSignature) {
         this.resetMapView(true);
@@ -3509,7 +3543,7 @@ class OperatorApp {
       this.operatorMapPayload = localActive.map && typeof localActive.map === "object" ? localActive.map : null;
       this.operatorMapSignature = nextSignature;
       this.robotMapState = {
-        robotActiveMapName: String(robotActive.mapName || "").trim(),
+        robotActiveMapName: String(robotActive.mapName || localActive.robotMapName || "").trim(),
         operatorActiveMapName: String(localActive.activeMapName || "").trim(),
         robotSignature: String(robotActive.signature || localActive.robotSignature || "").trim(),
         operatorSignature: nextSignature,
@@ -3678,6 +3712,15 @@ class OperatorApp {
     const previousRobots = new Map((Array.isArray(previous.robots) ? previous.robots : []).map((robot) => [robot.name, robot]));
     const nextRobots = (Array.isArray(tickState.robots) ? tickState.robots : []).map((robot) => {
       const prior = previousRobots.get(robot.name) || {};
+      const incomingUpdatedAt = Number(robot.updatedAt);
+      const priorUpdatedAt = Number(prior.updatedAt);
+      if (
+        Number.isFinite(incomingUpdatedAt)
+        && Number.isFinite(priorUpdatedAt)
+        && incomingUpdatedAt + 0.000001 < priorUpdatedAt
+      ) {
+        return prior;
+      }
       const incomingTrajectory = Array.isArray(robot.trajectory) ? robot.trajectory : [];
       const incomingPlanNodes = Array.isArray(robot.planNodes) ? robot.planNodes : [];
       const incomingRoutePreview = Array.isArray(robot.routePreview) ? robot.routePreview : [];
@@ -4326,9 +4369,15 @@ class OperatorApp {
       : "No route planned.";
     this.syncModeButtons();
     this.syncManualButtons();
-    this.drawRoute();
-    this.drawScanOverlay();
-    this.drawRobot();
+    if (!this.babylonMapFailed && !this.slamActive) {
+      if (!this.updateOperatorScene3dRobots(this.scene3d, { motionOnly: true })) {
+        this.renderOperatorBabylonMap({ motionOnly: true });
+      }
+    } else {
+      this.drawRoute();
+      this.drawScanOverlay();
+      this.drawRobot();
+    }
     this.syncMapControls();
   }
 
@@ -4459,10 +4508,16 @@ class OperatorApp {
     this.renderFleetRobotList(robots);
     this.renderFleetQueue();
     this.renderFleetPlanDebug();
-    this.drawRoute();
-    this.drawLookahead();
-    this.drawLandmarks();
-    this.drawRobot();
+    if (!this.babylonMapFailed && !this.slamActive) {
+      if (!this.updateOperatorScene3dRobots(this.scene3d)) {
+        this.renderOperatorBabylonMap();
+      }
+    } else {
+      this.drawRoute();
+      this.drawLookahead();
+      this.drawLandmarks();
+      this.drawRobot();
+    }
     this.syncMapControls();
     this.syncModeButtons();
     this.syncManualButtons();
@@ -5426,6 +5481,11 @@ class OperatorApp {
       this.syncMapControls();
       return;
     }
+    if (!this.babylonMapFailed) {
+      this.syncMapControls();
+      this.renderOperatorBabylonMap();
+      return;
+    }
     const map = payload.map;
     this.operatorMapSvg.setAttribute("viewBox", `0 0 ${Number(map.viewWidth || 100)} ${Number(map.viewHeight || 100)}`);
     this.operatorMapImage.setAttribute("x", String(Number(map.viewPadding || 0)));
@@ -5897,7 +5957,7 @@ class OperatorApp {
       const group = document.createElementNS("http://www.w3.org/2000/svg", "g");
       group.setAttribute("class", [
         "landmark",
-        style.compact ? "compact" : "",
+        style.compact && !this.lmNamesVisible ? "compact" : "",
         isNearest ? "nearest" : "",
         isTarget ? "target" : "",
         isSelected ? "selected" : "",
@@ -5947,14 +6007,16 @@ class OperatorApp {
       circle.setAttribute("r", String(isNearest || isTarget || isSelected ? style.emphasisRadius : style.radius));
       circle.style.strokeWidth = String(style.strokeWidth);
       group.append(circle);
-      const label = document.createElementNS("http://www.w3.org/2000/svg", "text");
-      label.setAttribute("class", "landmark-label");
-      label.setAttribute("x", String(px.x));
-      label.setAttribute("y", String(px.y + style.labelOffset));
-      label.setAttribute("font-size", String(style.labelFontSize));
-      label.style.strokeWidth = String(style.labelStrokeWidth);
-      label.textContent = landmark.name;
-      group.append(label);
+      if (this.lmNamesVisible) {
+        const label = document.createElementNS("http://www.w3.org/2000/svg", "text");
+        label.setAttribute("class", "landmark-label");
+        label.setAttribute("x", String(px.x));
+        label.setAttribute("y", String(px.y + style.labelOffset));
+        label.setAttribute("font-size", String(style.labelFontSize));
+        label.style.strokeWidth = String(style.labelStrokeWidth);
+        label.textContent = landmark.name;
+        group.append(label);
+      }
       this.operatorLandmarkLayer.append(group);
     }
   }
@@ -6471,6 +6533,10 @@ class OperatorApp {
   }
 
   refreshAdaptiveMapLayers() {
+    if (this.mapAdaptiveLayerTimer) {
+      window.clearTimeout(this.mapAdaptiveLayerTimer);
+      this.mapAdaptiveLayerTimer = null;
+    }
     if (!this.activeOperatorMapPayload()?.map || this.mapViewMode === "3d") {
       return;
     }
@@ -6481,6 +6547,16 @@ class OperatorApp {
     this.drawFleetEditorOverlay();
     this.drawScanOverlay();
     this.drawRobot();
+  }
+
+  scheduleAdaptiveMapLayers() {
+    if (this.mapAdaptiveLayerTimer) {
+      window.clearTimeout(this.mapAdaptiveLayerTimer);
+    }
+    this.mapAdaptiveLayerTimer = window.setTimeout(() => {
+      this.mapAdaptiveLayerTimer = null;
+      this.refreshAdaptiveMapLayers();
+    }, 90);
   }
 
   directionArrow(edge, landmarks) {
@@ -6915,6 +6991,7 @@ class OperatorApp {
     this.fleetMapDirty = false;
     this.fleetSelectedLmName = "";
     this.fleetSelectedEdgeKey = "";
+    this.markBabylonMapGeometryDirty();
     this.syncFleetEditorFields();
     this.renderOperatorMap();
     this.robotMessageText.textContent = "Fleet map draft reloaded.";
@@ -7107,6 +7184,7 @@ class OperatorApp {
     };
     draft.lms.push(lm);
     this.fleetMapDirty = true;
+    this.markBabylonMapGeometryDirty();
     return lm;
   }
 
@@ -7128,6 +7206,7 @@ class OperatorApp {
     const dy = point.y - Number(lm.y || 0);
     lm.x = point.x;
     lm.y = point.y;
+    this.markBabylonMapGeometryDirty();
     for (const edge of this.fleetMapDraft.edges || []) {
       if (!Array.isArray(edge.control_points) || edge.control_points.length !== 4) {
         continue;
@@ -7173,6 +7252,7 @@ class OperatorApp {
     };
     edge.length = this.edgeLength(edge);
     draft.edges.push(edge);
+    this.markBabylonMapGeometryDirty();
     this.selectFleetEditorEdge(this.edgeKey(from, to));
   }
 
@@ -7183,6 +7263,7 @@ class OperatorApp {
     this.fleetSelectedLmName = "";
     this.fleetSelectedEdgeKey = "";
     this.fleetMapDirty = true;
+    this.markBabylonMapGeometryDirty();
     this.syncFleetEditorFields();
     this.renderOperatorMap();
   }
@@ -7193,6 +7274,7 @@ class OperatorApp {
     draft.edges = (draft.edges || []).filter((edge) => !(edge.from === from && edge.to === to));
     this.fleetSelectedEdgeKey = "";
     this.fleetMapDirty = true;
+    this.markBabylonMapGeometryDirty();
     this.syncFleetEditorFields();
     this.renderOperatorMap();
   }
@@ -7214,14 +7296,22 @@ class OperatorApp {
     this.fleetSelectedLmName = name;
     this.fleetSelectedEdgeKey = "";
     this.syncFleetEditorFields();
-    this.renderOperatorMap();
+    if (this.scene3d && !this.babylonMapFailed) {
+      this.refreshBabylonEditorState();
+    } else {
+      this.renderOperatorMap();
+    }
   }
 
   selectFleetEditorEdge(edgeKey) {
     this.fleetSelectedEdgeKey = edgeKey;
     this.fleetSelectedLmName = "";
     this.syncFleetEditorFields();
-    this.renderOperatorMap();
+    if (this.scene3d && !this.babylonMapFailed) {
+      this.refreshBabylonEditorState();
+    } else {
+      this.renderOperatorMap();
+    }
   }
 
   syncFleetEditorFields() {
@@ -7426,6 +7516,7 @@ class OperatorApp {
       y: Math.round(Number(point.y || 0) * 1000) / 1000,
     };
     edge.length = this.edgeLength(edge);
+    this.markBabylonMapGeometryDirty();
   }
 
   edgeLength(edge) {
@@ -7564,6 +7655,12 @@ class OperatorApp {
   }
 
   zoomMap(factor, anchor = null) {
+    if (this.scene3d && !this.babylonMapFailed && !this.slamActive) {
+      this.mapView.follow = false;
+      this.scene3d.zoomBy(factor);
+      this.syncMapControls();
+      return;
+    }
     const previous = this.mapView.scale;
     const next = Math.max(1, Math.min(9, previous * factor));
     if (Math.abs(next - previous) < 0.001) {
@@ -7579,7 +7676,7 @@ class OperatorApp {
     this.mapView.ty = pivot.y - ((next / previous) * (pivot.y - this.mapView.ty));
     this.mapView.scale = next;
     this.applyMapTransform();
-    this.refreshAdaptiveMapLayers();
+    this.scheduleAdaptiveMapLayers();
     this.syncMapControls();
   }
 
@@ -7588,6 +7685,11 @@ class OperatorApp {
     this.mapView.tx = 0;
     this.mapView.ty = 0;
     this.mapView.follow = keepFollow ? this.mapView.follow : false;
+    if (this.scene3d && !this.babylonMapFailed && !this.slamActive) {
+      this.scene3d.resetView();
+      this.syncMapControls();
+      return;
+    }
     this.applyMapTransform();
     this.refreshAdaptiveMapLayers();
     this.syncMapControls();
@@ -7609,24 +7711,46 @@ class OperatorApp {
   }
 
   syncMapControls() {
-    const canUse3d = this.isFleetManager() && !this.isRobotModelPage() && !this.isParamsPage();
+    const hasMap = Boolean(this.activeOperatorMapPayload()?.map);
+    const canUse3d = hasMap
+      && !this.isRobotModelPage()
+      && !this.isParamsPage()
+      && !this.fleetMapEditorActive
+      && !this.slamActive;
     const show3d = canUse3d && this.mapViewMode === "3d";
-    this.operatorMapSvg?.classList.toggle("hidden", show3d);
-    this.operatorScene3d?.classList.toggle("hidden", !show3d);
+    const useBabylon = hasMap && !this.babylonMapFailed && !this.slamActive;
+    this.operatorMapSvg?.classList.toggle("hidden", useBabylon);
+    this.operatorScene3d?.classList.toggle("hidden", !useBabylon);
     this.operatorMap2dButton?.classList.toggle("active", !show3d);
     this.operatorMap3dButton?.classList.toggle("active", show3d);
     this.operatorMap3dButton?.classList.toggle("hidden", !canUse3d);
-    if (show3d) {
-      this.refreshOperatorScene3d();
+    this.scene3d?.setViewMode(show3d ? "3d" : "2d");
+    this.scene3d?.setLandmarkLabelsVisible(this.lmNamesVisible);
+    this.operatorLmNamesButton?.classList.toggle("active", this.lmNamesVisible);
+    if (this.operatorLmNamesButton) {
+      this.operatorLmNamesButton.textContent = `LM names: ${this.lmNamesVisible ? "On" : "Off"}`;
+      this.operatorLmNamesButton.setAttribute("aria-pressed", String(this.lmNamesVisible));
     }
     this.operatorFollowRobotButton.classList.toggle("primary", this.mapView.follow);
     this.operatorFollowRobotButton.textContent = this.mapView.follow ? "Following Robot" : "Follow Robot";
   }
 
+  toggleLmNames() {
+    this.lmNamesVisible = !this.lmNamesVisible;
+    window.localStorage.setItem("operator:lmNamesVisible", this.lmNamesVisible ? "1" : "0");
+    this.scene3d?.setLandmarkLabelsVisible(this.lmNamesVisible);
+    this.syncMapControls();
+    this.drawLandmarks();
+  }
+
   setMapViewMode(mode) {
     const nextMode = mode === "3d" ? "3d" : "2d";
-    if (nextMode === "3d" && !this.isFleetManager()) {
-      this.robotMessageText.textContent = "3D view is available in Fleet Manager and Fleet Manager Sim.";
+    if (nextMode === "3d" && this.fleetMapEditorActive) {
+      this.robotMessageText.textContent = "Map Editor is available only in the 2D Babylon view.";
+      return;
+    }
+    if (nextMode === "3d" && (!this.activeOperatorMapPayload()?.map || this.slamActive)) {
+      this.robotMessageText.textContent = "3D view requires a loaded static map.";
       return;
     }
     this.mapViewMode = nextMode;
@@ -7637,6 +7761,10 @@ class OperatorApp {
 
   async ensureScene3d() {
     if (this.scene3d) {
+      await this.scene3d.readyPromise;
+      if (this.scene3d.initError || !this.scene3d.scene) {
+        throw this.scene3d.initError || new Error("Babylon.js did not initialize a scene.");
+      }
       return this.scene3d;
     }
     if (!this.scene3dModulePromise) {
@@ -7647,10 +7775,349 @@ class OperatorApp {
     this.scene3d.setHandlers({
       onFloorClick: (world) => this.handleScene3dFloorClick(world),
       onLandmarkHover: (lmName) => this.handleScene3dLandmarkHover(lmName),
-      onRobotClick: (robotName) => this.selectFleetRobotByName(robotName),
+      onRobotClick: (robotName) => {
+        if (this.isFleetManager()) {
+          this.selectFleetRobotByName(robotName);
+        }
+      },
+      onPointerDown: (hit) => this.handleBabylonMapPointerDown(hit),
+      onPointerMove: (hit) => this.handleBabylonMapPointerMove(hit),
+      onPointerUp: (hit) => this.handleBabylonMapPointerUp(hit),
+      onContextMenu: (hit) => this.handleBabylonMapContextMenu(hit),
     });
+    this.scene3d.setViewMode(this.mapViewMode);
+    this.scene3d.setLandmarkLabelsVisible(this.lmNamesVisible);
     this.scene3d.setTargetArmed(this.scene3dTargetArmed());
+    await this.scene3d.readyPromise;
+    if (this.scene3d.initError || !this.scene3d.scene) {
+      throw this.scene3d.initError || new Error("Babylon.js did not initialize a scene.");
+    }
     return this.scene3d;
+  }
+
+  operatorBabylonScenePayload() {
+    const payload = this.activeOperatorMapPayload();
+    const map = payload?.map || {};
+    const resolution = Math.max(0.000001, Number(map.resolution || 1));
+    const width = Math.max(1, Number(map.width || 0) * resolution || Number(map.viewWidth || 1) * resolution);
+    const depth = Math.max(1, Number(map.height || 0) * resolution || Number(map.viewHeight || 1) * resolution);
+    const lms = Array.isArray(payload?.lms) ? payload.lms : [];
+    const lmIndex = new Map(lms.map((lm) => [String(lm.name || ""), lm]));
+    const edges = (Array.isArray(payload?.edges) ? payload.edges : []).map((edge) => {
+      if (
+        (Array.isArray(edge.world_points) && edge.world_points.length >= 2)
+        || (Array.isArray(edge.control_points) && edge.control_points.length === 4)
+      ) {
+        return edge;
+      }
+      const from = lmIndex.get(String(edge.from || ""));
+      const to = lmIndex.get(String(edge.to || ""));
+      return from && to
+        ? {
+            ...edge,
+            world_points: [
+              { x: Number(from.x || 0), y: Number(from.y || 0) },
+              { x: Number(to.x || 0), y: Number(to.y || 0) },
+            ],
+          }
+        : edge;
+    });
+    return {
+      ok: true,
+      mapName: payload?.mapName || this.robotMapState.operatorActiveMapName || "operator-map",
+      coordinateFrame: "map_top_left",
+      floor: {
+        width,
+        depth,
+        resolution,
+        imageDataUrl: String(map.imageDataUrl || ""),
+      },
+      bounds: { minX: 0, minZ: 0, maxX: width, maxZ: depth },
+      // Occupancy is represented by the floor texture. Synthetic square
+      // obstacles are deliberately not duplicated in the 2D engine view.
+      walls: [],
+      lms,
+      edges,
+    };
+  }
+
+  operatorBabylonStaticKey() {
+    const geometryDragging = Boolean(
+      this.fleetEditorLmDrag
+      || this.fleetEditorEdgeDrag
+      || this.fleetEditorBezierDrag
+    );
+    if (geometryDragging && this.scene3dStaticKey) {
+      return this.scene3dStaticKey;
+    }
+    const source = this.mapViewMode === "3d" && this.isFleetManager() ? "fleet-3d" : "map";
+    return [
+      source,
+      this.scene3dKey(),
+      this.fleetMapEditorActive ? `draft-${this.babylonMapRevision}` : "saved",
+      this.activeOperatorMapPayload()?.lms?.length || 0,
+      this.activeOperatorMapPayload()?.edges?.length || 0,
+    ].join(":");
+  }
+
+  operatorBabylonRobots() {
+    if (this.isFleetManager()) {
+      return this.fleetRenderRobots();
+    }
+    const selected = this.selectedRobot();
+    const statusRobot = this.statusForRobotDisplay(this.currentStatus?.robot || {});
+    const rawPose = this.slamActive && this.slamMapFrame?.pose
+      ? this.slamMapFrame.pose
+      : statusRobot.pose;
+    const pose = rawPose ? this.displayPoseForActiveMap(rawPose) : null;
+    if (!selected || !pose) {
+      return [];
+    }
+    const route = this.currentStatus?.route || this.currentRoute || {};
+    return [{
+      name: statusRobot.robotId || selected.name || selected.id,
+      pose,
+      status: statusRobot.state || "IDLE",
+      currentLm: statusRobot.nearestLm || "",
+      targetLm: statusRobot.targetLm || "",
+      trajectory: Array.isArray(route.trajectory) ? route.trajectory : [],
+      routePreview: [],
+      routeRevision: route.revision || route.routeRevision || 0,
+      routeClock: statusRobot.routeClock || 0,
+      reason: statusRobot.message || "",
+    }];
+  }
+
+  babylonEditorState() {
+    const payload = this.activeOperatorMapPayload() || {};
+    const dragging = Boolean(
+      this.fleetEditorLmDrag
+      || this.fleetEditorEdgeDrag
+      || this.fleetEditorBezierDrag
+    );
+    return {
+      active: Boolean(this.fleetMapEditorActive && this.mapViewMode === "2d"),
+      revision: this.babylonMapRevision,
+      dragging,
+      tool: this.fleetMapTool,
+      selectedLmName: this.fleetSelectedLmName,
+      selectedEdgeKey: this.fleetSelectedEdgeKey,
+      preview: this.fleetEditorPreview,
+      lms: Array.isArray(payload.lms) ? payload.lms : [],
+      edges: Array.isArray(payload.edges) ? payload.edges : [],
+    };
+  }
+
+  refreshBabylonEditorState() {
+    this.scene3d?.setEditorState(this.babylonEditorState());
+  }
+
+  renderOperatorBabylonMap(options = {}) {
+    if (!this.activeOperatorMapPayload()?.map || this.babylonMapFailed || this.slamActive) {
+      return;
+    }
+    if (this.scene3dLoadPending) {
+      this.scene3dRenderQueued = true;
+      return;
+    }
+    const requestedKey = this.operatorBabylonStaticKey();
+    this.scene3dLoadPending = true;
+    this.ensureScene3d()
+      .then(async (scene) => {
+        scene.setViewMode(this.mapViewMode);
+        scene.setLandmarkLabelsVisible(this.lmNamesVisible);
+        scene.setTargetArmed(this.scene3dTargetArmed());
+        if (options.force || this.scene3dStaticKey !== requestedKey) {
+          let payload = this.operatorBabylonScenePayload();
+          if (this.mapViewMode === "3d" && this.isFleetManager()) {
+            payload = await this.getJson(this.fleetApiPath("/scene3d"));
+          }
+          if (requestedKey !== this.operatorBabylonStaticKey()) {
+            this.scene3dRenderQueued = true;
+            return;
+          }
+          this.scene3dPayload = payload;
+          scene.setScene(payload, { preserveView: Boolean(this.scene3dStaticKey) });
+          this.scene3dStaticKey = requestedKey;
+        }
+        scene.setEditorState(this.babylonEditorState());
+        const robots = this.operatorBabylonRobots();
+        const selectedName = this.isFleetManager()
+          ? (this.selectedFleetRobot(robots)?.name || "")
+          : String(robots[0]?.name || "");
+        const waitBlockerName = this.isFleetManager()
+          ? this.fleetRobotWaitBlockerName(this.selectedFleetRobot(robots))
+          : "";
+        if (options.motionOnly && scene.updateRobotPoses(robots)) {
+          // Pose buffers were updated without rebuilding robot meshes.
+        } else {
+          scene.updateRobots(robots, selectedName, waitBlockerName);
+        }
+        if (this.mapView.follow) {
+          const followed = robots.find((robot) => robot.name === selectedName) || robots[0];
+          scene.focusOn(followed?.pose);
+        }
+      })
+      .catch((error) => {
+        this.babylonMapFailed = true;
+        this.robotMessageText.textContent = `Babylon map failed, SVG fallback enabled: ${error.message || error}`;
+        this.renderOperatorMap();
+      })
+      .finally(() => {
+        this.scene3dLoadPending = false;
+        const rerender = this.scene3dRenderQueued;
+        this.scene3dRenderQueued = false;
+        if (rerender && typeof window.requestAnimationFrame === "function") {
+          window.requestAnimationFrame(() => this.renderOperatorBabylonMap());
+        }
+      });
+  }
+
+  markBabylonMapGeometryDirty() {
+    this.babylonMapRevision += 1;
+  }
+
+  handleBabylonMapPointerDown(hit) {
+    if (Number(hit?.button || 0) !== 0 || !hit?.world) {
+      return false;
+    }
+    if (this.relocateMode && !this.isFleetManager()) {
+      this.babylonRelocationDrag = {
+        pointerId: hit.pointerId,
+        start: { ...hit.world },
+        end: { ...hit.world },
+      };
+      return true;
+    }
+    if (!this.fleetMapEditorActive || this.mapViewMode !== "2d") {
+      return false;
+    }
+    this.ensureFleetMapDraft();
+    if (hit.bezierIndex && hit.edgeKey) {
+      this.selectFleetEditorEdge(hit.edgeKey);
+      this.fleetEditorBezierDrag = {
+        pointerId: hit.pointerId,
+        edgeKey: hit.edgeKey,
+        index: Number(hit.bezierIndex),
+      };
+      return true;
+    }
+    if (hit.lmName) {
+      this.selectFleetEditorLm(hit.lmName);
+      if (this.fleetMapTool === "edge") {
+        this.fleetEditorEdgeDrag = { pointerId: hit.pointerId, currentLm: hit.lmName, lastCreated: "" };
+      } else {
+        this.fleetEditorLmDrag = { pointerId: hit.pointerId, name: hit.lmName, start: hit.world, moved: false };
+      }
+      return true;
+    }
+    if (hit.edgeKey) {
+      this.selectFleetEditorEdge(hit.edgeKey);
+      return true;
+    }
+    if (this.fleetMapTool === "lm") {
+      const added = this.addFleetEditorLm(hit.world);
+      this.selectFleetEditorLm(added.name);
+      this.renderOperatorBabylonMap({ force: true });
+      return true;
+    }
+    this.fleetSelectedLmName = "";
+    this.fleetSelectedEdgeKey = "";
+    this.syncFleetEditorFields();
+    this.refreshBabylonEditorState();
+    return false;
+  }
+
+  handleBabylonMapPointerMove(hit) {
+    const world = hit?.world;
+    if (this.babylonRelocationDrag?.pointerId === hit?.pointerId && world) {
+      this.babylonRelocationDrag.end = { ...world };
+      return;
+    }
+    if (!this.fleetMapEditorActive || !world) {
+      return;
+    }
+    if (this.fleetEditorBezierDrag?.pointerId === hit.pointerId) {
+      const snapped = this.snapMapPoint(world);
+      this.moveFleetEditorBezierHandle(
+        this.fleetEditorBezierDrag.edgeKey,
+        this.fleetEditorBezierDrag.index,
+        snapped,
+      );
+      this.fleetMapDirty = true;
+      this.syncFleetEditorFields();
+      this.refreshBabylonEditorState();
+      return;
+    }
+    if (this.fleetEditorLmDrag?.pointerId === hit.pointerId) {
+      const snapped = this.snapMapPoint(world);
+      this.moveFleetEditorLm(this.fleetEditorLmDrag.name, snapped);
+      this.fleetEditorLmDrag.moved = true;
+      this.fleetMapDirty = true;
+      this.syncFleetEditorFields();
+      this.refreshBabylonEditorState();
+      return;
+    }
+    if (this.fleetEditorEdgeDrag?.pointerId === hit.pointerId) {
+      const nearest = this.nearestLandmark(world);
+      if (
+        nearest
+        && nearest.distance <= 0.35
+        && nearest.landmark.name !== this.fleetEditorEdgeDrag.currentLm
+        && nearest.landmark.name !== this.fleetEditorEdgeDrag.lastCreated
+      ) {
+        const previous = this.fleetEditorEdgeDrag.currentLm;
+        this.addFleetEditorEdge(previous, nearest.landmark.name);
+        this.fleetEditorEdgeDrag.lastCreated = previous;
+        this.fleetEditorEdgeDrag.currentLm = nearest.landmark.name;
+        this.fleetMapDirty = true;
+      }
+      this.fleetEditorPreview = {
+        fromName: this.fleetEditorEdgeDrag.currentLm,
+        world: { ...world },
+      };
+      this.refreshBabylonEditorState();
+    }
+  }
+
+  handleBabylonMapPointerUp(hit) {
+    if (this.babylonRelocationDrag?.pointerId === hit?.pointerId) {
+      const drag = this.babylonRelocationDrag;
+      this.babylonRelocationDrag = null;
+      const dx = drag.end.x - drag.start.x;
+      const dy = drag.end.y - drag.start.y;
+      const currentYaw = Number(this.currentStatus?.robot?.pose?.yaw || 0);
+      const yaw = Math.hypot(dx, dy) > 0.03 ? Math.atan2(dy, dx) : currentYaw;
+      this.startRelocation({ ...drag.start, yaw });
+      return;
+    }
+    const geometryChanged = Boolean(
+      this.fleetEditorLmDrag
+      || this.fleetEditorEdgeDrag
+      || this.fleetEditorBezierDrag
+    );
+    this.fleetEditorLmDrag = null;
+    this.fleetEditorEdgeDrag = null;
+    this.fleetEditorBezierDrag = null;
+    this.fleetEditorPreview = null;
+    if (geometryChanged) {
+      this.renderOperatorBabylonMap({ force: true });
+    } else {
+      this.refreshBabylonEditorState();
+    }
+  }
+
+  handleBabylonMapContextMenu(hit) {
+    if (!this.fleetMapEditorActive || this.mapViewMode !== "2d") {
+      return;
+    }
+    if (hit?.lmName && window.confirm(`Delete ${hit.lmName}?`)) {
+      this.deleteFleetEditorLm(hit.lmName);
+      return;
+    }
+    if (hit?.edgeKey && window.confirm(`Delete edge ${hit.edgeKey}?`)) {
+      this.deleteFleetEditorEdge(hit.edgeKey);
+    }
   }
 
   scene3dTargetArmed() {
@@ -7670,98 +8137,54 @@ class OperatorApp {
     return `${robot?.id || ""}:${mapName}:${signature}`;
   }
 
-  normalizeScene3dMapName(mapName) {
-    return String(mapName || "").trim().replace(/\.smap$/i, "");
-  }
-
   invalidateOperatorScene3d() {
     this.scene3dStaticKey = "";
     this.scene3dPayload = null;
     this.scene3dRenderQueued = true;
-    if (this.mapViewMode === "3d") {
-      this.renderOperatorScene3d();
+    if (this.activeOperatorMapPayload()?.map) {
+      this.renderOperatorBabylonMap({ force: true });
     }
   }
 
   refreshOperatorScene3d(options = {}) {
-    if (this.mapViewMode !== "3d") {
+    if (this.babylonMapFailed || this.slamActive) {
       return;
     }
     if (!this.updateOperatorScene3dRobots(this.scene3d, options)) {
-      this.renderOperatorScene3d();
+      this.renderOperatorBabylonMap(options);
     }
   }
 
   updateOperatorScene3dRobots(scene = this.scene3d, options = {}) {
-    if (!this.isFleetManager() || this.mapViewMode !== "3d" || !scene) {
+    if (!scene || this.babylonMapFailed || this.slamActive) {
       return false;
     }
-    if (this.scene3dStaticKey !== this.scene3dKey()) {
+    if (this.scene3dStaticKey !== this.operatorBabylonStaticKey()) {
       return false;
     }
-    const robots = this.fleetRenderRobots();
+    scene.setViewMode(this.mapViewMode);
+    scene.setLandmarkLabelsVisible(this.lmNamesVisible);
+    const robots = this.operatorBabylonRobots();
+    const selectedRobot = this.isFleetManager() ? this.selectedFleetRobot(robots) : robots[0];
     if (
       options.motionOnly
       && typeof scene.updateRobotPoses === "function"
       && scene.updateRobotPoses(robots)
     ) {
+      if (this.mapView.follow && selectedRobot?.pose) {
+        scene.focusOn(selectedRobot.pose);
+      }
       return true;
     }
     scene.setTargetArmed(this.scene3dTargetArmed());
-    const selectedRobot = this.selectedFleetRobot(robots);
     const selectedName = selectedRobot?.name || "";
-    const waitBlockerName = this.fleetRobotWaitBlockerName(selectedRobot);
+    const waitBlockerName = this.isFleetManager() ? this.fleetRobotWaitBlockerName(selectedRobot) : "";
     scene.updateRobots(robots, selectedName, waitBlockerName);
+    scene.setEditorState(this.babylonEditorState());
+    if (this.mapView.follow && selectedRobot?.pose) {
+      scene.focusOn(selectedRobot.pose);
+    }
     return true;
-  }
-
-  renderOperatorScene3d() {
-    if (!this.isFleetManager() || this.mapViewMode !== "3d" || !this.operatorScene3d) {
-      return;
-    }
-    if (this.scene3dLoadPending) {
-      this.scene3dRenderQueued = true;
-      return;
-    }
-    this.ensureScene3d()
-      .then(async (scene) => {
-        scene.setTargetArmed(this.scene3dTargetArmed());
-        const key = this.scene3dKey();
-        if (this.scene3dStaticKey !== key) {
-          this.scene3dLoadPending = true;
-          this.scene3dRenderQueued = false;
-          this.scene3dPayload = null;
-          try {
-            const payload = await this.getJson(this.fleetApiPath("/scene3d"));
-            if (this.mapViewMode !== "3d" || !this.isFleetManager()) {
-              return;
-            }
-            const payloadMapName = this.normalizeScene3dMapName(payload?.mapName);
-            const currentMapName = this.normalizeScene3dMapName(this.currentStatus?.mapName || this.robotMapState.robotActiveMapName || this.robotMapState.operatorActiveMapName);
-            if (payloadMapName && currentMapName && payloadMapName !== currentMapName) {
-              this.scene3dRenderQueued = true;
-            } else {
-              this.scene3dPayload = payload;
-              scene.setScene(payload);
-              this.scene3dStaticKey = this.scene3dKey();
-            }
-          } finally {
-            this.scene3dLoadPending = false;
-          }
-        }
-        const updated = this.updateOperatorScene3dRobots(scene);
-        const needsAnotherPass = this.scene3dRenderQueued || !updated || this.scene3dStaticKey !== this.scene3dKey();
-        this.scene3dRenderQueued = false;
-        if (needsAnotherPass && this.mapViewMode === "3d" && typeof window.requestAnimationFrame === "function") {
-          window.requestAnimationFrame(() => this.renderOperatorScene3d());
-        }
-        this.ensureFleetAnimationLoop();
-      })
-      .catch((error) => {
-        this.scene3dLoadPending = false;
-        this.scene3dRenderQueued = false;
-        this.robotMessageText.textContent = `3D view failed: ${error.message || error}`;
-      });
   }
 
   toggleNavigateMode() {
@@ -7933,7 +8356,7 @@ class OperatorApp {
     if (!this.isFleetManager()) {
       return false;
     }
-    return this.isFleetRemoteRobot(this.targetFleetRobot());
+    return Boolean(this.targetFleetRobot());
   }
 
   async startNavigation(goalLm) {
@@ -9530,7 +9953,8 @@ class OperatorApp {
     if (robot && robot.name === this.fleetManualRobotName) {
       if (this.isFleetRobotsMode()) {
         const result = await this.postJson(this.fleetApiPath("/manual-stop"), { name: robot.name });
-        this.currentStatus = result.state || await this.getJson(this.fleetApiPath("/state"));
+        const state = result.state || await this.getJson(this.fleetApiPath("/state"));
+        this.currentStatus = this.mergeFleetTickState(state);
         this.fleetStatusReceivedAt = performance.now();
         this.fleetStatusObjectRef = this.currentStatus;
         this.fleetManualRobotName = "";
@@ -9551,7 +9975,8 @@ class OperatorApp {
         payload.pose = pose;
       }
       const result = await this.postJson(this.fleetApiPath("/robots/update"), payload);
-      this.currentStatus = result.state || await this.getJson(this.fleetApiPath("/state"));
+      const state = result.state || await this.getJson(this.fleetApiPath("/state"));
+      this.currentStatus = this.mergeFleetTickState(state);
     }
     this.fleetManualRobotName = "";
     this.fleetManualLastAt = 0;

@@ -99,3 +99,78 @@ def test_simulation_params_refresh_does_not_install_a_grpc_gateway() -> None:
     manager.update_world({"params": {"fleet": {}}})
 
     assert manager.robot_gateway.transport == "simulation"
+
+
+def test_simulation_uses_transport_neutral_stop_and_order_replacement_hooks() -> None:
+    landmarks, edges = _graph()
+    manager = FleetManagerSim(landmarks, edges, params={"fleet": {}})
+    manager.add_robot({"name": "r1", "spawnLm": "A", "mode": "simulated"})
+
+    first = manager.set_order({"id": "o1", "vehicle": "r1", "targetLm": "B"})
+    replacement = manager.set_order(
+        {
+            "id": "o2",
+            "vehicle": "r1",
+            "targetLm": "B",
+            "replaceActive": True,
+        }
+    )
+    stopped = manager.stop_robot({"name": "r1"})
+
+    assert first["ok"] is True
+    assert replacement["ok"] is True
+    assert manager.orders["o1"].status == "CANCELED"
+    assert stopped["robot"]["status"] == "STOPPED"
+
+
+def test_manual_off_graph_pose_reconnects_before_processing_order() -> None:
+    landmarks, edges = _graph()
+    manager = FleetManagerSim(landmarks, edges, params={"fleet": {}})
+    manager.add_robot({"name": "r1", "spawnLm": "A", "mode": "simulated"})
+    manager.update_robot(
+        {
+            "name": "r1",
+            "status": "IDLE",
+            "targetLm": "",
+            "pose": {"x": 0.35, "y": 0.0, "yaw": 0.0},
+        }
+    )
+
+    result = manager.set_order(
+        {"id": "manual-goal", "vehicle": "r1", "targetLm": "B", "replaceActive": True}
+    )
+    robot = manager.robots["r1"]
+
+    assert result["ok"] is True
+    assert robot.status == "MOVING"
+    assert robot.route_note == "manual graph reconnect"
+    assert robot.pose is not None
+    assert robot.pose["x"] > 0.34
+    assert abs(robot.pose["y"]) < 0.001
+    assert robot.trajectory[0]["x"] == 0.35
+    assert manager.orders["manual-goal"].status == "EXECUTING"
+
+    robot.pose = dict(robot.trajectory[-1])
+    robot.current_lm = robot.route_chunk_goal_lm
+    assert manager._complete_simulated_route_chunk(robot, manager.simulation_time()) is True
+    manager._dispatch_orders()
+
+    assert robot.status == "MOVING"
+    assert robot.target_lm == "B"
+    assert robot.route_note != "manual graph reconnect"
+    assert manager.orders["manual-goal"].status == "EXECUTING"
+
+
+def test_async_dispatch_completes_order_already_at_target() -> None:
+    landmarks, edges = _graph()
+    manager = FleetManagerSim(landmarks, edges, params={"fleet": {}})
+    manager.add_robot({"name": "r1", "spawnLm": "A", "mode": "simulated"})
+    manager.set_order(
+        {"id": "already-there", "vehicle": "r1", "targetLm": "A"},
+        dispatch=False,
+    )
+
+    manager._dispatch_orders(async_simulated=True)
+
+    assert manager.orders["already-there"].status == "COMPLETED"
+    assert manager.robots["r1"].status == "ARRIVED"

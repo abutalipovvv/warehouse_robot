@@ -139,6 +139,14 @@ class FleetManagerCore(
         self._route_revision_seq = max(self._route_revision_seq + 1, now_ms)
         return self._route_revision_seq
 
+    def _cancel_remote_route(self, robot: FleetRobot, reason: str) -> None:
+        """No-op transport hook overridden by the gRPC runtime."""
+        del robot, reason
+
+    def _stop_remote_robot(self, robot: FleetRobot) -> None:
+        """No-op transport hook overridden by the gRPC runtime."""
+        del robot
+
     def set_active_robot_modes(self, modes: set[str] | list[str] | tuple[str, ...] | None) -> None:
         if modes is None:
             self.active_robot_modes = None
@@ -1064,6 +1072,31 @@ class FleetManagerCore(
         order = self.orders.get(robot.active_order_id)
         if order is None or order.status in TERMINAL_ORDER_STATUSES:
             return False
+        if robot.route_note == "manual graph reconnect":
+            order.status = "QUEUED"
+            order.error = ""
+            order.updated_at = now
+            order.assigned_robot = robot.name
+            order.start_lm = robot.current_lm
+            order.route_nodes = []
+            robot.active_order_id = ""
+            robot.target_lm = ""
+            robot.status = "IDLE"
+            robot.trajectory = []
+            robot.trajectory_dirty = True
+            robot.plan_nodes = []
+            robot.route_started_at = None
+            robot.route_clock = 0.0
+            robot.last_tick_at = now
+            robot.last_reason = "manual graph reconnect complete; route queued"
+            robot.route_note = ""
+            self._clear_remote_route_metadata(robot)
+            robot.updated_at = now
+            self._event(
+                "info",
+                f"manual graph reconnect complete: {robot.name}@{robot.current_lm}",
+            )
+            return True
         final_target = self._active_order_target(order)
         if robot.current_lm != robot.route_chunk_goal_lm or robot.current_lm == final_target:
             return False

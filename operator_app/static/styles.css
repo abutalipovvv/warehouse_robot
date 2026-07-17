@@ -472,6 +472,13 @@ body[data-fleet-page="fleet"] .robot-control-actions {
     minmax(150px, 1.05fr);
 }
 
+body[data-fleet-page="map"] .robot-control-actions {
+  grid-template-columns:
+    minmax(360px, 2fr)
+    minmax(140px, 0.8fr)
+    minmax(360px, 2fr);
+}
+
 .robot-action-group {
   display: grid;
   grid-template-rows: auto 1fr;
@@ -915,7 +922,7 @@ body[data-fleet-page="fleet"] .robot-control-actions {
   top: 0;
   z-index: 1;
   padding: 0.55rem 0.1rem 0.2rem;
-  background: var(--panel);
+  background: #ffffff;
   color: var(--text);
   font-size: 0.82rem;
   font-weight: 850;
@@ -1572,7 +1579,7 @@ body[data-fleet-page="fleet"] .robot-control-actions {
 .operator-inspector,
 .panel-block {
   border: 1px solid var(--border);
-  background: #ffffff;
+  background: var(--panel);
 }
 
 .operator-map-panel {
@@ -1618,11 +1625,15 @@ body[data-fleet-page="fleet"] .robot-control-actions {
 }
 
 .operator-scene3d {
+  position: relative;
+  overflow: hidden;
   width: 100%;
   height: 100%;
   min-height: 420px;
   display: block;
-  background: #f8fbff;
+  background:
+    radial-gradient(circle at 50% 28%, rgba(247, 251, 255, 0.98), rgba(232, 240, 255, 0.96)),
+    #eef4ff;
 }
 
 .operator-scene3d canvas {
@@ -1631,6 +1642,35 @@ body[data-fleet-page="fleet"] .robot-control-actions {
   display: block;
   cursor: grab;
   touch-action: none;
+  outline: none;
+}
+
+.operator-scene3d.camera-interacting canvas {
+  cursor: grabbing;
+}
+
+.operator-scene-engine-badge {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  z-index: 3;
+  padding: 0.36rem 0.55rem;
+  border: 1px solid rgba(148, 163, 184, 0.34);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.74);
+  color: rgba(255, 255, 255, 0.88);
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.14);
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  line-height: 1;
+  pointer-events: none;
+  backdrop-filter: blur(8px);
+}
+
+.operator-scene-engine-badge.error {
+  border-color: rgba(248, 113, 113, 0.48);
+  background: rgba(127, 29, 29, 0.82);
 }
 
 .operator-scene3d.target-armed canvas,
@@ -1778,27 +1818,27 @@ body[data-fleet-page="fleet"] .robot-control-actions {
 }
 
 .graph-edge {
-  stroke: rgba(78, 94, 116, 0.56);
-  stroke-width: 0.9;
+  stroke: rgba(139, 180, 255, 0.68);
+  stroke-width: 0.72;
   stroke-linecap: round;
   fill: none;
 }
 
 .graph-edge.editable {
   cursor: pointer;
-  stroke-width: 1.4;
+  stroke-width: 1.15;
 }
 
 .graph-edge.editable:hover,
 .graph-edge.selected {
   stroke: #2368ff;
-  stroke-width: 2.2;
+  stroke-width: 1.8;
   filter: drop-shadow(0 3px 7px rgba(35, 104, 255, 0.28));
 }
 
 .graph-direction {
-  fill: #56616f;
-  opacity: 0.82;
+  fill: #5f7497;
+  opacity: 0.72;
 }
 
 .map-obstacle {
@@ -1820,9 +1860,9 @@ body[data-fleet-page="fleet"] .robot-control-actions {
 }
 
 .landmark-dot {
-  fill: #b73c46;
-  stroke: #143158;
-  stroke-width: 1.15;
+  fill: #2368ff;
+  stroke: #ffffff;
+  stroke-width: 0.9;
   transition: fill 120ms ease, stroke-width 120ms ease, filter 120ms ease, r 120ms ease;
 }
 
@@ -1854,10 +1894,10 @@ body[data-fleet-page="fleet"] .robot-control-actions {
 }
 
 .landmark:hover .landmark-dot {
-  fill: #ffca4f;
+  fill: #5298ff;
   stroke: #17365f;
-  stroke-width: 1.8;
-  filter: drop-shadow(0 3px 5px rgba(20, 49, 88, 0.28));
+  stroke-width: 1.45;
+  filter: drop-shadow(0 3px 5px rgba(35, 104, 255, 0.24));
 }
 
 .landmark:hover .landmark-label {
@@ -1876,10 +1916,10 @@ body[data-fleet-page="fleet"] .robot-control-actions {
 .landmark.armed:hover .landmark-dot,
 .landmark.target:hover .landmark-dot,
 .landmark.nearest:hover .landmark-dot {
-  fill: #ffca4f;
+  fill: #5298ff;
   stroke: #17365f;
-  stroke-width: 2.3;
-  filter: drop-shadow(0 0 8px rgba(245, 158, 11, 0.52));
+  stroke-width: 1.8;
+  filter: drop-shadow(0 0 8px rgba(35, 104, 255, 0.34));
 }
 
 .landmark.compact.armed:hover .landmark-dot,
@@ -1889,14 +1929,14 @@ body[data-fleet-page="fleet"] .robot-control-actions {
 }
 
 .landmark.armed:hover .landmark-label {
-  fill: #9a3412;
+  fill: #2368ff;
   stroke-width: 3px;
 }
 
 .landmark.selected .landmark-dot {
-  fill: #ffca4f;
+  fill: #5298ff;
   stroke: #143158;
-  stroke-width: 2.1;
+  stroke-width: 1.7;
   filter: drop-shadow(0 4px 8px rgba(20, 49, 88, 0.24));
 }
 
@@ -2078,7 +2118,7 @@ body[data-fleet-page="fleet"] .robot-control-actions {
 }
 
 .editor-bezier-handle:hover {
-  fill: #ffca4f;
+  fill: #5298ff;
 }
 
 .editor-bezier-endpoint {

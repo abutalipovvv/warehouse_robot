@@ -164,6 +164,12 @@ class FleetTaskDispatchMixin:
         # component at a time and cap synchronous work per runtime tick.
         handled: set[str] = set()
         ready = self._ready_simulated_order_entries(queued_orders)
+        handled.update(
+            order.order_id
+            for order in queued_orders
+            if order.status != "QUEUED"
+            or str(order.error or "").startswith("manual graph reconnect blocked:")
+        )
         if async_simulated and not self._async_simulated_dispatch_active():
             prefetch = self._ready_rolling_prefetch_entry()
             recovery_ready = any(
@@ -274,7 +280,28 @@ class FleetTaskDispatchMixin:
                 continue
             final_goal = self._active_order_target(order)
             start_lm = self._safe_replan_start_lm(robot)
-            if not start_lm or start_lm not in self.landmarks or start_lm == final_goal:
+            if not start_lm or start_lm not in self.landmarks:
+                self._dispatch_manual_graph_reconnect(order, robot, final_goal)
+                used_robots.add(robot.name)
+                continue
+            if start_lm == final_goal:
+                now = self._now()
+                robot.current_lm = final_goal
+                robot.target_lm = ""
+                robot.status = "ARRIVED"
+                robot.active_order_id = ""
+                robot.last_reason = "order already at target"
+                robot.updated_at = now
+                completed = self._advance_or_complete_order(order, robot, now)
+                self._event(
+                    "info",
+                    (
+                        f"order completed: {order.order_id} {robot.name}@{final_goal}"
+                        if completed
+                        else f"order step reached: {order.order_id} {robot.name}@{final_goal}"
+                    ),
+                )
+                used_robots.add(robot.name)
                 continue
             request: dict[str, Any] = {
                 "name": robot.name,
@@ -290,6 +317,152 @@ class FleetTaskDispatchMixin:
             entries.append((order, robot, request, final_goal))
             used_robots.add(robot.name)
         return entries
+
+    def _dispatch_manual_graph_reconnect(
+        self,
+        order: FleetOrder,
+        robot: FleetRobot,
+        final_goal: str,
+    ) -> bool:
+        """Return a manually moved simulated robot to the traffic graph.
+
+        MAPF starts at graph landmarks by design. A free-drive pose therefore
+        needs a short collision-checked approach chunk before the queued graph
+        route can be planned. Keeping it as part of the same order avoids both
+        teleporting the robot and silently dropping the operator's goal.
+        """
+        if robot.is_remote() or robot.pose is None:
+            self._set_order_error(order, "robot has no graph-safe start pose")
+            return False
+        reconnect_lm = self._nearest_lm_for_robot(robot)
+        landmark = self.landmarks.get(reconnect_lm)
+        if landmark is None:
+            self._set_order_error(order, "no graph landmark near manual pose")
+            return False
+
+        start_pose = {
+            "x": float(robot.pose.get("x", 0.0) or 0.0),
+            "y": float(robot.pose.get("y", 0.0) or 0.0),
+            "yaw": float(robot.pose.get("yaw", 0.0) or 0.0),
+        }
+        dx = float(landmark.x) - start_pose["x"]
+        dy = float(landmark.y) - start_pose["y"]
+        distance = math.hypot(dx, dy)
+        if distance <= 0.000001:
+            robot.current_lm = reconnect_lm
+            return False
+
+        navigation = self.params.get("navigation", {})
+        if not isinstance(navigation, dict):
+            navigation = {}
+        speed = max(
+            0.05,
+            float(order.speed or navigation.get("route_speed", 0.35) or 0.35),
+        )
+        turn_speed = max(
+            0.05,
+            float(order.turn_speed or navigation.get("max_angular_speed", 0.9) or 0.9),
+        )
+        heading = math.atan2(dy, dx)
+        yaw_delta = math.atan2(
+            math.sin(heading - start_pose["yaw"]),
+            math.cos(heading - start_pose["yaw"]),
+        )
+        sample_dt = max(0.03, min(0.08, self.collision.sample_time_step() / 2.0))
+        rotate_duration = abs(yaw_delta) / turn_speed
+        rotate_steps = max(1, int(math.ceil(rotate_duration / sample_dt))) if rotate_duration > 0.01 else 0
+        move_duration = distance / speed
+        move_steps = max(
+            1,
+            int(math.ceil(max(move_duration / sample_dt, distance / 0.04))),
+        )
+        trajectory: list[dict[str, Any]] = [
+            {
+                "t": 0.0,
+                **start_pose,
+                "edgeId": f"MANUAL->{reconnect_lm}",
+                "motionDirection": "not_specified",
+            }
+        ]
+        for index in range(1, rotate_steps + 1):
+            ratio = index / rotate_steps
+            trajectory.append(
+                {
+                    "t": rotate_duration * ratio,
+                    "x": start_pose["x"],
+                    "y": start_pose["y"],
+                    "yaw": start_pose["yaw"] + yaw_delta * ratio,
+                    "edgeId": f"MANUAL->ROTATE@{reconnect_lm}",
+                    "motionDirection": "rotate",
+                }
+            )
+        for index in range(1, move_steps + 1):
+            ratio = index / move_steps
+            sample: dict[str, Any] = {
+                "t": rotate_duration + move_duration * ratio,
+                "x": start_pose["x"] + dx * ratio,
+                "y": start_pose["y"] + dy * ratio,
+                "yaw": heading,
+                "edgeId": f"MANUAL->{reconnect_lm}",
+                "motionDirection": "forward",
+            }
+            if index == move_steps:
+                sample["lm"] = reconnect_lm
+            trajectory.append(sample)
+
+        for sample in trajectory:
+            reason = self.collision.blocked_reason(
+                pose=sample,
+                obstacles=self.obstacles,
+                obstacle_areas=self.obstacle_areas,
+            )
+            if not reason:
+                for other in self._runtime_robots():
+                    if other.name == robot.name or other.pose is None:
+                        continue
+                    if self.collision.robot_footprints_conflict(sample, other.pose):
+                        reason = f"robot footprint conflict with {other.name}"
+                        break
+            if reason:
+                self._set_order_error(order, f"manual graph reconnect blocked: {reason}")
+                return False
+
+        now = self._now()
+        robot.current_lm = reconnect_lm
+        robot.target_lm = reconnect_lm
+        robot.status = "MOVING"
+        robot.trajectory = trajectory
+        robot.trajectory_dirty = True
+        robot.plan_nodes = [reconnect_lm]
+        robot.route_started_at = now
+        robot.route_clock = 0.0
+        robot.last_tick_at = now
+        robot.blocked_since = None
+        robot.last_replan_at = None
+        robot.last_reason = "returning manual pose to traffic graph"
+        robot.route_note = "manual graph reconnect"
+        robot.active_order_id = order.order_id
+        robot.route_revision = self._next_route_revision()
+        robot.route_chunk_index = 0
+        robot.route_chunk_goal_lm = reconnect_lm
+        robot.route_final_lm = final_goal
+        robot.route_preview = [dict(sample) for sample in trajectory]
+        robot.route_preview_dirty = True
+        robot.pending_route = None
+        robot.has_executed_route = True
+        robot.updated_at = now
+
+        order.status = "EXECUTING"
+        order.error = ""
+        order.updated_at = now
+        order.assigned_robot = robot.name
+        order.start_lm = reconnect_lm
+        order.route_nodes = [reconnect_lm]
+        self._event(
+            "info",
+            f"manual graph reconnect: {robot.name}->{reconnect_lm}; then {final_goal}",
+        )
+        return True
 
     def _order_is_robot_queue_head(self, order: FleetOrder) -> bool:
         """Keep generated lifelong orders FIFO for each robot.

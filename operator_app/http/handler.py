@@ -29,7 +29,7 @@ class OperatorRequestHandler(SimpleHTTPRequestHandler):
 
     def end_headers(self) -> None:
         static_path = urlparse(self.path).path
-        if static_path in {"/", "/index.html", "/app.js", "/styles.css"} or static_path in APP_ROUTES:
+        if static_path in {"/", "/index.html", "/app.js", "/scene3d.js", "/styles.css"} or static_path in APP_ROUTES:
             self.send_header("Cache-Control", "no-store, max-age=0")
             self.send_header("Pragma", "no-cache")
         super().end_headers()

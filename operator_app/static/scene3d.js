@@ -1,18 +1,48 @@
-import * as THREE from "./vendor/three.module.min.js";
+const BABYLON_CDN_URL = "https://cdn.jsdelivr.net/npm/babylonjs@9.16.2/babylon.js";
+const BABYLON_CDN_INTEGRITY = "sha384-QvTCEtU2vNY4HyFf9yPSiKC2c5g/MzzN6jGWdQh7r01HTPNQ+A/XJzerTlL17Whj";
+
+const loadBabylon = () => {
+  if (globalThis.BABYLON) {
+    return Promise.resolve(globalThis.BABYLON);
+  }
+  return new Promise((resolve, reject) => {
+    const existing = document.querySelector("script[data-babylon-runtime]");
+    const script = existing || document.createElement("script");
+    const onLoad = () => globalThis.BABYLON
+      ? resolve(globalThis.BABYLON)
+      : reject(new Error("Babylon.js loaded without exposing its runtime."));
+    const onError = () => reject(new Error("Could not load the Babylon.js runtime."));
+    script.addEventListener("load", onLoad, { once: true });
+    script.addEventListener("error", onError, { once: true });
+    if (!existing) {
+      script.src = BABYLON_CDN_URL;
+      script.integrity = BABYLON_CDN_INTEGRITY;
+      script.crossOrigin = "anonymous";
+      script.dataset.babylonRuntime = "9.16.2";
+      document.head.append(script);
+    }
+  });
+};
+
+// The same Babylon runtime renders the orthographic 2D map and the 3D twin.
+// HTML/CSS remains responsible only for controls and inspector panels.
+const B = globalThis.BABYLON || await loadBabylon();
 
 const COLORS = {
-  floor: 0xf7f8fb,
-  wall: 0x151922,
-  edge: 0x2f6fed,
-  edgeActive: 0x22c55e,
-  lm: 0xf59e0b,
-  lmHover: 0xffca4f,
-  robot: 0x2563eb,
-  route: 0x64748b,
-  ecomBody: 0xffffff,
-  ecomDeck: 0xb8bec8,
-  lidar: 0x374151,
-  wheel: 0x1f2937,
+  floor: 0xf8fbff,
+  wall: 0x718493,
+  edge: 0x8bb4ff,
+  edgeActive: 0x2368ff,
+  lm: 0x2368ff,
+  lmHover: 0x5298ff,
+  robot: 0x3d70a3,
+  route: 0x5f7890,
+  ecomBody: 0xe8ecef,
+  ecomDeck: 0xaeb7bf,
+  lidar: 0x303840,
+  wheel: 0x252b31,
+  frontPanel: 0x161b20,
+  editor: 0x2d78b7,
 };
 
 const ROBOT_PALETTE = [
@@ -26,41 +56,68 @@ const ROBOT_PALETTE = [
   0x84cc16,
 ];
 
+const toColor3 = (hex) => B.Color3.FromHexString(
+  `#${Number(hex || 0).toString(16).padStart(6, "0")}`,
+);
+
+const setMaterialColor = (material, hex) => {
+  const color = toColor3(hex);
+  if (material.albedoColor) {
+    material.albedoColor.copyFrom(color);
+  }
+  if (material.diffuseColor) {
+    material.diffuseColor.copyFrom(color);
+  }
+  if (material.emissiveColor && material.disableLighting) {
+    material.emissiveColor.copyFrom(color);
+  }
+};
+
 export class OperatorScene3D {
   constructor(container) {
     this.container = container;
-    this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0xf8fbff);
-    this.scene.fog = new THREE.Fog(0xf8fbff, 35, 95);
+    this.canvas = document.createElement("canvas");
+    this.canvas.className = "operator-babylon-canvas";
+    this.canvas.setAttribute("aria-label", "Babylon.js warehouse digital twin");
+    this.canvas.setAttribute("tabindex", "0");
+    this.engineBadge = document.createElement("div");
+    this.engineBadge.className = "operator-scene-engine-badge";
+    this.engineBadge.textContent = "BABYLON · STARTING";
+    this.container.append(this.canvas, this.engineBadge);
 
-    this.camera = new THREE.PerspectiveCamera(48, 1, 0.05, 400);
-    this.orthoCamera = new THREE.OrthographicCamera(-10, 10, 10, -10, 0.05, 400);
-    this.activeCamera = this.camera;
-    this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
-    this.renderPixelRatio = Math.min(1.35, window.devicePixelRatio || 1);
-    this.renderer.setPixelRatio(this.renderPixelRatio);
-    this.renderer.shadowMap.enabled = false;
-    this.container.append(this.renderer.domElement);
-
-    this.staticGroup = new THREE.Group();
-    this.robotGroup = new THREE.Group();
-    this.routeGroup = new THREE.Group();
-    this.scene.add(this.staticGroup, this.routeGroup, this.robotGroup);
-
-    this.target = new THREE.Vector3(0, 0, 0);
+    this.engine = null;
+    this.scene = null;
+    this.viewMode = "3d";
+    this.saved3dView = null;
+    this.camera = null;
+    this.orthoCamera = null;
+    this.activeCamera = null;
+    this.staticRoot = null;
+    this.robotRoot = null;
+    this.routeRoot = null;
+    this.target = new B.Vector3(0, 0, 0);
     this.distance = 24;
     this.yaw = -Math.PI / 4;
     this.pitch = 0.85;
     this.bounds = { width: 20, depth: 20 };
     this.drag = null;
     this.handlers = {};
-    this.raycaster = new THREE.Raycaster();
-    this.floorPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
     this.floorMesh = null;
     this.wallMaterial = null;
+    this.wallMesh = null;
+    this.graphMesh = null;
+    this.graphFaceMap = [];
     this.lms = [];
     this.landmarkObjects = new Map();
     this.landmarkMesh = null;
+    this.landmarkLabelMesh = null;
+    this.landmarkLabelSignature = "";
+    this.landmarkLabelRefreshTimer = 0;
+    this.landmarkLabelsVisible = true;
+    this.editorRoot = null;
+    this.editorState = {};
+    this.editorStateSignature = "";
+    this.externalPointer = null;
     this.hoverMarker = null;
     this.hoverLabel = null;
     this.hoverLmName = "";
@@ -68,41 +125,165 @@ export class OperatorScene3D {
     this.robotObjects = new Map();
     this.robotRouteObjects = new Map();
     this.robotRouteKeys = new Map();
-    this.maxStaticLmLabels = 220;
     this.maxInactiveRoutePoints = 48;
     this.maxActiveRoutePoints = 220;
+    this.renderPixelRatio = Math.min(1.35, window.devicePixelRatio || 1);
+    this.appliedPixelRatio = 0;
     this.lastAnimationRenderAt = 0;
     this.lastRobotMotionAt = 0;
+    this.lastCameraModeTopDown = null;
+    this.cameraInteracting = false;
+    this.cameraInteractionRestoreTimer = 0;
+    this.compactRobotMode = false;
     this.needsRender = true;
     this.disposed = false;
+    this.animationFrame = 0;
+    this.pendingScenePayload = null;
+    this.pendingSceneOptions = {};
+    this.pendingRobots = null;
+    this.appliedMapName = "";
+    this.initError = null;
 
-    this.addLights();
     this.bindControls();
     this.resizeObserver = new ResizeObserver(() => this.resize());
     this.resizeObserver.observe(this.container);
+    this.readyPromise = this.initialize().catch((error) => {
+      this.initError = error;
+      this.engineBadge.classList.add("error");
+      this.engineBadge.textContent = "3D ENGINE ERROR";
+      console.error("Babylon.js scene initialization failed", error);
+    });
+  }
+
+  async initialize() {
+    const engineKind = await this.createEngine();
+    if (this.disposed) {
+      this.engine?.dispose();
+      return;
+    }
+
+    this.scene = new B.Scene(this.engine);
+    // Fleet/map coordinates were authored in the same right-handed frame
+    // previously used by Three.js. Keeping that frame also preserves camera
+    // orbit direction and positive map yaw.
+    this.scene.useRightHandedSystem = true;
+    this.scene.clearColor = new B.Color4(0.933, 0.957, 1, 1);
+    this.scene.fogMode = B.Scene.FOGMODE_LINEAR;
+    this.scene.fogStart = 35;
+    this.scene.fogEnd = 95;
+    this.scene.fogColor = new B.Color3(0.933, 0.957, 1);
+    this.scene.skipPointerMovePicking = true;
+    this.scene.imageProcessingConfiguration.toneMappingEnabled = false;
+    this.scene.imageProcessingConfiguration.contrast = 1;
+    this.scene.imageProcessingConfiguration.exposure = 1;
+    const colorCurves = new B.ColorCurves();
+    colorCurves.globalSaturation = 0;
+    colorCurves.globalExposure = 0;
+    this.scene.imageProcessingConfiguration.colorCurves = colorCurves;
+    this.scene.imageProcessingConfiguration.colorCurvesEnabled = true;
+
+    this.camera = new B.FreeCamera("warehouse-camera", new B.Vector3(12, 18, 12), this.scene);
+    this.camera.minZ = 0.05;
+    this.camera.maxZ = 400;
+    this.camera.fov = B.Tools.ToRadians(48);
+    this.orthoCamera = new B.FreeCamera("warehouse-map-camera", new B.Vector3(10, 30, 10), this.scene);
+    this.orthoCamera.mode = B.Camera.ORTHOGRAPHIC_CAMERA;
+    this.orthoCamera.minZ = 0.05;
+    this.orthoCamera.maxZ = 400;
+    this.orthoCamera.upVector = new B.Vector3(0, 0, -1);
+    this.activeCamera = this.camera;
+    this.scene.activeCamera = this.activeCamera;
+
+    this.staticRoot = new B.TransformNode("static-root", this.scene);
+    this.robotRoot = new B.TransformNode("robot-root", this.scene);
+    this.routeRoot = new B.TransformNode("route-root", this.scene);
+    this.addLights();
+
+    this.engineBadge.textContent = `BABYLON · ${engineKind}`;
+    this.container.dataset.renderEngine = engineKind.toLowerCase().replace(/\s+/g, "-");
     this.resize();
+
+    if (this.pendingScenePayload) {
+      this.applyScene(this.pendingScenePayload, this.pendingSceneOptions);
+    }
+    if (this.pendingRobots) {
+      const pending = this.pendingRobots;
+      this.pendingRobots = null;
+      this.updateRobots(pending.robots, pending.selectedName, pending.waitBlockerName);
+    }
     this.animate();
   }
 
+  async createEngine() {
+    if (navigator.gpu && B.WebGPUEngine) {
+      try {
+        const supportCheck = B.WebGPUEngine.IsSupportedAsync;
+        const supported = await Promise.resolve(
+          typeof supportCheck === "function"
+            ? supportCheck.call(B.WebGPUEngine)
+            : supportCheck,
+        );
+        if (supported !== false) {
+          const engine = new B.WebGPUEngine(this.canvas, {
+            antialias: true,
+            adaptToDeviceRatio: false,
+            powerPreference: "high-performance",
+          });
+          await engine.initAsync();
+          this.engine = engine;
+          this.applyHardwareScaling();
+          return "WEBGPU";
+        }
+      } catch (error) {
+        console.warn("WebGPU initialization failed; falling back to WebGL 2", error);
+      }
+    }
+
+    this.engine = new B.Engine(
+      this.canvas,
+      true,
+      {
+        antialias: true,
+        preserveDrawingBuffer: false,
+        stencil: true,
+        powerPreference: "high-performance",
+        disableWebGL2Support: false,
+      },
+      false,
+    );
+    this.applyHardwareScaling();
+    return this.engine.webGLVersion >= 2 ? "WEBGL 2" : "WEBGL";
+  }
+
   addLights() {
-    const hemi = new THREE.HemisphereLight(0xffffff, 0xdbeafe, 1.8);
-    this.scene.add(hemi);
-    const sun = new THREE.DirectionalLight(0xffffff, 2.5);
-    sun.position.set(-8, 18, -12);
-    sun.castShadow = true;
-    sun.shadow.mapSize.set(2048, 2048);
-    sun.shadow.camera.near = 1;
-    sun.shadow.camera.far = 80;
-    sun.shadow.camera.left = -35;
-    sun.shadow.camera.right = 35;
-    sun.shadow.camera.top = 35;
-    sun.shadow.camera.bottom = -35;
-    this.scene.add(sun);
+    const ambient = new B.HemisphericLight("warehouse-ambient", new B.Vector3(0, 1, 0), this.scene);
+    ambient.intensity = 0.92;
+    ambient.diffuse = new B.Color3(1, 1, 1);
+    ambient.groundColor = new B.Color3(0.62, 0.68, 0.72);
+
+    const sun = new B.DirectionalLight("warehouse-sun", new B.Vector3(0.35, -1, 0.42), this.scene);
+    sun.position = new B.Vector3(-8, 18, -12);
+    sun.intensity = 0.82;
   }
 
   bindControls() {
-    const canvas = this.renderer.domElement;
+    const canvas = this.canvas;
     canvas.addEventListener("pointerdown", (event) => {
+      const externalHit = this.pointerHit(event);
+      if (
+        typeof this.handlers.onPointerDown === "function"
+        && this.handlers.onPointerDown(externalHit) === true
+      ) {
+        this.externalPointer = {
+          pointerId: event.pointerId,
+          x: event.clientX,
+          y: event.clientY,
+        };
+        canvas.setPointerCapture(event.pointerId);
+        event.preventDefault();
+        return;
+      }
+      this.beginCameraInteraction();
       this.drag = {
         pointerId: event.pointerId,
         button: event.button,
@@ -111,12 +292,19 @@ export class OperatorScene3D {
         yaw: this.yaw,
         pitch: this.pitch,
         target: this.target.clone(),
-        pan: event.button === 1 || event.button === 2 || event.shiftKey,
+        pan: this.viewMode === "2d" || event.button === 1 || event.button === 2 || event.shiftKey,
       };
       canvas.setPointerCapture(event.pointerId);
       event.preventDefault();
     });
     canvas.addEventListener("pointermove", (event) => {
+      if (this.externalPointer?.pointerId === event.pointerId) {
+        if (typeof this.handlers.onPointerMove === "function") {
+          this.handlers.onPointerMove(this.pointerHit(event));
+        }
+        event.preventDefault();
+        return;
+      }
       if (!this.drag) {
         this.updateLandmarkHover(event);
         return;
@@ -131,16 +319,38 @@ export class OperatorScene3D {
       }
       this.requestRender();
     });
-    canvas.addEventListener("pointerup", (event) => this.endDrag(event));
-    canvas.addEventListener("pointercancel", (event) => this.endDrag(event));
+    canvas.addEventListener("pointerup", (event) => this.endPointer(event));
+    canvas.addEventListener("pointercancel", (event) => this.endPointer(event));
     canvas.addEventListener("pointerleave", () => this.setLandmarkHover(""));
-    canvas.addEventListener("contextmenu", (event) => event.preventDefault());
+    canvas.addEventListener("contextmenu", (event) => {
+      event.preventDefault();
+      if (typeof this.handlers.onContextMenu === "function") {
+        this.handlers.onContextMenu(this.pointerHit(event));
+      }
+    });
     canvas.addEventListener("wheel", (event) => {
       event.preventDefault();
       const factor = Math.exp(event.deltaY * 0.0012);
       this.distance = Math.max(3.5, Math.min(110, this.distance * factor));
+      this.scheduleLandmarkLabelRefresh();
       this.requestRender();
     }, { passive: false });
+  }
+
+  endPointer(event) {
+    if (this.externalPointer?.pointerId === event.pointerId) {
+      if (typeof this.handlers.onPointerUp === "function") {
+        this.handlers.onPointerUp(this.pointerHit(event));
+      }
+      try {
+        this.canvas.releasePointerCapture(event.pointerId);
+      } catch (_) {
+        // Capture may already be released by the browser.
+      }
+      this.externalPointer = null;
+      return;
+    }
+    this.endDrag(event);
   }
 
   endDrag(event) {
@@ -149,13 +359,14 @@ export class OperatorScene3D {
     }
     const drag = this.drag;
     try {
-      this.renderer.domElement.releasePointerCapture(event.pointerId);
+      this.canvas.releasePointerCapture(event.pointerId);
     } catch (_) {
-      // Pointer capture can already be gone after browser gestures.
+      // Pointer capture can already be gone after a browser gesture.
     }
     this.drag = null;
+    this.finishCameraInteraction();
     const moved = Math.hypot(event.clientX - drag.x, event.clientY - drag.y);
-    if (!drag.pan && drag.button === 0 && moved <= 5) {
+    if (drag.button === 0 && moved <= 5) {
       if (!this.isTargetArmed() && this.pickRobot(event)) {
         return;
       }
@@ -166,24 +377,73 @@ export class OperatorScene3D {
   pan(dx, dy) {
     const scale = this.distance / Math.max(260, this.container.clientHeight || 260);
     const topDown = this.isTopDown();
-    const right = topDown
-      ? new THREE.Vector3(1, 0, 0)
-      : new THREE.Vector3(Math.cos(this.yaw), 0, -Math.sin(this.yaw));
-    const forward = topDown
-      ? new THREE.Vector3(0, 0, 1)
-      : new THREE.Vector3(Math.sin(this.yaw), 0, Math.cos(this.yaw));
-    this.target.copy(this.drag.target)
-      .addScaledVector(right, -dx * scale)
-      .addScaledVector(forward, -dy * scale);
+    if (topDown) {
+      this.target.x = this.drag.target.x - (dx * scale);
+      this.target.z = this.drag.target.z - (dy * scale);
+      return;
+    }
+    const cosine = Math.cos(this.yaw);
+    const sine = Math.sin(this.yaw);
+    this.target.x = this.drag.target.x - (dx * scale * cosine) - (dy * scale * sine);
+    this.target.z = this.drag.target.z + (dx * scale * sine) - (dy * scale * cosine);
+  }
+
+  beginCameraInteraction() {
+    window.clearTimeout(this.cameraInteractionRestoreTimer);
+    this.cameraInteractionRestoreTimer = 0;
+    if (this.cameraInteracting) {
+      return;
+    }
+    this.cameraInteracting = true;
+    this.container.classList.add("camera-interacting");
+    this.applyHardwareScaling();
+    this.setDetailLabelsEnabled(false);
+  }
+
+  finishCameraInteraction() {
+    window.clearTimeout(this.cameraInteractionRestoreTimer);
+    this.cameraInteractionRestoreTimer = window.setTimeout(() => {
+      this.cameraInteractionRestoreTimer = 0;
+      this.cameraInteracting = false;
+      this.container.classList.remove("camera-interacting");
+      this.applyHardwareScaling();
+      this.refreshLandmarkLabels();
+      this.setDetailLabelsEnabled(true);
+      this.requestRender();
+    }, 140);
+  }
+
+  setDetailLabelsEnabled(enabled) {
+    for (const mesh of this.staticRoot?.getChildMeshes(false) || []) {
+      if (mesh.metadata?.cameraDetailLabel) {
+        mesh.setEnabled(enabled);
+      }
+    }
+    for (const entry of this.robotObjects.values()) {
+      entry.group.metadata?.label?.setEnabled(enabled);
+    }
+  }
+
+  applyHardwareScaling() {
+    if (!this.engine) {
+      return;
+    }
+    const desired = this.cameraInteracting
+      ? Math.min(this.renderPixelRatio, 0.82)
+      : this.renderPixelRatio;
+    if (Math.abs(desired - this.appliedPixelRatio) < 0.01) {
+      return;
+    }
+    this.appliedPixelRatio = desired;
+    this.engine.setHardwareScalingLevel(1 / desired);
   }
 
   resize() {
-    const width = Math.max(1, this.container.clientWidth || 1);
-    const height = Math.max(1, this.container.clientHeight || 1);
-    this.camera.aspect = width / height;
-    this.camera.updateProjectionMatrix();
+    if (!this.engine) {
+      return;
+    }
     this.updateOrthoFrustum();
-    this.renderer.setSize(width, height, false);
+    this.engine.resize();
     this.requestRender();
   }
 
@@ -191,18 +451,100 @@ export class OperatorScene3D {
     this.handlers = { ...handlers };
   }
 
+  setViewMode(mode) {
+    const nextMode = mode === "2d" ? "2d" : "3d";
+    if (nextMode === this.viewMode) {
+      this.wallMesh?.setEnabled(nextMode === "3d");
+      return;
+    }
+    if (nextMode === "2d") {
+      this.saved3dView = {
+        yaw: this.yaw,
+        pitch: this.pitch,
+        distance: this.distance,
+        target: this.target.clone(),
+      };
+      this.pitch = Math.PI / 2;
+    } else if (this.saved3dView) {
+      this.yaw = this.saved3dView.yaw;
+      this.pitch = this.saved3dView.pitch;
+      this.distance = this.saved3dView.distance;
+      this.target.copyFrom(this.saved3dView.target);
+    } else {
+      this.pitch = 0.85;
+    }
+    this.viewMode = nextMode;
+    this.wallMesh?.setEnabled(nextMode === "3d");
+    this.lastCameraModeTopDown = null;
+    this.updateCamera();
+    this.refreshLandmarkLabels(true);
+    this.requestRender();
+  }
+
+  zoomBy(factor) {
+    const value = Number(factor || 1);
+    if (!Number.isFinite(value) || value <= 0) {
+      return;
+    }
+    this.distance = Math.max(2.5, Math.min(140, this.distance / value));
+    this.updateOrthoFrustum();
+    this.scheduleLandmarkLabelRefresh();
+    this.requestRender();
+  }
+
+  resetView() {
+    this.target.set(this.bounds.width / 2, 0, this.bounds.depth / 2);
+    this.distance = Math.max(8, Math.max(this.bounds.width, this.bounds.depth) * 1.05);
+    if (this.viewMode === "2d") {
+      this.pitch = Math.PI / 2;
+    } else {
+      this.yaw = -Math.PI / 4;
+      this.pitch = 0.85;
+      this.saved3dView = null;
+    }
+    this.updateCamera();
+    this.refreshLandmarkLabels(true);
+    this.requestRender();
+  }
+
+  focusOn(world) {
+    if (!world) {
+      return;
+    }
+    const x = Number(world.x);
+    const z = Number(world.y ?? world.z);
+    if (!Number.isFinite(x) || !Number.isFinite(z)) {
+      return;
+    }
+    this.target.x = x;
+    this.target.z = z;
+    this.scheduleLandmarkLabelRefresh();
+    this.requestRender();
+  }
+
   setTargetArmed(armed) {
     this.targetArmed = Boolean(armed);
-    this.renderer.domElement.classList.toggle("target-armed", this.targetArmed);
+    this.canvas.classList.toggle("target-armed", this.targetArmed);
     if (!this.targetArmed) {
       this.setLandmarkHover("");
     }
   }
 
+  setLandmarkLabelsVisible(visible) {
+    const nextVisible = Boolean(visible);
+    if (nextVisible === this.landmarkLabelsVisible) {
+      return;
+    }
+    this.landmarkLabelsVisible = nextVisible;
+    this.landmarkLabelSignature = "";
+    this.refreshLandmarkLabels(true);
+    this.requestRender();
+  }
+
   isTargetArmed() {
     return this.targetArmed
       || this.container.classList.contains("target-armed")
-      || this.renderer.domElement.classList.contains("target-armed");
+      || this.canvas.classList.contains("target-armed");
   }
 
   isTopDown() {
@@ -210,27 +552,91 @@ export class OperatorScene3D {
   }
 
   updateOrthoFrustum() {
+    if (!this.orthoCamera) {
+      return;
+    }
     const width = Math.max(1, this.container.clientWidth || 1);
     const height = Math.max(1, this.container.clientHeight || 1);
     const aspect = width / height;
     const viewHeight = Math.max(4, this.distance * 0.95);
     const viewWidth = viewHeight * aspect;
-    this.orthoCamera.left = -viewWidth / 2;
-    this.orthoCamera.right = viewWidth / 2;
-    this.orthoCamera.top = viewHeight / 2;
-    this.orthoCamera.bottom = -viewHeight / 2;
-    this.orthoCamera.updateProjectionMatrix();
+    this.orthoCamera.orthoLeft = -viewWidth / 2;
+    this.orthoCamera.orthoRight = viewWidth / 2;
+    this.orthoCamera.orthoTop = viewHeight / 2;
+    this.orthoCamera.orthoBottom = -viewHeight / 2;
+  }
+
+  scenePick(event, predicate, camera = this.activeCamera) {
+    if (!this.scene || !camera) {
+      return null;
+    }
+    const rect = this.canvas.getBoundingClientRect();
+    if (!rect.width || !rect.height) {
+      return null;
+    }
+    return this.scene.pick(
+      event.clientX - rect.left,
+      event.clientY - rect.top,
+      predicate,
+      false,
+      camera,
+    );
+  }
+
+  pointerHit(event) {
+    const worldPoint = this.floorPointForEvent(event);
+    const hit = {
+      pointerId: Number(event.pointerId ?? 0),
+      button: Number(event.button ?? 0),
+      clientX: Number(event.clientX || 0),
+      clientY: Number(event.clientY || 0),
+      world: worldPoint ? { x: worldPoint.x, y: worldPoint.z } : null,
+      lmName: "",
+      edgeKey: "",
+      bezierIndex: 0,
+    };
+    if (!this.editorState?.active || !this.scene) {
+      return hit;
+    }
+    this.updateCamera();
+    const pick = this.scenePick(
+      event,
+      (mesh) => Boolean(
+        mesh === this.landmarkMesh
+        || mesh === this.graphMesh
+        || mesh.metadata?.editorBezierIndex
+      ),
+    );
+    const pickedMesh = pick?.pickedMesh;
+    if (!pick?.hit || !pickedMesh) {
+      return hit;
+    }
+    if (pickedMesh.metadata?.editorBezierIndex) {
+      hit.edgeKey = String(pickedMesh.metadata.edgeKey || "");
+      hit.bezierIndex = Number(pickedMesh.metadata.editorBezierIndex || 0);
+      return hit;
+    }
+    if (pickedMesh === this.landmarkMesh) {
+      const index = Number(pick.thinInstanceIndex);
+      hit.lmName = Number.isInteger(index) && index >= 0
+        ? String(this.lms[index]?.name || "")
+        : "";
+      return hit;
+    }
+    if (pickedMesh === this.graphMesh) {
+      hit.edgeKey = String(this.graphFaceMap[Number(pick.faceId)] || "");
+    }
+    return hit;
   }
 
   floorPointForEvent(event) {
-    this.updateCamera();
-    const ndc = this.pointerNdc(event);
-    if (!ndc) {
+    if (!this.floorMesh) {
       return null;
     }
-    const point = new THREE.Vector3();
-    this.raycaster.setFromCamera(ndc, this.activeCamera);
-    if (!this.raycaster.ray.intersectPlane(this.floorPlane, point)) {
+    this.updateCamera();
+    const pick = this.scenePick(event, (mesh) => mesh === this.floorMesh);
+    const point = pick?.hit ? pick.pickedPoint : null;
+    if (!point) {
       return null;
     }
     if (point.x < -0.5 || point.z < -0.5 || point.x > this.bounds.width + 0.5 || point.z > this.bounds.depth + 0.5) {
@@ -239,40 +645,18 @@ export class OperatorScene3D {
     return point;
   }
 
-  pointerNdc(event) {
-    const rect = this.renderer.domElement.getBoundingClientRect();
-    if (!rect.width || !rect.height) {
-      return null;
-    }
-    return new THREE.Vector2(
-      ((event.clientX - rect.left) / rect.width) * 2 - 1,
-      -(((event.clientY - rect.top) / rect.height) * 2 - 1)
-    );
-  }
-
   pickRobot(event) {
     if (typeof this.handlers.onRobotClick !== "function") {
       return false;
     }
     this.updateCamera();
-    const ndc = this.pointerNdc(event);
-    if (!ndc) {
+    const pick = this.scenePick(event, (mesh) => Boolean(mesh.metadata?.robotName));
+    const robotName = String(pick?.pickedMesh?.metadata?.robotName || "");
+    if (!pick?.hit || !robotName) {
       return false;
     }
-    this.raycaster.setFromCamera(ndc, this.activeCamera);
-    const hits = this.raycaster.intersectObjects(this.robotGroup.children, true);
-    for (const hit of hits) {
-      let object = hit.object;
-      while (object) {
-        const robotName = String(object.userData?.robotName || "");
-        if (robotName) {
-          this.handlers.onRobotClick(robotName);
-          return true;
-        }
-        object = object.parent;
-      }
-    }
-    return false;
+    this.handlers.onRobotClick(robotName);
+    return true;
   }
 
   pickFloor(event) {
@@ -280,10 +664,9 @@ export class OperatorScene3D {
       return;
     }
     const point = this.floorPointForEvent(event);
-    if (!point) {
-      return;
+    if (point) {
+      this.handlers.onFloorClick({ x: point.x, y: point.z });
     }
-    this.handlers.onFloorClick({ x: point.x, y: point.z });
   }
 
   updateLandmarkHover(event) {
@@ -320,7 +703,7 @@ export class OperatorScene3D {
     }
     this.hoverLmName = nextName;
     const current = this.landmarkObjects.get(this.hoverLmName);
-    if (current) {
+    if (current && this.scene) {
       this.showHoverLandmark(current.landmark);
     } else {
       this.hideHoverLandmark();
@@ -335,272 +718,753 @@ export class OperatorScene3D {
     const x = Number(landmark.x || 0);
     const z = Number(landmark.y || 0);
     if (!this.hoverMarker) {
-      const geometry = new THREE.CylinderGeometry(0.18, 0.18, 0.06, 20);
-      const material = new THREE.MeshBasicMaterial({ color: COLORS.lmHover });
-      this.hoverMarker = new THREE.Mesh(geometry, material);
-      this.hoverMarker.renderOrder = 12;
-      this.staticGroup.add(this.hoverMarker);
+      const marker = B.MeshBuilder.CreateCylinder("lm-hover", {
+        diameter: 0.36,
+        height: 0.06,
+        tessellation: 24,
+      }, this.scene);
+      marker.material = this.unlitMaterial("lm-hover-material", COLORS.lmHover, 1);
+      marker.isPickable = false;
+      marker.parent = this.staticRoot;
+      this.hoverMarker = marker;
     }
     this.hoverMarker.position.set(x, 0.075, z);
-    this.hoverMarker.visible = true;
+    this.hoverMarker.isVisible = true;
 
-    if (this.hoverLabel) {
-      this.staticGroup.remove(this.hoverLabel);
-      this.disposeObject(this.hoverLabel);
-      this.hoverLabel = null;
-    }
-    this.hoverLabel = this.floorLabel(String(landmark.name || ""), new THREE.Vector3(x, 0, z));
-    this.hoverLabel.scale.set(1.18, 1.18, 1.18);
-    this.staticGroup.add(this.hoverLabel);
+    this.hoverLabel?.dispose(false, true);
+    this.hoverLabel = this.floorLabel(String(landmark.name || ""), new B.Vector3(x, 0, z), 1.18);
   }
 
   hideHoverLandmark() {
     if (this.hoverMarker) {
-      this.hoverMarker.visible = false;
+      this.hoverMarker.isVisible = false;
     }
     if (this.hoverLabel) {
-      this.staticGroup.remove(this.hoverLabel);
-      this.disposeObject(this.hoverLabel);
+      this.hoverLabel.dispose(false, true);
       this.hoverLabel = null;
     }
   }
 
-  setScene(payload) {
-    this.disposeGroup(this.staticGroup);
-    this.staticGroup.clear();
-    for (const name of Array.from(this.robotRouteObjects.keys())) {
-      this.removeRobotRoute(name);
-    }
-    this.landmarkMesh = null;
-    this.hoverMarker = null;
-    this.hoverLabel = null;
+  setScene(payload, options = {}) {
+    this.pendingScenePayload = payload || {};
+    this.pendingSceneOptions = { ...options };
     const floor = payload?.floor || {};
     this.bounds = {
       width: Math.max(1, Number(floor.width || 1)),
       depth: Math.max(1, Number(floor.depth || 1)),
     };
     this.lms = Array.isArray(payload?.lms) ? payload.lms : [];
+    if (this.scene) {
+      this.applyScene(this.pendingScenePayload, this.pendingSceneOptions);
+    }
+  }
+
+  applyScene(payload, options = {}) {
+    const previousBounds = { ...this.bounds };
+    const previousView = {
+      target: this.target.clone(),
+      distance: this.distance,
+      yaw: this.yaw,
+      pitch: this.pitch,
+    };
+    const nextMapName = String(payload?.mapName || "");
+    this.staticRoot?.dispose(false, true);
+    this.staticRoot = new B.TransformNode("static-root", this.scene);
+    this.editorRoot?.dispose(false, true);
+    this.editorRoot = new B.TransformNode("editor-root", this.scene);
+    this.editorStateSignature = "";
+    for (const name of Array.from(this.robotRouteObjects.keys())) {
+      this.removeRobotRoute(name);
+    }
+    this.floorMesh = null;
+    this.wallMaterial = null;
+    this.wallMesh = null;
+    this.graphMesh = null;
+    this.graphFaceMap = [];
+    this.landmarkMesh = null;
+    this.landmarkLabelMesh = null;
+    this.landmarkLabelSignature = "";
+    this.hoverMarker = null;
+    this.hoverLabel = null;
     this.landmarkObjects.clear();
     this.hoverLmName = "";
-    this.target.set(this.bounds.width / 2, 0, this.bounds.depth / 2);
-    this.distance = Math.max(8, Math.max(this.bounds.width, this.bounds.depth) * 1.05);
+    this.lastCameraModeTopDown = null;
+
+    const floor = payload?.floor || {};
+    this.bounds = {
+      width: Math.max(1, Number(floor.width || 1)),
+      depth: Math.max(1, Number(floor.depth || 1)),
+    };
+    this.lms = Array.isArray(payload?.lms) ? payload.lms : [];
+    const preserveView = Boolean(
+      options.preserveView
+      && this.appliedMapName
+      && this.appliedMapName === nextMapName
+      && Math.abs(previousBounds.width - this.bounds.width) < 0.0001
+      && Math.abs(previousBounds.depth - this.bounds.depth) < 0.0001
+    );
+    if (preserveView) {
+      this.target.copyFrom(previousView.target);
+      this.distance = previousView.distance;
+      this.yaw = previousView.yaw;
+      this.pitch = this.viewMode === "2d" ? Math.PI / 2 : previousView.pitch;
+    } else {
+      this.target.set(this.bounds.width / 2, 0, this.bounds.depth / 2);
+      this.distance = Math.max(8, Math.max(this.bounds.width, this.bounds.depth) * 1.05);
+    }
+    this.appliedMapName = nextMapName;
     this.updateOrthoFrustum();
 
     this.addFloor(floor);
     this.addWalls(Array.isArray(payload?.walls) ? payload.walls : []);
     this.addEdges(Array.isArray(payload?.edges) ? payload.edges : []);
     this.addLandmarks(this.lms);
+    this.setEditorState(this.editorState);
+    this.optimizeStaticScene();
     this.requestRender();
   }
 
-  addFloor(floor) {
-    const geometry = new THREE.PlaneGeometry(this.bounds.width, this.bounds.depth);
-    const material = new THREE.MeshStandardMaterial({ color: COLORS.floor, roughness: 0.9, metalness: 0.0 });
-    if (floor.imageDataUrl) {
-      const texture = new THREE.TextureLoader().load(String(floor.imageDataUrl), () => this.requestRender());
-      texture.colorSpace = THREE.SRGBColorSpace;
-      texture.anisotropy = 4;
-      material.map = texture;
-      material.needsUpdate = true;
+  optimizeStaticScene() {
+    for (const mesh of this.staticRoot?.getChildMeshes(false) || []) {
+      mesh.freezeWorldMatrix();
+      if (mesh !== this.floorMesh) {
+        mesh.doNotSyncBoundingInfo = true;
+      }
+      if (
+        mesh.material
+        && mesh.material !== this.wallMaterial
+        && mesh !== this.floorMesh
+        && typeof mesh.material.freeze === "function"
+      ) {
+        mesh.material.freeze();
+      }
     }
-    const mesh = new THREE.Mesh(geometry, material);
-    mesh.rotation.x = -Math.PI / 2;
-    mesh.position.set(this.bounds.width / 2, -0.01, this.bounds.depth / 2);
-    mesh.receiveShadow = true;
-    this.floorMesh = mesh;
-    this.staticGroup.add(mesh);
+  }
 
-    const grid = new THREE.GridHelper(Math.max(this.bounds.width, this.bounds.depth), 24, 0xcbd5e1, 0xe2e8f0);
-    grid.position.set(this.bounds.width / 2, 0.002, this.bounds.depth / 2);
-    this.staticGroup.add(grid);
+  pbrMaterial(name, hex, metallic, roughness) {
+    const material = new B.PBRMaterial(name, this.scene);
+    material.albedoColor = toColor3(hex);
+    material.metallic = metallic;
+    material.roughness = roughness;
+    material.environmentIntensity = 0.7;
+    return material;
+  }
+
+  unlitMaterial(name, hex, alpha = 1) {
+    const material = new B.StandardMaterial(name, this.scene);
+    const color = toColor3(hex);
+    material.diffuseColor = color;
+    material.emissiveColor = color;
+    material.specularColor = B.Color3.Black();
+    material.disableLighting = true;
+    material.alpha = alpha;
+    material.backFaceCulling = false;
+    return material;
+  }
+
+  addFloor(floor) {
+    const mesh = B.MeshBuilder.CreateGround("warehouse-floor", {
+      width: this.bounds.width,
+      height: this.bounds.depth,
+      subdivisions: 1,
+    }, this.scene);
+    mesh.position.set(this.bounds.width / 2, -0.01, this.bounds.depth / 2);
+    mesh.parent = this.staticRoot;
+    mesh.isPickable = true;
+
+    const material = this.pbrMaterial("warehouse-floor-material", COLORS.floor, 0, 0.92);
+    material.unlit = true;
+    if (floor.imageDataUrl) {
+      const texture = new B.Texture(
+        String(floor.imageDataUrl),
+        this.scene,
+        false,
+        true,
+        B.Texture.NEAREST_SAMPLINGMODE,
+        () => this.requestRender(),
+      );
+      texture.anisotropicFilteringLevel = 1;
+      // Occupancy textures commonly encode free floor as light gray. Boost
+      // that channel to white while preserving dark map features.
+      texture.level = 1.3;
+      material.albedoTexture = texture;
+    }
+    mesh.material = material;
+    this.floorMesh = mesh;
   }
 
   addWalls(walls) {
     if (!walls.length) {
       return;
     }
-    const geometry = new THREE.BoxGeometry(1, 1, 1);
-    const material = new THREE.MeshStandardMaterial({ color: COLORS.wall, roughness: 0.85 });
-    material.transparent = true;
-    this.wallMaterial = material;
-    const mesh = new THREE.InstancedMesh(geometry, material, walls.length);
-    mesh.castShadow = true;
-    mesh.receiveShadow = true;
-    const matrix = new THREE.Matrix4();
-    const position = new THREE.Vector3();
-    const quaternion = new THREE.Quaternion();
-    const scale = new THREE.Vector3();
+    const mesh = B.MeshBuilder.CreateBox("warehouse-walls", { size: 1 }, this.scene);
+    const material = this.pbrMaterial("warehouse-wall-material", COLORS.wall, 0.04, 0.82);
+    material.alpha = 0.92;
+    mesh.material = material;
+    mesh.parent = this.staticRoot;
+    mesh.isPickable = false;
+    const matrices = new Float32Array(walls.length * 16);
     walls.forEach((wall, index) => {
       const height = Math.max(0.05, Number(wall.height || 1.8));
-      position.set(Number(wall.x || 0), height / 2, Number(wall.z || 0));
-      scale.set(Math.max(0.01, Number(wall.width || 0.01)), height, Math.max(0.01, Number(wall.depth || 0.01)));
-      matrix.compose(position, quaternion, scale);
-      mesh.setMatrixAt(index, matrix);
+      const scale = new B.Vector3(
+        Math.max(0.01, Number(wall.width || 0.01)),
+        height,
+        Math.max(0.01, Number(wall.depth || 0.01)),
+      );
+      const position = new B.Vector3(Number(wall.x || 0), height / 2, Number(wall.z || 0));
+      B.Matrix.Compose(scale, B.Quaternion.Identity(), position).copyToArray(matrices, index * 16);
     });
-    mesh.instanceMatrix.needsUpdate = true;
-    this.staticGroup.add(mesh);
+    mesh.thinInstanceSetBuffer("matrix", matrices, 16, true);
+    mesh.thinInstanceRefreshBoundingInfo(true);
+    this.wallMaterial = material;
+    this.wallMesh = mesh;
+    mesh.setEnabled(this.viewMode === "3d");
   }
 
   addEdges(edges) {
-    const material = new THREE.LineBasicMaterial({ color: COLORS.edge, transparent: true, opacity: 0.78 });
-    const activeMaterial = new THREE.LineBasicMaterial({ color: COLORS.edgeActive, transparent: true, opacity: 0.95 });
-    const positions = [];
-    const activePositions = [];
+    const lines = [];
+    const edgeKeys = [];
+    const sampleCount = edges.length >= 1200 ? 8 : 18;
     for (const edge of edges) {
-      const points = this.edgePoints(edge);
+      const points = this.edgePoints(edge, sampleCount);
       if (points.length < 2) {
         continue;
       }
-      const target = Number(edge.motionDirectionCode) === 1 ? activePositions : positions;
+      lines.push(points);
+      edgeKeys.push(`${String(edge.from || "")}->${String(edge.to || "")}`);
+    }
+    const width = Math.max(0.025, Math.max(this.bounds.width, this.bounds.depth) / 900);
+    this.graphMesh = this.createRibbonBatch(
+      "graph-edges",
+      lines,
+      width,
+      this.unlitMaterial("graph-edge-material", COLORS.edge, 0.52),
+      this.staticRoot,
+      edgeKeys,
+    );
+    if (this.graphMesh) {
+      this.graphMesh.metadata = { editorKind: "edges" };
+      this.graphMesh.isPickable = Boolean(this.editorState?.active);
+    }
+  }
+
+  addLineSystem(name, lines, color, alpha, parent) {
+    if (!lines.length) {
+      return null;
+    }
+    const mesh = B.MeshBuilder.CreateLineSystem(name, { lines, updatable: false }, this.scene);
+    mesh.color = toColor3(color);
+    mesh.alpha = alpha;
+    mesh.isPickable = false;
+    mesh.parent = parent;
+    return mesh;
+  }
+
+  createRibbonBatch(name, lines, width, material, parent, edgeKeys = []) {
+    const positions = [];
+    const indices = [];
+    const faceMap = [];
+    const halfWidth = Math.max(0.004, Number(width || 0.04) / 2);
+    lines.forEach((points, lineIndex) => {
+      const edgeKey = String(edgeKeys[lineIndex] || "");
       for (let index = 0; index < points.length - 1; index += 1) {
-        target.push(
-          points[index].x, points[index].y, points[index].z,
-          points[index + 1].x, points[index + 1].y, points[index + 1].z
+        const start = points[index];
+        const goal = points[index + 1];
+        const dx = goal.x - start.x;
+        const dz = goal.z - start.z;
+        const length = Math.hypot(dx, dz);
+        if (length <= 0.000001) {
+          continue;
+        }
+        const nx = (-dz / length) * halfWidth;
+        const nz = (dx / length) * halfWidth;
+        const base = positions.length / 3;
+        positions.push(
+          start.x + nx, start.y, start.z + nz,
+          start.x - nx, start.y, start.z - nz,
+          goal.x + nx, goal.y, goal.z + nz,
+          goal.x - nx, goal.y, goal.z - nz,
         );
+        indices.push(base, base + 1, base + 2, base + 1, base + 3, base + 2);
+        faceMap.push(edgeKey, edgeKey);
       }
+    });
+    if (!indices.length) {
+      return null;
     }
-    this.addLineSegments(positions, material);
-    this.addLineSegments(activePositions, activeMaterial);
+    const normals = [];
+    B.VertexData.ComputeNormals(positions, indices, normals);
+    const mesh = new B.Mesh(name, this.scene);
+    const vertexData = new B.VertexData();
+    vertexData.positions = positions;
+    vertexData.indices = indices;
+    vertexData.normals = normals;
+    vertexData.applyToMesh(mesh);
+    mesh.material = material;
+    mesh.parent = parent;
+    mesh.isPickable = false;
+    if (edgeKeys.length) {
+      this.graphFaceMap = faceMap;
+    }
+    return mesh;
   }
 
-  addLineSegments(positions, material) {
-    if (!positions.length) {
-      return;
-    }
-    const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
-    this.staticGroup.add(new THREE.LineSegments(geometry, material));
-  }
-
-  edgePoints(edge) {
+  edgePoints(edge, sampleCount = 18) {
     if (edge.geometry === "bezier" && Array.isArray(edge.control_points) && edge.control_points.length === 4) {
-      const [p0, p1, p2, p3] = edge.control_points.map((point) => new THREE.Vector3(Number(point.x || 0), 0.055, Number(point.y || 0)));
+      const [p0, p1, p2, p3] = edge.control_points.map(
+        (point) => new B.Vector3(Number(point.x || 0), 0.055, Number(point.y || 0)),
+      );
       const points = [];
-      for (let i = 0; i <= 18; i += 1) {
-        const t = i / 18;
+      for (let index = 0; index <= sampleCount; index += 1) {
+        const t = index / sampleCount;
         const a = (1 - t) ** 3;
         const b = 3 * ((1 - t) ** 2) * t;
         const c = 3 * (1 - t) * (t ** 2);
         const d = t ** 3;
-        points.push(new THREE.Vector3(
+        points.push(new B.Vector3(
           (a * p0.x) + (b * p1.x) + (c * p2.x) + (d * p3.x),
           0.055,
-          (a * p0.z) + (b * p1.z) + (c * p2.z) + (d * p3.z)
+          (a * p0.z) + (b * p1.z) + (c * p2.z) + (d * p3.z),
         ));
       }
       return points;
     }
     const worldPoints = Array.isArray(edge.world_points) ? edge.world_points : [];
-    if (worldPoints.length >= 2) {
-      return worldPoints.map((point) => new THREE.Vector3(Number(point.x || 0), 0.055, Number(point.y || 0)));
+    const points = worldPoints.map(
+      (point) => new B.Vector3(Number(point.x || 0), 0.055, Number(point.y || 0)),
+    );
+    if (points.length >= 2) {
+      return points;
     }
-    return [];
+    const from = this.landmarkObjects.get(String(edge.from || ""))?.landmark
+      || this.lms.find((lm) => String(lm.name || "") === String(edge.from || ""));
+    const to = this.landmarkObjects.get(String(edge.to || ""))?.landmark
+      || this.lms.find((lm) => String(lm.name || "") === String(edge.to || ""));
+    return from && to
+      ? [
+          new B.Vector3(Number(from.x || 0), 0.055, Number(from.y || 0)),
+          new B.Vector3(Number(to.x || 0), 0.055, Number(to.y || 0)),
+        ]
+      : [];
   }
 
   addLandmarks(lms) {
-    const geometry = new THREE.CylinderGeometry(0.09, 0.09, 0.035, 16);
-    const material = new THREE.MeshBasicMaterial({ color: COLORS.lm });
-    const mesh = new THREE.InstancedMesh(geometry, material, lms.length);
-    mesh.renderOrder = 8;
-    const matrix = new THREE.Matrix4();
-    const position = new THREE.Vector3();
-    const quaternion = new THREE.Quaternion();
-    const scale = new THREE.Vector3(1, 1, 1);
-    const showStaticLabels = lms.length <= this.maxStaticLmLabels;
-    lms.forEach((lm, index) => {
-      position.set(Number(lm.x || 0), 0.04, Number(lm.y || 0));
-      matrix.compose(position, quaternion, scale);
-      mesh.setMatrixAt(index, matrix);
-      this.landmarkObjects.set(String(lm.name || ""), { landmark: lm, index });
-      if (showStaticLabels && String(lm.name || "").length <= 8) {
-        const label = this.floorLabel(String(lm.name || ""), position);
-        this.staticGroup.add(label);
-      }
-    });
-    mesh.instanceMatrix.needsUpdate = true;
-    this.landmarkMesh = mesh;
-    if (lms.length) {
-      this.staticGroup.add(mesh);
+    if (!lms.length) {
+      return;
     }
+    const mesh = B.MeshBuilder.CreateCylinder("landmarks", {
+      diameter: Math.max(0.14, Math.max(this.bounds.width, this.bounds.depth) / 420),
+      height: 0.035,
+      tessellation: 16,
+    }, this.scene);
+    mesh.material = this.unlitMaterial("landmark-material", COLORS.lm, 1);
+    mesh.parent = this.staticRoot;
+    mesh.isPickable = Boolean(this.editorState?.active);
+    mesh.thinInstanceEnablePicking = true;
+    mesh.metadata = { editorKind: "landmarks" };
+    const matrices = new Float32Array(lms.length * 16);
+    lms.forEach((lm, index) => {
+      const position = new B.Vector3(Number(lm.x || 0), 0.04, Number(lm.y || 0));
+      B.Matrix.Translation(position.x, position.y, position.z).copyToArray(matrices, index * 16);
+      this.landmarkObjects.set(String(lm.name || ""), { landmark: lm, index });
+    });
+    mesh.thinInstanceSetBuffer("matrix", matrices, 16, true);
+    mesh.thinInstanceRefreshBoundingInfo(true);
+    this.landmarkMesh = mesh;
+    this.refreshLandmarkLabels(true);
   }
 
-  floorLabel(text, position) {
-    const canvas = document.createElement("canvas");
-    canvas.width = 256;
-    canvas.height = 96;
-    const context = canvas.getContext("2d");
-    context.font = "700 34px system-ui, sans-serif";
+  setEditorState(state = {}) {
+    const nextState = { ...state };
+    const previewState = nextState.preview;
+    const signature = [
+      this.viewMode,
+      Number(nextState.revision || 0),
+      nextState.active ? 1 : 0,
+      nextState.dragging ? 1 : 0,
+      String(nextState.tool || ""),
+      String(nextState.selectedLmName || ""),
+      String(nextState.selectedEdgeKey || ""),
+      String(previewState?.fromName || ""),
+      Number(previewState?.world?.x || 0).toFixed(3),
+      Number(previewState?.world?.y || 0).toFixed(3),
+    ].join(":");
+    this.editorState = nextState;
+    if (!this.scene) {
+      return;
+    }
+    if (signature === this.editorStateSignature) {
+      return;
+    }
+    this.editorStateSignature = signature;
+    this.editorRoot?.dispose(false, true);
+    this.editorRoot = new B.TransformNode("editor-root", this.scene);
+    const active = Boolean(this.editorState.active && this.viewMode === "2d");
+    if (this.graphMesh) {
+      this.graphMesh.isPickable = active;
+    }
+    if (this.landmarkMesh) {
+      this.landmarkMesh.isPickable = active;
+    }
+    if (!active) {
+      this.requestRender();
+      return;
+    }
+
+    const lms = Array.isArray(this.editorState.lms) ? this.editorState.lms : this.lms;
+    const edges = Array.isArray(this.editorState.edges) ? this.editorState.edges : [];
+    const lmIndex = new Map(lms.map((lm) => [String(lm.name || ""), lm]));
+    const selectedLmName = String(this.editorState.selectedLmName || "");
+    const selectedEdgeKey = String(this.editorState.selectedEdgeKey || "");
+    const overlayLines = [];
+    const overlayKeys = [];
+
+    if (selectedLmName) {
+      const selectedLm = lmIndex.get(selectedLmName);
+      if (selectedLm) {
+        const marker = B.MeshBuilder.CreateCylinder("editor-selected-lm", {
+          diameter: Math.max(0.22, Math.max(this.bounds.width, this.bounds.depth) / 360),
+          height: 0.045,
+          tessellation: 24,
+        }, this.scene);
+        marker.position.set(Number(selectedLm.x || 0), 0.09, Number(selectedLm.y || 0));
+        marker.material = this.unlitMaterial("editor-selected-lm-material", COLORS.lmHover, 0.92);
+        marker.parent = this.editorRoot;
+        marker.isPickable = false;
+        if (!this.editorState.dragging) {
+          this.floorLabel(String(selectedLm.name || ""), marker.position, 1.15).parent = this.editorRoot;
+        }
+      }
+      for (const edge of edges) {
+        if (edge.from !== selectedLmName && edge.to !== selectedLmName) {
+          continue;
+        }
+        const points = this.editorEdgePoints(edge, lmIndex);
+        if (points.length >= 2) {
+          overlayLines.push(points);
+          overlayKeys.push(`${String(edge.from || "")}->${String(edge.to || "")}`);
+        }
+      }
+    }
+
+    const selectedEdge = selectedEdgeKey
+      ? edges.find((edge) => `${String(edge.from || "")}->${String(edge.to || "")}` === selectedEdgeKey)
+      : null;
+    if (selectedEdge) {
+      const points = this.editorEdgePoints(selectedEdge, lmIndex);
+      if (points.length >= 2) {
+        overlayLines.push(points);
+        overlayKeys.push(selectedEdgeKey);
+      }
+      if (Array.isArray(selectedEdge.control_points) && selectedEdge.control_points.length === 4) {
+        [1, 2].forEach((index) => {
+          const point = selectedEdge.control_points[index];
+          const handle = B.MeshBuilder.CreateCylinder(`editor-bezier-${index}`, {
+            diameter: Math.max(0.22, Math.max(this.bounds.width, this.bounds.depth) / 330),
+            height: 0.065,
+            tessellation: 18,
+          }, this.scene);
+          handle.position.set(Number(point.x || 0), 0.13, Number(point.y || 0));
+          handle.material = this.unlitMaterial(`editor-bezier-material-${index}`, COLORS.lmHover, 1);
+          handle.parent = this.editorRoot;
+          handle.isPickable = true;
+          handle.metadata = { editorBezierIndex: index, edgeKey: selectedEdgeKey };
+        });
+      }
+    }
+
+    const preview = this.editorState.preview;
+    if (preview?.fromName && preview?.world) {
+      const from = lmIndex.get(String(preview.fromName));
+      if (from) {
+        overlayLines.push([
+          new B.Vector3(Number(from.x || 0), 0.105, Number(from.y || 0)),
+          new B.Vector3(Number(preview.world.x || 0), 0.105, Number(preview.world.y || 0)),
+        ]);
+        overlayKeys.push("preview");
+      }
+    }
+    if (overlayLines.length) {
+      this.createRibbonBatch(
+        "editor-edge-overlay",
+        overlayLines,
+        Math.max(0.055, Math.max(this.bounds.width, this.bounds.depth) / 650),
+        this.unlitMaterial("editor-edge-overlay-material", COLORS.editor, 0.92),
+        this.editorRoot,
+        [],
+      );
+    }
+    this.requestRender();
+  }
+
+  editorEdgePoints(edge, lmIndex) {
+    if (edge.geometry === "bezier" && Array.isArray(edge.control_points) && edge.control_points.length === 4) {
+      return this.edgePoints(edge, 18).map((point) => new B.Vector3(point.x, 0.105, point.z));
+    }
+    const from = lmIndex.get(String(edge.from || ""));
+    const to = lmIndex.get(String(edge.to || ""));
+    return from && to
+      ? [
+          new B.Vector3(Number(from.x || 0), 0.105, Number(from.y || 0)),
+          new B.Vector3(Number(to.x || 0), 0.105, Number(to.y || 0)),
+        ]
+      : this.edgePoints(edge, 18).map((point) => new B.Vector3(point.x, 0.105, point.z));
+  }
+
+  dynamicLabel(text, name, alertSeverity = "") {
+    const lines = String(text || "").split("\n").slice(0, 2);
+    const multiline = lines.length > 1;
+    const texture = new B.DynamicTexture(name, { width: 512, height: 192 }, this.scene, false);
+    texture.hasAlpha = true;
+    const context = texture.getContext();
+    context.clearRect(0, 0, 512, 192);
+    context.fillStyle = "rgba(255,255,255,0.94)";
+    context.fillRect(16, multiline ? 14 : 36, 480, multiline ? 164 : 120);
+    context.strokeStyle = "rgba(35,104,255,0.22)";
+    context.lineWidth = 2;
+    context.strokeRect(16, multiline ? 14 : 36, 480, multiline ? 164 : 120);
     context.textAlign = "center";
     context.textBaseline = "middle";
-    context.fillStyle = "rgba(255,255,255,0.78)";
-    context.fillRect(14, 20, 228, 56);
-    context.strokeStyle = "rgba(15,23,42,0.20)";
-    context.strokeRect(14, 20, 228, 56);
-    context.fillStyle = "#0f172a";
-    context.fillText(text, 128, 50);
+    context.font = `${multiline ? 700 : 600} ${multiline ? 50 : 68}px system-ui, sans-serif`;
+    context.fillStyle = "#143158";
+    if (multiline) {
+      context.fillText(lines[0], 256, 64);
+      context.fillStyle = alertSeverity === "error" ? "#c51f2d" : "#b54708";
+      context.fillText(lines[1], 256, 130);
+    } else {
+      context.fillText(lines[0] || "", 256, 100);
+    }
+    // Canvas uses a top-left origin while the GPU texture uses bottom-left.
+    // DynamicTexture performs the required upload flip when invertY is true.
+    texture.update(true);
 
-    const texture = new THREE.CanvasTexture(canvas);
-    texture.colorSpace = THREE.SRGBColorSpace;
-    texture.anisotropy = 4;
-    const material = new THREE.MeshBasicMaterial({
-      map: texture,
-      transparent: true,
-      depthWrite: false,
-      polygonOffset: true,
-      polygonOffsetFactor: -1,
-      polygonOffsetUnits: -1,
+    const material = new B.StandardMaterial(`${name}-material`, this.scene);
+    material.diffuseTexture = texture;
+    material.opacityTexture = texture;
+    material.emissiveColor = B.Color3.White();
+    material.disableLighting = true;
+    material.backFaceCulling = false;
+    material.useAlphaFromDiffuseTexture = true;
+    material.specularColor = B.Color3.Black();
+    return material;
+  }
+
+  scheduleLandmarkLabelRefresh(delay = 120) {
+    window.clearTimeout(this.landmarkLabelRefreshTimer);
+    this.landmarkLabelRefreshTimer = window.setTimeout(() => {
+      this.landmarkLabelRefreshTimer = 0;
+      this.refreshLandmarkLabels();
+      this.requestRender();
+    }, delay);
+  }
+
+  landmarkLabelViewport() {
+    const canvasWidth = Math.max(1, this.container.clientWidth || 1);
+    const canvasHeight = Math.max(1, this.container.clientHeight || 1);
+    if (this.viewMode !== "2d") {
+      return {
+        left: 0,
+        right: this.bounds.width,
+        top: 0,
+        bottom: this.bounds.depth,
+        width: this.bounds.width,
+        height: this.bounds.depth,
+        canvasWidth,
+        canvasHeight,
+      };
+    }
+    const viewHeight = Math.max(4, this.distance * 0.95);
+    const viewWidth = viewHeight * (canvasWidth / canvasHeight);
+    return {
+      left: this.target.x - (viewWidth / 2),
+      right: this.target.x + (viewWidth / 2),
+      top: this.target.z - (viewHeight / 2),
+      bottom: this.target.z + (viewHeight / 2),
+      width: viewWidth,
+      height: viewHeight,
+      canvasWidth,
+      canvasHeight,
+    };
+  }
+
+  landmarkLabelCandidates(viewport) {
+    if (!this.landmarkLabelsVisible) {
+      return [];
+    }
+    const visible = this.lms.filter((lm) => {
+      const x = Number(lm.x || 0);
+      const z = Number(lm.y || 0);
+      return x >= viewport.left
+        && x <= viewport.right
+        && z >= viewport.top
+        && z <= viewport.bottom;
     });
-    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(0.82, 0.3), material);
+    return visible;
+  }
+
+  refreshLandmarkLabels(force = false) {
+    if (!this.scene || !this.staticRoot || !this.lms.length) {
+      return;
+    }
+    const viewport = this.landmarkLabelViewport();
+    const candidates = this.landmarkLabelCandidates(viewport);
+    const worldPerPixel = viewport.height / viewport.canvasHeight;
+    const labelWidth = Math.max(0.70, Math.min(4.2, worldPerPixel * 62));
+    const labelHeight = Math.max(0.24, Math.min(1.45, worldPerPixel * 21));
+    const signature = [
+      this.viewMode,
+      this.landmarkLabelsVisible ? "labels-on" : "labels-off",
+      labelWidth.toFixed(3),
+      labelHeight.toFixed(3),
+      candidates.map((lm) => String(lm.name || "")).join("|"),
+    ].join(":");
+    if (!force && signature === this.landmarkLabelSignature) {
+      return;
+    }
+    this.landmarkLabelSignature = signature;
+    this.landmarkLabelMesh?.dispose(false, true);
+    this.landmarkLabelMesh = null;
+    if (!candidates.length) {
+      return;
+    }
+
+    const atlasColumns = Math.min(16, candidates.length);
+    const atlasRows = Math.ceil(candidates.length / atlasColumns);
+    const cellWidth = 192;
+    const cellHeight = 64;
+    const textureWidth = atlasColumns * cellWidth;
+    const textureHeight = atlasRows * cellHeight;
+    const texture = new B.DynamicTexture(
+      "landmark-label-atlas",
+      { width: textureWidth, height: textureHeight },
+      this.scene,
+      false,
+    );
+    texture.hasAlpha = true;
+    const context = texture.getContext();
+    context.clearRect(0, 0, textureWidth, textureHeight);
+
+    const positions = [];
+    const indices = [];
+    const uvs = [];
+    const normals = [];
+    candidates.forEach((lm, index) => {
+      const column = index % atlasColumns;
+      const row = Math.floor(index / atlasColumns);
+      const cellX = column * cellWidth;
+      const cellY = row * cellHeight;
+
+      const text = String(lm.name || "");
+      let fontSize = 32;
+      context.font = `700 ${fontSize}px "Segoe UI", system-ui, sans-serif`;
+      while (fontSize > 18 && context.measureText(text).width > cellWidth - 24) {
+        fontSize -= 2;
+        context.font = `700 ${fontSize}px "Segoe UI", system-ui, sans-serif`;
+      }
+      context.textAlign = "center";
+      context.textBaseline = "middle";
+      context.lineJoin = "round";
+      context.strokeStyle = "rgba(255,255,255,0.96)";
+      context.lineWidth = 7;
+      context.strokeText(text, cellX + (cellWidth / 2), cellY + (cellHeight / 2));
+      context.fillStyle = "#143158";
+      context.fillText(text, cellX + (cellWidth / 2), cellY + (cellHeight / 2));
+
+      const x = Number(lm.x || 0);
+      const z = Number(lm.y || 0) + (labelHeight * 0.82);
+      const halfWidth = labelWidth / 2;
+      const halfHeight = labelHeight / 2;
+      const base = positions.length / 3;
+      positions.push(
+        x - halfWidth, 0.018, z + halfHeight,
+        x + halfWidth, 0.018, z + halfHeight,
+        x + halfWidth, 0.018, z - halfHeight,
+        x - halfWidth, 0.018, z - halfHeight,
+      );
+      indices.push(base, base + 1, base + 2, base, base + 2, base + 3);
+
+      const uMin = cellX / textureWidth;
+      const uMax = (cellX + cellWidth) / textureWidth;
+      const vMin = (textureHeight - cellY - cellHeight) / textureHeight;
+      const vMax = (textureHeight - cellY) / textureHeight;
+      uvs.push(uMin, vMin, uMax, vMin, uMax, vMax, uMin, vMax);
+    });
+    texture.update(true);
+    B.VertexData.ComputeNormals(positions, indices, normals);
+
+    const mesh = new B.Mesh("landmark-labels", this.scene);
+    const vertexData = new B.VertexData();
+    vertexData.positions = positions;
+    vertexData.indices = indices;
+    vertexData.uvs = uvs;
+    vertexData.normals = normals;
+    vertexData.applyToMesh(mesh);
+
+    const material = new B.StandardMaterial("landmark-label-material", this.scene);
+    material.diffuseTexture = texture;
+    material.opacityTexture = texture;
+    material.emissiveColor = B.Color3.White();
+    material.disableLighting = true;
+    material.backFaceCulling = false;
+    material.useAlphaFromDiffuseTexture = true;
+    material.specularColor = B.Color3.Black();
+    mesh.material = material;
+    mesh.parent = this.staticRoot;
+    mesh.isPickable = false;
+    mesh.metadata = { cameraDetailLabel: true };
+    mesh.setEnabled(!this.cameraInteracting);
+    mesh.freezeWorldMatrix();
+    material.freeze();
+    this.landmarkLabelMesh = mesh;
+  }
+
+  floorLabel(text, position, scale = 1) {
+    const name = `lm-label-${String(text || "label")}`;
+    const mesh = B.MeshBuilder.CreatePlane(name, { width: 0.82 * scale, height: 0.3 * scale }, this.scene);
+    mesh.material = this.dynamicLabel(text, `${name}-texture`);
     mesh.rotation.x = -Math.PI / 2;
-    mesh.position.set(position.x, 0.016, position.z + 0.17);
-    mesh.renderOrder = 3;
+    mesh.position.set(position.x, 0.016, position.z + (0.17 * scale));
+    mesh.parent = this.staticRoot;
+    mesh.isPickable = false;
+    mesh.metadata = { cameraDetailLabel: true };
+    mesh.setEnabled(!this.cameraInteracting);
     return mesh;
   }
 
-  labelSprite(text, position, yOffset, alertSeverity = "") {
-    const canvas = document.createElement("canvas");
-    canvas.width = 256;
-    canvas.height = 96;
-    const context = canvas.getContext("2d");
-    const lines = String(text || "").split("\n").slice(0, 2);
-    const multiline = lines.length > 1;
-    context.font = `${multiline ? 700 : 600} ${multiline ? 25 : 34}px system-ui, sans-serif`;
-    context.textAlign = "center";
-    context.textBaseline = "middle";
-    context.fillStyle = "rgba(255,255,255,0.88)";
-    context.fillRect(8, multiline ? 7 : 18, 240, multiline ? 82 : 60);
-    context.strokeStyle = "rgba(15,23,42,0.22)";
-    context.strokeRect(8, multiline ? 7 : 18, 240, multiline ? 82 : 60);
-    context.fillStyle = "#0f172a";
-    if (multiline) {
-      context.fillText(lines[0], 128, 32);
-      context.fillStyle = alertSeverity === "error" ? "#c51f2d" : "#b54708";
-      context.fillText(lines[1], 128, 65);
-    } else {
-      context.fillText(lines[0] || "", 128, 50);
-    }
-    const texture = new THREE.CanvasTexture(canvas);
-    texture.colorSpace = THREE.SRGBColorSpace;
-    const sprite = new THREE.Sprite(new THREE.SpriteMaterial({
-      map: texture,
-      transparent: true,
-      depthTest: false,
-      depthWrite: false,
-    }));
-    sprite.position.set(position.x, position.y + yOffset, position.z);
-    sprite.scale.set(multiline ? 1.18 : 0.85, multiline ? 0.44 : 0.32, 1);
-    sprite.userData.labelText = String(text || "");
-    sprite.userData.alertSeverity = String(alertSeverity || "");
-    sprite.renderOrder = 20;
-    return sprite;
+  labelSprite(text, yOffset, alertSeverity = "") {
+    const multiline = String(text || "").includes("\n");
+    const name = `robot-label-${Math.random().toString(36).slice(2)}`;
+    const mesh = B.MeshBuilder.CreatePlane(name, {
+      width: multiline ? 1.18 : 0.85,
+      height: multiline ? 0.44 : 0.32,
+    }, this.scene);
+    mesh.material = this.dynamicLabel(text, `${name}-texture`, alertSeverity);
+    mesh.position.set(0, 0.46 + yOffset, 0);
+    mesh.billboardMode = B.Mesh.BILLBOARDMODE_ALL;
+    mesh.isPickable = false;
+    mesh.metadata = {
+      labelText: String(text || ""),
+      alertSeverity: String(alertSeverity || ""),
+      isRobotLabel: true,
+    };
+    return mesh;
   }
 
   updateRobots(robots, selectedName = "", waitBlockerName = "") {
-    const incoming = new Set();
     const robotList = Array.isArray(robots) ? robots : [];
+    if (!this.scene) {
+      this.pendingRobots = { robots: robotList, selectedName, waitBlockerName };
+      return;
+    }
     this.updateRenderQuality(robotList.length);
+    const compactMode = robotList.length >= 40;
+    if (compactMode !== this.compactRobotMode && this.robotObjects.size) {
+      this.clearRobotObjects();
+    }
+    this.compactRobotMode = compactMode;
+    const incoming = new Set();
     const showLabels = robotList.length <= 50;
-    for (const robot of robots || []) {
+    for (const robot of robotList) {
       const pose = this.robotPose(robot);
       if (!Number.isFinite(Number(pose.x)) || !Number.isFinite(Number(pose.y))) {
         continue;
@@ -610,12 +1474,11 @@ export class OperatorScene3D {
         continue;
       }
       incoming.add(name);
-      const active = String(robot.name || "") === String(selectedName || "");
+      const active = name === String(selectedName || "");
       const waitBlocker = Boolean(waitBlockerName && name === String(waitBlockerName));
       let entry = this.robotObjects.get(name);
       if (!entry) {
         const group = this.robotMesh({ ...robot, pose }, active);
-        this.robotGroup.add(group);
         entry = {
           group,
           active: null,
@@ -635,28 +1498,31 @@ export class OperatorScene3D {
       if (incoming.has(name)) {
         continue;
       }
-      this.robotGroup.remove(entry.group);
-      this.disposeGroup(entry.group);
+      entry.group.dispose(false, true);
       this.robotObjects.delete(name);
       this.removeRobotRoute(name);
     }
     this.requestRender();
   }
 
+  clearRobotObjects() {
+    for (const [name, entry] of this.robotObjects) {
+      entry.group.dispose(false, true);
+      this.removeRobotRoute(name);
+    }
+    this.robotObjects.clear();
+  }
+
   updateRobotPoses(robots) {
     const robotList = Array.isArray(robots) ? robots : [];
-    if (robotList.length !== this.robotObjects.size) {
+    if (!this.scene || robotList.length !== this.robotObjects.size) {
       return false;
     }
     for (const robot of robotList) {
       const name = String(robot?.name || "");
       const entry = this.robotObjects.get(name);
       const pose = this.robotPose(robot);
-      if (
-        !entry
-        || !Number.isFinite(Number(pose.x))
-        || !Number.isFinite(Number(pose.y))
-      ) {
+      if (!entry || !Number.isFinite(Number(pose.x)) || !Number.isFinite(Number(pose.y))) {
         return false;
       }
       entry.targetPose = {
@@ -669,16 +1535,13 @@ export class OperatorScene3D {
   }
 
   updateRenderQuality(robotCount) {
-    // At benchmark density fill-rate matters more than supersampling. Keep
-    // antialiasing, but avoid rendering almost twice as many physical pixels
-    // on HiDPI screens when forty or more full robot models are visible.
     const cap = Number(robotCount || 0) >= 40 ? 1.0 : 1.35;
     const desired = Math.min(cap, window.devicePixelRatio || 1);
-    if (Math.abs(desired - this.renderPixelRatio) < 0.01) {
+    if (!this.engine || Math.abs(desired - this.renderPixelRatio) < 0.01) {
       return;
     }
     this.renderPixelRatio = desired;
-    this.renderer.setPixelRatio(desired);
+    this.applyHardwareScaling();
     this.resize();
   }
 
@@ -694,63 +1557,40 @@ export class OperatorScene3D {
     const labelText = alertText
       ? `${String(robot.name || "")}\n${alertText}`
       : String(robot.name || "");
-    let label = entry.group.userData.label;
-    if (label && (
-      label.userData.labelText !== labelText
-      || label.userData.alertSeverity !== alertSeverity
-    )) {
-      entry.group.remove(label);
-      this.disposeGroup(label);
-      label = this.labelSprite(
-        labelText,
-        new THREE.Vector3(0, 0.46, 0),
-        0,
-        alertSeverity,
-      );
-      if (!alertText) {
-        label.scale.set(0.7, 0.26, 1);
-      }
-      entry.group.userData.label = label;
-      entry.group.add(label);
+    const needsLabel = showLabel || active || Boolean(alertText);
+    let label = entry.group.metadata.label;
+    if (needsLabel && (!label || (
+      label.metadata?.labelText !== labelText
+      || label.metadata?.alertSeverity !== alertSeverity
+    ))) {
+      label?.dispose(false, true);
+      label = this.labelSprite(labelText, 0, alertSeverity);
+      label.parent = entry.group;
+      entry.group.metadata.label = label;
     }
     if (label) {
-      label.visible = showLabel || active || Boolean(alertText);
+      label.isVisible = needsLabel;
+      label.setEnabled(!this.cameraInteracting);
     }
     if (entry.active === active && entry.waitBlocker === waitBlocker) {
       return;
     }
     entry.active = active;
     entry.waitBlocker = waitBlocker;
-    const bodyMaterial = entry.group.userData.bodyMaterial;
-    if (bodyMaterial) {
-      bodyMaterial.color.setHex(COLORS.ecomBody);
+    const metadata = entry.group.metadata;
+    setMaterialColor(metadata.bodyMaterial, COLORS.ecomBody);
+    const selectionColor = waitBlocker ? 0xff7a00 : (metadata.selectionColor || COLORS.robot);
+    setMaterialColor(metadata.underglowMaterial, selectionColor);
+    metadata.underglowMaterial.alpha = active ? 0.72 : (waitBlocker ? 0.5 : 0.12);
+    if (!active) {
+      metadata.underglowMesh.scaling.set(1, 1, 1);
     }
-    const underglowMaterial = entry.group.userData.underglowMaterial;
-    if (underglowMaterial) {
-      underglowMaterial.color.setHex(
-        waitBlocker ? 0xff7a00 : (entry.group.userData.selectionColor || COLORS.robot),
-      );
-      underglowMaterial.opacity = active ? 0.72 : (waitBlocker ? 0.5 : 0.12);
-    }
-    const underglowMesh = entry.group.userData.underglowMesh;
-    if (underglowMesh && !active) {
-      underglowMesh.scale.set(1, 1, 1);
-    }
-    const selectionHaloMesh = entry.group.userData.selectionHaloMesh;
-    const selectionRingMesh = entry.group.userData.selectionRingMesh;
-    const haloColor = waitBlocker
-      ? 0xff7a00
-      : (entry.group.userData.selectionColor || COLORS.robot);
-    entry.group.userData.selectionHaloMaterial?.color.setHex(haloColor);
-    entry.group.userData.selectionRingMaterial?.color.setHex(haloColor);
-    if (selectionHaloMesh) {
-      selectionHaloMesh.visible = active || waitBlocker;
-      selectionHaloMesh.scale.set(1, 1, 1);
-    }
-    if (selectionRingMesh) {
-      selectionRingMesh.visible = active || waitBlocker;
-      selectionRingMesh.scale.set(1, 1, 1);
-    }
+    setMaterialColor(metadata.selectionHaloMaterial, selectionColor);
+    setMaterialColor(metadata.selectionRingMaterial, selectionColor);
+    metadata.selectionHaloMesh.isVisible = active || waitBlocker;
+    metadata.selectionRingMesh.isVisible = active || waitBlocker;
+    metadata.selectionHaloMesh.scaling.set(1, 1, 1);
+    metadata.selectionRingMesh.scaling.set(1, 1, 1);
   }
 
   robotAlertLabel(robot) {
@@ -814,9 +1654,6 @@ export class OperatorScene3D {
       ? Math.min(0.05, Math.max(0.001, (now - this.lastRobotMotionAt) / 1000))
       : (1 / 60);
     this.lastRobotMotionAt = now;
-    // A short critically-damped visual follow removes websocket/manual-step
-    // quantisation while remaining behind confirmed poses. At 60 Hz this
-    // applies about 41% of the remaining correction per rendered frame.
     const alpha = 1 - Math.exp(-32 * dt);
     let animating = false;
     for (const entry of this.robotObjects.values()) {
@@ -839,8 +1676,6 @@ export class OperatorScene3D {
         continue;
       }
       animating = true;
-      // Spawn/reset is a discontinuity, not vehicle motion. Do not animate a
-      // robot across the warehouse after an explicit relocation.
       if (distanceSq > 4.0) {
         group.position.set(Number(target.x || 0), 0, Number(target.y || 0));
         group.rotation.y = targetRotation;
@@ -873,127 +1708,107 @@ export class OperatorScene3D {
       return {};
     }
     const lm = this.lms.find((item) => String(item.name || "") === lmName);
-    if (!lm) {
-      return {};
-    }
-    return {
+    return lm ? {
       x: Number(lm.x || 0),
       y: Number(lm.y || 0),
       yaw: Number(pose.yaw || 0),
-    };
+    } : {};
   }
 
   robotMesh(robot, active) {
     const pose = robot.pose || {};
-    const group = new THREE.Group();
+    const group = new B.TransformNode(`robot-${String(robot.name || "robot")}`, this.scene);
     group.position.set(Number(pose.x || 0), 0, Number(pose.y || 0));
     group.rotation.y = -Number(pose.yaw || 0);
-    group.renderOrder = 20;
-    group.userData.robotName = String(robot.name || "");
+    group.parent = this.robotRoot;
+    group.metadata = { robotName: String(robot.name || "") };
 
     this.addEcomModel(group, robot, active);
-    const label = this.labelSprite(String(robot.name || ""), new THREE.Vector3(0, 0.46, 0), 0);
-    label.scale.set(0.7, 0.26, 1);
-    group.userData.label = label;
-    group.add(label);
     return group;
+  }
+
+  markRobotMesh(mesh, group) {
+    mesh.parent = group;
+    mesh.isPickable = true;
+    mesh.metadata = { robotName: String(group.metadata?.robotName || "") };
+    return mesh;
   }
 
   addEcomModel(group, robot, active) {
     const selectionColor = this.robotColor(robot?.name);
-    const body = new THREE.MeshStandardMaterial({
-      color: COLORS.ecomBody,
-      roughness: 0.48,
-      metalness: 0.12,
-    });
-    const deck = new THREE.MeshStandardMaterial({ color: COLORS.ecomDeck, roughness: 0.52 });
-    const wheel = new THREE.MeshStandardMaterial({ color: COLORS.wheel, roughness: 0.72 });
-    const lidar = new THREE.MeshStandardMaterial({ color: COLORS.lidar, roughness: 0.34 });
-    const underglow = new THREE.MeshBasicMaterial({
-      color: selectionColor,
-      transparent: true,
-      opacity: active ? 0.72 : 0.12,
-      depthWrite: false,
-      blending: THREE.NormalBlending,
-    });
-    const selectionHalo = new THREE.MeshBasicMaterial({
-      color: selectionColor,
-      transparent: true,
-      opacity: 0.38,
-      depthWrite: false,
-      side: THREE.DoubleSide,
-      blending: THREE.NormalBlending,
-    });
-    const selectionRing = new THREE.MeshBasicMaterial({
-      color: selectionColor,
-      transparent: true,
-      opacity: 0.82,
-      depthWrite: false,
-      side: THREE.DoubleSide,
-      blending: THREE.NormalBlending,
-    });
+    const body = this.pbrMaterial(`${group.name}-body`, COLORS.ecomBody, 0.12, 0.48);
+    const deck = this.pbrMaterial(`${group.name}-deck`, COLORS.ecomDeck, 0.28, 0.52);
+    const wheel = this.compactRobotMode
+      ? null
+      : this.pbrMaterial(`${group.name}-wheel`, COLORS.wheel, 0.04, 0.72);
+    const lidar = this.pbrMaterial(`${group.name}-lidar`, COLORS.lidar, 0.32, 0.34);
+    const frontPanel = this.pbrMaterial(`${group.name}-front-panel`, COLORS.frontPanel, 0.08, 0.62);
+    const underglow = this.unlitMaterial(`${group.name}-underglow`, selectionColor, active ? 0.72 : 0.12);
+    const selectionHalo = this.unlitMaterial(`${group.name}-halo`, selectionColor, 0.38);
+    const selectionRing = this.unlitMaterial(`${group.name}-ring`, selectionColor, 0.82);
 
-    const addBox = (size, position, material) => {
-      const mesh = new THREE.Mesh(new THREE.BoxGeometry(size.x, size.z, size.y), material);
+    const addBox = (name, size, position, material) => {
+      const mesh = B.MeshBuilder.CreateBox(`${group.name}-${name}`, {
+        width: size.x,
+        height: size.z,
+        depth: size.y,
+      }, this.scene);
       mesh.position.set(position.x, position.z, position.y);
-      mesh.castShadow = true;
-      mesh.receiveShadow = true;
-      mesh.renderOrder = 22;
-      group.add(mesh);
-      return mesh;
+      mesh.material = material;
+      return this.markRobotMesh(mesh, group);
     };
-    const addCylinder = (radius, length, position, material, rotation = null) => {
-      const mesh = new THREE.Mesh(new THREE.CylinderGeometry(radius, radius, length, 24), material);
+    const addCylinder = (name, radius, length, position, material, rotation = null) => {
+      const mesh = B.MeshBuilder.CreateCylinder(`${group.name}-${name}`, {
+        diameter: radius * 2,
+        height: length,
+        tessellation: 24,
+      }, this.scene);
       mesh.position.set(position.x, position.z, position.y);
       if (rotation) {
         mesh.rotation.set(rotation.x || 0, rotation.y || 0, rotation.z || 0);
       }
-      mesh.castShadow = true;
-      mesh.receiveShadow = true;
-      mesh.renderOrder = 22;
-      group.add(mesh);
-      return mesh;
+      mesh.material = material;
+      return this.markRobotMesh(mesh, group);
     };
-    const addExtrudedPolygon = (outline, height, baseZ, material) => {
-      const vertices = [];
+    const addExtrudedPolygon = (name, outline, height, baseZ, material) => {
+      const positions = [];
       const indices = [];
       const count = outline.length;
       for (const point of outline) {
-        vertices.push(point.x, baseZ, point.y);
+        positions.push(point.x, baseZ, point.y);
       }
       for (const point of outline) {
-        vertices.push(point.x, baseZ + height, point.y);
+        positions.push(point.x, baseZ + height, point.y);
       }
       for (let index = 1; index < count - 1; index += 1) {
-        indices.push(0, index, index + 1);
-        indices.push(count, count + index + 1, count + index);
+        indices.push(0, index + 1, index);
+        indices.push(count, count + index, count + index + 1);
       }
       for (let index = 0; index < count; index += 1) {
         const next = (index + 1) % count;
-        indices.push(index, count + next, next);
-        indices.push(index, count + index, count + next);
+        indices.push(index, next, count + next);
+        indices.push(index, count + next, count + index);
       }
-      const geometry = new THREE.BufferGeometry();
-      geometry.setAttribute("position", new THREE.Float32BufferAttribute(vertices, 3));
-      geometry.setIndex(indices);
-      geometry.computeVertexNormals();
-      const mesh = new THREE.Mesh(geometry, material);
-      mesh.castShadow = true;
-      mesh.receiveShadow = true;
-      mesh.renderOrder = 22;
-      group.add(mesh);
-      return mesh;
+      const normals = [];
+      B.VertexData.ComputeNormals(positions, indices, normals);
+      const mesh = new B.Mesh(`${group.name}-${name}`, this.scene);
+      const vertexData = new B.VertexData();
+      vertexData.positions = positions;
+      vertexData.indices = indices;
+      vertexData.normals = normals;
+      vertexData.applyToMesh(mesh);
+      mesh.material = material;
+      return this.markRobotMesh(mesh, group);
     };
 
-    group.userData.bodyMaterial = body;
-    group.userData.underglowMaterial = underglow;
-    group.userData.selectionColor = selectionColor;
-    group.userData.selectionHaloMaterial = selectionHalo;
-    group.userData.selectionRingMaterial = selectionRing;
+    group.metadata.bodyMaterial = body;
+    group.metadata.underglowMaterial = underglow;
+    group.metadata.selectionColor = selectionColor;
+    group.metadata.selectionHaloMaterial = selectionHalo;
+    group.metadata.selectionRingMaterial = selectionRing;
 
-    // Lightweight browser representation of ecom_stage.urdf.xacro.  RViz
-    // uses the supplied STL meshes; the browser keeps primitive geometry so
-    // a 50-robot view does not duplicate the 21 MB chassis mesh 50 times.
+    // A light procedural representation of ecom_stage.urdf.xacro keeps a
+    // dense fleet responsive while retaining the real robot footprint.
     const bodyOutline = [
       { x: -0.5230, y: -0.1840 },
       { x: -0.5000, y: -0.2350 },
@@ -1023,48 +1838,79 @@ export class OperatorScene3D {
       { x: -0.360, y: 0.265 },
       { x: -0.420, y: 0.220 },
     ];
-    const glowOutline = bodyOutline.map((point) => ({
-      x: point.x * 1.07,
-      y: point.y * 1.10,
-    }));
-    const underglowMesh = addExtrudedPolygon(glowOutline, 0.008, 0.006, underglow);
-    underglowMesh.renderOrder = 24;
-    group.userData.underglowMesh = underglowMesh;
-    const selectionHaloMesh = new THREE.Mesh(new THREE.CircleGeometry(0.64, 56), selectionHalo);
+    const glowOutline = bodyOutline.map((point) => ({ x: point.x * 1.07, y: point.y * 1.10 }));
+    const underglowMesh = addExtrudedPolygon("underglow", glowOutline, 0.008, 0.006, underglow);
+    underglowMesh.isPickable = false;
+    group.metadata.underglowMesh = underglowMesh;
+
+    const selectionHaloMesh = B.MeshBuilder.CreateDisc(`${group.name}-selection-halo`, {
+      radius: 0.64,
+      tessellation: 56,
+      sideOrientation: B.Mesh.DOUBLESIDE,
+    }, this.scene);
     selectionHaloMesh.rotation.x = -Math.PI / 2;
     selectionHaloMesh.position.y = 0.012;
-    selectionHaloMesh.renderOrder = 23;
-    selectionHaloMesh.visible = active;
-    group.userData.selectionHaloMesh = selectionHaloMesh;
-    group.add(selectionHaloMesh);
-    const selectionRingMesh = new THREE.Mesh(new THREE.RingGeometry(0.61, 0.68, 56), selectionRing);
-    selectionRingMesh.rotation.x = -Math.PI / 2;
+    selectionHaloMesh.material = selectionHalo;
+    selectionHaloMesh.isVisible = active;
+    selectionHaloMesh.isPickable = false;
+    selectionHaloMesh.parent = group;
+    group.metadata.selectionHaloMesh = selectionHaloMesh;
+
+    const selectionRingMesh = this.createRing(`${group.name}-selection-ring`, 0.61, 0.68, 56, selectionRing);
     selectionRingMesh.position.y = 0.014;
-    selectionRingMesh.renderOrder = 24;
-    selectionRingMesh.visible = active;
-    group.userData.selectionRingMesh = selectionRingMesh;
-    group.add(selectionRingMesh);
-    addExtrudedPolygon(bodyOutline, 0.170, 0.0, body);
-    addExtrudedPolygon(deckOutline, 0.045, 0.160, deck);
+    selectionRingMesh.isVisible = active;
+    selectionRingMesh.parent = group;
+    group.metadata.selectionRingMesh = selectionRingMesh;
 
-    // Keep the drive wheels below and inside the shell. From normal camera
-    // angles the body hides them; they are only visible from underneath.
-    addCylinder(0.09, 0.057, { x: -0.043, y: 0.300, z: 0.060 }, wheel, { x: Math.PI / 2 });
-    addCylinder(0.09, 0.057, { x: -0.043, y: -0.300, z: 0.060 }, wheel, { x: Math.PI / 2 });
-
-    addCylinder(0.0337, 0.042, { x: 0.32487, y: 0.24906, z: 0.218 }, lidar);
-    addCylinder(0.0337, 0.042, { x: -0.41524, y: -0.25105, z: 0.218 }, lidar);
-    addBox({ x: 0.055, y: 0.26, z: 0.018 }, { x: 0.438, y: 0, z: 0.166 }, lidar);
-
+    addExtrudedPolygon("body", bodyOutline, 0.170, 0.0, body);
+    addExtrudedPolygon("deck", deckOutline, 0.045, 0.160, deck);
+    addCylinder("lidar-front", 0.0337, 0.042, { x: 0.32487, y: 0.24906, z: 0.218 }, lidar);
+    addCylinder("lidar-rear", 0.0337, 0.042, { x: -0.41524, y: -0.25105, z: 0.218 }, lidar);
+    addBox("front-panel", { x: 0.034, y: 0.275, z: 0.056 }, { x: 0.464, y: 0, z: 0.126 }, frontPanel);
+    if (!this.compactRobotMode) {
+      addCylinder("wheel-left", 0.09, 0.057, { x: -0.043, y: 0.300, z: 0.060 }, wheel, { x: Math.PI / 2 });
+      addCylinder("wheel-right", 0.09, 0.057, { x: -0.043, y: -0.300, z: 0.060 }, wheel, { x: Math.PI / 2 });
+      addBox("front-led", { x: 0.055, y: 0.26, z: 0.018 }, { x: 0.438, y: 0, z: 0.166 }, underglow);
+    }
   }
 
-  addRobotRoute(robot, active) {
-    this.updateRobotRoute(robot, active);
+  createRing(name, innerRadius, outerRadius, segments, material) {
+    const positions = [];
+    const indices = [];
+    for (let index = 0; index <= segments; index += 1) {
+      const angle = (index / segments) * Math.PI * 2;
+      const cosine = Math.cos(angle);
+      const sine = Math.sin(angle);
+      positions.push(innerRadius * cosine, 0, innerRadius * sine);
+      positions.push(outerRadius * cosine, 0, outerRadius * sine);
+      if (index < segments) {
+        const start = index * 2;
+        indices.push(start, start + 3, start + 1, start, start + 2, start + 3);
+      }
+    }
+    const normals = [];
+    B.VertexData.ComputeNormals(positions, indices, normals);
+    const mesh = new B.Mesh(name, this.scene);
+    const vertexData = new B.VertexData();
+    vertexData.positions = positions;
+    vertexData.indices = indices;
+    vertexData.normals = normals;
+    vertexData.applyToMesh(mesh);
+    mesh.material = material;
+    mesh.isPickable = false;
+    return mesh;
   }
 
   updateRobotRoute(robot, active) {
     const name = String(robot?.name || "");
     if (!name) {
+      return;
+    }
+    // The fleet overview must not turn into a second line grid. Only the
+    // selected robot owns a visible route; graph edges already describe the
+    // rest of the traffic topology.
+    if (!active) {
+      this.removeRobotRoute(name);
       return;
     }
     const routePreview = Array.isArray(robot?.routePreview) ? robot.routePreview : [];
@@ -1080,66 +1926,44 @@ export class OperatorScene3D {
       return;
     }
     this.removeRobotRoute(name);
-    const maxPoints = active ? this.maxActiveRoutePoints : this.maxInactiveRoutePoints;
+    const maxPoints = this.maxActiveRoutePoints;
     const points = this.sampleTrajectory(trajectory, maxPoints)
-      .map((point) => new THREE.Vector3(Number(point.x || 0), 0.095, Number(point.y || 0)));
-    let routeObject;
-    if (active) {
-      const material = new THREE.MeshBasicMaterial({
-        color: this.robotColor(name),
-        transparent: true,
-        opacity: 0.9,
-        depthWrite: false,
-        side: THREE.DoubleSide,
-      });
-      routeObject = new THREE.Mesh(this.routeRibbonGeometry(points, 0.105), material);
-      routeObject.renderOrder = 16;
-    } else {
-      const geometry = new THREE.BufferGeometry().setFromPoints(points);
-      const material = new THREE.LineBasicMaterial({
-        color: COLORS.route,
-        transparent: true,
-        opacity: 0.38,
-      });
-      routeObject = new THREE.Line(geometry, material);
-    }
-    this.routeGroup.add(routeObject);
+      .map((point) => new B.Vector3(Number(point.x || 0), 0.095, Number(point.y || 0)));
+    const material = this.unlitMaterial(`route-${name}-material`, this.robotColor(name), 0.82);
+    const routeObject = this.routeRibbonGeometry(points, 0.105, material, `route-${name}`);
+    routeObject.isPickable = false;
+    routeObject.parent = this.routeRoot;
     this.robotRouteObjects.set(name, routeObject);
     this.robotRouteKeys.set(name, routeKey);
   }
 
-  routeRibbonGeometry(points, width) {
-    const vertices = [];
+  routeRibbonGeometry(points, width, material, name) {
+    const positions = [];
     const indices = [];
     const halfWidth = width * 0.5;
     const direction = (from, to) => {
-      const result = new THREE.Vector3(to.x - from.x, 0, to.z - from.z);
-      return result.lengthSq() > 0.00000001 ? result.normalize() : null;
+      const result = new B.Vector3(to.x - from.x, 0, to.z - from.z);
+      return result.lengthSquared() > 0.00000001 ? result.normalize() : null;
     };
-    let fallbackDirection = new THREE.Vector3(1, 0, 0);
-
+    let fallbackDirection = new B.Vector3(1, 0, 0);
     for (let index = 0; index < points.length; index += 1) {
       const previous = index > 0 ? direction(points[index - 1], points[index]) : null;
       const next = index < points.length - 1 ? direction(points[index], points[index + 1]) : null;
       const incoming = previous || next || fallbackDirection;
       const outgoing = next || previous || fallbackDirection;
       fallbackDirection = outgoing;
-      const tangent = incoming.clone().add(outgoing);
-      if (tangent.lengthSq() < 0.00000001) {
-        tangent.copy(outgoing);
+      const tangent = incoming.add(outgoing);
+      if (tangent.lengthSquared() < 0.00000001) {
+        tangent.copyFrom(outgoing);
       }
       tangent.normalize();
-      const normal = new THREE.Vector3(-tangent.z, 0, tangent.x);
-      const incomingNormal = new THREE.Vector3(-incoming.z, 0, incoming.x);
-      const denominator = Math.max(0.35, Math.abs(normal.dot(incomingNormal)));
+      const normal = new B.Vector3(-tangent.z, 0, tangent.x);
+      const incomingNormal = new B.Vector3(-incoming.z, 0, incoming.x);
+      const denominator = Math.max(0.35, Math.abs(B.Vector3.Dot(normal, incomingNormal)));
       const offset = Math.min(halfWidth / denominator, halfWidth * 2.4);
-      vertices.push(
-        points[index].x + normal.x * offset,
-        points[index].y,
-        points[index].z + normal.z * offset,
-        points[index].x - normal.x * offset,
-        points[index].y,
-        points[index].z - normal.z * offset,
+      positions.push(
+        points[index].x + (normal.x * offset), points[index].y, points[index].z + (normal.z * offset),
+        points[index].x - (normal.x * offset), points[index].y, points[index].z - (normal.z * offset),
       );
       if (index > 0) {
         const previousLeft = (index - 1) * 2;
@@ -1149,12 +1973,16 @@ export class OperatorScene3D {
         indices.push(previousLeft, previousRight, left, previousRight, right, left);
       }
     }
-
-    const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute("position", new THREE.Float32BufferAttribute(vertices, 3));
-    geometry.setIndex(indices);
-    geometry.computeVertexNormals();
-    return geometry;
+    const normals = [];
+    B.VertexData.ComputeNormals(positions, indices, normals);
+    const mesh = new B.Mesh(name, this.scene);
+    const vertexData = new B.VertexData();
+    vertexData.positions = positions;
+    vertexData.indices = indices;
+    vertexData.normals = normals;
+    vertexData.applyToMesh(mesh);
+    mesh.material = material;
+    return mesh;
   }
 
   robotRouteKey(robot, active) {
@@ -1192,30 +2020,35 @@ export class OperatorScene3D {
     if (!route) {
       return;
     }
-    this.routeGroup.remove(route);
-    this.disposeObject(route);
+    route.dispose(false, true);
     this.robotRouteObjects.delete(name);
     this.robotRouteKeys.delete(name);
   }
 
   updateCamera() {
+    if (!this.camera || !this.orthoCamera || !this.scene) {
+      return;
+    }
     const horizontal = Math.cos(this.pitch) * this.distance;
     const height = Math.sin(this.pitch) * this.distance;
     this.camera.position.set(
-      this.target.x + Math.sin(this.yaw) * horizontal,
+      this.target.x + (Math.sin(this.yaw) * horizontal),
       this.target.y + height,
-      this.target.z + Math.cos(this.yaw) * horizontal
+      this.target.z + (Math.cos(this.yaw) * horizontal),
     );
-    this.camera.lookAt(this.target);
+    this.camera.setTarget(this.target);
     this.updateOrthoFrustum();
     this.orthoCamera.position.set(this.target.x, this.target.y + Math.max(6, this.distance), this.target.z);
-    this.orthoCamera.up.set(0, 0, -1);
-    this.orthoCamera.lookAt(this.target);
+    this.orthoCamera.setTarget(this.target);
     const topDown = this.isTopDown();
-    this.activeCamera = topDown ? this.orthoCamera : this.camera;
-    if (this.wallMaterial) {
-      this.wallMaterial.opacity = topDown ? 0.42 : 1.0;
-      this.wallMaterial.needsUpdate = true;
+    const nextCamera = topDown ? this.orthoCamera : this.camera;
+    if (this.activeCamera !== nextCamera) {
+      this.activeCamera = nextCamera;
+      this.scene.activeCamera = nextCamera;
+    }
+    if (this.wallMaterial && this.lastCameraModeTopDown !== topDown) {
+      this.wallMaterial.alpha = topDown ? 0.38 : 0.92;
+      this.lastCameraModeTopDown = topDown;
     }
   }
 
@@ -1227,38 +2060,29 @@ export class OperatorScene3D {
     let animating = false;
     const pulse = 0.5 + (0.5 * Math.sin(Number(timestamp || 0) * 0.005));
     for (const entry of this.robotObjects.values()) {
-      const mesh = entry.group.userData.underglowMesh;
-      const material = entry.group.userData.underglowMaterial;
-      if ((!entry.active && !entry.waitBlocker) || !mesh || !material) {
+      const metadata = entry.group.metadata;
+      if ((!entry.active && !entry.waitBlocker) || !metadata?.underglowMesh) {
         continue;
       }
       animating = true;
       const scale = 1.02 + (pulse * (entry.waitBlocker ? 0.14 : 0.1));
-      mesh.scale.set(scale, 1, scale);
-      material.opacity = (entry.waitBlocker ? 0.42 : 0.58) + (pulse * 0.24);
-      const selectionHaloMesh = entry.group.userData.selectionHaloMesh;
-      const selectionHaloMaterial = entry.group.userData.selectionHaloMaterial;
-      if (selectionHaloMesh && selectionHaloMaterial) {
-        const haloScale = 0.98 + (pulse * 0.08);
-        selectionHaloMesh.scale.set(haloScale, haloScale, 1);
-        selectionHaloMaterial.opacity = 0.3 + (pulse * 0.18);
-      }
-      const selectionRingMesh = entry.group.userData.selectionRingMesh;
-      const selectionRingMaterial = entry.group.userData.selectionRingMaterial;
-      if (selectionRingMesh && selectionRingMaterial) {
-        const ringScale = 0.96 + (pulse * 0.12);
-        selectionRingMesh.scale.set(ringScale, ringScale, 1);
-        selectionRingMaterial.opacity = 0.62 + (pulse * 0.28);
-      }
+      metadata.underglowMesh.scaling.set(scale, 1, scale);
+      metadata.underglowMaterial.alpha = (entry.waitBlocker ? 0.42 : 0.58) + (pulse * 0.24);
+      const haloScale = 0.98 + (pulse * 0.08);
+      metadata.selectionHaloMesh.scaling.set(haloScale, haloScale, 1);
+      metadata.selectionHaloMaterial.alpha = 0.3 + (pulse * 0.18);
+      const ringScale = 0.96 + (pulse * 0.12);
+      metadata.selectionRingMesh.scaling.set(ringScale, 1, ringScale);
+      metadata.selectionRingMaterial.alpha = 0.62 + (pulse * 0.28);
     }
     return animating;
   }
 
   animate(timestamp = 0) {
-    if (this.disposed) {
+    if (this.disposed || !this.scene) {
       return;
     }
-    window.requestAnimationFrame((nextTimestamp) => this.animate(nextTimestamp));
+    this.animationFrame = window.requestAnimationFrame((nextTimestamp) => this.animate(nextTimestamp));
     const robotAnimating = this.updateRobotMotion(timestamp);
     const selectionAnimating = this.updateSelectionAnimation(timestamp);
     if (!this.needsRender && !this.drag && !selectionAnimating && !robotAnimating) {
@@ -1276,39 +2100,18 @@ export class OperatorScene3D {
     this.needsRender = false;
     this.lastAnimationRenderAt = timestamp;
     this.updateCamera();
-    this.renderer.render(this.scene, this.activeCamera);
-  }
-
-  disposeGroup(group) {
-    group.traverse((object) => {
-      this.disposeObjectResources(object);
-    });
-  }
-
-  disposeObject(object) {
-    object.traverse((item) => this.disposeObjectResources(item));
-  }
-
-  disposeObjectResources(object) {
-    if (object.geometry) {
-      object.geometry.dispose();
-    }
-    if (object.material) {
-      const materials = Array.isArray(object.material) ? object.material : [object.material];
-      for (const material of materials) {
-        if (material.map) {
-          material.map.dispose();
-        }
-        material.dispose();
-      }
-    }
+    this.scene.render();
   }
 
   dispose() {
     this.disposed = true;
+    window.cancelAnimationFrame(this.animationFrame);
+    window.clearTimeout(this.cameraInteractionRestoreTimer);
+    window.clearTimeout(this.landmarkLabelRefreshTimer);
     this.resizeObserver?.disconnect();
-    this.disposeGroup(this.scene);
-    this.renderer.dispose();
-    this.renderer.domElement.remove();
+    this.scene?.dispose();
+    this.engine?.dispose();
+    this.canvas.remove();
+    this.engineBadge.remove();
   }
 }

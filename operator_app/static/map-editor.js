@@ -20,6 +20,11 @@ class RobotMapEditorApp {
     this.dirty = false;
     this.logs = [];
     this.view = { x: 0, y: 0, width: 100, height: 100 };
+    this.babylonScene = null;
+    this.babylonRevision = 0;
+    this.babylonRenderedRevision = -1;
+    this.babylonFailed = false;
+    this.lmNamesVisible = window.localStorage.getItem("operator:lmNamesVisible") !== "0";
 
     this.editorRobotTitle = document.getElementById("editorRobotTitle");
     this.editorStatusText = document.getElementById("editorStatusText");
@@ -48,9 +53,11 @@ class RobotMapEditorApp {
     this.zoomInButton = document.getElementById("zoomInButton");
     this.zoomOutButton = document.getElementById("zoomOutButton");
     this.resetViewButton = document.getElementById("resetViewButton");
+    this.lmNamesButton = document.getElementById("lmNamesButton");
     this.deleteSelectionButton = document.getElementById("deleteSelectionButton");
 
     this.editorSvg = document.getElementById("editorSvg");
+    this.editorBabylon = document.getElementById("editorBabylon");
     this.editorMapImage = document.getElementById("editorMapImage");
     this.editorEdgeLayer = document.getElementById("editorEdgeLayer");
     this.editorPreviewLayer = document.getElementById("editorPreviewLayer");
@@ -81,7 +88,14 @@ class RobotMapEditorApp {
       return;
     }
     this.bindEvents();
+    const engineReady = this.ensureBabylonEditor().catch((error) => {
+      this.babylonFailed = true;
+      this.editorBabylon?.classList.add("hidden");
+      this.editorSvg?.classList.remove("hidden");
+      this.log("warn", `Babylon renderer unavailable; SVG fallback enabled: ${error.message || error}`);
+    });
     await this.refreshAll({ autoOpenLocal: true });
+    await engineReady;
   }
 
   bindEvents() {
@@ -100,6 +114,7 @@ class RobotMapEditorApp {
     this.zoomInButton.addEventListener("click", () => this.zoomView(0.88));
     this.zoomOutButton.addEventListener("click", () => this.zoomView(1.14));
     this.resetViewButton.addEventListener("click", () => this.resetView());
+    this.lmNamesButton?.addEventListener("click", () => this.toggleLmNames());
     this.deleteSelectionButton.addEventListener("click", () => this.deleteSelection());
     this.toolButtons.forEach((button) => {
       button.addEventListener("click", () => this.setTool(button.dataset.tool || "select"));
@@ -125,6 +140,43 @@ class RobotMapEditorApp {
       event.preventDefault();
       event.returnValue = "";
     });
+  }
+
+  async ensureBabylonEditor() {
+    if (this.babylonScene) {
+      await this.babylonScene.readyPromise;
+      if (this.babylonScene.initError || !this.babylonScene.scene) {
+        throw this.babylonScene.initError || new Error("Babylon.js did not initialize a scene.");
+      }
+      return this.babylonScene;
+    }
+    const module = await import("./scene3d.js");
+    const scene = new module.OperatorScene3D(this.editorBabylon);
+    scene.setHandlers({
+      onPointerDown: (hit) => this.onBabylonPointerDown(hit),
+      onPointerMove: (hit) => this.onBabylonPointerMove(hit),
+      onPointerUp: (hit) => this.onBabylonPointerUp(hit),
+      onContextMenu: (hit) => this.onBabylonContextMenu(hit),
+    });
+    scene.setViewMode("2d");
+    scene.setLandmarkLabelsVisible(this.lmNamesVisible);
+    this.babylonScene = scene;
+    await scene.readyPromise;
+    if (scene.initError || !scene.scene) {
+      throw scene.initError || new Error("Babylon.js did not initialize a scene.");
+    }
+    this.editorSvg.classList.add("hidden");
+    this.editorBabylon.classList.remove("hidden");
+    scene.resize();
+    this.renderCanvas({ force: true });
+    window.requestAnimationFrame(() => {
+      scene.resize();
+      window.requestAnimationFrame(() => {
+        scene.updateCamera();
+        scene.scene?.render();
+      });
+    });
+    return scene;
   }
 
   goOperatorPage(path, options = {}) {
@@ -352,6 +404,8 @@ class RobotMapEditorApp {
     this.selection = { type: "none", key: "" };
     this.previewWorld = null;
     this.previewSnapName = "";
+    this.babylonRevision += 1;
+    this.babylonRenderedRevision = -1;
     this.recomputeAllEdgeLengths();
     this.resetView();
   }
@@ -382,10 +436,15 @@ class RobotMapEditorApp {
       height: Number(this.currentMap.map.viewHeight || 100),
     };
     this.applyViewBox();
+    this.babylonScene?.resetView();
   }
 
   zoomView(scale, anchor = null) {
     if (!this.currentMap) {
+      return;
+    }
+    if (this.babylonScene && !this.babylonFailed) {
+      this.babylonScene.zoomBy(1 / Math.max(0.01, Number(scale || 1)));
       return;
     }
     const mapMeta = this.currentMap.map || {};
@@ -408,6 +467,25 @@ class RobotMapEditorApp {
       height: nextHeight,
     };
     this.applyViewBox();
+  }
+
+  toggleLmNames() {
+    this.lmNamesVisible = !this.lmNamesVisible;
+    window.localStorage.setItem("operator:lmNamesVisible", this.lmNamesVisible ? "1" : "0");
+    this.babylonScene?.setLandmarkLabelsVisible(this.lmNamesVisible);
+    this.syncLmNamesButton();
+    if (!this.babylonScene || this.babylonFailed) {
+      this.renderLandmarks();
+    }
+  }
+
+  syncLmNamesButton() {
+    if (!this.lmNamesButton) {
+      return;
+    }
+    this.lmNamesButton.classList.toggle("active", this.lmNamesVisible);
+    this.lmNamesButton.textContent = `LM names: ${this.lmNamesVisible ? "On" : "Off"}`;
+    this.lmNamesButton.setAttribute("aria-pressed", String(this.lmNamesVisible));
   }
 
   applyViewBox() {
@@ -561,6 +639,109 @@ class RobotMapEditorApp {
     this.dragState = null;
   }
 
+  onBabylonPointerDown(hit) {
+    if (!this.currentMap || Number(hit?.button || 0) !== 0 || !hit?.world) {
+      return false;
+    }
+    if (hit.bezierIndex && hit.edgeKey && this.selectedTool === "select") {
+      this.selection = { type: "edge", key: hit.edgeKey };
+      this.dragState = {
+        type: "handle",
+        edgeKey: hit.edgeKey,
+        handleIndex: Number(hit.bezierIndex),
+        pointerId: hit.pointerId,
+      };
+      this.render();
+      return true;
+    }
+    if (hit.lmName) {
+      this.selection = { type: "lm", key: hit.lmName };
+      if (this.selectedTool === "edge") {
+        this.dragState = {
+          type: "edge_chain",
+          currentLm: hit.lmName,
+          lastCreated: "",
+          pointerId: hit.pointerId,
+        };
+        this.previewWorld = { ...hit.world };
+        this.previewSnapName = hit.lmName;
+      } else if (this.selectedTool === "select") {
+        this.dragState = { type: "landmark", name: hit.lmName, pointerId: hit.pointerId };
+      }
+      this.render();
+      return true;
+    }
+    if (hit.edgeKey && this.selectedTool === "select") {
+      this.selection = { type: "edge", key: hit.edgeKey };
+      this.render();
+      return true;
+    }
+    if (this.selectedTool === "lm") {
+      this.addLandmark(hit.world);
+      return true;
+    }
+    this.selection = { type: "none", key: "" };
+    this.render();
+    return false;
+  }
+
+  onBabylonPointerMove(hit) {
+    if (!this.currentMap || !hit?.world || this.dragState?.pointerId !== hit.pointerId) {
+      return;
+    }
+    if (this.dragState.type === "landmark") {
+      this.moveLandmark(this.dragState.name, hit.world);
+      return;
+    }
+    if (this.dragState.type === "handle") {
+      this.moveCurveHandle(this.dragState.edgeKey, this.dragState.handleIndex, hit.world);
+      return;
+    }
+    if (this.dragState.type === "edge_chain") {
+      const nearest = this.nearestLandmark(hit.world, 0.35);
+      if (
+        nearest
+        && nearest.name !== this.dragState.currentLm
+        && nearest.name !== this.dragState.lastCreated
+      ) {
+        const previous = this.dragState.currentLm;
+        this.createEdge(previous, nearest.name);
+        this.dragState.lastCreated = previous;
+        this.dragState.currentLm = nearest.name;
+      }
+      this.previewWorld = { ...hit.world };
+      this.previewSnapName = nearest?.name || "";
+      this.renderBabylonCanvas();
+    }
+  }
+
+  onBabylonPointerUp(hit) {
+    if (this.dragState?.pointerId !== hit?.pointerId) {
+      return;
+    }
+    const geometryChanged = ["landmark", "handle", "edge_chain"].includes(this.dragState?.type);
+    this.dragState = null;
+    this.previewWorld = null;
+    this.previewSnapName = "";
+    if (geometryChanged) {
+      this.render();
+    } else {
+      this.renderBabylonCanvas();
+    }
+  }
+
+  onBabylonContextMenu(hit) {
+    if (hit?.lmName && window.confirm(`Delete ${hit.lmName}?`)) {
+      this.selection = { type: "lm", key: hit.lmName };
+      this.deleteSelection();
+      return;
+    }
+    if (hit?.edgeKey && window.confirm(`Delete edge ${hit.edgeKey}?`)) {
+      this.selection = { type: "edge", key: hit.edgeKey };
+      this.deleteSelection();
+    }
+  }
+
   handleEdgeToolClick(lmName) {
     if (!lmName) {
       return;
@@ -608,7 +789,6 @@ class RobotMapEditorApp {
     landmark.x = this.round(world.x);
     landmark.y = this.round(world.y);
     this.refreshConnectedEdges(name);
-    this.recomputeAllEdgeLengths();
     this.markDirty(`Moved landmark ${name}.`, { quietLog: true });
   }
 
@@ -624,7 +804,8 @@ class RobotMapEditorApp {
       x: this.round(world.x),
       y: this.round(world.y),
     };
-    this.recomputeAllEdgeLengths();
+    edge.world_points = this.edgeWorldPoints(edge);
+    edge.length = this.round(this.edgeLength(edge));
     this.markDirty(`Updated curve handle for ${edge.from} -> ${edge.to}.`, { quietLog: true });
   }
 
@@ -718,7 +899,6 @@ class RobotMapEditorApp {
       this.selection = { type: "lm", key: nextName };
     }
     this.refreshConnectedEdges(nextName);
-    this.recomputeAllEdgeLengths();
     this.markDirty(`Updated landmark ${nextName}.`, { quietLog: true });
   }
 
@@ -744,7 +924,8 @@ class RobotMapEditorApp {
       delete edge.control_points;
       delete edge.curve_type;
     }
-    this.recomputeAllEdgeLengths();
+    edge.world_points = this.edgeWorldPoints(edge);
+    edge.length = this.round(this.edgeLength(edge));
     this.markDirty(`Updated edge ${edge.from} -> ${edge.to}.`, { quietLog: true });
   }
 
@@ -793,6 +974,7 @@ class RobotMapEditorApp {
         }
       }
       edge.world_points = this.edgeWorldPoints(edge);
+      edge.length = this.round(this.edgeLength(edge));
     }
   }
 
@@ -807,6 +989,7 @@ class RobotMapEditorApp {
   }
 
   render() {
+    this.syncLmNamesButton();
     this.renderHeader();
     this.renderWorkflowSummary();
     this.renderCanvas();
@@ -895,13 +1078,84 @@ class RobotMapEditorApp {
     return Boolean(active?.hasLocalChanges);
   }
 
-  renderCanvas() {
+  babylonScenePayload() {
+    const map = this.currentMap?.map || {};
+    const resolution = Math.max(0.000001, Number(map.resolution || 1));
+    const width = Math.max(1, Number(map.width || 0) * resolution);
+    const depth = Math.max(1, Number(map.height || 0) * resolution);
+    return {
+      ok: true,
+      mapName: this.currentLocalMapName || this.currentMap?.mapName || "robot-map-editor",
+      coordinateFrame: "map_top_left",
+      floor: {
+        width,
+        depth,
+        resolution,
+        imageDataUrl: String(map.imageDataUrl || ""),
+      },
+      bounds: { minX: 0, minZ: 0, maxX: width, maxZ: depth },
+      walls: [],
+      lms: this.currentMap?.lms || [],
+      edges: this.currentMap?.edges || [],
+    };
+  }
+
+  babylonEditorState() {
+    const selectedLmName = this.selection.type === "lm" ? this.selection.key : "";
+    const selectedEdgeKey = this.selection.type === "edge" ? this.selection.key : "";
+    const dragging = ["landmark", "handle", "edge_chain"].includes(this.dragState?.type);
+    return {
+      active: true,
+      revision: this.babylonRevision,
+      dragging,
+      tool: this.selectedTool,
+      selectedLmName,
+      selectedEdgeKey,
+      preview: this.dragState?.type === "edge_chain" && this.previewWorld
+        ? { fromName: this.dragState.currentLm, world: this.previewWorld }
+        : null,
+      lms: this.currentMap?.lms || [],
+      edges: this.currentMap?.edges || [],
+    };
+  }
+
+  renderBabylonCanvas(options = {}) {
+    if (!this.babylonScene || !this.currentMap || this.babylonFailed) {
+      return false;
+    }
+    const dragging = ["landmark", "handle", "edge_chain"].includes(this.dragState?.type);
+    if ((options.force || this.babylonRenderedRevision !== this.babylonRevision) && !dragging) {
+      this.babylonScene.setScene(this.babylonScenePayload(), {
+        preserveView: this.babylonRenderedRevision >= 0,
+      });
+      this.babylonRenderedRevision = this.babylonRevision;
+    }
+    this.babylonScene.setViewMode("2d");
+    this.babylonScene.setLandmarkLabelsVisible(this.lmNamesVisible);
+    this.babylonScene.setEditorState(this.babylonEditorState());
+    this.babylonScene.updateRobots([], "", "");
+    this.editorBabylon.dataset.mapName = String(this.currentLocalMapName || this.currentMap?.mapName || "");
+    this.editorBabylon.dataset.landmarkCount = String(this.currentMap?.lms?.length || 0);
+    this.editorBabylon.dataset.edgeCount = String(this.currentMap?.edges?.length || 0);
+    this.editorBabylon.dataset.revision = String(this.babylonRenderedRevision);
+    this.editorBabylon.dataset.meshCount = String(this.babylonScene.scene?.meshes?.length || 0);
+    this.editorBabylon.dataset.bounds = `${this.babylonScene.bounds.width.toFixed(2)}x${this.babylonScene.bounds.depth.toFixed(2)}`;
+    this.editorBabylon.dataset.distance = Number(this.babylonScene.distance || 0).toFixed(2);
+    this.editorBabylon.dataset.target = `${this.babylonScene.target.x.toFixed(2)},${this.babylonScene.target.z.toFixed(2)}`;
+    this.editorBabylon.dataset.camera = String(this.babylonScene.scene?.activeCamera?.name || "");
+    return true;
+  }
+
+  renderCanvas(options = {}) {
     if (!this.currentMap) {
       this.editorMapImage.setAttribute("href", "");
       this.editorEdgeLayer.innerHTML = "";
       this.editorLmLayer.innerHTML = "";
       this.editorHandleLayer.innerHTML = "";
       this.editorPreviewLayer.innerHTML = "";
+      return;
+    }
+    if (this.renderBabylonCanvas(options)) {
       return;
     }
     const mapMeta = this.currentMap.map || {};
@@ -940,6 +1194,7 @@ class RobotMapEditorApp {
 
   renderLandmarks() {
     this.editorLmLayer.innerHTML = "";
+    this.syncLmNamesButton();
     for (const landmark of this.currentMap.lms) {
       const svgPoint = this.worldToSvg(landmark);
       const group = document.createElementNS("http://www.w3.org/2000/svg", "g");
@@ -954,15 +1209,17 @@ class RobotMapEditorApp {
       circle.setAttribute("stroke-width", "2");
       group.append(circle);
 
-      const label = document.createElementNS("http://www.w3.org/2000/svg", "text");
-      label.setAttribute("x", String(svgPoint.x));
-      label.setAttribute("y", String(svgPoint.y + 17));
-      label.setAttribute("text-anchor", "middle");
-      label.setAttribute("font-size", "11");
-      label.setAttribute("font-weight", "700");
-      label.setAttribute("fill", "var(--text)");
-      label.textContent = landmark.name;
-      group.append(label);
+      if (this.lmNamesVisible) {
+        const label = document.createElementNS("http://www.w3.org/2000/svg", "text");
+        label.setAttribute("x", String(svgPoint.x));
+        label.setAttribute("y", String(svgPoint.y + 17));
+        label.setAttribute("text-anchor", "middle");
+        label.setAttribute("font-size", "11");
+        label.setAttribute("font-weight", "700");
+        label.setAttribute("fill", "var(--text)");
+        label.textContent = landmark.name;
+        group.append(label);
+      }
 
       this.editorLmLayer.append(group);
     }
@@ -1342,8 +1599,18 @@ class RobotMapEditorApp {
 
   markDirty(message, options = {}) {
     this.dirty = true;
-    this.recomputeAllEdgeLengths();
-    this.render();
+    this.babylonRevision += 1;
+    const lightweightDrag = Boolean(
+      options.quietLog
+      && this.babylonScene
+      && ["landmark", "handle"].includes(this.dragState?.type)
+    );
+    if (lightweightDrag) {
+      this.renderBabylonCanvas();
+      this.renderInspector();
+    } else {
+      this.render();
+    }
     if (!options.quietLog) {
       this.log("info", message);
     }

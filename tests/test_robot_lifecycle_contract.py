@@ -73,6 +73,43 @@ def test_operator_ui_requests_force_takeover_and_graph_safe_fleet_pose() -> None
     assert 'stopNavigation: force' in app_js
     assert 'async startFleetPoseNavigation(world)' in app_js
     assert 'await this.startFleetNavigation(nearest.landmark.name' in app_js
+    assert 'return Boolean(this.targetFleetRobot());' in app_js
+    assert 'incomingUpdatedAt + 0.000001 < priorUpdatedAt' in app_js
+    assert 'this.scheduleAdaptiveMapLayers();' in app_js
+
+
+def test_all_static_map_views_and_editors_use_babylon_2d() -> None:
+    project_root = Path(__file__).resolve().parents[1]
+    app_js = (project_root / "operator_app" / "static" / "app.js").read_text(
+        encoding="utf-8"
+    )
+    editor_js = (
+        project_root / "operator_app" / "static" / "map-editor.js"
+    ).read_text(encoding="utf-8")
+    editor_html = (
+        project_root / "operator_app" / "static" / "map-editor.html"
+    ).read_text(encoding="utf-8")
+    index_html = (
+        project_root / "operator_app" / "static" / "index.html"
+    ).read_text(encoding="utf-8")
+    scene_js = (
+        project_root / "operator_app" / "static" / "scene3d.js"
+    ).read_text(encoding="utf-8")
+
+    assert "renderOperatorBabylonMap()" in app_js
+    assert "Promise.allSettled([" in app_js
+    assert 'this.scene3d?.setViewMode(show3d ? "3d" : "2d");' in app_js
+    assert "this.operatorMapSvg?.classList.toggle(\"hidden\", useBabylon);" in app_js
+    assert 'id="editorBabylon"' in editor_html
+    assert 'import("./scene3d.js")' in editor_js
+    assert 'scene.setViewMode("2d");' in editor_js
+    assert "renderBabylonCanvas(options = {})" in editor_js
+    assert 'this.editorSvg.classList.add("hidden");' in editor_js
+    assert 'id="operatorLmNamesButton"' in index_html
+    assert 'id="lmNamesButton"' in editor_html
+    assert "setLandmarkLabelsVisible(visible)" in scene_js
+    assert 'window.localStorage.setItem("operator:lmNamesVisible"' in app_js
+    assert 'window.localStorage.setItem("operator:lmNamesVisible"' in editor_js
 
 
 class _TakeoverAdapter:
