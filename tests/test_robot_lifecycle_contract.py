@@ -3,9 +3,19 @@ from pathlib import Path
 
 from operator_app.core.models import KnownRobot
 from operator_app.core.state import OperatorAppState
-from operator_app.robot_grpc_api.contracts import robot_status_from_json, robot_status_to_json
-from operator_app.robot_grpc_api.proto import robot_api_pb2, robot_api_pb2_grpc
+from operator_app.core.grpc.contracts import robot_status_from_json, robot_status_to_json
+from operator_app.core.grpc.proto import robot_api_pb2, robot_api_pb2_grpc
 from fleet_manager.runtime.grpc.api.server import RobotApiService
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+OPERATOR_STATIC_ROOT = PROJECT_ROOT / "operator_app" / "web" / "static"
+
+
+def _operator_app_source() -> str:
+    module_root = OPERATOR_STATIC_ROOT / "js" / "app"
+    paths = [OPERATOR_STATIC_ROOT / "app.js", *sorted(module_root.glob("*.js"))]
+    return "\n".join(path.read_text(encoding="utf-8") for path in paths)
 
 
 def test_lifecycle_rpc_methods_are_in_client_contract() -> None:
@@ -88,9 +98,7 @@ def test_operator_takeover_stops_previous_autonomous_route() -> None:
 
 
 def test_operator_ui_requests_force_takeover_and_graph_safe_fleet_pose() -> None:
-    app_js = (Path(__file__).resolve().parents[1] / "operator_app" / "static" / "app.js").read_text(
-        encoding="utf-8"
-    )
+    app_js = _operator_app_source()
 
     assert 'acquireRobotControl(true, true)' in app_js
     assert 'stopNavigation: force' in app_js
@@ -103,21 +111,11 @@ def test_operator_ui_requests_force_takeover_and_graph_safe_fleet_pose() -> None
 
 def test_all_static_map_views_and_editors_use_babylon_2d() -> None:
     project_root = Path(__file__).resolve().parents[1]
-    app_js = (project_root / "operator_app" / "static" / "app.js").read_text(
-        encoding="utf-8"
-    )
-    editor_js = (
-        project_root / "operator_app" / "static" / "map-editor.js"
-    ).read_text(encoding="utf-8")
-    editor_html = (
-        project_root / "operator_app" / "static" / "map-editor.html"
-    ).read_text(encoding="utf-8")
-    index_html = (
-        project_root / "operator_app" / "static" / "index.html"
-    ).read_text(encoding="utf-8")
-    scene_js = (
-        project_root / "operator_app" / "static" / "scene3d.js"
-    ).read_text(encoding="utf-8")
+    app_js = _operator_app_source()
+    editor_js = (OPERATOR_STATIC_ROOT / "map-editor.js").read_text(encoding="utf-8")
+    editor_html = (OPERATOR_STATIC_ROOT / "map-editor.html").read_text(encoding="utf-8")
+    index_html = (OPERATOR_STATIC_ROOT / "index.html").read_text(encoding="utf-8")
+    scene_js = (OPERATOR_STATIC_ROOT / "scene3d.js").read_text(encoding="utf-8")
 
     assert "renderOperatorBabylonMap()" in app_js
     assert "Promise.allSettled([" in app_js
@@ -137,26 +135,30 @@ def test_all_static_map_views_and_editors_use_babylon_2d() -> None:
     assert "this.addEdgeDirections(edges);" in scene_js
     assert "const MAP_TEXTURE_INVERT_Y = false;" in scene_js
     assert "candidates.length >= 320" not in scene_js
-    assert 'window.localStorage.setItem("operator:lmNamesVisible"' in app_js
-    assert 'window.localStorage.setItem("operator:lmNamesVisible"' in editor_js
-    assert '"operator:edgeDirectionsVisible"' in app_js
-    assert '"operator:edgeDirectionsVisible"' in editor_js
+    assert 'preferences.setBoolean("lmNamesVisible"' in app_js
+    assert 'preferences.setBoolean("lmNamesVisible"' in editor_js
+    assert 'preferences.setBoolean("edgeDirectionsVisible"' in app_js
+    assert 'preferences.setBoolean("edgeDirectionsVisible"' in editor_js
+    assert 'type="module" src="app.js"' in index_html
+    assert 'type="module" src="map-editor.js"' in editor_html
+    assert 'data-tool="brush"' in editor_html
+    assert 'data-tool="eraser"' in editor_html
+    assert 'data-tool="fill"' in editor_html
+    assert 'data-tool="corridor"' in editor_html
+    assert 'data-fleet-map-tool="brush"' in index_html
+    assert 'data-fleet-map-tool="corridor"' in index_html
+    assert "syncFleetRasterPayload()" in app_js
+    assert "markControlledCorridor" in app_js
+    assert "OccupancyGrid" in editor_js
+    assert "setFloorCanvas(canvas)" in scene_js
 
 
 def test_operator_map_context_and_edge_controls_are_explicit() -> None:
     project_root = Path(__file__).resolve().parents[1]
-    app_js = (project_root / "operator_app" / "static" / "app.js").read_text(
-        encoding="utf-8"
-    )
-    editor_js = (
-        project_root / "operator_app" / "static" / "map-editor.js"
-    ).read_text(encoding="utf-8")
-    editor_html = (
-        project_root / "operator_app" / "static" / "map-editor.html"
-    ).read_text(encoding="utf-8")
-    index_html = (
-        project_root / "operator_app" / "static" / "index.html"
-    ).read_text(encoding="utf-8")
+    app_js = _operator_app_source()
+    editor_js = (OPERATOR_STATIC_ROOT / "map-editor.js").read_text(encoding="utf-8")
+    editor_html = (OPERATOR_STATIC_ROOT / "map-editor.html").read_text(encoding="utf-8")
+    index_html = (OPERATOR_STATIC_ROOT / "index.html").read_text(encoding="utf-8")
 
     for html in (index_html, editor_html):
         assert 'value="one_way"' in html
@@ -184,15 +186,21 @@ def test_operator_map_context_and_edge_controls_are_explicit() -> None:
 
 def test_operator_workspace_navigation_and_fleet_sidebar_contract() -> None:
     project_root = Path(__file__).resolve().parents[1]
-    app_js = (project_root / "operator_app" / "static" / "app.js").read_text(
-        encoding="utf-8"
-    )
-    styles_css = (
-        project_root / "operator_app" / "static" / "styles.css"
-    ).read_text(encoding="utf-8")
+    app_js = _operator_app_source()
+    styles_css = (OPERATOR_STATIC_ROOT / "styles.css").read_text(encoding="utf-8")
 
     assert 'button.addEventListener("dblclick"' in app_js
     assert "selectRobot({ enterWorkspace: false })" in app_js
+    card_selection = app_js[
+        app_js.index("const selectRobot = async")
+        : app_js.index('button.addEventListener("click"', app_js.index("const selectRobot = async"))
+    ]
+    assert card_selection.index("if (options.home && !enterWorkspace)") < (
+        card_selection.index("this.renderSelectedRobot();")
+    )
+    assert "this.syncRobotCardSelection();" in card_selection
+    assert "this.workspaceLoadingMinimumMs = 800;" in app_js
+    assert "this.workspaceLoadingMinimumMs - (performance.now() - workspaceLoadingStartedAt)" in app_js
     assert 'this.fleetActiveTab === "fleet"' in app_js
     assert "returningFromMapEditor" in app_js
     assert "if (this.fleetMapEditorActive) {\n      return [];" in app_js
@@ -206,12 +214,8 @@ def test_operator_workspace_navigation_and_fleet_sidebar_contract() -> None:
 
 def test_babylon_2d_uses_robot_model_footprint_and_future_route() -> None:
     project_root = Path(__file__).resolve().parents[1]
-    app_js = (project_root / "operator_app" / "static" / "app.js").read_text(
-        encoding="utf-8"
-    )
-    scene_js = (
-        project_root / "operator_app" / "static" / "scene3d.js"
-    ).read_text(encoding="utf-8")
+    app_js = _operator_app_source()
+    scene_js = (OPERATOR_STATIC_ROOT / "scene3d.js").read_text(encoding="utf-8")
 
     assert "robotModelFootprint()" in app_js
     assert "footprint: this.robotModelFootprint()" in app_js
@@ -221,6 +225,10 @@ def test_babylon_2d_uses_robot_model_footprint_and_future_route() -> None:
     assert "this.addEcomModel(group, robot, active);" in scene_js
     assert "futureRobotTrajectory(robot, active)" in scene_js
     assert 'this.viewMode === "2d" ? 0.94 : 0.82' in scene_js
+    assert "occupancyWallRectanglesFromImageData(" in scene_js
+    assert "this.ensureOccupancyWalls();" in scene_js
+    assert "mesh.thinInstanceSetBuffer(\"matrix\", matrices, 16, true);" in scene_js
+    assert "const position = new B.Vector3(Number(wall.x || 0), height / 2" in scene_js
 
 
 class _TakeoverAdapter:

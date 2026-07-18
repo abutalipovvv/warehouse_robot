@@ -11,7 +11,7 @@ import time
 from http.server import SimpleHTTPRequestHandler
 from urllib.parse import parse_qs, unquote, urlparse
 
-from ..config import (
+from ..core.config import (
     APP_ROUTES,
     DEFAULT_FLEET_WS_INTERVAL_MS,
     MAX_FLEET_WS_INTERVAL_MS,
@@ -19,8 +19,8 @@ from ..config import (
     WEBSOCKET_GUID,
 )
 from ..core.state import OperatorAppState, RobotProbeError, utc_now
-from ..robot_grpc_api.client import GrpcRobotError
-from ..services.fleet_manager import FLEET_MANAGER_ID, FLEET_MANAGER_SIM_ID
+from ..core.fleet_manager import FLEET_MANAGER_ID, FLEET_MANAGER_SIM_ID
+from ..core.grpc.client import GrpcRobotError
 
 
 class OperatorRequestHandler(SimpleHTTPRequestHandler):
@@ -29,9 +29,21 @@ class OperatorRequestHandler(SimpleHTTPRequestHandler):
 
     def end_headers(self) -> None:
         static_path = urlparse(self.path).path
-        if static_path in {"/", "/index.html", "/app.js", "/scene3d.js", "/styles.css"} or static_path in APP_ROUTES:
+        no_store_paths = {
+            "/",
+            "/index.html",
+            "/app.js",
+            "/scene3d.js",
+            "/styles.css",
+            "/map-editor.html",
+            "/map-editor.js",
+            "/map-editor.css",
+        }
+        if static_path in no_store_paths or static_path in APP_ROUTES or static_path.startswith("/js/"):
             self.send_header("Cache-Control", "no-store, max-age=0")
             self.send_header("Pragma", "no-cache")
+        elif static_path.startswith("/vendor/"):
+            self.send_header("Cache-Control", "public, max-age=31536000, immutable")
         super().end_headers()
 
     def do_GET(self) -> None:

@@ -23,7 +23,8 @@ class FleetMapfPlanner:
         self.params = params or {}
         self.route_planner = LmRoutePlanner(landmarks, edges, params=params)
         self.graph = self._build_graph()
-        self._traffic_graph_cache: dict[tuple[float, float, float], TrafficGraph] = {}
+        self._traffic_graph_cache: dict[tuple[float, float, float, bool, int], TrafficGraph] = {}
+        self._controlled_corridor_ticks_cache: dict[tuple[float, float], int] = {}
         self._heuristic_cache: dict[tuple[str, str], float] = {}
         self.edge_by_key = {
             (edge.from_name, edge.to_name): edge
@@ -60,6 +61,22 @@ class FleetMapfPlanner:
         self.min_robot_center_distance_m = self._min_robot_center_distance(fleet_params)
         self.rotation_min_robot_center_distance_m = self._rotation_min_robot_center_distance(
             fleet_params
+        )
+        controlled_corridors_value = fleet_params.get(
+            "controlled_corridors_enabled",
+            False,
+        )
+        self.controlled_corridors_mode = (
+            str(controlled_corridors_value).strip().lower()
+            if isinstance(controlled_corridors_value, str)
+            else ("enabled" if bool(controlled_corridors_value) else "disabled")
+        )
+        self.controlled_corridors_enabled = self._controlled_corridors_are_enabled(
+            controlled_corridors_value,
+        )
+        self.controlled_corridor_min_edges = max(
+            1,
+            int(fleet_params.get("controlled_corridor_min_edges", 2) or 2),
         )
         self.planner_backend = self._planner_backend(fleet_params)
         planner_params = self.params.get("planner", {})
@@ -214,6 +231,7 @@ class FleetMapfPlanner:
             marker in str(result.debug.reason or "")
             for marker in ("priority_cycle", "priority_repair_limit")
         )
+        traffic_graph = self._traffic_graph(speed)
         return {
             "ok": bool(result.plans) or not requests,
             "debug": {
@@ -240,6 +258,8 @@ class FleetMapfPlanner:
                 "rotateEnabled": rotate_enabled,
                 "turnSpeed": turn_speed,
                 "deadlock": deadlock,
+                "controlledCorridors": len(traffic_graph.controlled_region_ids()),
+                "controlledCorridorsMode": self.controlled_corridors_mode,
                 "deadlockReason": (
                     "cyclic traffic dependencies could not be safely ordered"
                     if deadlock
@@ -494,6 +514,10 @@ class FleetMapfPlanner:
             vertex_resources_fn=traffic_graph.vertex_resources,
             rotation_resources_fn=traffic_graph.rotation_resources,
             lane_resources_fn=lane_resources,
+            can_wait_fn=lambda node: bool(
+                traffic_graph.vertices.get(node) is None
+                or traffic_graph.vertices[node].can_wait
+            ),
             low_level_max_time=low_level_max_time,
             max_high_level_nodes=self.max_high_level_nodes,
             max_planning_time_sec=self.max_planning_time_sec,
@@ -635,6 +659,8 @@ class FleetMapfPlanner:
             round(max(0.02, float(speed)), 6),
             round(self.min_robot_center_distance_m, 6),
             round(self.rotation_min_robot_center_distance_m, 6),
+            self.controlled_corridors_enabled,
+            self.controlled_corridor_min_edges,
         )
         cached = self._traffic_graph_cache.get(key)
         if cached is not None:
@@ -647,9 +673,85 @@ class FleetMapfPlanner:
             rotation_min_robot_center_distance_m=(
                 self.rotation_min_robot_center_distance_m
             ),
+            controlled_corridors_enabled=self.controlled_corridors_enabled,
+            controlled_corridor_min_edges=self.controlled_corridor_min_edges,
         )
         self._traffic_graph_cache[key] = graph
         return graph
+
+    def controlled_corridor_max_ticks(
+        self,
+        *,
+        speed: float | None = None,
+        acceleration: float | None = None,
+    ) -> int:
+        route_speed = (
+            self._route_speed({})
+            if speed is None
+            else max(0.02, float(speed))
+        )
+        route_acceleration = (
+            self._route_acceleration({})
+            if acceleration is None
+            else max(0.02, float(acceleration))
+        )
+        cache_key = (
+            round(route_speed, 6),
+            round(route_acceleration, 6),
+        )
+        cached = self._controlled_corridor_ticks_cache.get(cache_key)
+        if cached is not None:
+            return cached
+        graph = self._traffic_graph(route_speed)
+        region_groups: dict[str, dict[str, int]] = {}
+        for lane in graph.lanes.values():
+            if not lane.controlled_region_ids:
+                continue
+            ticks = self._edge_tick_cost(
+                lane.from_lm,
+                lane.to_lm,
+                route_speed,
+                route_acceleration,
+            )
+            for region_id in lane.controlled_region_ids:
+                by_group = region_groups.setdefault(region_id, {})
+                by_group[lane.lane_group_id] = max(
+                    by_group.get(lane.lane_group_id, 0),
+                    ticks,
+                )
+        maximum = max(
+            (sum(groups.values()) for groups in region_groups.values()),
+            default=0,
+        )
+        self._controlled_corridor_ticks_cache[cache_key] = maximum
+        return maximum
+
+    def _controlled_corridors_are_enabled(self, value: Any) -> bool:
+        """Resolve explicit booleans and map-aware SMART auto mode.
+
+        ``auto`` deliberately requires every graph edge to carry the SMART
+        marker. This enables topology-derived single-lane corridors on the
+        generated SMART warehouse maps without silently changing arbitrary
+        imported customer maps.
+        """
+        if isinstance(value, str):
+            normalized = value.strip().lower()
+            if normalized in {"auto", "smart"}:
+                self.controlled_corridors_mode = "auto"
+                return bool(self.edges) and all(
+                    self._edge_has_smart_marker(edge)
+                    for edge in self.edges
+                )
+            return normalized not in {"", "0", "false", "no", "off", "disabled"}
+        return bool(value)
+
+    @staticmethod
+    def _edge_has_smart_marker(edge: GraphEdge) -> bool:
+        properties = edge.properties if isinstance(edge.properties, dict) else {}
+        value = properties.get("smart", False)
+        if isinstance(value, str):
+            return value.strip().lower() not in {"", "0", "false", "no", "off"}
+        return bool(value)
 
     def _min_robot_center_distance(self, fleet_params: dict[str, Any]) -> float:
         configured = fleet_params.get("mapf_min_robot_center_distance_m")

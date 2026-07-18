@@ -266,6 +266,369 @@ class TrafficRoutingMixin:
         except (TypeError, ValueError):
             return max(0.0, float(default))
 
+    def _controlled_corridor_param(self, key: str, default: float) -> float:
+        fleet = self.params.get("fleet", {})
+        if not isinstance(fleet, dict):
+            fleet = {}
+        return self._positive_float_param(fleet, key, default)
+
+    def _controlled_corridor_pose_is_at_lm(
+        self,
+        pose: dict[str, Any] | None,
+        lm_name: str,
+    ) -> bool:
+        if pose is None:
+            return False
+        landmark = self.landmarks.get(lm_name)
+        if landmark is None:
+            return False
+        # Admission ownership is stricter than the normal replanning
+        # tolerance. A robot 5-10 cm beyond the entry LM is already inside and
+        # must keep the token until its complete footprint reaches the exit.
+        return math.hypot(
+            landmark.x - float(pose.get("x", 0.0) or 0.0),
+            landmark.y - float(pose.get("y", 0.0) or 0.0),
+        ) <= 0.03
+
+    def _controlled_regions_for_robot(self, robot: FleetRobot) -> set[str]:
+        graph = self._controlled_corridor_graph
+        if graph is None:
+            return set()
+        regions: set[str] = set()
+        current_lm = self._traffic_lm_for_robot(robot)
+        vertex = graph.vertices.get(current_lm)
+        if vertex is not None:
+            regions.update(vertex.controlled_region_ids)
+
+        if not robot.trajectory:
+            return regions
+        edge = self._parse_edge_id(
+            self._edge_id_at_trajectory(robot.trajectory, robot.route_clock)
+        )
+        if edge is None:
+            return regions
+        src, dst = edge
+        lane = graph.lane_for(src, dst)
+        if lane is None:
+            return regions
+        src_vertex = graph.vertices.get(src)
+        dst_vertex = graph.vertices.get(dst)
+        for region_id in lane.controlled_region_ids:
+            at_entry_boundary = (
+                self._controlled_corridor_pose_is_at_lm(robot.pose, src)
+                and (
+                    src_vertex is None
+                    or region_id not in src_vertex.controlled_region_ids
+                )
+            )
+            at_exit_boundary = (
+                self._controlled_corridor_pose_is_at_lm(robot.pose, dst)
+                and (
+                    dst_vertex is None
+                    or region_id not in dst_vertex.controlled_region_ids
+                )
+            )
+            if not at_entry_boundary and not at_exit_boundary:
+                regions.add(region_id)
+        return regions
+
+    def _next_controlled_corridor_entry(
+        self,
+        robot: FleetRobot,
+    ) -> dict[str, Any] | None:
+        graph = self._controlled_corridor_graph
+        if graph is None or len(robot.trajectory) < 2:
+            return None
+        inside = self._controlled_regions_for_robot(robot)
+        lookahead = self._controlled_corridor_entry_lookahead()
+        for index in range(len(robot.trajectory) - 1):
+            start = robot.trajectory[index]
+            end = robot.trajectory[index + 1]
+            start_time = float(start.get("t", 0.0) or 0.0)
+            end_time = float(end.get("t", start_time) or start_time)
+            if end_time + 0.000001 < robot.route_clock:
+                continue
+            eta = max(0.0, start_time - robot.route_clock)
+            if eta > lookahead + 0.000001:
+                break
+            edge_id = str(end.get("edgeId") or start.get("edgeId") or "")
+            edge = self._parse_edge_id(edge_id)
+            if edge is None:
+                continue
+            src, dst = edge
+            lane = graph.lane_for(src, dst)
+            if lane is None:
+                continue
+            src_vertex = graph.vertices.get(src)
+            for region_id in lane.controlled_region_ids:
+                if region_id in inside:
+                    continue
+                if (
+                    src_vertex is not None
+                    and region_id in src_vertex.controlled_region_ids
+                ):
+                    continue
+                holding_lm = ""
+                for previous_index in range(index, -1, -1):
+                    previous_lm = str(
+                        robot.trajectory[previous_index].get("lm") or ""
+                    ).strip()
+                    if not previous_lm or previous_lm == src:
+                        continue
+                    previous_vertex = graph.vertices.get(previous_lm)
+                    if previous_vertex is not None and previous_vertex.can_wait:
+                        holding_lm = previous_lm
+                    # Only the immediately preceding graph LM is a valid
+                    # stop-line. Searching farther back could hold a robot
+                    # inside another controlled region.
+                    break
+                return {
+                    "region": region_id,
+                    "src": src,
+                    "dst": dst,
+                    "holding_lm": holding_lm,
+                    "eta": eta,
+                    "at_boundary": self._controlled_corridor_pose_is_at_lm(
+                        robot.pose,
+                        src,
+                    ),
+                    "at_staging": bool(
+                        holding_lm
+                        and self._controlled_corridor_pose_is_at_lm(
+                            robot.pose,
+                            holding_lm,
+                        )
+                    ),
+                }
+        return None
+
+    def _controlled_corridor_entry_lookahead(self) -> float:
+        return max(
+            1.0,
+            self._controlled_corridor_param(
+                "controlled_corridor_entry_lookahead_sec",
+                max(3.0, self._rolling_horizon()),
+            ),
+        )
+
+    def _prepare_controlled_corridor_admissions(self, now: float) -> None:
+        self._controlled_corridor_tick_now = now
+        self._controlled_corridor_winners = {}
+        self._controlled_corridor_occupancy = {}
+        self._controlled_corridor_queues = {}
+        if self._controlled_corridor_graph is None:
+            return
+
+        occupancy: dict[str, set[str]] = {}
+        for robot in self._runtime_robots():
+            for region_id in self._controlled_regions_for_robot(robot):
+                occupancy.setdefault(region_id, set()).add(robot.name)
+        self._controlled_corridor_occupancy = {
+            region_id: sorted(owners)
+            for region_id, owners in occupancy.items()
+        }
+
+        candidates_by_region: dict[str, list[dict[str, Any]]] = {}
+        candidate_keys: set[tuple[str, str]] = set()
+        for robot in self._runtime_robots():
+            if (
+                robot.status not in {"MOVING", "WAITING"}
+                or not robot.trajectory
+                or robot.is_remote()
+            ):
+                continue
+            entry = self._next_controlled_corridor_entry(robot)
+            if entry is None:
+                continue
+            region_id = str(entry["region"])
+            key = (region_id, robot.name)
+            candidate_keys.add(key)
+            wait_since = self._controlled_corridor_wait_since.setdefault(key, now)
+            order = self._active_order_for_robot(robot)
+            candidates_by_region.setdefault(region_id, []).append({
+                **entry,
+                "robot": robot,
+                "priority": int(order.priority if order is not None else 0),
+                "wait_since": wait_since,
+            })
+
+        for key in list(self._controlled_corridor_wait_since):
+            if key not in candidate_keys:
+                self._controlled_corridor_wait_since.pop(key, None)
+
+        lease_duration = max(
+            0.5,
+            self._controlled_corridor_param(
+                "controlled_corridor_admission_lease_sec",
+                4.0,
+            ),
+            self._controlled_corridor_entry_lookahead() + 1.0,
+        )
+        starvation = max(
+            1.0,
+            self._controlled_corridor_param(
+                "controlled_corridor_starvation_sec",
+                8.0,
+            ),
+        )
+        for region_id in (
+            set(candidates_by_region)
+            | set(self._controlled_corridor_leases)
+            | set(occupancy)
+        ):
+            candidates = candidates_by_region.get(region_id, [])
+            candidate_names = {
+                item["robot"].name
+                for item in candidates
+            }
+            owners = occupancy.get(region_id, set())
+            if owners:
+                self._controlled_corridor_leases.pop(region_id, None)
+                self._controlled_corridor_queues[region_id] = sorted(
+                    candidate_names - owners
+                )
+                continue
+
+            lease_owner, lease_until = self._controlled_corridor_leases.get(
+                region_id,
+                ("", 0.0),
+            )
+            if (
+                not lease_owner
+                or lease_until <= now
+                or lease_owner not in candidate_names
+            ):
+                self._controlled_corridor_leases.pop(region_id, None)
+                lease_owner = ""
+
+            if not lease_owner and candidates:
+                starved = [
+                    item
+                    for item in candidates
+                    if now - float(item["wait_since"]) >= starvation
+                ]
+                if starved:
+                    selected = min(
+                        starved,
+                        key=lambda item: (
+                            item["wait_since"],
+                            -item["priority"],
+                            item["eta"],
+                            item["robot"].name,
+                        ),
+                    )
+                else:
+                    selected = min(
+                        candidates,
+                        key=lambda item: (
+                            not bool(item["at_boundary"]),
+                            -item["priority"],
+                            item["eta"],
+                            item["wait_since"],
+                            item["robot"].name,
+                        ),
+                    )
+                lease_owner = selected["robot"].name
+                self._controlled_corridor_leases[region_id] = (
+                    lease_owner,
+                    now + lease_duration,
+                )
+                self.traffic_metrics["corridorAdmissionsGranted"] += 1
+
+            if lease_owner:
+                self._controlled_corridor_winners[lease_owner] = region_id
+            self._controlled_corridor_queues[region_id] = sorted(
+                candidate_names - ({lease_owner} if lease_owner else set())
+            )
+
+    def _controlled_corridor_admission_reason(
+        self,
+        robot: FleetRobot,
+        check_clock: float,
+    ) -> str:
+        graph = self._controlled_corridor_graph
+        if graph is None or not robot.trajectory:
+            return ""
+        inside = self._controlled_regions_for_robot(robot)
+        upcoming = self._next_controlled_corridor_entry(robot)
+        if upcoming is not None:
+            region_id = str(upcoming["region"])
+            entry_lm = str(upcoming["src"])
+            holding_lm = str(upcoming.get("holding_lm") or "")
+            stop_lm = (
+                holding_lm
+                if holding_lm
+                and self._controlled_corridor_pose_is_at_lm(
+                    robot.pose,
+                    holding_lm,
+                )
+                else entry_lm
+            )
+            at_stop_line = self._controlled_corridor_pose_is_at_lm(
+                robot.pose,
+                stop_lm,
+            )
+            if (
+                region_id not in inside
+                and at_stop_line
+                and self._controlled_corridor_winners.get(robot.name)
+                != region_id
+            ):
+                return self._controlled_corridor_wait_reason(
+                    robot,
+                    stop_lm,
+                    region_id,
+                )
+        edge = self._parse_edge_id(
+            self._edge_id_at_trajectory(robot.trajectory, check_clock)
+        )
+        if edge is None:
+            return ""
+        src, dst = edge
+        lane = graph.lane_for(src, dst)
+        if lane is None or not lane.controlled_region_ids:
+            return ""
+        src_vertex = graph.vertices.get(src)
+        for region_id in lane.controlled_region_ids:
+            if region_id in inside:
+                continue
+            if (
+                src_vertex is not None
+                and region_id in src_vertex.controlled_region_ids
+            ):
+                continue
+            # Lookahead may inspect a later corridor while the robot is still
+            # approaching it. Hold only after the robot reaches the outside
+            # boundary LM; this prevents stopping midway along an upstream
+            # edge.
+            if not self._controlled_corridor_pose_is_at_lm(robot.pose, src):
+                continue
+            if self._controlled_corridor_winners.get(robot.name) == region_id:
+                continue
+            return self._controlled_corridor_wait_reason(
+                robot,
+                src,
+                region_id,
+            )
+        return ""
+
+    def _controlled_corridor_wait_reason(
+        self,
+        robot: FleetRobot,
+        stop_lm: str,
+        region_id: str,
+    ) -> str:
+        owners = self._controlled_corridor_occupancy.get(region_id, [])
+        lease = self._controlled_corridor_leases.get(region_id, ("", 0.0))
+        owner = owners[0] if owners else lease[0]
+        suffix = f"; owner {owner}" if owner else ""
+        reason = (
+            f"corridor admission wait at {stop_lm} for {region_id}{suffix}"
+        )
+        if robot.last_reason != reason:
+            self.traffic_metrics["corridorAdmissionWaits"] += 1
+        return reason
+
     def _traffic_zone_control_enabled(self) -> bool:
         fleet = self.params.get("fleet", {})
         if not isinstance(fleet, dict):
@@ -645,8 +1008,39 @@ class TrafficRoutingMixin:
                 "phaseUntil": phase_until,
             })
         return {
-            "enabled": bool(self._traffic_zone_by_lm),
+            "enabled": bool(
+                self._traffic_zone_by_lm
+                or self._controlled_corridor_graph is not None
+            ),
+            "controlledCorridorsEnabled": bool(
+                self._controlled_corridor_graph is not None
+            ),
             "zones": zones,
+            "controlledCorridors": [
+                {
+                    "id": region_id,
+                    "occupancy": list(
+                        self._controlled_corridor_occupancy.get(region_id, [])
+                    ),
+                    "queue": list(
+                        self._controlled_corridor_queues.get(region_id, [])
+                    ),
+                    "winner": next(
+                        (
+                            robot_name
+                            for robot_name, winner_region in
+                            self._controlled_corridor_winners.items()
+                            if winner_region == region_id
+                        ),
+                        "",
+                    ),
+                }
+                for region_id in sorted(
+                    set(self._controlled_corridor_occupancy)
+                    | set(self._controlled_corridor_queues)
+                    | set(self._controlled_corridor_leases)
+                )
+            ],
         }
 
     def _attach_spatial_route_to_request(
@@ -760,13 +1154,6 @@ class TrafficRoutingMixin:
             return final_goal_lm
         if len(route_nodes) < 2:
             return final_goal_lm
-        if order.dispatch_failures > 0:
-            # Recovery must make useful progress instead of rejecting an
-            # entire horizon because its second/third edge is temporarily
-            # unavailable. The same committed spatial suffix remains intact;
-            # only the temporal chunk is shortened to the next graph LM.
-            return str(route_nodes[1])
-
         route_payload: dict[str, Any] = {}
         if order.speed > 0.0:
             route_payload["speed"] = order.speed
@@ -774,6 +1161,16 @@ class TrafficRoutingMixin:
             route_payload["acceleration"] = order.acceleration
         speed = self.planner._route_speed(route_payload)
         acceleration = self.planner._route_acceleration(route_payload)
+        traffic_graph = self.planner._traffic_graph(speed)
+        if order.dispatch_failures > 0:
+            # Recovery still makes the smallest useful progress, but never
+            # hands a rolling token off at an internal no-wait corridor LM.
+            selected_index = traffic_graph.extend_route_index_to_controlled_exit(
+                route_nodes,
+                1,
+            )
+            return str(route_nodes[selected_index])
+
         elapsed = 0.0
         selected_index = 1
         for index in range(1, len(route_nodes)):
@@ -794,6 +1191,10 @@ class TrafficRoutingMixin:
                 selected_index = index
                 continue
             break
+        selected_index = traffic_graph.extend_route_index_to_controlled_exit(
+            route_nodes,
+            selected_index,
+        )
         return str(route_nodes[selected_index])
 
     def _wait_only_rolling_plan(
@@ -856,6 +1257,16 @@ class TrafficRoutingMixin:
             if step_limit > 0:
                 chunk_index = min(chunk_index, max(1, step_limit))
             chunk_index = min(final_index, max(1, chunk_index))
+            route_speed = float(
+                result.get("debug", {}).get("routeSpeed", 0.0)
+                if isinstance(result.get("debug"), dict)
+                else 0.0
+            )
+            if route_speed <= 0.0:
+                route_speed = self.planner._route_speed({})
+            chunk_index = self.planner._traffic_graph(
+                route_speed
+            ).extend_route_index_to_controlled_exit(nodes, chunk_index)
 
             chunk_goal = nodes[chunk_index]
             arrival_time = max(0.0, float(times[chunk_index] - times[0]) * time_step)

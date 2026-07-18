@@ -8,9 +8,11 @@ Main runtime split:
 - `sim_robot/ws/src/robot_status` - robot status ROS 2 node.
 - `sim_robot/ws/src/robot_map_manager` - robot map state/load/sync ROS 2 services.
 - `sim_robot/ws/src/robot_grpc_api` - local ROS 2 robot gRPC API backed by robot topics/services.
-- `operator_app/robot_grpc_api` - local Operator App copy of the robot gRPC client contract.
+- `operator_app/core/grpc` - local Operator App copy of the robot gRPC client contract.
 - `fleet_manager/robot_grpc_api` - local Fleet Manager copy of the robot gRPC client contract.
-- `operator_app` - desktop/web operator application. Browser talks to it over HTTP/WebSocket; robot communication uses gRPC.
+- `operator_app/core` - Operator App state, Fleet Manager bridge, gRPC client and domain logic.
+- `operator_app/web` - offline browser UI and HTTP/WebSocket transport.
+- `operator_app/server.py` - Operator App entry point; settings live in `operator_app/config/config.yaml`.
 - `fleet_manager` - Fleet Manager map/MAPF/runtime code.
 
 Map/planning ownership:
@@ -109,3 +111,8 @@ Run this on the operator computer. Add robots by IP and gRPC port, default `5005
 cd ~/warehouse_robot
 python3 serve_operator.py --open
 ```
+
+The browser runtime, including Babylon.js, is stored locally under
+`operator_app/web/static/vendor`; Operator App does not need internet access to
+start or render maps. Runtime workspaces and map caches live under
+`var/operator_app`.

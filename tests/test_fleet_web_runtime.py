@@ -373,6 +373,8 @@ def test_runtime_wait_cycle_grants_one_robot_deterministic_priority() -> None:
         "coupledReplansFailed": 0,
         "priorityGrants": 1,
         "runtimeSafetyRollbacks": 0,
+        "corridorAdmissionWaits": 0,
+        "corridorAdmissionsGranted": 0,
         "zoneAdmissionWaits": 0,
         "zoneAdmissionsGranted": 0,
     }
@@ -2608,6 +2610,147 @@ def test_zone_admission_releases_compatible_batch_and_prevents_starvation() -> N
     assert manager._traffic_zone_occupancy[target_zone] >= 1
     assert manager._traffic_zone_winners == {"r1": target_zone}
     assert manager._traffic_zone_emergency_until[target_zone] > now + 1.0
+
+
+def test_controlled_corridor_admission_holds_loser_at_boundary() -> None:
+    landmarks = {
+        name: Landmark(name=name, x=x, y=0.0)
+        for name, x in (("L", 0.0), ("B", 1.0), ("C", 2.0), ("R", 3.0))
+    }
+    edges = []
+    for first, second in (("L", "B"), ("B", "C"), ("C", "R")):
+        for src, dst in ((first, second), (second, first)):
+            edges.append(
+                GraphEdge(
+                    from_name=src,
+                    to_name=dst,
+                    length=1.0,
+                    kind="line",
+                    edge_type="FeatureLine",
+                    world_points=(
+                        WorldPoint(landmarks[src].x, 0.0),
+                        WorldPoint(landmarks[dst].x, 0.0),
+                    ),
+                    properties={"direction": 2, "smart": True},
+                )
+            )
+    manager = FleetManagerSim(
+        landmarks,
+        edges,
+        params={
+            "navigation": {"route_speed": 1.0, "route_acceleration": 1.0},
+            "fleet": {
+                "controlled_corridors_enabled": "auto",
+                "reservation_horizon_sec": 1.0,
+                "traffic_zone_control_enabled": False,
+            },
+        },
+    )
+
+    def trajectory(nodes: list[str]) -> list[dict[str, object]]:
+        result: list[dict[str, object]] = []
+        for index, node in enumerate(nodes):
+            edge_id = (
+                f"{nodes[0]}->{nodes[1]}"
+                if index == 0
+                else f"{nodes[index - 1]}->{node}"
+            )
+            result.append({
+                "t": float(index),
+                "x": landmarks[node].x,
+                "y": 0.0,
+                "yaw": 0.0,
+                "edgeId": edge_id,
+                "lm": node,
+            })
+        return result
+
+    for name, nodes, priority in (
+        ("r1", ["L", "B", "C", "R"], 1),
+        ("r2", ["R", "C", "B", "L"], 5),
+    ):
+        start = nodes[0]
+        manager.robots[name] = FleetRobot(
+            name=name,
+            current_lm=start,
+            target_lm=nodes[-1],
+            status="MOVING",
+            active_order_id=f"o-{name}",
+            pose={"x": landmarks[start].x, "y": 0.0, "yaw": 0.0},
+            trajectory=trajectory(nodes),
+        )
+        manager.orders[f"o-{name}"] = FleetOrder(
+            order_id=f"o-{name}",
+            target_lm=nodes[-1],
+            vehicle=name,
+            assigned_robot=name,
+            status="EXECUTING",
+            priority=priority,
+            spatial_route_nodes=nodes,
+        )
+
+    now = 1_000.0
+    manager._prepare_controlled_corridor_admissions(now)
+    region_id = manager.planner._traffic_graph(1.0).controlled_region_ids()[0]
+
+    assert manager._controlled_corridor_winners == {"r2": region_id}
+    assert manager._controlled_corridor_admission_reason(
+        manager.robots["r2"],
+        0.1,
+    ) == ""
+    assert manager._controlled_corridor_admission_reason(
+        manager.robots["r1"],
+        0.1,
+    ).startswith("corridor admission wait at L")
+    assert manager._reservation_horizon() > 3.0
+
+    # A rotate/wait sample at the portal must not hide the following corridor
+    # edge from the runtime gate. This was the live path that fell through to
+    # pairwise collision arbitration and generated thousands of priority
+    # grants while the robot was still standing at the entrance.
+    original = trajectory(["L", "B", "C", "R"])
+    manager.robots["r1"].trajectory = [
+        {
+            "t": 0.0,
+            "x": landmarks["L"].x,
+            "y": 0.0,
+            "yaw": 0.0,
+            "edgeId": "L->L",
+            "lm": "L",
+        },
+        {
+            "t": 1.0,
+            "x": landmarks["L"].x,
+            "y": 0.0,
+            "yaw": 0.0,
+            "edgeId": "WAIT@ROTATE:L",
+            "lm": "L",
+        },
+        *[
+            {**sample, "t": float(sample["t"]) + 2.0}
+            for sample in original
+        ],
+    ]
+    assert manager._controlled_corridor_admission_reason(
+        manager.robots["r1"],
+        0.5,
+    ).startswith("corridor admission wait at L")
+
+    manager.robots["r2"].route_clock = 0.5
+    manager.robots["r2"].pose = {"x": 2.5, "y": 0.0, "yaw": 0.0}
+    manager._prepare_controlled_corridor_admissions(now + 0.5)
+
+    assert manager._controlled_corridor_occupancy == {region_id: ["r2"]}
+    assert "owner r2" in manager._controlled_corridor_admission_reason(
+        manager.robots["r1"],
+        0.1,
+    )
+    assert not manager._should_replan_for_blocked_reason(
+        f"corridor admission wait at L for {region_id}; owner r2"
+    )
+    assert manager._reason_requires_spatial_replan(
+        f"corridor admission timeout: wait at L for {region_id}"
+    )
 
 
 def test_dynamic_orders_keep_fifo_within_each_robot_queue() -> None:

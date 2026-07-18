@@ -1,3 +1,12 @@
+import { httpClient } from "./js/api/http-client.js";
+import { CommandStack } from "./js/editor/command-stack.js";
+import { markControlledCorridor } from "./js/editor/graph-tools.js";
+import { OccupancyGrid, OCCUPANCY_VALUES } from "./js/editor/occupancy-grid.js";
+import { preferences } from "./js/state/preferences.js";
+import { cloneJson, escapeHtml } from "./js/shared/json.js";
+
+const RASTER_TOOLS = new Set(["brush", "eraser", "unknown", "fill", "rectangle"]);
+
 function normalizeEdgeMotionCode(value) {
   const numeric = Number(value);
   return numeric === 0 || numeric === 1 ? numeric : -1;
@@ -21,6 +30,7 @@ class RobotMapEditorApp {
     this.selection = { type: "none", key: "" };
     this.previewWorld = null;
     this.previewSnapName = "";
+    this.corridorStartLm = "";
     this.dragState = null;
     this.dirty = false;
     this.logs = [];
@@ -29,8 +39,15 @@ class RobotMapEditorApp {
     this.babylonRevision = 0;
     this.babylonRenderedRevision = -1;
     this.babylonFailed = false;
-    this.lmNamesVisible = window.localStorage.getItem("operator:lmNamesVisible") !== "0";
-    this.edgeDirectionsVisible = window.localStorage.getItem("operator:edgeDirectionsVisible") !== "0";
+    this.lmNamesVisible = preferences.getBoolean("lmNamesVisible", false);
+    this.edgeDirectionsVisible = preferences.getBoolean("edgeDirectionsVisible", true);
+    this.rasterGrid = null;
+    this.rasterHistory = new CommandStack(100);
+    this.rasterHistory.onChange = () => this.syncRasterControls();
+    this.rasterPreviewTimer = 0;
+    this.allowUnload = false;
+    this.exitDialogResolve = null;
+    this.saveAsDialogResolve = null;
 
     this.editorRobotTitle = document.getElementById("editorRobotTitle");
     this.editorStatusText = document.getElementById("editorStatusText");
@@ -51,9 +68,16 @@ class RobotMapEditorApp {
     this.editorRobotModelButton = document.getElementById("editorRobotModelButton");
     this.refreshMapsButton = document.getElementById("refreshMapsButton");
     this.saveLocalButton = document.getElementById("saveLocalButton");
+    this.saveAsButton = document.getElementById("saveAsButton");
     this.pushRobotButton = document.getElementById("pushRobotButton");
     this.cancelMapChangesButton = document.getElementById("cancelMapChangesButton");
     this.closeEditorButton = document.getElementById("closeEditorButton");
+    this.editorExitDialog = document.getElementById("editorExitDialog");
+    this.cancelExitButton = document.getElementById("cancelExitButton");
+    this.saveAsDialog = document.getElementById("saveAsDialog");
+    this.saveAsForm = document.getElementById("saveAsForm");
+    this.saveAsNameInput = document.getElementById("saveAsNameInput");
+    this.cancelSaveAsButton = document.getElementById("cancelSaveAsButton");
 
     this.toolButtons = Array.from(document.querySelectorAll("[data-tool]"));
     this.zoomInButton = document.getElementById("zoomInButton");
@@ -62,6 +86,10 @@ class RobotMapEditorApp {
     this.lmNamesButton = document.getElementById("lmNamesButton");
     this.edgeDirectionsButton = document.getElementById("edgeDirectionsButton");
     this.deleteSelectionButton = document.getElementById("deleteSelectionButton");
+    this.brushSizeInput = document.getElementById("brushSizeInput");
+    this.brushSizeOutput = document.getElementById("brushSizeOutput");
+    this.undoRasterButton = document.getElementById("undoRasterButton");
+    this.redoRasterButton = document.getElementById("redoRasterButton");
 
     this.editorSvg = document.getElementById("editorSvg");
     this.editorBabylon = document.getElementById("editorBabylon");
@@ -79,12 +107,14 @@ class RobotMapEditorApp {
     this.landmarkXInput = document.getElementById("landmarkXInput");
     this.landmarkYInput = document.getElementById("landmarkYInput");
     this.landmarkIgnoreDirInput = document.getElementById("landmarkIgnoreDirInput");
+    this.landmarkCanWaitInput = document.getElementById("landmarkCanWaitInput");
     this.edgeFromText = document.getElementById("edgeFromText");
     this.edgeToText = document.getElementById("edgeToText");
     this.edgeKindSelect = document.getElementById("edgeKindSelect");
     this.edgeTypeInput = document.getElementById("edgeTypeInput");
     this.edgeTrafficSelect = document.getElementById("edgeTrafficSelect");
     this.edgeDirectionSelect = document.getElementById("edgeDirectionSelect");
+    this.edgeControlledRegionInput = document.getElementById("edgeControlledRegionInput");
     this.edgeLengthText = document.getElementById("edgeLengthText");
     this.edgeCurveHint = document.getElementById("edgeCurveHint");
   }
@@ -116,15 +146,36 @@ class RobotMapEditorApp {
     this.editorRobotModelButton.addEventListener("click", () => this.goOperatorPage("/robot_model"));
     this.refreshMapsButton.addEventListener("click", () => this.refreshAll());
     this.saveLocalButton.addEventListener("click", () => this.saveLocalDraft());
+    this.saveAsButton.addEventListener("click", () => this.saveLocalDraftAs());
     this.pushRobotButton.addEventListener("click", () => this.pushToRobot());
     this.cancelMapChangesButton.addEventListener("click", () => this.cancelMapChanges());
     this.closeEditorButton.addEventListener("click", () => this.handleCloseEditor());
+    this.editorExitDialog?.querySelectorAll("[data-exit-choice]").forEach((button) => {
+      button.addEventListener("click", () => this.resolveExitDialog(button.dataset.exitChoice || "cancel"));
+    });
+    this.cancelExitButton?.addEventListener("click", () => this.resolveExitDialog("cancel"));
+    this.editorExitDialog?.addEventListener("cancel", (event) => {
+      event.preventDefault();
+      this.resolveExitDialog("cancel");
+    });
+    this.saveAsForm?.addEventListener("submit", (event) => {
+      event.preventDefault();
+      this.resolveSaveAsDialog(this.saveAsNameInput?.value || "");
+    });
+    this.cancelSaveAsButton?.addEventListener("click", () => this.resolveSaveAsDialog(""));
+    this.saveAsDialog?.addEventListener("cancel", (event) => {
+      event.preventDefault();
+      this.resolveSaveAsDialog("");
+    });
     this.zoomInButton.addEventListener("click", () => this.zoomView(0.88));
     this.zoomOutButton.addEventListener("click", () => this.zoomView(1.14));
     this.resetViewButton.addEventListener("click", () => this.resetView());
     this.lmNamesButton?.addEventListener("click", () => this.toggleLmNames());
     this.edgeDirectionsButton?.addEventListener("click", () => this.toggleEdgeDirections());
     this.deleteSelectionButton.addEventListener("click", () => this.deleteSelection());
+    this.brushSizeInput?.addEventListener("input", () => this.syncRasterControls());
+    this.undoRasterButton?.addEventListener("click", () => this.undoRaster());
+    this.redoRasterButton?.addEventListener("click", () => this.redoRaster());
     this.toolButtons.forEach((button) => {
       button.addEventListener("click", () => this.setTool(button.dataset.tool || "select"));
     });
@@ -133,18 +184,21 @@ class RobotMapEditorApp {
     this.landmarkXInput.addEventListener("change", () => this.applyLandmarkInspector());
     this.landmarkYInput.addEventListener("change", () => this.applyLandmarkInspector());
     this.landmarkIgnoreDirInput.addEventListener("change", () => this.applyLandmarkInspector());
+    this.landmarkCanWaitInput.addEventListener("change", () => this.applyLandmarkInspector());
     this.edgeKindSelect.addEventListener("change", () => this.applyEdgeInspector());
     this.edgeTypeInput.addEventListener("change", () => this.applyEdgeInspector());
     this.edgeTrafficSelect.addEventListener("change", () => this.applyEdgeInspector());
     this.edgeDirectionSelect.addEventListener("change", () => this.applyEdgeInspector());
+    this.edgeControlledRegionInput.addEventListener("change", () => this.applyEdgeInspector());
 
     this.editorSvg.addEventListener("pointerdown", (event) => this.onPointerDown(event));
     this.editorSvg.addEventListener("pointermove", (event) => this.onPointerMove(event));
-    this.editorSvg.addEventListener("pointerup", () => this.onPointerUp());
-    this.editorSvg.addEventListener("pointerleave", () => this.onPointerUp());
+    this.editorSvg.addEventListener("pointerup", (event) => this.onPointerUp(event));
+    this.editorSvg.addEventListener("pointerleave", (event) => this.onPointerUp(event));
     this.editorSvg.addEventListener("wheel", (event) => this.onWheel(event), { passive: false });
+    window.addEventListener("keydown", (event) => this.onKeyDown(event));
     window.addEventListener("beforeunload", (event) => {
-      if (!this.dirty) {
+      if (!this.dirty || this.allowUnload) {
         return;
       }
       event.preventDefault();
@@ -190,10 +244,11 @@ class RobotMapEditorApp {
     return scene;
   }
 
-  goOperatorPage(path, options = {}) {
-    if (this.dirty && !window.confirm("Leave map editor with unsaved changes?")) {
+  async goOperatorPage(path, options = {}) {
+    if (!await this.confirmDirtyExit()) {
       return;
     }
+    this.allowUnload = true;
     if (this.robotId) {
       window.localStorage.setItem("operator:selectedRobotId", this.robotId);
     }
@@ -262,7 +317,7 @@ class RobotMapEditorApp {
       this.currentSourceMapName = String(payload.robotMapName || payload.sourceMapName || payload.map.mapName || "");
       this.selectedLocalMapName = this.currentLocalMapName;
       this.currentHasLocalChanges = Boolean(payload.hasLocalChanges);
-      this.loadEditableMap(payload.map);
+      await this.loadEditableMap(payload.map);
       this.dirty = false;
       if (!options.silent) {
         this.setStatus("Map loaded.");
@@ -280,19 +335,29 @@ class RobotMapEditorApp {
       return null;
     }
     const defaultName = this.currentLocalMapName || this.currentMap.mapName || this.currentSourceMapName || "draft_map";
-    const mapName = String(defaultName || "").trim();
+    const mapName = String(options.mapName || defaultName || "").trim();
+    if (!mapName) {
+      this.handleError(new Error("Map name is required."));
+      return null;
+    }
     try {
+      this.syncRasterPayload();
+      const editableMap = this.clone(this.currentMap);
+      if (options.mapName) {
+        editableMap.mapName = mapName.replace(/\.smap$/i, "");
+      }
       const payload = await this.postJson(
         `/api/robots/${encodeURIComponent(this.robotId)}/maps/local/save`,
         {
           mapName,
           sourceMapName: this.currentSourceMapName || this.currentMap.mapName || mapName,
-          map: this.currentMap,
+          map: editableMap,
         },
       );
       const local = payload.local || {};
       this.currentLocalMapName = String(local.mapName || mapName);
       this.selectedLocalMapName = this.currentLocalMapName;
+      this.currentMap.mapName = String(editableMap.mapName || this.currentMap.mapName || mapName);
       this.dirty = false;
       this.currentHasLocalChanges = Boolean(local.hasLocalChanges);
       if (this.currentHasLocalChanges) {
@@ -316,18 +381,34 @@ class RobotMapEditorApp {
     }
   }
 
-  async pushToRobot() {
+  async saveLocalDraftAs() {
     if (!this.currentMap) {
       this.handleError(new Error("No map is loaded."));
-      return;
+      return null;
     }
-    const confirmed = window.confirm(
-      this.dirty
-        ? "Save the current map and push it to the robot?"
-        : "Push the saved map to the robot?",
-    );
-    if (!confirmed) {
-      return;
+    const currentName = this.currentLocalMapName || this.currentMap.mapName || "draft_map";
+    const suggestedName = `${String(currentName).replace(/\.smap$/i, "")}_copy`;
+    const mapName = await this.promptSaveAsName(suggestedName);
+    if (!mapName) {
+      return null;
+    }
+    return this.saveLocalDraft({ mapName });
+  }
+
+  async pushToRobot(options = {}) {
+    if (!this.currentMap) {
+      this.handleError(new Error("No map is loaded."));
+      return null;
+    }
+    if (!options.skipConfirm) {
+      const confirmed = window.confirm(
+        this.dirty
+          ? "Save the current map and push it to the robot?"
+          : "Push the saved map to the robot?",
+      );
+      if (!confirmed) {
+        return null;
+      }
     }
     try {
       if (this.dirty) {
@@ -340,8 +421,13 @@ class RobotMapEditorApp {
       this.setStatus(payload.message || "Map pushed to robot. Operator and robot are synced.");
       this.log("info", "Map pushed to robot.");
       this.render();
+      return payload;
     } catch (error) {
       this.handleError(error);
+      if (options.throwOnError) {
+        throw error;
+      }
+      return null;
     }
   }
 
@@ -387,26 +473,89 @@ class RobotMapEditorApp {
   }
 
   async handleCloseEditor() {
-    if (!this.dirty) {
+    if (await this.confirmDirtyExit()) {
       this.closeWindow();
-      return;
-    }
-    const shouldSave = window.confirm("Save map changes before closing?");
-    if (!shouldSave) {
-      this.closeWindow();
-      return;
-    }
-    try {
-      await this.saveLocalDraft({ silent: true, throwOnError: true });
-      this.setStatus("Map saved locally. Push it to the robot to apply it.");
-      this.log("info", "Map saved locally; push not sent.");
-      this.closeWindow();
-    } catch (error) {
-      this.handleError(error);
     }
   }
 
-  loadEditableMap(payload) {
+  async confirmDirtyExit() {
+    if (!this.dirty) {
+      return true;
+    }
+    const decision = await this.promptExitDecision();
+    if (decision === "discard") {
+      return true;
+    }
+    if (decision === "save") {
+      const saved = await this.saveLocalDraft({ silent: true, throwOnError: false });
+      if (saved) {
+        this.setStatus("Map saved locally.");
+        this.log("info", "Map saved locally before closing.");
+      }
+      return Boolean(saved);
+    }
+    if (decision === "save-push") {
+      const saved = await this.saveLocalDraft({ silent: true, throwOnError: false });
+      if (!saved) {
+        return false;
+      }
+      const pushed = await this.pushToRobot({ skipConfirm: true });
+      return Boolean(pushed);
+    }
+    return false;
+  }
+
+  promptExitDecision() {
+    if (!this.editorExitDialog || typeof this.editorExitDialog.showModal !== "function") {
+      const shouldSave = window.confirm("Save map changes before closing?");
+      return Promise.resolve(shouldSave ? "save" : "discard");
+    }
+    return new Promise((resolve) => {
+      this.exitDialogResolve = resolve;
+      this.editorExitDialog.showModal();
+    });
+  }
+
+  resolveExitDialog(decision) {
+    if (!this.exitDialogResolve) {
+      return;
+    }
+    const resolve = this.exitDialogResolve;
+    this.exitDialogResolve = null;
+    if (this.editorExitDialog?.open) {
+      this.editorExitDialog.close();
+    }
+    resolve(decision);
+  }
+
+  promptSaveAsName(suggestedName) {
+    if (!this.saveAsDialog || typeof this.saveAsDialog.showModal !== "function") {
+      return Promise.resolve((window.prompt("Save local map as", suggestedName) || "").trim());
+    }
+    this.saveAsNameInput.value = suggestedName;
+    return new Promise((resolve) => {
+      this.saveAsDialogResolve = resolve;
+      this.saveAsDialog.showModal();
+      window.requestAnimationFrame(() => {
+        this.saveAsNameInput.focus();
+        this.saveAsNameInput.select();
+      });
+    });
+  }
+
+  resolveSaveAsDialog(mapName) {
+    if (!this.saveAsDialogResolve) {
+      return;
+    }
+    const resolve = this.saveAsDialogResolve;
+    this.saveAsDialogResolve = null;
+    if (this.saveAsDialog?.open) {
+      this.saveAsDialog.close();
+    }
+    resolve(String(mapName || "").trim());
+  }
+
+  async loadEditableMap(payload) {
     this.currentMap = this.clone(payload);
     this.currentMap.mapName = String(this.currentMap.mapName || this.currentSourceMapName || "map").trim() || "map";
     this.currentMap.lms = Array.isArray(this.currentMap.lms) ? this.currentMap.lms : [];
@@ -415,6 +564,20 @@ class RobotMapEditorApp {
     this.selection = { type: "none", key: "" };
     this.previewWorld = null;
     this.previewSnapName = "";
+    this.rasterGrid = null;
+    this.rasterHistory.clear();
+    const map = this.currentMap.map;
+    if (map.imageDataUrl && Number(map.width) > 0 && Number(map.height) > 0) {
+      try {
+        this.rasterGrid = await OccupancyGrid.fromImageDataUrl(
+          map.imageDataUrl,
+          Number(map.width),
+          Number(map.height),
+        );
+      } catch (error) {
+        this.log("warn", `Raster tools are unavailable: ${error.message || error}`);
+      }
+    }
     this.babylonRevision += 1;
     this.babylonRenderedRevision = -1;
     this.recomputeAllEdgeLengths();
@@ -422,7 +585,12 @@ class RobotMapEditorApp {
   }
 
   setTool(tool) {
-    this.selectedTool = ["select", "lm", "edge"].includes(tool) ? tool : "select";
+    const allowed = ["select", "lm", "edge", "corridor", ...RASTER_TOOLS];
+    this.selectedTool = allowed.includes(tool) ? tool : "select";
+    if (RASTER_TOOLS.has(this.selectedTool) && !this.rasterGrid) {
+      this.selectedTool = "select";
+      this.setStatus("Raster tools require a loaded occupancy map.");
+    }
     if (this.selectedTool !== "edge") {
       this.previewWorld = null;
       this.previewSnapName = "";
@@ -430,10 +598,130 @@ class RobotMapEditorApp {
         this.dragState = null;
       }
     }
+    if (this.selectedTool !== "corridor") {
+      this.corridorStartLm = "";
+    }
     this.toolButtons.forEach((button) => {
       button.classList.toggle("active", button.dataset.tool === this.selectedTool);
     });
+    this.syncRasterControls();
     this.renderInteraction();
+  }
+
+  syncRasterControls() {
+    const brushSize = Math.max(1, Math.floor(Number(this.brushSizeInput?.value) || 1));
+    if (this.brushSizeOutput) {
+      this.brushSizeOutput.textContent = `${brushSize} px`;
+    }
+    if (this.undoRasterButton) {
+      this.undoRasterButton.disabled = !this.rasterHistory.canUndo;
+    }
+    if (this.redoRasterButton) {
+      this.redoRasterButton.disabled = !this.rasterHistory.canRedo;
+    }
+    for (const button of this.toolButtons) {
+      if (RASTER_TOOLS.has(button.dataset.tool || "")) {
+        button.disabled = !this.rasterGrid;
+      }
+    }
+  }
+
+  onKeyDown(event) {
+    const target = event.target;
+    if (target instanceof HTMLInputElement || target instanceof HTMLSelectElement || target instanceof HTMLTextAreaElement) {
+      return;
+    }
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "z") {
+      event.preventDefault();
+      if (event.shiftKey) {
+        this.redoRaster();
+      } else {
+        this.undoRaster();
+      }
+    }
+  }
+
+  undoRaster() {
+    if (this.rasterHistory.undo()) {
+      this.afterRasterMutation("Raster edit undone.");
+    }
+  }
+
+  redoRaster() {
+    if (this.rasterHistory.redo()) {
+      this.afterRasterMutation("Raster edit restored.");
+    }
+  }
+
+  syncRasterPayload() {
+    if (!this.currentMap?.map || !this.rasterGrid) {
+      return;
+    }
+    this.currentMap.map.imageDataUrl = this.rasterGrid.toDataUrl();
+    this.currentMap.map.raster = this.rasterGrid.toPayload();
+  }
+
+  rasterPoint(world) {
+    const resolution = Math.max(0.000001, Number(this.currentMap?.map?.resolution || 1));
+    return this.rasterGrid?.normalizePoint({
+      x: Number(world?.x || 0) / resolution,
+      y: Number(world?.y || 0) / resolution,
+    }) || null;
+  }
+
+  rasterValueForTool(tool = this.selectedTool) {
+    if (tool === "eraser") {
+      return OCCUPANCY_VALUES.free;
+    }
+    if (tool === "unknown") {
+      return OCCUPANCY_VALUES.unknown;
+    }
+    return OCCUPANCY_VALUES.occupied;
+  }
+
+  commitRasterPatch(patch, message) {
+    const command = this.rasterGrid?.commandForPatch(patch);
+    if (!command) {
+      return false;
+    }
+    this.rasterHistory.push(command);
+    this.afterRasterMutation(message || `${command.label} changed ${command.pixelCount} cells.`);
+    return true;
+  }
+
+  afterRasterMutation(message = "") {
+    this.dirty = true;
+    this.scheduleRasterPreview(true);
+    if (!this.babylonScene || this.babylonFailed) {
+      this.currentMap.map.imageDataUrl = this.rasterGrid.toDataUrl();
+      this.editorMapImage.setAttribute("href", this.currentMap.map.imageDataUrl);
+    }
+    this.renderWorkflowSummary();
+    this.syncRasterControls();
+    if (message) {
+      this.log("info", message);
+    }
+  }
+
+  scheduleRasterPreview(immediate = false) {
+    if (!this.babylonScene || this.babylonFailed) {
+      return;
+    }
+    if (immediate) {
+      if (this.rasterPreviewTimer) {
+        window.clearTimeout(this.rasterPreviewTimer);
+        this.rasterPreviewTimer = 0;
+      }
+      this.babylonScene.updateFloorCanvas();
+      return;
+    }
+    if (this.rasterPreviewTimer) {
+      return;
+    }
+    this.rasterPreviewTimer = window.setTimeout(() => {
+      this.rasterPreviewTimer = 0;
+      this.babylonScene?.updateFloorCanvas();
+    }, 50);
   }
 
   resetView() {
@@ -482,7 +770,7 @@ class RobotMapEditorApp {
 
   toggleLmNames() {
     this.lmNamesVisible = !this.lmNamesVisible;
-    window.localStorage.setItem("operator:lmNamesVisible", this.lmNamesVisible ? "1" : "0");
+    preferences.setBoolean("lmNamesVisible", this.lmNamesVisible);
     this.babylonScene?.setLandmarkLabelsVisible(this.lmNamesVisible);
     this.syncLmNamesButton();
     if (!this.babylonScene || this.babylonFailed) {
@@ -501,10 +789,7 @@ class RobotMapEditorApp {
 
   toggleEdgeDirections() {
     this.edgeDirectionsVisible = !this.edgeDirectionsVisible;
-    window.localStorage.setItem(
-      "operator:edgeDirectionsVisible",
-      this.edgeDirectionsVisible ? "1" : "0",
-    );
+    preferences.setBoolean("edgeDirectionsVisible", this.edgeDirectionsVisible);
     this.babylonScene?.setEdgeDirectionsVisible(this.edgeDirectionsVisible);
     this.syncEdgeDirectionsButton();
     if (!this.babylonScene || this.babylonFailed) {
@@ -540,6 +825,16 @@ class RobotMapEditorApp {
     }
     const svgPoint = this.eventToSvgPoint(event);
     const world = this.svgToWorld(svgPoint);
+    if (RASTER_TOOLS.has(this.selectedTool)) {
+      if (this.beginRasterPointer({
+        pointerId: event.pointerId,
+        button: event.button,
+        world,
+      })) {
+        this.editorSvg.setPointerCapture(event.pointerId);
+      }
+      return;
+    }
     const handle = event.target.closest("[data-handle-index]");
     if (handle && this.selectedTool === "select") {
       this.dragState = {
@@ -554,6 +849,10 @@ class RobotMapEditorApp {
     const landmarkNode = event.target.closest("[data-lm-name]");
     if (landmarkNode) {
       const lmName = landmarkNode.dataset.lmName || "";
+      if (this.selectedTool === "corridor") {
+        this.handleCorridorToolClick(lmName);
+        return;
+      }
       if (this.selectedTool === "edge") {
         this.selection = { type: "lm", key: lmName };
         this.dragState = {
@@ -623,6 +922,13 @@ class RobotMapEditorApp {
       return;
     }
     const svgPoint = this.eventToSvgPoint(event);
+    if (["raster_stroke", "raster_rectangle"].includes(this.dragState?.type)) {
+      this.moveRasterPointer({
+        pointerId: event.pointerId,
+        world: this.svgToWorld(svgPoint),
+      });
+      return;
+    }
     if (this.dragState?.type === "pan") {
       const dx = svgPoint.x - this.dragState.start.x;
       const dy = svgPoint.y - this.dragState.start.y;
@@ -663,7 +969,15 @@ class RobotMapEditorApp {
     }
   }
 
-  onPointerUp() {
+  onPointerUp(event = null) {
+    if (["raster_stroke", "raster_rectangle"].includes(this.dragState?.type)) {
+      const world = event ? this.svgToWorld(this.eventToSvgPoint(event)) : null;
+      this.endRasterPointer({
+        pointerId: event?.pointerId ?? this.dragState.pointerId,
+        world,
+      });
+      return;
+    }
     if (this.dragState?.type === "edge_chain") {
       this.previewWorld = null;
       this.previewSnapName = "";
@@ -675,6 +989,9 @@ class RobotMapEditorApp {
   onBabylonPointerDown(hit) {
     if (!this.currentMap || Number(hit?.button || 0) !== 0 || !hit?.world) {
       return false;
+    }
+    if (RASTER_TOOLS.has(this.selectedTool)) {
+      return this.beginRasterPointer(hit);
     }
     if (hit.bezierIndex && hit.edgeKey && this.selectedTool === "select") {
       this.selection = { type: "edge", key: hit.edgeKey };
@@ -688,6 +1005,10 @@ class RobotMapEditorApp {
       return true;
     }
     if (hit.lmName) {
+      if (this.selectedTool === "corridor") {
+        this.handleCorridorToolClick(hit.lmName);
+        return true;
+      }
       this.selection = { type: "lm", key: hit.lmName };
       if (this.selectedTool === "edge") {
         this.dragState = {
@@ -722,6 +1043,10 @@ class RobotMapEditorApp {
     if (!this.currentMap || !hit?.world || this.dragState?.pointerId !== hit.pointerId) {
       return;
     }
+    if (this.dragState.type === "raster_stroke" || this.dragState.type === "raster_rectangle") {
+      this.moveRasterPointer(hit);
+      return;
+    }
     if (this.dragState.type === "landmark") {
       this.moveLandmark(this.dragState.name, hit.world);
       return;
@@ -752,6 +1077,10 @@ class RobotMapEditorApp {
     if (this.dragState?.pointerId !== hit?.pointerId) {
       return;
     }
+    if (this.dragState.type === "raster_stroke" || this.dragState.type === "raster_rectangle") {
+      this.endRasterPointer(hit);
+      return;
+    }
     const geometryChanged = ["landmark", "handle", "edge_chain"].includes(this.dragState?.type);
     this.dragState = null;
     this.previewWorld = null;
@@ -760,6 +1089,94 @@ class RobotMapEditorApp {
       this.render();
     } else {
       this.renderBabylonCanvas();
+    }
+  }
+
+  beginRasterPointer(hit) {
+    if (!this.rasterGrid || !hit?.world) {
+      return false;
+    }
+    const point = this.rasterPoint(hit.world);
+    const value = this.rasterValueForTool();
+    if (this.selectedTool === "fill") {
+      const patch = this.rasterGrid.beginPatch("Fill");
+      this.rasterGrid.floodFill(patch, point, value);
+      this.commitRasterPatch(patch, "Connected area filled.");
+      return true;
+    }
+    if (this.selectedTool === "rectangle") {
+      this.dragState = {
+        type: "raster_rectangle",
+        pointerId: hit.pointerId,
+        start: point,
+        current: point,
+        value,
+      };
+      return true;
+    }
+    const patch = this.rasterGrid.beginPatch(
+      this.selectedTool === "eraser"
+        ? "Erase"
+        : this.selectedTool === "unknown"
+          ? "Unknown brush"
+          : "Pencil",
+    );
+    const radius = Math.max(1, Math.floor(Number(this.brushSizeInput?.value) || 1));
+    this.rasterGrid.paintLine(patch, point, point, radius, value);
+    this.dragState = {
+      type: "raster_stroke",
+      pointerId: hit.pointerId,
+      patch,
+      last: point,
+      radius,
+      value,
+    };
+    this.scheduleRasterPreview();
+    return true;
+  }
+
+  moveRasterPointer(hit) {
+    const point = this.rasterPoint(hit?.world);
+    if (!point || !this.dragState) {
+      return;
+    }
+    if (this.dragState.type === "raster_rectangle") {
+      this.dragState.current = point;
+      return;
+    }
+    if (this.dragState.type !== "raster_stroke") {
+      return;
+    }
+    this.rasterGrid.paintLine(
+      this.dragState.patch,
+      this.dragState.last,
+      point,
+      this.dragState.radius,
+      this.dragState.value,
+    );
+    this.dragState.last = point;
+    this.scheduleRasterPreview();
+  }
+
+  endRasterPointer(hit) {
+    const drag = this.dragState;
+    this.dragState = null;
+    if (!drag || !this.rasterGrid) {
+      return;
+    }
+    if (drag.type === "raster_rectangle") {
+      const patch = this.rasterGrid.beginPatch("Rectangle");
+      this.rasterGrid.paintRectangle(
+        patch,
+        drag.start,
+        hit?.world ? this.rasterPoint(hit.world) : drag.current,
+        drag.value,
+      );
+      this.commitRasterPatch(patch, "Occupied rectangle added.");
+      return;
+    }
+    if (drag.type === "raster_stroke") {
+      this.commitRasterPatch(drag.patch);
     }
   }
 
@@ -796,6 +1213,35 @@ class RobotMapEditorApp {
     this.edgeStartLm = "";
     this.previewWorld = null;
     this.renderInteraction();
+  }
+
+  handleCorridorToolClick(lmName) {
+    if (!lmName) {
+      return;
+    }
+    if (!this.corridorStartLm) {
+      this.corridorStartLm = lmName;
+      this.selection = { type: "lm", key: lmName };
+      this.setStatus(`Corridor start: ${lmName}. Select the opposite holding LM.`);
+      this.render();
+      return;
+    }
+    const startLm = this.corridorStartLm;
+    this.corridorStartLm = "";
+    if (startLm === lmName) {
+      this.setStatus("Corridor selection canceled.");
+      this.render();
+      return;
+    }
+    const result = markControlledCorridor(this.currentMap, startLm, lmName);
+    if (!result) {
+      this.handleError(new Error(`No directed graph route from ${startLm} to ${lmName}.`));
+      return;
+    }
+    this.selection = { type: "lm", key: lmName };
+    this.markDirty(
+      `Controlled corridor ${result.regionId} marked across ${result.path.length - 1} edges.`,
+    );
   }
 
   addLandmark(world) {
@@ -904,6 +1350,7 @@ class RobotMapEditorApp {
     const nextX = Number(this.landmarkXInput.value);
     const nextY = Number(this.landmarkYInput.value);
     const nextIgnoreDir = this.landmarkIgnoreDirInput.value.trim();
+    const canWait = Boolean(this.landmarkCanWaitInput.checked);
 
     if (!nextName) {
       this.handleError(new Error("LM name is required."));
@@ -920,6 +1367,10 @@ class RobotMapEditorApp {
     current.x = this.round(Number.isFinite(nextX) ? nextX : current.x);
     current.y = this.round(Number.isFinite(nextY) ? nextY : current.y);
     current.ignoreDir = nextIgnoreDir;
+    current.properties = current.properties && typeof current.properties === "object"
+      ? current.properties
+      : {};
+    current.properties.can_wait = canWait;
     if (previousName !== nextName) {
       for (const edge of this.currentMap.edges) {
         if (edge.from === previousName) {
@@ -946,10 +1397,16 @@ class RobotMapEditorApp {
     const nextKind = this.edgeKindSelect.value === "curve" ? "curve" : "line";
     const nextType = String(this.edgeTypeInput.value || "").trim() || (nextKind === "curve" ? "DegenerateBezier" : "FeatureLine");
     const direction = normalizeEdgeMotionCode(this.edgeDirectionSelect.value);
+    const controlledRegion = String(this.edgeControlledRegionInput.value || "").trim();
     edge.kind = nextKind;
     edge.type = nextType;
     edge.properties = typeof edge.properties === "object" && edge.properties ? edge.properties : {};
     edge.properties.direction = direction;
+    if (controlledRegion) {
+      edge.properties.controlled_region = controlledRegion;
+    } else {
+      delete edge.properties.controlled_region;
+    }
     if (nextKind === "curve") {
       this.ensureCurveGeometry(edge);
     } else {
@@ -1065,6 +1522,7 @@ class RobotMapEditorApp {
   render() {
     this.syncLmNamesButton();
     this.syncEdgeDirectionsButton();
+    this.syncRasterControls();
     this.renderHeader();
     this.renderWorkflowSummary();
     this.renderCanvas();
@@ -1106,6 +1564,7 @@ class RobotMapEditorApp {
     const hasMap = Boolean(this.currentMap);
     const hasSavedLocalChanges = this.hasSavedLocalChanges();
     this.saveLocalButton.disabled = !hasMap || !this.dirty;
+    this.saveAsButton.disabled = !hasMap;
     this.pushRobotButton.disabled = !hasMap || (!this.dirty && !hasSavedLocalChanges);
     this.cancelMapChangesButton.disabled = !hasMap || (!this.dirty && !hasSavedLocalChanges);
     if (!this.currentMap) {
@@ -1214,6 +1673,9 @@ class RobotMapEditorApp {
         preserveView: this.babylonRenderedRevision >= 0,
       });
       this.babylonRenderedRevision = this.babylonRevision;
+    }
+    if (this.rasterGrid) {
+      this.babylonScene.setFloorCanvas(this.rasterGrid.canvas);
     }
     this.babylonScene.setViewMode("2d");
     this.babylonScene.setLandmarkLabelsVisible(this.lmNamesVisible);
@@ -1515,6 +1977,11 @@ class RobotMapEditorApp {
       this.landmarkXInput.value = String(landmark.x);
       this.landmarkYInput.value = String(landmark.y);
       this.landmarkIgnoreDirInput.value = String(landmark.ignoreDir || "");
+      this.landmarkCanWaitInput.checked = (
+        landmark.properties?.can_wait
+        ?? landmark.properties?.canWait
+        ?? true
+      ) !== false;
       return;
     }
 
@@ -1535,6 +2002,11 @@ class RobotMapEditorApp {
         : "one_way";
       this.edgeDirectionSelect.value = String(
         normalizeEdgeMotionCode(edge.properties && edge.properties.direction),
+      );
+      this.edgeControlledRegionInput.value = String(
+        edge.properties?.controlled_region
+        || edge.properties?.controlledRegion
+        || "",
       );
       this.edgeLengthText.textContent = `${Number(edge.length || 0).toFixed(2)} m`;
       this.edgeCurveHint.classList.toggle("hidden", !(Array.isArray(edge.control_points) && edge.control_points.length === 4));
@@ -1743,6 +2215,7 @@ class RobotMapEditorApp {
   }
 
   closeWindow() {
+    this.allowUnload = true;
     window.close();
     window.setTimeout(() => {
       if (!window.closed) {
@@ -1769,41 +2242,19 @@ class RobotMapEditorApp {
   }
 
   clone(value) {
-    return JSON.parse(JSON.stringify(value));
+    return cloneJson(value);
   }
 
   async getJson(url) {
-    const response = await fetch(url, { headers: { Accept: "application/json" } });
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok || payload.ok === false) {
-      throw new Error(payload.error || `Request failed: ${response.status}`);
-    }
-    return payload;
+    return httpClient.get(url);
   }
 
   async postJson(url, payload) {
-    const response = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Accept": "application/json",
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(payload),
-    });
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok || data.ok === false) {
-      throw new Error(data.error || `Request failed: ${response.status}`);
-    }
-    return data;
+    return httpClient.post(url, payload);
   }
 
   escapeHtml(value) {
-    return String(value)
-      .replaceAll("&", "&amp;")
-      .replaceAll("<", "&lt;")
-      .replaceAll(">", "&gt;")
-      .replaceAll('"', "&quot;")
-      .replaceAll("'", "&#39;");
+    return escapeHtml(value);
   }
 }
 

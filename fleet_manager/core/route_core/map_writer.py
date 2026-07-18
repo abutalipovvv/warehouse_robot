@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import math
 import re
 import shutil
@@ -28,6 +29,7 @@ def save_editable_map(
     landmarks = _normalize_landmarks(payload.get("lms") or payload.get("landmarks") or [])
     edges = _normalize_edges(payload.get("edges") or [], landmarks)
 
+    _write_occupancy_raster(target_dir, payload)
     _write_yaml(
         target_dir / "LMs.yaml",
         {
@@ -49,6 +51,68 @@ def save_editable_map(
         [_edge_to_length_item(edge) for edge in edges],
     )
     return WarehouseMapLoader(target_dir).load()
+
+
+def _write_occupancy_raster(target_dir: Path, payload: dict[str, Any]) -> None:
+    map_payload = payload.get("map")
+    raster = map_payload.get("raster") if isinstance(map_payload, dict) else None
+    if raster is None:
+        return
+    if not isinstance(raster, dict):
+        raise ValueError("map.raster must be an object")
+    if str(raster.get("encoding") or "") != "base64":
+        raise ValueError("map.raster encoding must be base64")
+    if str(raster.get("format") or "") != "gray8":
+        raise ValueError("map.raster format must be gray8")
+
+    width = int(raster.get("width") or 0)
+    height = int(raster.get("height") or 0)
+    if width <= 0 or height <= 0 or width * height > 100_000_000:
+        raise ValueError("map.raster dimensions are invalid")
+    encoded = raster.get("pixelsBase64")
+    if not isinstance(encoded, str) or not encoded:
+        raise ValueError("map.raster pixelsBase64 is required")
+    try:
+        pixels = base64.b64decode(encoded.encode("ascii"), validate=True)
+    except (ValueError, UnicodeEncodeError) as error:
+        raise ValueError("map.raster pixelsBase64 is invalid") from error
+    if len(pixels) != width * height:
+        raise ValueError(
+            f"map.raster contains {len(pixels)} pixels; expected {width * height}"
+        )
+
+    existing = WarehouseMapLoader(target_dir).load().map_metadata
+    if width != existing.width or height != existing.height:
+        raise ValueError(
+            "map.raster dimensions must match the current occupancy map "
+            f"({existing.width}x{existing.height})"
+        )
+    yaml_path = _find_ros_map_yaml(target_dir)
+    yaml_payload = yaml.safe_load(yaml_path.read_text(encoding="utf-8")) or {}
+    image_name = str(yaml_payload.get("image") or "").strip()
+    if not image_name:
+        raise ValueError(f"ROS map yaml does not define an image: {yaml_path.name}")
+    image_path = (yaml_path.parent / image_name).resolve()
+    target_root = target_dir.resolve()
+    if target_root not in image_path.parents:
+        raise ValueError("ROS map image must stay inside the map directory")
+    if image_path.suffix.lower() != ".pgm":
+        raise ValueError("occupancy raster editing currently requires a PGM map image")
+
+    temporary = image_path.with_suffix(f"{image_path.suffix}.tmp")
+    temporary.write_bytes(f"P5\n{width} {height}\n255\n".encode("ascii") + pixels)
+    temporary.replace(image_path)
+
+
+def _find_ros_map_yaml(map_dir: Path) -> Path:
+    candidates = sorted(
+        path
+        for path in map_dir.glob("*.yaml")
+        if path.name not in {"LMs.yaml", "graphs.yaml", "graph_edges_lengths.yaml"}
+    )
+    if not candidates:
+        raise FileNotFoundError(f"No ROS map yaml found in {map_dir}")
+    return candidates[0]
 
 
 def _target_map_dir(source_dir: Path, output_name: str, overwrite_output: bool) -> Path:

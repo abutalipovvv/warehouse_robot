@@ -9,14 +9,14 @@ try:
 except ModuleNotFoundError:  # pragma: no cover - PyYAML is available in the normal app environment.
     yaml = None  # type: ignore[assignment]
 
-from .core.registry import default_registry_path
-from .services.fleet_manager import DEFAULT_FLEET_MAP_DIR
+from .fleet_manager import DEFAULT_FLEET_MAP_DIR
+from .registry import default_registry_path
 
-PACKAGE_ROOT = Path(__file__).resolve().parent
+PACKAGE_ROOT = Path(__file__).resolve().parents[1]
 PROJECT_ROOT = PACKAGE_ROOT.parent
 
-DEFAULT_CONFIG_PATH = PACKAGE_ROOT / "params.yaml"
-DEFAULT_STATIC_DIR = PACKAGE_ROOT / "static"
+DEFAULT_CONFIG_PATH = PACKAGE_ROOT / "config" / "config.yaml"
+DEFAULT_STATIC_DIR = PACKAGE_ROOT / "web" / "static"
 DEFAULT_FLEET_PARAMS_PATH = PROJECT_ROOT / "fleet_manager" / "config" / "params.yaml"
 
 GRPC_ROBOT_TYPES = {"grpc", "aivison_grpc", "real_grpc"}
@@ -87,7 +87,7 @@ class OperatorAppConfig:
 
 def _load_yaml(path: Path) -> dict[str, Any]:
     if yaml is None:
-        raise RuntimeError("PyYAML is required to read operator_app/params.yaml")
+        raise RuntimeError("PyYAML is required to read operator_app/config/config.yaml")
     payload = yaml.safe_load(path.read_text(encoding="utf-8"))
     return payload if isinstance(payload, dict) else {}
 

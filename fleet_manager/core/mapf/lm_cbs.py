@@ -43,6 +43,12 @@ class Conflict:
     agent_2_time: int = -1
     agent_1_resource_kind: str = ""
     agent_2_resource_kind: str = ""
+    agent_1_resource_start: int = -1
+    agent_1_resource_end: int = -1
+    agent_2_resource_start: int = -1
+    agent_2_resource_end: int = -1
+    agent_1_resource_entry: NodeName | None = None
+    agent_2_resource_entry: NodeName | None = None
     resource: object | None = None
 
 
@@ -222,6 +228,7 @@ class LmCBSEnvironment:
         vertex_resources_fn: Callable[[NodeName], tuple[object, ...]] | None = None,
         rotation_resources_fn: Callable[[NodeName], tuple[object, ...]] | None = None,
         lane_resources_fn: Callable[[NodeName, NodeName], tuple[object, ...]] | None = None,
+        can_wait_fn: Callable[[NodeName], bool] | None = None,
         low_level_max_time: int = 128,
         wait_cost: int = 6,
     ) -> None:
@@ -239,6 +246,7 @@ class LmCBSEnvironment:
         self.vertex_resources_fn = vertex_resources_fn
         self.rotation_resources_fn = rotation_resources_fn or vertex_resources_fn
         self.lane_resources_fn = lane_resources_fn
+        self.can_wait_fn = can_wait_fn or (lambda _node: True)
         self.low_level_max_time = max(1, int(low_level_max_time))
         self.wait_cost = max(1, int(wait_cost))
         self.agent_dict: dict[str, dict[str, State]] = {}
@@ -479,6 +487,8 @@ class LmCBSEnvironment:
         neighbors: list[State] = []
         for node in candidates:
             if node == state.node:
+                if not self.can_wait_fn(state.node):
+                    continue
                 next_state = State(state.time + 1, node, state.yaw)
             else:
                 target_yaw = self._normalize_yaw(self.heading_fn(state.node, node))
@@ -660,8 +670,17 @@ class LmCBSEnvironment:
             second_by_resource.setdefault(interval.resource, []).append(interval)
         for interval_1 in first:
             for interval_2 in second_by_resource.get(interval_1.resource, []):
-                start = max(interval_1.start_time, interval_2.start_time)
-                end = min(interval_1.end_time, interval_2.end_time)
+                span_1 = (interval_1.start_time, interval_1.end_time)
+                span_2 = (interval_2.start_time, interval_2.end_time)
+                entry_1: NodeName | None = None
+                entry_2: NodeName | None = None
+                if getattr(interval_1.resource, "kind", "") == "controlled_region":
+                    span_1 = self._resource_occupation_span(first, interval_1)
+                    span_2 = self._resource_occupation_span(second, interval_2)
+                    entry_1 = self._resource_entry_node(first, interval_1.resource, span_1)
+                    entry_2 = self._resource_entry_node(second, interval_2.resource, span_2)
+                start = max(span_1[0], span_2[0])
+                end = min(span_1[1], span_2[1])
                 if start >= end:
                     continue
                 conflict = Conflict(
@@ -678,10 +697,59 @@ class LmCBSEnvironment:
                     agent_2_to=interval_2.to_node,
                     agent_1_resource_kind=interval_1.kind,
                     agent_2_resource_kind=interval_2.kind,
+                    agent_1_resource_start=span_1[0],
+                    agent_1_resource_end=span_1[1] - 1,
+                    agent_2_resource_start=span_2[0],
+                    agent_2_resource_end=span_2[1] - 1,
+                    agent_1_resource_entry=entry_1,
+                    agent_2_resource_entry=entry_2,
                     resource=interval_1.resource,
                 )
                 best = self._earlier_conflict(best, conflict)
         return best
+
+    def _resource_occupation_span(
+        self,
+        intervals: list[PathResourceInterval],
+        seed: PathResourceInterval,
+    ) -> tuple[int, int]:
+        """Merge one robot's touching reservations for a controlled region."""
+        start = seed.start_time
+        end = seed.end_time
+        changed = True
+        while changed:
+            changed = False
+            for candidate in intervals:
+                if candidate.resource != seed.resource:
+                    continue
+                if candidate.start_time > end or candidate.end_time < start:
+                    continue
+                next_start = min(start, candidate.start_time)
+                next_end = max(end, candidate.end_time)
+                if next_start != start or next_end != end:
+                    start, end = next_start, next_end
+                    changed = True
+        return start, end
+
+    def _resource_entry_node(
+        self,
+        intervals: list[PathResourceInterval],
+        resource: object,
+        span: tuple[int, int],
+    ) -> NodeName | None:
+        edge_intervals = sorted(
+            (
+                interval
+                for interval in intervals
+                if interval.resource == resource
+                and interval.kind == "edge"
+                and interval.from_node
+                and interval.start_time >= span[0]
+                and interval.end_time <= span[1]
+            ),
+            key=lambda interval: (interval.start_time, interval.end_time),
+        )
+        return edge_intervals[0].from_node if edge_intervals else None
 
     def _path_intervals(
         self,
@@ -852,13 +920,59 @@ class LmCBSEnvironment:
             assert conflict.resource is not None
             constraint_1 = Constraints()
             constraint_2 = Constraints()
-            resource_constraint = ResourceIntervalConstraint(
-                start_time=conflict.time,
-                end_time=max(conflict.time, conflict.end_time),
-                resource=conflict.resource,
+            controlled = getattr(conflict.resource, "kind", "") == "controlled_region"
+            constraint_1.resource_interval_constraints.add(
+                ResourceIntervalConstraint(
+                    start_time=(
+                        0
+                        if controlled and conflict.agent_2_resource_start >= 0
+                        else conflict.time
+                    ),
+                    end_time=(
+                        conflict.agent_2_resource_end
+                        if controlled and conflict.agent_2_resource_end >= 0
+                        else max(conflict.time, conflict.end_time)
+                    ),
+                    resource=conflict.resource,
+                )
             )
-            constraint_1.resource_interval_constraints.add(resource_constraint)
-            constraint_2.resource_interval_constraints.add(resource_constraint)
+            constraint_2.resource_interval_constraints.add(
+                ResourceIntervalConstraint(
+                    start_time=(
+                        0
+                        if controlled and conflict.agent_1_resource_start >= 0
+                        else conflict.time
+                    ),
+                    end_time=(
+                        conflict.agent_1_resource_end
+                        if controlled and conflict.agent_1_resource_end >= 0
+                        else max(conflict.time, conflict.end_time)
+                    ),
+                    resource=conflict.resource,
+                )
+            )
+            if controlled and conflict.agent_1_resource_entry:
+                constraint_1.vertex_interval_constraints.add(
+                    VertexIntervalConstraint(
+                        start_time=0,
+                        end_time=max(
+                            0,
+                            conflict.agent_2_resource_end + 1,
+                        ),
+                        node=conflict.agent_1_resource_entry,
+                    )
+                )
+            if controlled and conflict.agent_2_resource_entry:
+                constraint_2.vertex_interval_constraints.add(
+                    VertexIntervalConstraint(
+                        start_time=0,
+                        end_time=max(
+                            0,
+                            conflict.agent_1_resource_end + 1,
+                        ),
+                        node=conflict.agent_2_resource_entry,
+                    )
+                )
             return {
                 conflict.agent_1: constraint_1,
                 conflict.agent_2: constraint_2,
@@ -977,6 +1091,7 @@ class LmCBSPlanner:
         vertex_resources_fn: Callable[[NodeName], tuple[object, ...]] | None = None,
         rotation_resources_fn: Callable[[NodeName], tuple[object, ...]] | None = None,
         lane_resources_fn: Callable[[NodeName, NodeName], tuple[object, ...]] | None = None,
+        can_wait_fn: Callable[[NodeName], bool] | None = None,
         low_level_max_time: int = 128,
         max_high_level_nodes: int = 2000,
         max_planning_time_sec: float = 5.0,
@@ -990,6 +1105,7 @@ class LmCBSPlanner:
         self.vertex_resources_fn = vertex_resources_fn
         self.rotation_resources_fn = rotation_resources_fn or vertex_resources_fn
         self.lane_resources_fn = lane_resources_fn
+        self.can_wait_fn = can_wait_fn
         self.low_level_max_time = max(1, int(low_level_max_time))
         self.max_high_level_nodes = max(1, int(max_high_level_nodes))
         self.max_planning_time_sec = max(0.0, float(max_planning_time_sec))
@@ -1100,6 +1216,7 @@ class LmCBSPlanner:
             vertex_resources_fn=self.vertex_resources_fn,
             rotation_resources_fn=self.rotation_resources_fn,
             lane_resources_fn=self.lane_resources_fn,
+            can_wait_fn=self.can_wait_fn,
             low_level_max_time=ll_max_time,
             wait_cost=self.wait_cost,
         )

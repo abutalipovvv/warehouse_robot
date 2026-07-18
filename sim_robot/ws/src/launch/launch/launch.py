@@ -42,7 +42,7 @@ def _maps_root(project_root: Path) -> Path:
         project_root / "map_data" / "maps_out",
         project_root / "fleet_manager" / "map_data" / "maps_out",
         project_root / "robot" / "ws" / "src" / "robot_map_manager" / "maps_out",
-        project_root / "operator_app" / "map_out" / "robot1_127.0.0.1_50051",
+        project_root / "var" / "operator_app" / "map_cache" / "robot1_127.0.0.1_50051",
     ]
     for candidate in candidates:
         if candidate.is_dir():

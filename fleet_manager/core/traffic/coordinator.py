@@ -134,6 +134,25 @@ class TrafficCoordinatorMixin:
                     f"traffic admission timeout: {robot.last_reason}",
                 )
 
+        corridor_timeout = self._controlled_corridor_replan_after()
+        for robot in self._runtime_robots():
+            if (
+                robot.status != "WAITING"
+                or not robot.trajectory
+                or not str(robot.last_reason or "").startswith(
+                    "corridor admission wait at "
+                )
+                or robot.blocked_since is None
+                or now - robot.blocked_since < corridor_timeout
+            ):
+                continue
+            if self._safe_replan_start_lm(robot):
+                self._schedule_runtime_replan(
+                    robot,
+                    now,
+                    f"corridor admission timeout: {robot.last_reason}",
+                )
+
     def _record_traffic_progress(self, robot: FleetRobot) -> None:
         robot.traffic_stall_since = None
         for cycle_key in list(self._active_wait_cycles):
@@ -642,6 +661,27 @@ class TrafficCoordinatorMixin:
         except (TypeError, ValueError):
             return 6.0
 
+    def _controlled_corridor_replan_after(self) -> float:
+        fleet = self.params.get("fleet", {})
+        if not isinstance(fleet, dict):
+            return 8.0
+        try:
+            return max(
+                self._controlled_corridor_param(
+                    "controlled_corridor_starvation_sec",
+                    8.0,
+                ),
+                float(
+                    fleet.get(
+                        "controlled_corridor_replan_after_sec",
+                        8.0,
+                    )
+                    or 8.0
+                ),
+            )
+        except (TypeError, ValueError):
+            return 8.0
+
     def _deadlock_coupled_replan_after(self) -> float:
         fleet = self.params.get("fleet", {})
         if not isinstance(fleet, dict):
@@ -815,6 +855,12 @@ class TrafficCoordinatorMixin:
         pose = self._pose_at_trajectory(robot.trajectory, check_clock)
         if pose is None:
             return ""
+        corridor_reason = self._controlled_corridor_admission_reason(
+            robot,
+            check_clock,
+        )
+        if corridor_reason:
+            return corridor_reason
         zone_reason = self._traffic_zone_admission_reason(robot, check_clock)
         if zone_reason:
             return zone_reason
@@ -1176,6 +1222,8 @@ class TrafficCoordinatorMixin:
         if self._is_deadlock_reason(reason):
             return False
         if str(reason or "").startswith("traffic admission wait at "):
+            return False
+        if str(reason or "").startswith("corridor admission wait at "):
             return False
         if not self._is_robot_conflict(reason):
             return True

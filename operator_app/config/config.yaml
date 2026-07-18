@@ -8,8 +8,8 @@ paths:
   # Empty registry path keeps the default:
   # ~/.config/warehouse_operator/robots.json
   registry: ""
-  static_dir: static
+  static_dir: ../web/static
 
 fleet:
-  params_path: ../fleet_manager/config/params.yaml
-  map_dir: ../fleet_manager/map_data/maps_out/22.05.26_smap.smap
+  params_path: ../../fleet_manager/config/params.yaml
+  map_dir: ../../fleet_manager/map_data/maps_out/22.05.26_smap.smap

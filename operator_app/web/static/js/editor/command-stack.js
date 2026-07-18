@@ -1,0 +1,63 @@
+export class CommandStack {
+  constructor(limit = 100) {
+    this.limit = Math.max(1, Number(limit) || 100);
+    this.undoCommands = [];
+    this.redoCommands = [];
+    this.onChange = null;
+  }
+
+  get canUndo() {
+    return this.undoCommands.length > 0;
+  }
+
+  get canRedo() {
+    return this.redoCommands.length > 0;
+  }
+
+  clear() {
+    this.undoCommands = [];
+    this.redoCommands = [];
+    this.notify();
+  }
+
+  push(command) {
+    if (!command || typeof command.undo !== "function" || typeof command.redo !== "function") {
+      return false;
+    }
+    this.undoCommands.push(command);
+    if (this.undoCommands.length > this.limit) {
+      this.undoCommands.shift();
+    }
+    this.redoCommands = [];
+    this.notify();
+    return true;
+  }
+
+  undo() {
+    const command = this.undoCommands.pop();
+    if (!command) {
+      return false;
+    }
+    command.undo();
+    this.redoCommands.push(command);
+    this.notify();
+    return true;
+  }
+
+  redo() {
+    const command = this.redoCommands.pop();
+    if (!command) {
+      return false;
+    }
+    command.redo();
+    this.undoCommands.push(command);
+    this.notify();
+    return true;
+  }
+
+  notify() {
+    if (typeof this.onChange === "function") {
+      this.onChange(this);
+    }
+  }
+}

@@ -4,9 +4,9 @@ from collections import Counter
 from time import monotonic, sleep
 
 import fleet_manager.core.manager as runtime_module
-import operator_app.services.fleet_manager as service_module
+import operator_app.core.fleet_manager as service_module
 
-from operator_app.services.fleet_manager import (
+from operator_app.core.fleet_manager import (
     DEFAULT_FLEET_MAP_DIR,
     DEFAULT_FLEET_SIM_MAP_DIR,
     FLEET_MANAGER_SIM_ID,

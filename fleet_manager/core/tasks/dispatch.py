@@ -1424,6 +1424,13 @@ class FleetTaskDispatchMixin:
         window_sec = self._rolling_horizon() + self._reservation_horizon()
         guard_sec = max(2.0, self._reservation_safety_time() * 4.0)
         ticks = math.ceil((window_sec + guard_sec) / self._reservation_time_step())
+        corridor_ticks = self.planner.controlled_corridor_max_ticks()
+        if corridor_ticks:
+            reservation_ticks = math.ceil(
+                self._reservation_horizon() / self._reservation_time_step()
+            )
+            guard_ticks = math.ceil(guard_sec / self._reservation_time_step())
+            ticks = max(ticks, reservation_ticks + corridor_ticks + guard_ticks)
         return max(8, min(configured_max, int(ticks)))
 
     def _candidate_robots_for_order(self, order: FleetOrder) -> list[FleetRobot]:

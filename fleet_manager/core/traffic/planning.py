@@ -1154,11 +1154,27 @@ class TrafficPlanningMixin:
     def _reservation_horizon(self) -> float:
         fleet = self.params.get("fleet", {})
         if not isinstance(fleet, dict):
-            return 8.0
-        try:
-            return max(1.0, float(fleet.get("reservation_horizon_sec", 8.0) or 8.0))
-        except (TypeError, ValueError):
-            return 8.0
+            configured = 8.0
+        else:
+            try:
+                configured = max(
+                    1.0,
+                    float(fleet.get("reservation_horizon_sec", 8.0) or 8.0),
+                )
+            except (TypeError, ValueError):
+                configured = 8.0
+        corridor_ticks = self.planner.controlled_corridor_max_ticks()
+        if corridor_ticks <= 0:
+            return configured
+        # A committed robot must remain visible until it has left the longest
+        # controlled region. Clipping its edge reservations to the ordinary
+        # rolling window lets a later request schedule an entry while the
+        # first robot is still physically inside the corridor.
+        corridor_sec = corridor_ticks * self._reservation_time_step()
+        return max(
+            configured,
+            corridor_sec + (2.0 * self._reservation_safety_time()),
+        )
 
     def _rolling_horizon(self) -> float:
         fleet = self.params.get("fleet", {})

@@ -294,8 +294,15 @@ class SippPlanner:
         if depart is None:
             return None
         vertex = self.graph.vertices.get(state.node)
-        if vertex is not None and not vertex.can_wait and depart > state.time:
-            self.last_failure = f"cannot_wait:{state.node}@{state.time}-{depart}"
+        if (
+            vertex is not None
+            and not vertex.can_wait
+            and depart > state.time + rotate_duration
+        ):
+            self.last_failure = (
+                f"cannot_wait:{state.node}"
+                f"@{state.time + rotate_duration}-{depart}"
+            )
             return None
         arrival = depart + move_duration
         if arrival > self.low_level_max_time or not interval.contains(arrival):

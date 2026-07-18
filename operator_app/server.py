@@ -6,9 +6,9 @@ from functools import partial
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 
-from .config import DEFAULT_CONFIG_PATH, OperatorAppConfig
+from .core.config import DEFAULT_CONFIG_PATH, OperatorAppConfig
 from .core.state import OperatorAppState
-from .http.handler import OperatorRequestHandler
+from .web.handler import OperatorRequestHandler
 
 
 def parse_args() -> argparse.Namespace:

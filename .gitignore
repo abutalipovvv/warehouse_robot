@@ -19,5 +19,4 @@ robot/log/
 
 robot/.active_map.json
 sim_robot/ws/src/robot_map_manager/.active_map.json
-operator_app/map_out/
-operator_app/operator_data/
+var/operator_app/

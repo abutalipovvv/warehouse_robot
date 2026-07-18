@@ -28,6 +28,7 @@ class FleetMotionRuntimeMixin:
             name: float(snapshot["route_clock"])
             for name, snapshot in safety_snapshots.items()
         }
+        self._prepare_controlled_corridor_admissions(now)
         self._prepare_traffic_zone_admissions(now)
         for robot in self._runtime_robots():
             if robot.is_remote():
@@ -682,6 +683,7 @@ class FleetMotionRuntimeMixin:
             self._is_parked_robot_conflict(reason)
             or "alternate route required" in value
             or "traffic admission timeout" in value
+            or "corridor admission timeout" in value
             or "traffic wait timeout" in value
             or "obstacle" in value
             or "blocked edge" in value

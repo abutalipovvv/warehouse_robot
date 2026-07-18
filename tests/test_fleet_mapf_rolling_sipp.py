@@ -34,6 +34,260 @@ def test_traffic_graph_groups_reverse_lanes_as_same_resource() -> None:
     assert forward.lane_group_id == reverse.lane_group_id
 
 
+def test_traffic_graph_builds_whole_controlled_corridor_resource() -> None:
+    landmarks = _landmarks("A", "B", "C", "D")
+    edges = [
+        _edge(landmarks, start, goal)
+        for start, goal in (
+            ("A", "B"),
+            ("B", "A"),
+            ("B", "C"),
+            ("C", "B"),
+            ("C", "D"),
+            ("D", "C"),
+        )
+    ]
+    graph = TrafficGraph.from_route_core(
+        landmarks,
+        edges,
+        default_speed_mps=1.0,
+        controlled_corridors_enabled=True,
+    )
+
+    region_ids = graph.controlled_region_ids()
+
+    assert len(region_ids) == 1
+    assert graph.vertices["A"].can_wait
+    assert not graph.vertices["B"].can_wait
+    assert not graph.vertices["C"].can_wait
+    assert graph.vertices["D"].can_wait
+    assert all(
+        ResourceId("controlled_region", region_ids[0])
+        in graph.lane_resources(graph.lane_for(start, goal))
+        for start, goal in (("A", "B"), ("B", "C"), ("C", "D"))
+    )
+    assert graph.extend_route_index_to_controlled_exit(["A", "B", "C", "D"], 1) == 3
+
+
+def test_controlled_corridor_auto_mode_only_enables_fully_smart_graphs() -> None:
+    landmarks = _landmarks("A", "B", "C")
+    smart_edges = [
+        _edge(landmarks, start, goal)
+        for start, goal in (
+            ("A", "B"),
+            ("B", "A"),
+            ("B", "C"),
+            ("C", "B"),
+        )
+    ]
+    for edge in smart_edges:
+        edge.properties["smart"] = True
+    smart_planner = FleetMapfPlanner(
+        landmarks,
+        smart_edges,
+        params={
+            "fleet": {
+                "controlled_corridors_enabled": "auto",
+                "controlled_corridor_min_edges": 2,
+            }
+        },
+    )
+    ordinary_planner = FleetMapfPlanner(
+        landmarks,
+        [
+            _edge(landmarks, start, goal)
+            for start, goal in (
+                ("A", "B"),
+                ("B", "A"),
+                ("B", "C"),
+                ("C", "B"),
+            )
+        ],
+        params={"fleet": {"controlled_corridors_enabled": "auto"}},
+    )
+
+    assert smart_planner.controlled_corridors_enabled
+    assert smart_planner.controlled_corridors_mode == "auto"
+    assert len(smart_planner._traffic_graph(1.0).controlled_region_ids()) == 1
+    assert not ordinary_planner.controlled_corridors_enabled
+    assert ordinary_planner._traffic_graph(1.0).controlled_region_ids() == ()
+
+
+def test_controlled_corridor_can_cover_single_edge_between_junctions() -> None:
+    landmarks = _landmarks("A", "B")
+    graph = TrafficGraph.from_route_core(
+        landmarks,
+        [
+            _edge(landmarks, "A", "B"),
+            _edge(landmarks, "B", "A"),
+        ],
+        default_speed_mps=1.0,
+        controlled_corridors_enabled=True,
+        controlled_corridor_min_edges=1,
+    )
+
+    assert graph.controlled_region_ids() == ("A<=>B",)
+    assert graph.lane_for("A", "B").controlled_region_ids == ("A<=>B",)
+    assert graph.lane_for("B", "A").controlled_region_ids == ("A<=>B",)
+
+
+def test_explicit_editor_corridor_properties_work_without_auto_detection() -> None:
+    landmarks = {
+        "A": Landmark(name="A", x=0.0, y=0.0, properties={"holding_point": True}),
+        "B": Landmark(
+            name="B",
+            x=1.0,
+            y=0.0,
+            properties={"can_wait": False, "controlled_region": "corridor:A<=>D"},
+        ),
+        "C": Landmark(
+            name="C",
+            x=2.0,
+            y=0.0,
+            properties={"can_wait": False, "controlled_region": "corridor:A<=>D"},
+        ),
+        "D": Landmark(name="D", x=3.0, y=0.0, properties={"holding_point": True}),
+    }
+    edges = []
+    for start, goal in (("A", "B"), ("B", "C"), ("C", "D")):
+        edge = _edge(landmarks, start, goal)
+        edge.properties["controlled_region"] = "corridor:A<=>D"
+        edges.append(edge)
+    graph = TrafficGraph.from_route_core(
+        landmarks,
+        edges,
+        default_speed_mps=1.0,
+        controlled_corridors_enabled=False,
+    )
+
+    assert graph.controlled_region_ids() == ("corridor:A<=>D",)
+    assert not graph.vertices["B"].can_wait
+    assert not graph.vertices["C"].can_wait
+    assert graph.extend_route_index_to_controlled_exit(["A", "B", "C", "D"], 1) == 3
+
+
+def test_rolling_sipp_serializes_head_on_controlled_corridor_without_internal_waits() -> None:
+    landmarks = {
+        name: Landmark(name=name, x=x, y=y)
+        for name, x, y in (
+            ("LS", -2.0, -1.0),
+            ("LG", -2.0, 1.0),
+            ("L", -1.0, 0.0),
+            ("B", 0.0, 0.0),
+            ("C", 1.0, 0.0),
+            ("R", 2.0, 0.0),
+            ("RS", 3.0, -1.0),
+            ("RG", 3.0, 1.0),
+        )
+    }
+    pairs = (
+        ("LS", "L"),
+        ("LG", "L"),
+        ("L", "B"),
+        ("B", "C"),
+        ("C", "R"),
+        ("R", "RS"),
+        ("R", "RG"),
+    )
+    edges = [
+        _edge(landmarks, start, goal)
+        for first, second in pairs
+        for start, goal in ((first, second), (second, first))
+    ]
+    planner = FleetMapfPlanner(
+        landmarks,
+        edges,
+        params={
+            "navigation": {"route_speed": 1.0},
+            "fleet": {
+                "planner_backend": "rolling_sipp",
+                "reservation_time_step_sec": 1.0,
+                "cbs_low_level_max_time": 24,
+                "mapf_min_robot_center_distance_m": 0.1,
+                "controlled_corridors_enabled": True,
+            },
+        },
+    )
+
+    result = planner.plan(
+        {
+            "rotate": False,
+            "robots": [
+                {"name": "r1", "startLm": "LS", "goalLm": "RG"},
+                {"name": "r2", "startLm": "RS", "goalLm": "LG"},
+            ],
+        }
+    )
+
+    assert result["ok"], result["debug"]
+    assert result["debug"]["controlledCorridors"] == 1
+    for plan in result["plans"]:
+        for start, end in zip(plan["nodes"], plan["nodes"][1:]):
+            assert not (start == end and start in {"B", "C"})
+
+
+def test_cbs_branches_on_whole_controlled_corridor_occupation() -> None:
+    landmarks = {
+        name: Landmark(name=name, x=x, y=y)
+        for name, x, y in (
+            ("LS", -2.0, -1.0),
+            ("LG", -2.0, 1.0),
+            ("L", -1.0, 0.0),
+            ("B", 0.0, 0.0),
+            ("C", 1.0, 0.0),
+            ("R", 2.0, 0.0),
+            ("RS", 3.0, -1.0),
+            ("RG", 3.0, 1.0),
+        )
+    }
+    pairs = (
+        ("LS", "L"),
+        ("LG", "L"),
+        ("L", "B"),
+        ("B", "C"),
+        ("C", "R"),
+        ("R", "RS"),
+        ("R", "RG"),
+    )
+    planner = FleetMapfPlanner(
+        landmarks,
+        [
+            _edge(landmarks, start, goal)
+            for first, second in pairs
+            for start, goal in ((first, second), (second, first))
+        ],
+        params={
+            "navigation": {"route_speed": 1.0},
+            "fleet": {
+                "planner_backend": "cbs",
+                "reservation_time_step_sec": 1.0,
+                "cbs_low_level_max_time": 24,
+                "cbs_max_high_level_nodes": 200,
+                "cbs_max_planning_time_sec": 2.0,
+                "mapf_min_robot_center_distance_m": 0.1,
+                "controlled_corridors_enabled": True,
+            },
+        },
+    )
+
+    result = planner.plan(
+        {
+            "rotate": False,
+            "robots": [
+                {"name": "r1", "startLm": "LS", "goalLm": "RG"},
+                {"name": "r2", "startLm": "RS", "goalLm": "LG"},
+            ],
+        }
+    )
+
+    assert result["ok"], result["debug"]
+    assert result["debug"]["conflictsResolved"] >= 1
+    assert result["debug"]["highLevelNodes"] < 20
+    for plan in result["plans"]:
+        for start, end in zip(plan["nodes"], plan["nodes"][1:]):
+            assert not (start == end and start in {"B", "C"})
+
+
 def test_traffic_graph_reserves_endpoint_and_physical_clearance_resources() -> None:
     landmarks = {
         "A": Landmark(name="A", x=0.0, y=0.0),

@@ -110,6 +110,19 @@ class FleetManagerCore(
         # otherwise iteration order makes an already-updated peer appear one
         # extra step ahead and can admit a crossing that is rolled back later.
         self._runtime_tick_route_clocks: dict[str, float] = {}
+        default_speed = self.planner._route_speed({})
+        controlled_graph = self.planner._traffic_graph(default_speed)
+        self._controlled_corridor_graph = (
+            controlled_graph
+            if controlled_graph.controlled_region_ids()
+            else None
+        )
+        self._controlled_corridor_wait_since: dict[tuple[str, str], float] = {}
+        self._controlled_corridor_leases: dict[str, tuple[str, float]] = {}
+        self._controlled_corridor_winners: dict[str, str] = {}
+        self._controlled_corridor_occupancy: dict[str, list[str]] = {}
+        self._controlled_corridor_queues: dict[str, list[str]] = {}
+        self._controlled_corridor_tick_now = 0.0
         self._traffic_zone_by_lm = self._build_traffic_zone_index()
         self._traffic_zone_wait_since: dict[tuple[str, str], float] = {}
         self._traffic_zone_leases: dict[tuple[str, str], float] = {}
@@ -129,6 +142,8 @@ class FleetManagerCore(
             "coupledReplansFailed": 0,
             "priorityGrants": 0,
             "runtimeSafetyRollbacks": 0,
+            "corridorAdmissionWaits": 0,
+            "corridorAdmissionsGranted": 0,
             "zoneAdmissionWaits": 0,
             "zoneAdmissionsGranted": 0,
         }
@@ -155,6 +170,12 @@ class FleetManagerCore(
         self.active_robot_modes = clean_modes or None
 
     def reset_traffic_flow_state(self) -> None:
+        self._controlled_corridor_wait_since.clear()
+        self._controlled_corridor_leases.clear()
+        self._controlled_corridor_winners.clear()
+        self._controlled_corridor_occupancy.clear()
+        self._controlled_corridor_queues.clear()
+        self._controlled_corridor_tick_now = 0.0
         self._traffic_zone_wait_since.clear()
         self._traffic_zone_leases.clear()
         self._traffic_zone_phase.clear()

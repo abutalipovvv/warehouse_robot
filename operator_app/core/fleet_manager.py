@@ -1492,8 +1492,7 @@ class OperatorFleetManager:
                 f"largest component has {len(names)} safe spawn positions"
             )
         rng = random.Random(seed + 7919)
-        shuffled = list(names)
-        rng.shuffle(shuffled)
+        shuffled = self._corridor_safe_benchmark_lms(names, rng)
         spaced = self._spatially_separated_lms(shuffled, count)
         if len(spaced) < count:
             raise ValueError(
@@ -1515,6 +1514,41 @@ class OperatorFleetManager:
             self.manager.obstacles,
             self.manager.obstacle_areas,
         )
+
+    def _benchmark_corridor_region(self, name: str) -> str:
+        graph = getattr(self.manager, "_controlled_corridor_graph", None)
+        vertex = graph.vertices.get(name) if graph is not None else None
+        if vertex is None or not vertex.controlled_region_ids:
+            return ""
+        return sorted(vertex.controlled_region_ids)[0]
+
+    def _corridor_safe_benchmark_lms(
+        self,
+        names: list[str],
+        rng: random.Random,
+    ) -> list[str]:
+        """Prefer holding points and place at most one robot inside a corridor."""
+        if getattr(self.manager, "_controlled_corridor_graph", None) is None:
+            shuffled = list(names)
+            rng.shuffle(shuffled)
+            return shuffled
+        holding: list[str] = []
+        inside_by_region: dict[str, list[str]] = {}
+        for name in names:
+            region_id = self._benchmark_corridor_region(name)
+            if region_id:
+                inside_by_region.setdefault(region_id, []).append(name)
+            else:
+                holding.append(name)
+        rng.shuffle(holding)
+        region_ids = list(inside_by_region)
+        rng.shuffle(region_ids)
+        representatives: list[str] = []
+        for region_id in region_ids:
+            candidates = inside_by_region[region_id]
+            rng.shuffle(candidates)
+            representatives.append(candidates[0])
+        return holding + representatives
 
     def _next_benchmark_robot_index(self) -> int:
         max_index = 0
@@ -1608,8 +1642,7 @@ class OperatorFleetManager:
                 f"largest component has {len(names)}"
             )
         rng = random.Random(seed + count)
-        shuffled = list(names)
-        rng.shuffle(shuffled)
+        shuffled = self._corridor_safe_benchmark_lms(names, rng)
         starts = self._spatially_separated_lms(shuffled, count)
         if len(starts) < count:
             raise ValueError(
@@ -1698,6 +1731,15 @@ class OperatorFleetManager:
                     if name != start_lm
                     and name not in used_goals
                     and self._lm_is_separated_from(name, used_goals)
+                    and (
+                        not self._benchmark_corridor_region(name)
+                        or self._benchmark_corridor_region(name)
+                        not in {
+                            self._benchmark_corridor_region(goal)
+                            for goal in used_goals
+                            if self._benchmark_corridor_region(goal)
+                        }
+                    )
                 ]
             if not candidates:
                 raise ValueError(f"no target LM available for {robot.name}")
@@ -1823,6 +1865,14 @@ class OperatorFleetManager:
         queue: list[tuple[str, int, int]] = [(start_lm, 0, 0)]
         best_path: dict[str, tuple[int, int]] = {start_lm: (0, 0)}
         candidates: list[tuple[int, int, float, int, str]] = []
+        used_goal_regions = {
+            region_id
+            for region_id in (
+                self._benchmark_corridor_region(name)
+                for name in used_goals
+            )
+            if region_id
+        }
         sequence = 0
         start = self.loaded_map.landmarks[start_lm]
         while queue:
@@ -1834,6 +1884,11 @@ class OperatorFleetManager:
                 and node not in used_goals
                 and node not in excluded_goals
                 and self._lm_is_separated_from(node, used_goals)
+                and (
+                    not self._benchmark_corridor_region(node)
+                    or self._benchmark_corridor_region(node)
+                    not in used_goal_regions
+                )
             ):
                 landmark = self.loaded_map.landmarks[node]
                 distance_sq = ((landmark.x - start.x) ** 2) + ((landmark.y - start.y) ** 2)

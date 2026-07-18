@@ -18,6 +18,7 @@ class TrafficVertex:
     is_parking: bool = False
     is_charger: bool = False
     mutex_zone_ids: tuple[str, ...] = ()
+    controlled_region_ids: tuple[str, ...] = ()
     clearance_zone_ids: tuple[str, ...] = ()
     rotation_conflict_lms: tuple[str, ...] = ()
 
@@ -32,6 +33,7 @@ class TrafficLane:
     lane_group_id: str
     capacity: int = 1
     mutex_zone_ids: tuple[str, ...] = ()
+    controlled_region_ids: tuple[str, ...] = ()
     clearance_zone_ids: tuple[str, ...] = ()
     centerline: tuple[tuple[float, float], ...] = ()
 
@@ -51,6 +53,8 @@ class TrafficGraph:
         default_speed_mps: float,
         min_robot_center_distance_m: float = 0.0,
         rotation_min_robot_center_distance_m: float = 0.0,
+        controlled_corridors_enabled: bool = False,
+        controlled_corridor_min_edges: int = 2,
     ) -> "TrafficGraph":
         edge_keys = {(edge.from_name, edge.to_name) for edge in edges}
         vertices = {
@@ -77,6 +81,13 @@ class TrafficGraph:
             )
             lanes[lane.id] = lane
             outgoing.setdefault(lane.from_lm, []).append(lane.id)
+        if controlled_corridors_enabled:
+            vertices, lanes = _with_controlled_corridors(
+                vertices,
+                lanes,
+                landmarks,
+                minimum_edges=max(1, int(controlled_corridor_min_edges)),
+            )
         vertices, lanes = _with_lane_vertex_clearance_zones(
             vertices,
             lanes,
@@ -102,6 +113,10 @@ class TrafficGraph:
             ResourceId("lane_group", lane.lane_group_id),
         ]
         resources.extend(ResourceId("mutex_zone", zone_id) for zone_id in lane.mutex_zone_ids)
+        resources.extend(
+            ResourceId("controlled_region", region_id)
+            for region_id in lane.controlled_region_ids
+        )
         resources.extend(ResourceId("clearance", zone_id) for zone_id in lane.clearance_zone_ids)
         # A robot occupies the swept corridor, including both endpoint
         # clearances, for the complete traversal.  Reserving only the abstract
@@ -117,6 +132,10 @@ class TrafficGraph:
             return (ResourceId("vertex", lm_id),)
         resources = [ResourceId("vertex", lm_id)]
         resources.extend(ResourceId("mutex_zone", zone_id) for zone_id in vertex.mutex_zone_ids)
+        resources.extend(
+            ResourceId("controlled_region", region_id)
+            for region_id in vertex.controlled_region_ids
+        )
         resources.extend(ResourceId("clearance", zone_id) for zone_id in vertex.clearance_zone_ids)
         return tuple(resources)
 
@@ -153,6 +172,43 @@ class TrafficGraph:
             )
         return capacities
 
+    def controlled_region_ids(self) -> tuple[str, ...]:
+        return tuple(sorted({
+            region_id
+            for lane in self.lanes.values()
+            for region_id in lane.controlled_region_ids
+        }))
+
+    def extend_route_index_to_controlled_exit(
+        self,
+        route_nodes: list[str] | tuple[str, ...],
+        index: int,
+    ) -> int:
+        """Do not end a rolling chunk at an internal controlled-corridor LM."""
+        if not route_nodes:
+            return 0
+        cursor = max(0, min(int(index), len(route_nodes) - 1))
+        vertex = self.vertices.get(str(route_nodes[cursor]))
+        regions = set(vertex.controlled_region_ids if vertex is not None else ())
+        if not regions:
+            return cursor
+        region_id = sorted(regions)[0]
+        previous = str(route_nodes[cursor])
+        for next_index in range(cursor + 1, len(route_nodes)):
+            node = str(route_nodes[next_index])
+            if node == previous:
+                cursor = next_index
+                continue
+            lane = self.lane_for(previous, node)
+            if lane is None or region_id not in lane.controlled_region_ids:
+                break
+            cursor = next_index
+            previous = node
+            next_vertex = self.vertices.get(node)
+            if next_vertex is None or region_id not in next_vertex.controlled_region_ids:
+                break
+        return cursor
+
 
 def lane_id(from_lm: str, to_lm: str) -> str:
     return f"{from_lm}->{to_lm}"
@@ -165,10 +221,25 @@ def _traffic_vertex_from_landmark(landmark: Landmark) -> TrafficVertex:
         id=name,
         x=float(landmark.x),
         y=float(landmark.y),
-        can_wait=_bool_property(properties, ("can_wait", "canWait", "allow_wait", "allowWait"), True),
+        can_wait=_bool_property(
+            properties,
+            (
+                "can_wait",
+                "canWait",
+                "allow_wait",
+                "allowWait",
+                "wait_allowed",
+                "waitAllowed",
+            ),
+            True,
+        ),
         is_parking=_bool_property(properties, ("is_parking", "isParking", "parking", "parkPoint"), name.upper().startswith("PP")),
         is_charger=_bool_property(properties, ("is_charger", "isCharger", "charger", "chargePoint"), name.upper().startswith("CP")),
         mutex_zone_ids=_string_tuple_property(properties, ("mutex_zone", "mutexZone", "mutex_group", "mutexGroup")),
+        controlled_region_ids=_string_tuple_property(
+            properties,
+            ("controlled_region", "controlledRegion", "corridor_region", "corridorRegion"),
+        ),
     )
 
 
@@ -200,6 +271,7 @@ def _with_clearance_zones(
             is_parking=vertex.is_parking,
             is_charger=vertex.is_charger,
             mutex_zone_ids=vertex.mutex_zone_ids,
+            controlled_region_ids=vertex.controlled_region_ids,
             clearance_zone_ids=tuple(zones.get(name, ())),
             rotation_conflict_lms=vertex.rotation_conflict_lms,
         )
@@ -234,6 +306,7 @@ def _with_rotation_conflict_lms(
             is_parking=vertex.is_parking,
             is_charger=vertex.is_charger,
             mutex_zone_ids=vertex.mutex_zone_ids,
+            controlled_region_ids=vertex.controlled_region_ids,
             clearance_zone_ids=vertex.clearance_zone_ids,
             rotation_conflict_lms=tuple(conflicts.get(name, ())),
         )
@@ -311,6 +384,7 @@ def _with_lane_vertex_clearance_zones(
             is_parking=vertex.is_parking,
             is_charger=vertex.is_charger,
             mutex_zone_ids=vertex.mutex_zone_ids,
+            controlled_region_ids=vertex.controlled_region_ids,
             clearance_zone_ids=tuple(dict.fromkeys(vertex_zones.get(name, ()))),
             rotation_conflict_lms=vertex.rotation_conflict_lms,
         )
@@ -326,6 +400,7 @@ def _with_lane_vertex_clearance_zones(
             lane_group_id=lane.lane_group_id,
             capacity=lane.capacity,
             mutex_zone_ids=lane.mutex_zone_ids,
+            controlled_region_ids=lane.controlled_region_ids,
             clearance_zone_ids=tuple(dict.fromkeys(lane_zones.get(lane_id, ()))),
             centerline=lane.centerline,
         )
@@ -390,8 +465,138 @@ def _traffic_lane_from_edge(
         lane_group_id=group_id,
         capacity=_int_property(properties, ("capacity", "trafficCapacity", "laneCapacity"), 1),
         mutex_zone_ids=_string_tuple_property(properties, ("mutex_zone", "mutexZone", "mutex_group", "mutexGroup")),
+        controlled_region_ids=_string_tuple_property(
+            properties,
+            ("controlled_region", "controlledRegion", "corridor_region", "corridorRegion"),
+        ),
         centerline=_edge_centerline(edge),
     )
+
+
+def _with_controlled_corridors(
+    vertices: dict[str, TrafficVertex],
+    lanes: dict[str, TrafficLane],
+    landmarks: Mapping[str, Landmark],
+    *,
+    minimum_edges: int,
+) -> tuple[dict[str, TrafficVertex], dict[str, TrafficLane]]:
+    """Group maximal degree-two chains into whole-corridor mutex resources.
+
+    Junctions, dead ends, parking points, chargers and explicitly marked
+    holding points are corridor boundaries. A robot may queue there, but may
+    not wait at an internal LM after entering the controlled region.
+    """
+    adjacency: dict[str, set[str]] = {name: set() for name in vertices}
+    for lane in lanes.values():
+        adjacency.setdefault(lane.from_lm, set()).add(lane.to_lm)
+        adjacency.setdefault(lane.to_lm, set()).add(lane.from_lm)
+
+    def is_explicit_boundary(name: str) -> bool:
+        landmark = landmarks.get(name)
+        properties = (
+            landmark.properties
+            if landmark is not None and isinstance(landmark.properties, Mapping)
+            else {}
+        )
+        return _bool_property(
+            properties,
+            (
+                "corridor_boundary",
+                "corridorBoundary",
+                "holding_point",
+                "holdingPoint",
+            ),
+            False,
+        )
+
+    boundaries = {
+        name
+        for name, vertex in vertices.items()
+        if len(adjacency.get(name, ())) != 2
+        or vertex.is_parking
+        or vertex.is_charger
+        or is_explicit_boundary(name)
+    }
+    visited_edges: set[tuple[str, str]] = set()
+    chains: list[list[str]] = []
+    for start in sorted(boundaries):
+        for neighbor in sorted(adjacency.get(start, ())):
+            edge_key = tuple(sorted((start, neighbor)))
+            if edge_key in visited_edges:
+                continue
+            visited_edges.add(edge_key)
+            chain = [start, neighbor]
+            previous = start
+            current = neighbor
+            while current not in boundaries:
+                onward = sorted(adjacency.get(current, set()) - {previous})
+                if len(onward) != 1:
+                    break
+                next_node = onward[0]
+                next_key = tuple(sorted((current, next_node)))
+                if next_key in visited_edges:
+                    break
+                visited_edges.add(next_key)
+                chain.append(next_node)
+                previous, current = current, next_node
+            if (
+                len(chain) - 1 >= minimum_edges
+                and chain[-1] in boundaries
+                and chain[0] != chain[-1]
+            ):
+                chains.append(chain)
+
+    vertex_regions: dict[str, list[str]] = {
+        name: list(vertex.controlled_region_ids)
+        for name, vertex in vertices.items()
+    }
+    lane_regions: dict[str, list[str]] = {
+        name: list(lane.controlled_region_ids)
+        for name, lane in lanes.items()
+    }
+    internal_nodes: set[str] = set()
+    for chain in chains:
+        region_id = f"{chain[0]}<=>{chain[-1]}"
+        for node in chain[1:-1]:
+            vertex_regions[node].append(region_id)
+            internal_nodes.add(node)
+        for start, end in zip(chain, chain[1:]):
+            for lane_name in (lane_id(start, end), lane_id(end, start)):
+                if lane_name in lane_regions:
+                    lane_regions[lane_name].append(region_id)
+
+    updated_vertices = {
+        name: TrafficVertex(
+            id=vertex.id,
+            x=vertex.x,
+            y=vertex.y,
+            can_wait=vertex.can_wait and name not in internal_nodes,
+            is_parking=vertex.is_parking,
+            is_charger=vertex.is_charger,
+            mutex_zone_ids=vertex.mutex_zone_ids,
+            controlled_region_ids=tuple(dict.fromkeys(vertex_regions[name])),
+            clearance_zone_ids=vertex.clearance_zone_ids,
+            rotation_conflict_lms=vertex.rotation_conflict_lms,
+        )
+        for name, vertex in vertices.items()
+    }
+    updated_lanes = {
+        name: TrafficLane(
+            id=lane.id,
+            from_lm=lane.from_lm,
+            to_lm=lane.to_lm,
+            length_m=lane.length_m,
+            max_speed_mps=lane.max_speed_mps,
+            lane_group_id=lane.lane_group_id,
+            capacity=lane.capacity,
+            mutex_zone_ids=lane.mutex_zone_ids,
+            controlled_region_ids=tuple(dict.fromkeys(lane_regions[name])),
+            clearance_zone_ids=lane.clearance_zone_ids,
+            centerline=lane.centerline,
+        )
+        for name, lane in lanes.items()
+    }
+    return updated_vertices, updated_lanes
 
 
 def _edge_centerline(edge: GraphEdge) -> tuple[tuple[float, float], ...]:

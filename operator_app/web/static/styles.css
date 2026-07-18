@@ -1271,6 +1271,71 @@ body[data-fleet-page="map"] .robot-control-actions {
   line-height: 1.35;
 }
 
+.fleet-raster-size {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.3rem 0.55rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.fleet-model-toolbar .fleet-raster-size {
+  grid-column: span 2;
+  min-width: 0;
+}
+
+.fleet-raster-size input {
+  width: 100%;
+  min-width: 34px;
+  padding: 0;
+  accent-color: var(--primary);
+}
+
+.fleet-raster-size output {
+  min-width: 2.5rem;
+  color: var(--text);
+  font-weight: 800;
+}
+
+.fleet-editor-panel-head {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 0.7rem;
+}
+
+.map-editor-state-chip {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  padding: 0.26rem 0.55rem;
+  border-radius: 999px;
+  color: var(--success);
+  background: rgba(30, 157, 98, 0.1);
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.map-editor-state-chip.dirty {
+  color: var(--warning);
+  background: rgba(211, 122, 34, 0.12);
+}
+
+.fleet-map-file-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem;
+  margin-top: auto;
+  padding-top: 0.25rem;
+}
+
+.fleet-map-file-actions button {
+  min-height: 2.55rem;
+}
+
 .fleet-list-item {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 34px;
@@ -1839,7 +1904,14 @@ body[data-fleet-page="map"] .robot-control-actions {
   grid-column: 2;
   grid-row: 1;
   max-height: none;
-  overflow: hidden;
+  overflow-y: auto;
+  overflow-x: hidden;
+  align-content: start;
+}
+
+.operator-console.fleet-page-map #fleetTabMap.active {
+  min-height: 100%;
+  grid-template-rows: auto auto auto auto auto minmax(0, 1fr);
 }
 
 .operator-console.fleet-page-fleet .fleet-order-details,
@@ -1866,10 +1938,17 @@ body[data-fleet-page="map"] .robot-control-actions {
   position: absolute;
   top: 0.85rem;
   left: 0.85rem;
+  right: 0.85rem;
   z-index: 2;
   display: flex;
+  align-items: center;
   gap: 0.45rem;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 0.15rem 0.12rem 0.32rem;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
 }
 
 .map-toolbar button,
@@ -1877,6 +1956,40 @@ body[data-fleet-page="map"] .robot-control-actions {
   padding: 0.5rem 0.68rem;
   border-radius: 12px;
   background: rgba(255, 255, 255, 0.94);
+}
+
+.map-toolbar button {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.fleet-map-scene-tools {
+  display: none;
+  align-items: center;
+  gap: 0.45rem;
+  flex: 0 0 auto;
+}
+
+.operator-console.fleet-page-map .fleet-map-scene-tools {
+  display: flex;
+}
+
+.scene-tool-divider {
+  width: 1px;
+  height: 1.8rem;
+  flex: 0 0 auto;
+  margin: 0 0.05rem;
+  background: var(--border-strong);
+}
+
+.fleet-map-scene-tools .fleet-raster-size {
+  flex: 0 0 180px;
+  min-height: 2.38rem;
+  background: rgba(255, 255, 255, 0.94);
+}
+
+.fleet-map-scene-tools .fleet-raster-size input {
+  width: 70px;
 }
 
 .map-toolbar button.active {
@@ -2664,6 +2777,11 @@ dialog::backdrop {
   align-content: center;
   gap: 0.25rem;
   text-align: left;
+}
+
+.map-editor-exit-cancel {
+  width: 100%;
+  margin-top: 0.7rem;
 }
 
 .map-sync-choice-grid button strong {

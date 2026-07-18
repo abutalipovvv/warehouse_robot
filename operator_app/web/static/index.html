@@ -264,10 +264,12 @@
                   </div>
                 </div>
                 <div id="fleetTabMap" class="fleet-tab-page">
-                  <div class="fleet-model-toolbar">
-                    <button class="active" type="button" data-fleet-map-tool="select">Select</button>
-                    <button type="button" data-fleet-map-tool="lm">LM</button>
-                    <button type="button" data-fleet-map-tool="edge">Edge</button>
+                  <div class="fleet-editor-panel-head">
+                    <div>
+                      <div class="eyebrow">Map Editor</div>
+                      <div class="block-title">Map information</div>
+                    </div>
+                    <span id="fleetMapDirtyState" class="map-editor-state-chip">Saved</span>
                   </div>
                   <div id="fleetMapEditorHelp" class="fleet-plan-debug">Select, inspect, and edit LM/edges.</div>
                   <div class="fleet-map-editor-grid">
@@ -311,10 +313,11 @@
                     </label>
                   </div>
                   <div class="fleet-editor-auto-save-hint">LM and edge field changes apply automatically.</div>
-                  <div class="fleet-action-row">
+                  <div class="fleet-map-file-actions">
                     <button id="fleetMapSaveButton" class="primary" type="button">Save</button>
                     <button id="fleetMapSaveAsButton" type="button">Save As</button>
-                    <button id="fleetMapReloadButton" type="button">Reload</button>
+                    <button id="fleetMapReloadButton" type="button">Discard Changes</button>
+                    <button id="fleetMapCloseButton" type="button">Close</button>
                   </div>
                 </div>
               </section>
@@ -354,6 +357,26 @@
                   </div>
                 </div>
                 <div class="map-toolbar">
+                  <div id="fleetMapSceneTools" class="fleet-map-scene-tools" aria-label="Map editing tools">
+                    <button class="active" type="button" data-fleet-map-tool="select">Select</button>
+                    <button type="button" data-fleet-map-tool="lm">LM</button>
+                    <button type="button" data-fleet-map-tool="edge">Edge</button>
+                    <button type="button" data-fleet-map-tool="corridor">Corridor</button>
+                    <span class="scene-tool-divider" aria-hidden="true"></span>
+                    <button type="button" data-fleet-map-tool="brush">Pencil</button>
+                    <button type="button" data-fleet-map-tool="eraser">Eraser</button>
+                    <button type="button" data-fleet-map-tool="unknown">Unknown</button>
+                    <button type="button" data-fleet-map-tool="fill">Fill</button>
+                    <button type="button" data-fleet-map-tool="rectangle">Rectangle</button>
+                    <label class="fleet-raster-size">
+                      Size
+                      <input id="fleetRasterBrushSizeInput" type="range" min="1" max="32" value="3" />
+                      <output id="fleetRasterBrushSizeOutput">3 px</output>
+                    </label>
+                    <button id="fleetRasterUndoButton" type="button" disabled>Undo</button>
+                    <button id="fleetRasterRedoButton" type="button" disabled>Redo</button>
+                    <span class="scene-tool-divider" aria-hidden="true"></span>
+                  </div>
                   <button id="operatorMap2dButton" type="button">2D</button>
                   <button id="operatorMap3dButton" type="button">3D</button>
                   <button id="operatorZoomInButton" type="button">Zoom +</button>
@@ -579,6 +602,52 @@
     </form>
   </dialog>
 
+  <dialog id="fleetMapExitDialog">
+    <div class="dialog-card map-editor-exit-dialog">
+      <div class="dialog-head">
+        <div>
+          <div class="eyebrow">Unsaved Map</div>
+          <h2>Save changes before closing?</h2>
+        </div>
+      </div>
+      <p class="dialog-copy">Your latest map changes exist only in this editor.</p>
+      <div class="map-sync-choice-grid">
+        <button id="fleetMapExitDiscardButton" type="button">
+          <strong>Close</strong>
+          <span>Exit without saving</span>
+        </button>
+        <button id="fleetMapExitSaveButton" type="button">
+          <strong>Save</strong>
+          <span>Keep the map locally</span>
+        </button>
+        <button id="fleetMapExitPushButton" class="primary" type="button">
+          <strong>Save &amp; Push</strong>
+          <span>Apply to Fleet Manager</span>
+        </button>
+      </div>
+      <button id="fleetMapExitCancelButton" class="map-editor-exit-cancel" type="button">Continue Editing</button>
+    </div>
+  </dialog>
+
+  <dialog id="fleetMapSaveAsDialog">
+    <form id="fleetMapSaveAsForm" class="dialog-card">
+      <div class="dialog-head">
+        <div>
+          <div class="eyebrow">Local Map Copy</div>
+          <h2>Save map as</h2>
+        </div>
+      </div>
+      <label>
+        Map name
+        <input id="fleetMapSaveAsNameInput" type="text" autocomplete="off" required />
+      </label>
+      <div class="dialog-actions">
+        <button id="fleetMapSaveAsCancelButton" type="button">Cancel</button>
+        <button class="primary" type="submit">Save As</button>
+      </div>
+    </form>
+  </dialog>
+
   <dialog id="mapTransferDialog">
     <form method="dialog" class="dialog-card map-transfer-dialog">
       <div class="dialog-head">
@@ -616,6 +685,6 @@
     </form>
   </dialog>
 
-  <script src="app.js"></script>
+  <script type="module" src="app.js"></script>
 </body>
 </html>

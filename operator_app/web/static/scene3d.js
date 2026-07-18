@@ -1,5 +1,4 @@
-const BABYLON_CDN_URL = "https://cdn.jsdelivr.net/npm/babylonjs@9.16.2/babylon.js";
-const BABYLON_CDN_INTEGRITY = "sha384-QvTCEtU2vNY4HyFf9yPSiKC2c5g/MzzN6jGWdQh7r01HTPNQ+A/XJzerTlL17Whj";
+const BABYLON_RUNTIME_URL = new URL("./vendor/babylon-9.16.2.js", import.meta.url).href;
 
 const loadBabylon = () => {
   if (globalThis.BABYLON) {
@@ -29,9 +28,7 @@ const loadBabylon = () => {
     script.addEventListener("load", onLoad, { once: true });
     script.addEventListener("error", onError, { once: true });
     if (!existing) {
-      script.src = BABYLON_CDN_URL;
-      script.integrity = BABYLON_CDN_INTEGRITY;
-      script.crossOrigin = "anonymous";
+      script.src = BABYLON_RUNTIME_URL;
       script.dataset.babylonRuntime = "9.16.2";
       document.head.append(script);
     }
@@ -46,6 +43,7 @@ const B = globalThis.BABYLON || await loadBabylon();
 // Babylon ground UV v=0 is placed at map z=0, so the source must not be
 // vertically flipped during upload.
 const MAP_TEXTURE_INVERT_Y = false;
+const DYNAMIC_FLOOR_TEXTURE_INVERT_Y = true;
 
 const COLORS = {
   floor: 0xf8fbff,
@@ -63,6 +61,7 @@ const COLORS = {
   wheel: 0x252b31,
   frontPanel: 0x161b20,
   editor: 0x2d78b7,
+  scan: 0x18a999,
 };
 
 const ROBOT_PALETTE = [
@@ -75,6 +74,115 @@ const ROBOT_PALETTE = [
   0xec4899,
   0x84cc16,
 ];
+
+const OCCUPANCY_WALL_LUMINANCE_MAX = 96;
+const OCCUPANCY_WALL_MAX_INSTANCES = 6000;
+const OCCUPANCY_WALL_TARGET_PIXELS = 700000;
+
+export function occupancyWallRectanglesFromImageData(
+  imageData,
+  resolution = 1,
+  wallHeight = 1.8,
+) {
+  const width = Math.max(0, Math.floor(Number(imageData?.width || 0)));
+  const height = Math.max(0, Math.floor(Number(imageData?.height || 0)));
+  const pixels = imageData?.data;
+  if (!width || !height || !pixels || pixels.length < width * height * 4) {
+    return [];
+  }
+  const mapResolution = Math.max(0.000001, Number(resolution || 1));
+  const verticalHeight = Math.max(0.05, Number(wallHeight || 1.8));
+  const initialStride = Math.max(
+    1,
+    Math.ceil(Math.sqrt((width * height) / OCCUPANCY_WALL_TARGET_PIXELS)),
+  );
+
+  const rectanglesForStride = (stride) => {
+    const gridWidth = Math.ceil(width / stride);
+    const gridHeight = Math.ceil(height / stride);
+    const occupied = new Uint8Array(gridWidth * gridHeight);
+    for (let y = 0; y < height; y += 1) {
+      const targetRow = Math.floor(y / stride) * gridWidth;
+      let sourceIndex = y * width * 4;
+      for (let x = 0; x < width; x += 1, sourceIndex += 4) {
+        if (pixels[sourceIndex + 3] < 16) {
+          continue;
+        }
+        const luminance = (
+          pixels[sourceIndex]
+          + pixels[sourceIndex + 1]
+          + pixels[sourceIndex + 2]
+        ) / 3;
+        if (luminance <= OCCUPANCY_WALL_LUMINANCE_MAX) {
+          occupied[targetRow + Math.floor(x / stride)] = 1;
+        }
+      }
+    }
+
+    let active = new Map();
+    const rectangles = [];
+    for (let cellY = 0; cellY < gridHeight; cellY += 1) {
+      const rowOffset = cellY * gridWidth;
+      const runs = [];
+      let runStart = -1;
+      for (let cellX = 0; cellX < gridWidth; cellX += 1) {
+        if (occupied[rowOffset + cellX]) {
+          if (runStart < 0) {
+            runStart = cellX;
+          }
+        } else if (runStart >= 0) {
+          runs.push([runStart, cellX - runStart]);
+          runStart = -1;
+        }
+      }
+      if (runStart >= 0) {
+        runs.push([runStart, gridWidth - runStart]);
+      }
+
+      const nextActive = new Map();
+      for (const [x, runWidth] of runs) {
+        const key = `${x}:${runWidth}`;
+        const rectangle = active.get(key) || {
+          x,
+          y: cellY,
+          width: runWidth,
+          height: 0,
+        };
+        rectangle.height += 1;
+        nextActive.set(key, rectangle);
+        active.delete(key);
+      }
+      rectangles.push(...active.values());
+      active = nextActive;
+    }
+    rectangles.push(...active.values());
+
+    return rectangles.map((rectangle) => {
+      const pixelX = rectangle.x * stride;
+      const pixelY = rectangle.y * stride;
+      const pixelWidth = Math.min(width - pixelX, rectangle.width * stride);
+      const pixelHeight = Math.min(height - pixelY, rectangle.height * stride);
+      return {
+        x: (pixelX + (pixelWidth / 2)) * mapResolution,
+        z: (pixelY + (pixelHeight / 2)) * mapResolution,
+        width: pixelWidth * mapResolution,
+        depth: pixelHeight * mapResolution,
+        height: verticalHeight,
+        stride,
+      };
+    });
+  };
+
+  let stride = initialStride;
+  while (stride <= 16) {
+    const rectangles = rectanglesForStride(stride);
+    if (rectangles.length <= OCCUPANCY_WALL_MAX_INSTANCES || stride === 16) {
+      return rectangles;
+    }
+    stride *= 2;
+  }
+  return [];
+}
 
 const toColor3 = (hex) => B.Color3.FromHexString(
   `#${Number(hex || 0).toString(16).padStart(6, "0")}`,
@@ -123,8 +231,17 @@ export class OperatorScene3D {
     this.drag = null;
     this.handlers = {};
     this.floorMesh = null;
+    this.floorCanvasSource = null;
+    this.floorDynamicTexture = null;
     this.wallMaterial = null;
     this.wallMesh = null;
+    delete this.container.dataset.occupancyWalls;
+    this.currentFloor = null;
+    this.currentWallHeight = 1.8;
+    this.serverWallsAvailable = false;
+    this.occupancyWallBuildGeneration = 0;
+    this.occupancyWallBuildPending = false;
+    this.occupancyWallBuildComplete = false;
     this.graphMesh = null;
     this.edgeDirectionMesh = null;
     this.edgeDirectionsVisible = true;
@@ -147,6 +264,11 @@ export class OperatorScene3D {
     this.robotObjects = new Map();
     this.robotRouteObjects = new Map();
     this.robotRouteKeys = new Map();
+    this.scanMesh = null;
+    this.scanMaterial = null;
+    this.scanPointCount = 0;
+    this.latestScanPointCloud = [];
+    this.pendingScanPointCloud = null;
     this.latestRobots = [];
     this.latestSelectedRobotName = "";
     this.latestWaitBlockerName = "";
@@ -235,6 +357,11 @@ export class OperatorScene3D {
       const pending = this.pendingRobots;
       this.pendingRobots = null;
       this.updateRobots(pending.robots, pending.selectedName, pending.waitBlockerName);
+    }
+    if (this.pendingScanPointCloud) {
+      const pending = this.pendingScanPointCloud;
+      this.pendingScanPointCloud = null;
+      this.setScanPointCloud(pending.points, pending.options);
     }
     this.animate();
   }
@@ -480,6 +607,12 @@ export class OperatorScene3D {
     const nextMode = mode === "2d" ? "2d" : "3d";
     if (nextMode === this.viewMode) {
       this.wallMesh?.setEnabled(nextMode === "3d");
+      if (this.scanMaterial) {
+        this.scanMaterial.pointSize = nextMode === "2d" ? 3.8 : 5.2;
+      }
+      if (nextMode === "3d") {
+        this.ensureOccupancyWalls();
+      }
       return;
     }
     if (nextMode === "2d") {
@@ -500,6 +633,12 @@ export class OperatorScene3D {
     }
     this.viewMode = nextMode;
     this.wallMesh?.setEnabled(nextMode === "3d");
+    if (this.scanMaterial) {
+      this.scanMaterial.pointSize = nextMode === "2d" ? 3.8 : 5.2;
+    }
+    if (nextMode === "3d") {
+      this.ensureOccupancyWalls();
+    }
     if (this.robotObjects.size || this.latestRobots.length) {
       this.clearRobotObjects();
       this.updateRobots(
@@ -581,6 +720,80 @@ export class OperatorScene3D {
     }
     this.edgeDirectionsVisible = nextVisible;
     this.edgeDirectionMesh?.setEnabled(nextVisible);
+    this.requestRender();
+  }
+
+  setScanPointCloud(points = [], options = {}) {
+    const cloud = (Array.isArray(points) ? points : [])
+      .map((point) => ({
+        x: Number(point?.x),
+        y: Number(point?.height ?? 0.24),
+        z: Number(point?.y ?? point?.z),
+      }))
+      .filter((point) => (
+        Number.isFinite(point.x)
+        && Number.isFinite(point.y)
+        && Number.isFinite(point.z)
+      ));
+    this.latestScanPointCloud = cloud;
+    if (!this.scene) {
+      this.pendingScanPointCloud = { points: cloud, options };
+      return;
+    }
+    if (!cloud.length) {
+      this.clearScanPointCloud();
+      return;
+    }
+    if (!this.scanMesh) {
+      this.scanMesh = new B.Mesh("grpc-scan-point-cloud", this.scene);
+      this.scanMesh.isPickable = false;
+      this.scanMesh.alwaysSelectAsActiveMesh = true;
+      this.scanMesh.renderingGroupId = 1;
+      this.scanMaterial = this.unlitMaterial("grpc-scan-point-cloud-material", COLORS.scan, 0.92);
+      this.scanMaterial.pointsCloud = true;
+      this.scanMaterial.pointSize = this.viewMode === "2d" ? 3.8 : 5.2;
+      this.scanMaterial.disableDepthWrite = true;
+      this.scanMesh.material = this.scanMaterial;
+    }
+    const positions = new Float32Array(cloud.length * 3);
+    const pointCountChanged = this.scanPointCount !== cloud.length;
+    const indices = pointCountChanged ? new Array(cloud.length) : null;
+    for (let index = 0; index < cloud.length; index += 1) {
+      const point = cloud[index];
+      const offset = index * 3;
+      positions[offset] = point.x;
+      positions[offset + 1] = point.y;
+      positions[offset + 2] = point.z;
+      if (indices) {
+        indices[index] = index;
+      }
+    }
+    if (!pointCountChanged) {
+      this.scanMesh.updateVerticesData(B.VertexBuffer.PositionKind, positions, true, false);
+    } else {
+      this.scanMesh.setVerticesData(B.VertexBuffer.PositionKind, positions, true, 3);
+      this.scanMesh.setIndices(indices, null, true);
+      this.scanPointCount = cloud.length;
+    }
+    this.scanMesh.refreshBoundingInfo();
+    this.scanMesh.metadata = {
+      source: "grpc",
+      frameId: String(options.frameId || ""),
+      stampSec: Number(options.stampSec || 0),
+      pointCount: cloud.length,
+    };
+    this.scanMesh.setEnabled(true);
+    this.container.dataset.scanSource = "grpc";
+    this.container.dataset.scanPoints = String(cloud.length);
+    this.requestRender();
+  }
+
+  clearScanPointCloud() {
+    this.latestScanPointCloud = [];
+    this.pendingScanPointCloud = null;
+    this.scanMesh?.setEnabled(false);
+    delete this.container.dataset.scanSource;
+    delete this.container.dataset.scanPoints;
     this.requestRender();
   }
 
@@ -802,6 +1015,74 @@ export class OperatorScene3D {
     }
   }
 
+  setFloorCanvas(canvas) {
+    this.floorCanvasSource = canvas || null;
+    this.applyFloorCanvas();
+  }
+
+  updateFloorCanvas() {
+    if (!this.floorDynamicTexture) {
+      this.applyFloorCanvas();
+      return;
+    }
+    this.floorDynamicTexture.update(DYNAMIC_FLOOR_TEXTURE_INVERT_Y);
+    this.requestRender();
+  }
+
+  applyFloorCanvas() {
+    const material = this.floorMesh?.material;
+    if (!material || !this.floorCanvasSource || !this.scene) {
+      return;
+    }
+    this.alignFloorUvsForDynamicTexture();
+    if (
+      this.floorDynamicTexture
+      && this.floorDynamicTexture._canvas === this.floorCanvasSource
+    ) {
+      this.floorDynamicTexture.update(DYNAMIC_FLOOR_TEXTURE_INVERT_Y);
+      this.requestRender();
+      return;
+    }
+    material.albedoTexture?.dispose();
+    const texture = new B.DynamicTexture(
+      "warehouse-floor-editor-texture",
+      this.floorCanvasSource,
+      this.scene,
+      false,
+      B.Texture.NEAREST_SAMPLINGMODE,
+    );
+    texture.hasAlpha = false;
+    texture.anisotropicFilteringLevel = 1;
+    texture.level = 1.18;
+    texture.update(DYNAMIC_FLOOR_TEXTURE_INVERT_Y);
+    material.albedoTexture = texture;
+    material.markAsDirty(B.Material.TextureDirtyFlag);
+    this.floorDynamicTexture = texture;
+    this.requestRender();
+  }
+
+  alignFloorUvsForDynamicTexture() {
+    if (!this.floorMesh || this.floorMesh.metadata?.dynamicFloorUvsAligned) {
+      return;
+    }
+    const uvs = this.floorMesh.getVerticesData(B.VertexBuffer.UVKind);
+    if (!uvs?.length) {
+      return;
+    }
+    const aligned = uvs.slice();
+    for (let index = 1; index < aligned.length; index += 2) {
+      aligned[index] = 1 - aligned[index];
+    }
+    // Babylon's DynamicTexture upload flips canvas rows. Flip the floor UVs
+    // once so editor previews retain the same map_top_left orientation as the
+    // source PGM and the ordinary (non-editable) floor texture.
+    this.floorMesh.setVerticesData(B.VertexBuffer.UVKind, aligned, true);
+    this.floorMesh.metadata = {
+      ...(this.floorMesh.metadata || {}),
+      dynamicFloorUvsAligned: true,
+    };
+  }
+
   applyScene(payload, options = {}) {
     const previousBounds = { ...this.bounds };
     const previousView = {
@@ -820,8 +1101,15 @@ export class OperatorScene3D {
       this.removeRobotRoute(name);
     }
     this.floorMesh = null;
+    this.floorDynamicTexture = null;
     this.wallMaterial = null;
     this.wallMesh = null;
+    this.currentFloor = null;
+    this.serverWallsAvailable = false;
+    delete this.container.dataset.occupancyWalls;
+    this.occupancyWallBuildGeneration += 1;
+    this.occupancyWallBuildPending = false;
+    this.occupancyWallBuildComplete = false;
     this.graphMesh = null;
     this.edgeDirectionMesh = null;
     this.graphFaceMap = [];
@@ -835,10 +1123,14 @@ export class OperatorScene3D {
     this.lastCameraModeTopDown = null;
 
     const floor = payload?.floor || {};
+    const walls = Array.isArray(payload?.walls) ? payload.walls : [];
     this.bounds = {
       width: Math.max(1, Number(floor.width || 1)),
       depth: Math.max(1, Number(floor.depth || 1)),
     };
+    this.currentFloor = floor;
+    this.currentWallHeight = Math.max(0.05, Number(payload?.wallHeight || 1.8));
+    this.serverWallsAvailable = walls.length > 0;
     this.lms = Array.isArray(payload?.lms) ? payload.lms : [];
     const preserveView = Boolean(
       options.preserveView
@@ -860,7 +1152,12 @@ export class OperatorScene3D {
     this.updateOrthoFrustum();
 
     this.addFloor(floor);
-    this.addWalls(Array.isArray(payload?.walls) ? payload.walls : []);
+    this.applyFloorCanvas();
+    this.addWalls(walls);
+    this.occupancyWallBuildComplete = walls.length > 0;
+    if (this.viewMode === "3d" && !walls.length) {
+      this.ensureOccupancyWalls();
+    }
     this.addEdges(Array.isArray(payload?.edges) ? payload.edges : []);
     this.addLandmarks(this.lms);
     this.setEditorState(this.editorState);
@@ -960,9 +1257,105 @@ export class OperatorScene3D {
     });
     mesh.thinInstanceSetBuffer("matrix", matrices, 16, true);
     mesh.thinInstanceRefreshBoundingInfo(true);
+    mesh.freezeWorldMatrix();
+    mesh.doNotSyncBoundingInfo = true;
     this.wallMaterial = material;
     this.wallMesh = mesh;
+    this.container.dataset.occupancyWalls = String(walls.length);
     mesh.setEnabled(this.viewMode === "3d");
+  }
+
+  async ensureOccupancyWalls() {
+    if (
+      this.disposed
+      || !this.scene
+      || this.viewMode !== "3d"
+      || this.wallMesh
+      || this.serverWallsAvailable
+      || this.occupancyWallBuildPending
+      || this.occupancyWallBuildComplete
+    ) {
+      return;
+    }
+    const floor = this.currentFloor;
+    if (!floor?.imageDataUrl && !this.floorCanvasSource) {
+      this.occupancyWallBuildComplete = true;
+      return;
+    }
+
+    const generation = this.occupancyWallBuildGeneration;
+    const staticRoot = this.staticRoot;
+    this.occupancyWallBuildPending = true;
+    this.container.dataset.occupancyWalls = "loading";
+    try {
+      const imageData = await this.occupancyWallImageData(floor);
+      if (
+        this.disposed
+        || generation !== this.occupancyWallBuildGeneration
+        || staticRoot !== this.staticRoot
+      ) {
+        return;
+      }
+      await new Promise((resolve) => window.setTimeout(resolve, 0));
+      const walls = occupancyWallRectanglesFromImageData(
+        imageData,
+        floor.resolution,
+        this.currentWallHeight,
+      );
+      if (
+        this.disposed
+        || generation !== this.occupancyWallBuildGeneration
+        || staticRoot !== this.staticRoot
+      ) {
+        return;
+      }
+      this.addWalls(walls);
+      this.occupancyWallBuildComplete = true;
+      this.container.dataset.occupancyWalls = String(walls.length);
+      this.requestRender();
+    } catch (error) {
+      if (generation === this.occupancyWallBuildGeneration) {
+        this.occupancyWallBuildComplete = true;
+        this.container.dataset.occupancyWalls = "error";
+        console.warn("Could not build 3D occupancy walls from the map texture.", error);
+      }
+    } finally {
+      if (generation === this.occupancyWallBuildGeneration) {
+        this.occupancyWallBuildPending = false;
+      }
+    }
+  }
+
+  async occupancyWallImageData(floor) {
+    const canvas = this.floorCanvasSource;
+    if (canvas?.width && canvas?.height) {
+      const context = canvas.getContext("2d", { willReadFrequently: true });
+      if (!context) {
+        throw new Error("Could not read the edited occupancy canvas.");
+      }
+      return context.getImageData(0, 0, canvas.width, canvas.height);
+    }
+    const source = String(floor?.imageDataUrl || "");
+    if (!source) {
+      throw new Error("The occupancy map has no image.");
+    }
+    const image = await new Promise((resolve, reject) => {
+      const element = new Image();
+      element.addEventListener("load", () => resolve(element), { once: true });
+      element.addEventListener("error", () => reject(new Error("Could not decode the occupancy map.")), {
+        once: true,
+      });
+      element.src = source;
+    });
+    const imageCanvas = document.createElement("canvas");
+    imageCanvas.width = Math.max(1, Number(image.naturalWidth || image.width || 1));
+    imageCanvas.height = Math.max(1, Number(image.naturalHeight || image.height || 1));
+    const context = imageCanvas.getContext("2d", { willReadFrequently: true });
+    if (!context) {
+      throw new Error("Could not create an occupancy-map canvas.");
+    }
+    context.drawImage(image, 0, 0);
+    return context.getImageData(0, 0, imageCanvas.width, imageCanvas.height);
   }
 
   addEdges(edges) {
@@ -2496,6 +2889,7 @@ export class OperatorScene3D {
 
   dispose() {
     this.disposed = true;
+    this.occupancyWallBuildGeneration += 1;
     window.cancelAnimationFrame(this.animationFrame);
     window.clearTimeout(this.cameraInteractionRestoreTimer);
     window.clearTimeout(this.landmarkLabelRefreshTimer);

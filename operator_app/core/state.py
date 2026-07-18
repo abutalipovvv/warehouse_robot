@@ -14,8 +14,8 @@ from urllib.parse import urlparse
 
 from fleet_manager.core.route_core.map_exchange import build_editable_map_bundle_payload
 
-from ..config import GRPC_ROBOT_TYPES
-from ..services.fleet_manager import (
+from .config import GRPC_ROBOT_TYPES
+from .fleet_manager import (
     DEFAULT_FLEET_SIM_MAP_DIR,
     FLEET_MANAGER_ID,
     FLEET_MANAGER_IDS,
@@ -25,8 +25,8 @@ from ..services.fleet_manager import (
 from .map_cache import MapCache, default_maps_cache_root
 from .models import KnownRobot
 from .registry import RobotRegistry
-from ..robot_grpc_api.client import GrpcRobotAdapter, GrpcRobotError
-from ..robot_grpc_api.contracts import DEFAULT_GRPC_PORT
+from .grpc.client import GrpcRobotAdapter, GrpcRobotError
+from .grpc.contracts import DEFAULT_GRPC_PORT
 from .workspace import OperatorWorkspace
 
 OPERATOR_CONTROL_OWNER_ID = "operator-app"

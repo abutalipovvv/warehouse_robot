@@ -37,52 +37,32 @@
       </nav>
     </section>
 
-    <section class="editor-command-bar">
-      <div>
-        <div class="eyebrow">Map Changes</div>
-        <strong id="editorWorkflowHeadline">No map loaded.</strong>
-      </div>
-      <div class="editor-actions">
-        <button id="refreshMapsButton" type="button">Refresh</button>
-        <button id="saveLocalButton" type="button">Save</button>
-        <button id="pushRobotButton" class="primary" type="button">Push to Robot</button>
-        <button id="cancelMapChangesButton" type="button">Cancel Changes</button>
-        <button id="closeEditorButton" type="button">Close</button>
-      </div>
-    </section>
-
     <main class="editor-workspace">
-      <aside class="editor-sidebar">
-        <section class="editor-panel editor-workflow-panel">
-          <div class="panel-head">
-            <div>
-              <div class="eyebrow">Map Status</div>
-              <strong id="workflowStatusTitle">Ready</strong>
-            </div>
-            <span id="workflowStateChip" class="state-chip clean">synced</span>
-          </div>
-          <div id="workflowStatusText" class="workflow-status-text">Open a robot map to start editing.</div>
-          <div class="workflow-stats">
-            <div>
-              <span>LM</span>
-              <strong id="workflowLmCountText">0</strong>
-            </div>
-            <div>
-              <span>Edges</span>
-              <strong id="workflowEdgeCountText">0</strong>
-            </div>
-          </div>
-        </section>
-      </aside>
-
       <section class="editor-map-panel">
-        <div class="map-toolbar">
-          <div class="tool-group">
+        <div class="map-toolbar" role="toolbar" aria-label="Map editing tools">
+          <div class="map-toolbar-scroll">
+            <div class="tool-group" aria-label="Drawing tools">
             <button id="toolSelectButton" class="active" type="button" data-tool="select">Select</button>
             <button id="toolLmButton" type="button" data-tool="lm">LM</button>
             <button id="toolEdgeButton" type="button" data-tool="edge">Edge</button>
-          </div>
-          <div class="tool-group">
+            <button id="toolCorridorButton" type="button" data-tool="corridor" title="Mark a single-lane controlled corridor">Corridor</button>
+            <span class="tool-divider" aria-hidden="true"></span>
+            <button id="toolBrushButton" type="button" data-tool="brush" title="Draw occupied cells">Pencil</button>
+            <button id="toolEraserButton" type="button" data-tool="eraser" title="Draw free cells">Eraser</button>
+            <button id="toolUnknownButton" type="button" data-tool="unknown" title="Draw unknown cells">Unknown</button>
+            <button id="toolFillButton" type="button" data-tool="fill" title="Fill a connected area">Fill</button>
+            <button id="toolRectangleButton" type="button" data-tool="rectangle" title="Draw an occupied rectangle">Rectangle</button>
+            </div>
+            <span class="tool-divider" aria-hidden="true"></span>
+            <label class="brush-size-control" for="brushSizeInput">
+              Size
+              <input id="brushSizeInput" type="range" min="1" max="32" value="3" />
+              <output id="brushSizeOutput" for="brushSizeInput">3 px</output>
+            </label>
+            <button id="undoRasterButton" type="button" disabled title="Undo (Ctrl+Z)">Undo</button>
+            <button id="redoRasterButton" type="button" disabled title="Redo (Ctrl+Shift+Z)">Redo</button>
+            <span class="tool-divider" aria-hidden="true"></span>
+            <button id="refreshMapsButton" type="button">Refresh</button>
             <button id="zoomInButton" type="button">Zoom +</button>
             <button id="zoomOutButton" type="button">Zoom -</button>
             <button id="resetViewButton" type="button">Reset View</button>
@@ -110,6 +90,28 @@
       </section>
 
       <aside class="editor-sidebar inspector-sidebar">
+        <section class="editor-panel editor-workflow-panel">
+          <div class="panel-head">
+            <div>
+              <div class="eyebrow">Map Status</div>
+              <strong id="workflowStatusTitle">Ready</strong>
+            </div>
+            <span id="workflowStateChip" class="state-chip clean">synced</span>
+          </div>
+          <strong id="editorWorkflowHeadline" class="workflow-headline">No map loaded.</strong>
+          <div id="workflowStatusText" class="workflow-status-text">Open a robot map to start editing.</div>
+          <div class="workflow-stats">
+            <div>
+              <span>LM</span>
+              <strong id="workflowLmCountText">0</strong>
+            </div>
+            <div>
+              <span>Edges</span>
+              <strong id="workflowEdgeCountText">0</strong>
+            </div>
+          </div>
+        </section>
+
         <section class="editor-panel">
           <div class="panel-head">
             <div>
@@ -137,6 +139,10 @@
             <label>
               ignoreDir
               <input id="landmarkIgnoreDirInput" type="text" />
+            </label>
+            <label class="checkbox-control">
+              <input id="landmarkCanWaitInput" type="checkbox" checked />
+              Allow waiting at this LM
             </label>
           </div>
 
@@ -176,6 +182,10 @@
                 <option value="1">backward</option>
               </select>
             </label>
+            <label>
+              Controlled corridor
+              <input id="edgeControlledRegionInput" type="text" placeholder="empty = ordinary edge" />
+            </label>
             <div class="readout-row">
               <span>Length</span>
               <strong id="edgeLengthText">0.00 m</strong>
@@ -193,10 +203,64 @@
           </div>
           <div id="editorLog" class="editor-log"></div>
         </section>
+
+        <section class="editor-panel editor-file-actions" aria-label="Map file actions">
+          <div class="panel-head">
+            <div>
+              <div class="eyebrow">Map File</div>
+              <strong>Save and exit</strong>
+            </div>
+          </div>
+          <div class="editor-action-grid">
+            <button id="saveLocalButton" class="primary" type="button">Save</button>
+            <button id="saveAsButton" type="button">Save As</button>
+            <button id="pushRobotButton" type="button">Save &amp; Push</button>
+            <button id="closeEditorButton" type="button">Close</button>
+          </div>
+          <button id="cancelMapChangesButton" class="discard-button" type="button">Discard Map Changes</button>
+        </section>
       </aside>
     </main>
   </div>
 
-  <script src="map-editor.js"></script>
+  <dialog id="editorExitDialog" aria-labelledby="editorExitTitle">
+    <div class="dialog-card">
+      <div class="eyebrow">Unsaved Map</div>
+      <h2 id="editorExitTitle">Save changes before closing?</h2>
+      <p>Your changes exist only in this editor until you save them.</p>
+      <div class="exit-choice-grid">
+        <button type="button" data-exit-choice="discard">
+          <strong>Close</strong>
+          <span>Exit without saving</span>
+        </button>
+        <button type="button" data-exit-choice="save">
+          <strong>Save</strong>
+          <span>Keep the map locally</span>
+        </button>
+        <button class="primary" type="button" data-exit-choice="save-push">
+          <strong>Save &amp; Push</strong>
+          <span>Save and apply to the robot</span>
+        </button>
+      </div>
+      <button id="cancelExitButton" class="dialog-cancel-button" type="button">Continue Editing</button>
+    </div>
+  </dialog>
+
+  <dialog id="saveAsDialog" aria-labelledby="saveAsTitle">
+    <form id="saveAsForm" class="dialog-card">
+      <div class="eyebrow">Local Map Copy</div>
+      <h2 id="saveAsTitle">Save map as</h2>
+      <label for="saveAsNameInput">
+        Map name
+        <input id="saveAsNameInput" type="text" autocomplete="off" required />
+      </label>
+      <div class="dialog-actions">
+        <button id="cancelSaveAsButton" type="button">Cancel</button>
+        <button class="primary" type="submit">Save As</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script type="module" src="map-editor.js"></script>
 </body>
 </html>

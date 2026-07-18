@@ -177,6 +177,18 @@ fleet:
   cbs_low_level_max_time: 160
   cbs_max_high_level_nodes: 2000
   cbs_max_planning_time_sec: 2.5
+  # Explicit controlled_region edge properties are always honoured. In auto
+  # mode topology-derived corridors are enabled only when every edge carries
+  # the SMART marker, so imported maps keep their previous behaviour.
+  controlled_corridors_enabled: auto
+  controlled_corridor_min_edges: 1
+  # Select one deterministic entrant before it reaches the boundary. The
+  # runtime gate keeps this grant stable, and a parked owner triggers a spatial
+  # detour instead of leaving the queue blocked forever.
+  controlled_corridor_entry_lookahead_sec: 10
+  controlled_corridor_admission_lease_sec: 12
+  controlled_corridor_starvation_sec: 8
+  controlled_corridor_replan_after_sec: 8
   # CBS is a local coupled-component solver, never a 50-robot global fallback.
   local_cbs_max_robots: 8
   reservation_detour_horizon_sec: 8

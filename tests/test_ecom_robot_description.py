@@ -13,6 +13,13 @@ DESCRIPTION_ROOT = (
 )
 DESCRIPTION = DESCRIPTION_ROOT / "urdf" / "ecom_stage.urdf.xacro"
 STAGE_ROOT = PROJECT_ROOT / "sim_robot" / "ws" / "src" / "stage_ros2"
+OPERATOR_STATIC_ROOT = PROJECT_ROOT / "operator_app" / "web" / "static"
+
+
+def _operator_app_source() -> str:
+    module_root = OPERATOR_STATIC_ROOT / "js" / "app"
+    paths = [OPERATOR_STATIC_ROOT / "app.js", *sorted(module_root.glob("*.js"))]
+    return "\n".join(path.read_text(encoding="utf-8") for path in paths)
 
 
 def test_ecom_description_preserves_the_trp1_tf_contract() -> None:
@@ -165,11 +172,9 @@ def test_stage_launch_uses_ecom_description_and_keeps_stage_hardware_contract() 
     assert "node->world->IsGUI()" in stage_main
     assert "std::this_thread::sleep_until(next_update)" in stage_main
 
-    web_scene = (PROJECT_ROOT / "operator_app" / "static" / "scene3d.js").read_text(
-        encoding="utf-8"
-    )
+    web_scene = (OPERATOR_STATIC_ROOT / "scene3d.js").read_text(encoding="utf-8")
     assert 'const B = globalThis.BABYLON || await loadBabylon();' in web_scene
-    assert "babylonjs@9.16.2/babylon.js" in web_scene
+    assert '"./vendor/babylon-9.16.2.js"' in web_scene
     assert "new B.WebGPUEngine" in web_scene
     assert 'return this.engine.webGLVersion >= 2 ? "WEBGL 2" : "WEBGL";' in web_scene
     assert "this.scene.useRightHandedSystem = true;" in web_scene
@@ -215,9 +220,7 @@ def test_stage_launch_uses_ecom_description_and_keeps_stage_hardware_contract() 
     assert "const bodyOutline = [" in web_scene
     assert "this.addTrp1Model(group, active)" not in web_scene
 
-    web_app = (PROJECT_ROOT / "operator_app" / "static" / "app.js").read_text(
-        encoding="utf-8"
-    )
+    web_app = _operator_app_source()
     assert "this.fleetSelectionCleared = true" in web_app
     assert "this.clearFleetRobotSelection();" in web_app
     assert '"fleet-route-preview active"' in web_app
@@ -256,9 +259,7 @@ def test_stage_launch_uses_ecom_description_and_keeps_stage_hardware_contract() 
     assert "scene.updateRobots(robots, selectedName, waitBlockerName);" in web_app
     assert "scene.updateRobotPoses(robots)" in web_app
 
-    web_styles = (
-        PROJECT_ROOT / "operator_app" / "static" / "styles.css"
-    ).read_text(encoding="utf-8")
+    web_styles = (OPERATOR_STATIC_ROOT / "styles.css").read_text(encoding="utf-8")
     assert ".robot-selection-halo" in web_styles
     assert ".robot-wait-blocker-halo" in web_styles
     assert ".robot-wait-dependency-link" in web_styles
