@@ -43,7 +43,7 @@ class FleetManagerCore(
     production gRPC robot gateway. The core owns decisions, never UI concerns.
     """
 
-    MAX_SIMULATION_TIME_SCALE = 8.0
+    MAX_SIMULATION_TIME_SCALE = 4.0
     runtime_kind = "core"
 
     @property
@@ -102,6 +102,15 @@ class FleetManagerCore(
         self._dispatch_job: dict[str, Any] | None = None
         self._last_async_job_kind = ""
         self._rolling_prefetch_retry_at: dict[str, float] = {}
+        # Continuations share one planner worker with new order dispatch.
+        # Preserve admission age and the last service turn explicitly so a
+        # continuous stream of fresh robots cannot starve a stopped holder.
+        self._rolling_prefetch_eligible_since: dict[str, float] = {}
+        self._rolling_prefetch_last_attempt_at: dict[str, float] = {}
+        # An impossible departure around the same route-less parked bodies
+        # must not consume the sole planner worker forever. The dispatcher
+        # records the exact blocker occupancy and retries only after it changes.
+        self._stationary_order_retry_state: dict[str, dict[str, Any]] = {}
         # A continuation normally remains a cheap one/two-robot SIPP request.
         # Failed boundary holders rotate through cheap pair attempts, then the
         # fast SIPP recovery wave grows to include the coupled stopped group.
@@ -206,6 +215,120 @@ class FleetManagerCore(
         self._traffic_zone_queues.clear()
         self._traffic_zone_tick_now = 0.0
 
+    def _clear_rolling_prefetch_state(self, robot_name: str) -> None:
+        """Forget continuation backoff once a robot receives a fresh route."""
+        name = str(robot_name or "").strip()
+        if not name:
+            return
+        self._rolling_prefetch_retry_at.pop(name, None)
+        self._rolling_prefetch_failures.pop(name, None)
+        self._rolling_prefetch_eligible_since.pop(name, None)
+        self._rolling_prefetch_last_attempt_at.pop(name, None)
+        robot = self.robots.get(name)
+        if robot is not None:
+            robot.rolling_boundary_since = None
+
+    def clear_robot_ephemeral_state(self, robot_name: str) -> None:
+        """Remove name-keyed arbitration state for a removed/respawned robot."""
+        name = str(robot_name or "").strip()
+        if not name:
+            return
+        self._clear_rolling_prefetch_state(name)
+        self._runtime_tick_route_clocks.pop(name, None)
+        for order_id in list(self._stationary_order_retry_state):
+            order = self.orders.get(order_id)
+            if order is None or name in {
+                str(order.vehicle or ""),
+                str(order.assigned_robot or ""),
+            }:
+                self._stationary_order_retry_state.pop(order_id, None)
+
+        if any(item[0] == name for item in self._rolling_vacancy_recovery_signature):
+            self._rolling_vacancy_recovery_signature = ()
+            self._rolling_vacancy_recovery_blacklist.clear()
+        else:
+            self._rolling_vacancy_recovery_blacklist = {
+                item
+                for item in self._rolling_vacancy_recovery_blacklist
+                if item[1] != name
+            }
+
+        for state in (
+            self._active_wait_cycles,
+            self._wait_cycle_last_arbitration,
+            self._coupled_replan_last_attempt,
+            self._coupled_replan_failures,
+        ):
+            for cycle_key in list(state):
+                if name in cycle_key:
+                    state.pop(cycle_key, None)
+
+        for key in list(self._controlled_corridor_wait_since):
+            if len(key) > 1 and key[1] == name:
+                self._controlled_corridor_wait_since.pop(key, None)
+        for key in list(self._traffic_zone_wait_since):
+            if len(key) > 1 and key[1] == name:
+                self._traffic_zone_wait_since.pop(key, None)
+        self._controlled_corridor_winners.pop(name, None)
+        self._traffic_zone_winners.pop(name, None)
+        for region_id, lease in list(self._controlled_corridor_leases.items()):
+            if isinstance(lease, tuple) and lease and lease[0] == name:
+                self._controlled_corridor_leases.pop(region_id, None)
+        for key in list(self._traffic_zone_leases):
+            if len(key) > 1 and key[1] == name:
+                self._traffic_zone_leases.pop(key, None)
+        for membership in (
+            self._controlled_corridor_occupancy,
+            self._controlled_corridor_queues,
+            self._traffic_zone_queues,
+        ):
+            for region_id, robot_names in list(membership.items()):
+                filtered = [item for item in robot_names if item != name]
+                if filtered:
+                    membership[region_id] = filtered
+                else:
+                    membership.pop(region_id, None)
+
+    def reset_planning_runtime_state(self) -> None:
+        """Reset transient planner/arbitration state without racing a worker.
+
+        A Python planning thread cannot be force-cancelled safely. Mark the
+        current result stale and let that one worker finish; the dispatcher
+        will discard it before it can mutate a newly reset benchmark.
+        """
+        with self._dispatch_job_lock:
+            if self._dispatch_job is not None:
+                if self._dispatch_job.get("kind") == "dispatch":
+                    for entry in self._dispatch_job.get("entries", []):
+                        if not isinstance(entry, tuple) or not entry:
+                            continue
+                        order = entry[0]
+                        if (
+                            isinstance(order, FleetOrder)
+                            and self.orders.get(order.order_id) is order
+                            and order.status == "PLANNING"
+                        ):
+                            order.status = "QUEUED"
+                            order.error = ""
+                            order.updated_at = self._now()
+                self._dispatch_job["discard"] = True
+        self._last_async_job_kind = ""
+        self._rolling_prefetch_retry_at.clear()
+        self._rolling_prefetch_failures.clear()
+        self._rolling_prefetch_eligible_since.clear()
+        self._rolling_prefetch_last_attempt_at.clear()
+        for robot in self.robots.values():
+            robot.rolling_boundary_since = None
+        self._stationary_order_retry_state.clear()
+        self._rolling_vacancy_recovery_signature = ()
+        self._rolling_vacancy_recovery_blacklist.clear()
+        self._coupled_replan_last_attempt.clear()
+        self._coupled_replan_failures.clear()
+        self._active_wait_cycles.clear()
+        self._wait_cycle_last_arbitration.clear()
+        self._runtime_tick_route_clocks.clear()
+        self.reset_traffic_flow_state()
+
     def simulation_time(self) -> float:
         """Return the accelerated clock used by simulated fleet runtime."""
         return self._now()
@@ -285,6 +408,7 @@ class FleetManagerCore(
         route_revisions: dict[str, int] | None = None,
         include_runtime_details: bool = True,
     ) -> dict[str, Any]:
+        pending_by_robot = self.task_manager.pending_by_robot()
         state = {
             "ok": True,
             "robots": [
@@ -296,7 +420,8 @@ class FleetManagerCore(
                             route_revisions is not None
                             and int(route_revisions.get(robot.name, -1)) != robot.route_revision
                         )
-                    )
+                    ),
+                    pending_orders=pending_by_robot.get(robot.name, []),
                 )
                 for robot in self._runtime_robots()
             ],
@@ -321,9 +446,11 @@ class FleetManagerCore(
         robot: FleetRobot,
         *,
         include_trajectory: bool,
+        pending_orders: list[FleetOrder] | None = None,
     ) -> dict[str, Any]:
         payload = robot.to_dict(include_trajectory=include_trajectory)
-        pending_orders = self.task_manager.pending_for_robot(robot.name)
+        if pending_orders is None:
+            pending_orders = self.task_manager.pending_for_robot(robot.name)
         if not pending_orders:
             payload.update(
                 {
@@ -675,6 +802,7 @@ class FleetManagerCore(
 
         robot = self.robots.get(name)
         if robot is None:
+            self.clear_robot_ephemeral_state(name)
             now = self._now()
             robot = FleetRobot(
                 name=name,
@@ -691,6 +819,7 @@ class FleetManagerCore(
                 self._apply_remote_status(robot, remote_status, self._now())
             self._event("info", f"robot added: {name}@{current_lm}" + (f" remote={base_url}" if robot.is_remote() else ""))
         else:
+            self.clear_robot_ephemeral_state(name)
             self._cancel_active_order_for_robot(robot, "robot respawned")
             if robot.is_remote():
                 self._cancel_remote_route(robot, "robot respawned")
@@ -727,6 +856,7 @@ class FleetManagerCore(
             raise ValueError("robot name is required")
         removed = self.robots.pop(name, None)
         if removed is not None:
+            self.clear_robot_ephemeral_state(name)
             self._cancel_active_order_for_robot(removed, "robot removed")
             self._cancel_orders_for_robot(name, "robot removed")
             self._event("warn", f"robot removed: {name}")
@@ -1188,9 +1318,15 @@ class FleetManagerCore(
         if robot.current_lm != robot.route_chunk_goal_lm or robot.current_lm == final_target:
             return False
 
+        first_boundary_tick = robot.rolling_boundary_since is None
+        if first_boundary_tick:
+            robot.rolling_boundary_since = now
+            self._rolling_prefetch_eligible_since.setdefault(robot.name, now)
         order.status = "PLANNING"
         order.error = "rolling continuation pending"
-        order.updated_at = now
+        # Do not erase the real waiting age on every 10 Hz physics tick.
+        if first_boundary_tick:
+            order.updated_at = now
         order.assigned_robot = robot.name
         order.start_lm = robot.current_lm
         order.route_nodes = list(robot.plan_nodes)
@@ -1485,6 +1621,7 @@ class FleetManagerCore(
             return 0.8
 
     def _clear_remote_route_metadata(self, robot: FleetRobot) -> None:
+        self._clear_rolling_prefetch_state(robot.name)
         robot.route_revision = 0
         robot.route_chunk_index = 0
         robot.route_chunk_goal_lm = ""
@@ -1501,6 +1638,9 @@ class FleetManagerCore(
         plan: dict[str, Any],
         now: float,
     ) -> None:
+        # A successful full dispatch/replan starts a new continuation episode.
+        # Failure/backoff from an older route must not poison this route later.
+        self._clear_rolling_prefetch_state(robot.name)
         previous_final = robot.route_final_lm
         previous_chunk = robot.route_chunk_goal_lm
         chunk_goal = str(plan.get("goalLm") or order.target_lm).strip()

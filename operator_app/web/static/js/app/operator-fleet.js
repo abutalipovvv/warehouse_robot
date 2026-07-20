@@ -1391,7 +1391,20 @@ export const withFleetUi = (Base) => class OperatorAppFleetUi extends Base {
       this.fleetBenchmarkPackageButton.disabled = Boolean(this.fleetBenchmarkBusy || continuousActive);
     }
     if (this.fleetSimulationTimeScaleSelect) {
-      const scale = Math.max(1, Number(this.currentStatus?.simulationTimeScale || dynamic.timeScale || 1));
+      const maximum = Math.max(
+        1,
+        Number(this.currentStatus?.simulationTimeScaleMax || 4),
+      );
+      for (const option of this.fleetSimulationTimeScaleSelect.options) {
+        option.disabled = Number(option.value || 1) > maximum;
+      }
+      const scale = Math.min(
+        maximum,
+        Math.max(
+          1,
+          Number(this.currentStatus?.simulationTimeScale || dynamic.timeScale || 1),
+        ),
+      );
       this.fleetSimulationTimeScaleSelect.value = String(scale);
     }
   }
@@ -1679,6 +1692,7 @@ export const withFleetUi = (Base) => class OperatorAppFleetUi extends Base {
       Array.from(this.fleetRobotList.querySelectorAll(":scope > .fleet-list-item[data-robot-name]"))
         .map((row) => [row.dataset.robotName, row]),
     );
+    const queuedGoals = this.fleetQueuedGoalsByRobot();
     const activeNames = new Set();
     robots.forEach((robot, index) => {
       const name = String(robot.name || "");
@@ -1687,7 +1701,7 @@ export const withFleetUi = (Base) => class OperatorAppFleetUi extends Base {
       if (!row) {
         row = this.createFleetRobotListRow(name);
       }
-      this.updateFleetRobotListRow(row, robot);
+      this.updateFleetRobotListRow(row, robot, queuedGoals.get(name) || "");
       const currentAtIndex = this.fleetRobotList.children[index] || null;
       if (currentAtIndex !== row) {
         this.fleetRobotList.insertBefore(row, currentAtIndex);
@@ -1746,22 +1760,36 @@ export const withFleetUi = (Base) => class OperatorAppFleetUi extends Base {
     });
 
     row.append(button, removeButton);
+    row._fleetFields = {
+      color,
+      title,
+      subtitle,
+      state,
+      removeButton,
+    };
     return row;
   }
 
-  updateFleetRobotListRow(row, robot) {
+  updateFleetRobotListRow(row, robot, queuedGoal = "") {
     const name = String(robot.name || "");
     row.dataset.robotName = name;
     row.classList.toggle("active", name === this.selectedFleetRobotName);
-    const color = row.querySelector('[data-role="color"]');
+    const fields = row._fleetFields || {};
+    const color = fields.color || row.querySelector('[data-role="color"]');
     if (color) {
-      color.style.background = this.fleetRobotColor(name);
+      const nextColor = this.fleetRobotColor(name);
+      if (color.style.background !== nextColor) {
+        color.style.background = nextColor;
+      }
     }
-    const title = row.querySelector('[data-role="name"]');
+    const title = fields.title || row.querySelector('[data-role="name"]');
     if (title) {
-      title.textContent = name || "-";
+      const nextTitle = name || "-";
+      if (title.textContent !== nextTitle) {
+        title.textContent = nextTitle;
+      }
     }
-    const subtitle = row.querySelector('[data-role="meta"]');
+    const subtitle = fields.subtitle || row.querySelector('[data-role="meta"]');
     if (subtitle) {
       const robotMode = String(robot.mode || robot.type || "simulated");
       const remoteStatus = this.remoteStatusForFleetRobot(robot);
@@ -1772,40 +1800,56 @@ export const withFleetUi = (Base) => class OperatorAppFleetUi extends Base {
         robotMode !== "simulated" ? (robot.online === false ? "offline" : "online") : "",
         mapLabel && mapLabel !== "-" ? `map ${mapLabel}` : "",
       ].filter(Boolean);
-      subtitle.textContent = meta.join(" | ");
-      const queuedGoal = this.queuedGoalFor(name);
+      let nextSubtitle = meta.join(" | ");
       if (queuedGoal) {
-        subtitle.textContent = `${subtitle.textContent} | queued ${queuedGoal}`;
+        nextSubtitle = `${nextSubtitle} | queued ${queuedGoal}`;
+      }
+      if (subtitle.textContent !== nextSubtitle) {
+        subtitle.textContent = nextSubtitle;
       }
     }
-    const state = row.querySelector('[data-role="state"]');
+    const state = fields.state || row.querySelector('[data-role="state"]');
     if (state) {
-      state.textContent = this.fleetRobotStateLabel(robot);
+      const nextState = this.fleetRobotStateLabel(robot);
+      if (state.textContent !== nextState) {
+        state.textContent = nextState;
+      }
     }
-    const removeButton = row.querySelector(".fleet-list-remove");
+    const removeButton = fields.removeButton || row.querySelector(".fleet-list-remove");
     if (removeButton) {
-      removeButton.title = `Remove ${name}`;
+      const nextTitle = `Remove ${name}`;
+      if (removeButton.title !== nextTitle) {
+        removeButton.title = nextTitle;
+      }
     }
   }
 
-  queuedGoalFor(robotName) {
-    const draftGoals = this.fleetDraftGoalsFor(robotName);
-    if (draftGoals.length) {
-      return `${draftGoals.length} draft`;
+  fleetQueuedGoalsByRobot() {
+    const result = new Map();
+    for (const group of this.fleetDraftGroups()) {
+      result.set(group.robotName, `${group.goals.length} draft`);
     }
-    const item = this.fleetOrders().find((entry) => {
-      const status = String(entry.status || "").toUpperCase();
+    for (const item of this.fleetOrders()) {
+      const status = String(item.status || "").toUpperCase();
       if (this.isOrderTerminal(status)) {
-        return false;
+        continue;
       }
-      return entry.vehicle === robotName || entry.assignedRobot === robotName;
-    });
-    if (!item) {
-      return "";
+      const robotName = String(item.assignedRobot || item.vehicle || "");
+      if (!robotName || result.has(robotName)) {
+        continue;
+      }
+      const totalSteps = Number(
+        item.totalSteps
+        || (Array.isArray(item.targets) ? item.targets.length : 1)
+        || 1,
+      );
+      const currentStep = Math.min(totalSteps, Number(item.currentStep || 0) + 1);
+      result.set(
+        robotName,
+        `${currentStep}/${totalSteps} ${item.targetLm || "-"} ${status.toLowerCase()}`,
+      );
     }
-    const totalSteps = Number(item.totalSteps || (Array.isArray(item.targets) ? item.targets.length : 1) || 1);
-    const currentStep = Math.min(totalSteps, Number(item.currentStep || 0) + 1);
-    return `${currentStep}/${totalSteps} ${item.targetLm || "-"} ${String(item.status || "").toLowerCase()}`;
+    return result;
   }
 
   fleetDraftGoalsFor(robotName) {
@@ -1860,12 +1904,38 @@ export const withFleetUi = (Base) => class OperatorAppFleetUi extends Base {
     if (!this.fleetQueueList) {
       return;
     }
-    this.fleetQueueList.innerHTML = "";
     const draftGroups = this.fleetDraftGroups();
     const orders = this.fleetOrders();
     if (orders.length) {
       this.selectedFleetOrder();
     }
+    const renderKey = JSON.stringify({
+      manager: String(this.selectedRobot()?.id || ""),
+      selected: String(this.selectedFleetOrderId || ""),
+      drafts: draftGroups.map((group) => [
+        group.robotName,
+        group.goals.map((goal) => [
+          Number(goal.seq || 0),
+          String(goal.targetLm || goal.goalLm || ""),
+        ]),
+      ]),
+      orders: orders.slice(0, 80).map((item) => [
+        String(item.id || item.orderId || ""),
+        String(item.status || ""),
+        String(item.assignedRobot || item.vehicle || ""),
+        String(item.targetLm || ""),
+        Number(item.currentStep || 0),
+        Number(item.totalSteps || 0),
+        Array.isArray(item.targets) ? item.targets.map(String) : [],
+        Array.isArray(item.routeNodes) ? item.routeNodes.map(String) : [],
+        String(item.error || ""),
+      ]),
+    });
+    if (renderKey === this.fleetQueueRenderKey) {
+      return;
+    }
+    this.fleetQueueRenderKey = renderKey;
+    this.fleetQueueList.innerHTML = "";
     if (!draftGroups.length && !orders.length) {
       this.fleetQueueList.textContent = "No orders yet.";
       this.renderFleetOrderDetails();
@@ -2220,12 +2290,26 @@ export const withFleetUi = (Base) => class OperatorAppFleetUi extends Base {
   }
 
   renderEvents(events) {
+    const visibleEvents = events.slice().reverse().slice(0, 80);
+    const managerId = String(this.selectedRobot()?.id || "");
+    const renderKey = JSON.stringify([
+      managerId,
+      visibleEvents.map((event) => [
+        event.stamp || 0,
+        event.level || "info",
+        event.message || "",
+      ]),
+    ]);
+    if (renderKey === this.fleetEventsRenderKey) {
+      return;
+    }
+    this.fleetEventsRenderKey = renderKey;
     this.robotEventsLog.innerHTML = "";
     if (!events.length) {
       this.robotEventsLog.textContent = "No events yet.";
       return;
     }
-    for (const event of events.slice().reverse().slice(0, 80)) {
+    for (const event of visibleEvents) {
       const row = document.createElement("div");
       row.className = `event-row ${String(event.level || "info").toLowerCase()}`;
       const stamp = event.stamp ? new Date(Number(event.stamp) * 1000).toLocaleTimeString([], { hour12: false }) : "--:--:--";

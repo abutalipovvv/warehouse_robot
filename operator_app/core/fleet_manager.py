@@ -645,7 +645,7 @@ class OperatorFleetManager:
         self.manager.robots.clear()
         self.manager.orders.clear()
         self.manager.events.clear()
-        self.manager.reset_traffic_flow_state()
+        self.manager.reset_planning_runtime_state()
         for key in getattr(self.manager, "traffic_metrics", {}):
             self.manager.traffic_metrics[key] = 0
         self._reset_dynamic_benchmark()
@@ -746,10 +746,20 @@ class OperatorFleetManager:
                 f"wait for {len(pending_benchmark_orders)} active benchmark order(s) "
                 "to finish before starting a new generator"
             )
+        # A benchmark session owns its counters and bounded queue history.
+        # Leaving terminal dynamic orders from the previous session made the
+        # first pump count them as completions of the new run.
+        for order_id, order in list(self.manager.orders.items()):
+            if (
+                order_id.startswith("dynamic-")
+                and order.status in {"COMPLETED", "FAILED", "CANCELED"}
+            ):
+                self.manager.orders.pop(order_id, None)
 
         requested_horizon_sec = max(1.0, min(120.0, float(horizon_sec)))
         horizon_sec = self._safe_dynamic_rolling_horizon(
             requested_horizon_sec,
+            robot_count=len(robots),
         )
         generation_mode = (
             "package_waves"
@@ -771,7 +781,7 @@ class OperatorFleetManager:
         # independently configured reservation horizon; the fleet runtime
         # already raises it to the longest controlled-corridor traversal plus
         # its safety margin when that topology needs more look-ahead.
-        self.manager.reset_traffic_flow_state()
+        self.manager.reset_planning_runtime_state()
         for key in getattr(self.manager, "traffic_metrics", {}):
             self.manager.traffic_metrics[key] = 0
 
@@ -857,19 +867,21 @@ class OperatorFleetManager:
             "state": state,
         })
 
-    def _safe_dynamic_rolling_horizon(self, requested: float) -> float:
-        """Keep a benchmark window long enough for a corridor transfer."""
+    def _safe_dynamic_rolling_horizon(
+        self,
+        requested: float,
+        *,
+        robot_count: int | None = None,
+    ) -> float:
+        """Keep a benchmark window schedulable through explicit corridors.
+
+        The topology floor protects one corridor transfer.  A dense fleet also
+        needs enough committed time for the serialized planner to prepare all
+        future windows before their endpoints synchronize.  This second floor
+        is deliberately limited to maps that actually contain authored
+        controlled corridors; open maps keep the operator's requested value.
+        """
         requested = max(1.0, min(120.0, float(requested)))
-        fleet = self.manager.params.get("fleet", {})
-        if not isinstance(fleet, dict):
-            fleet = {}
-        try:
-            configured = max(
-                1.0,
-                float(fleet.get("rolling_horizon_sec", requested) or requested),
-            )
-        except (TypeError, ValueError):
-            configured = requested
         corridor_ticks = self.manager.planner.controlled_corridor_max_ticks()
         if corridor_ticks <= 0:
             return requested
@@ -882,7 +894,49 @@ class OperatorFleetManager:
             + self.manager._controlled_corridor_entry_lookahead()
             + (2.0 * self.manager._reservation_safety_time())
         )
-        return min(120.0, max(requested, configured, topology_minimum))
+        # Starting a benchmark writes the effective value back to
+        # ``rolling_horizon_sec``.  Reusing that mutable value here made the
+        # horizon sticky: after one 30 s run, a later 10 s request still ran at
+        # 30 s and paid the larger SIPP search cost forever.  The API request
+        # is authoritative; only the map's current corridor safety floor may
+        # raise it.
+        fleet = self.manager.params.get("fleet", {})
+        if not isinstance(fleet, dict):
+            fleet = {}
+        try:
+            dense_threshold = max(
+                2,
+                int(
+                    fleet.get(
+                        "dense_controlled_corridor_robot_threshold",
+                        32,
+                    )
+                    or 32
+                ),
+            )
+        except (TypeError, ValueError):
+            dense_threshold = 32
+        try:
+            dense_minimum = max(
+                topology_minimum,
+                float(
+                    fleet.get(
+                        "dense_controlled_corridor_horizon_sec",
+                        30.0,
+                    )
+                    or 30.0
+                ),
+            )
+        except (TypeError, ValueError):
+            dense_minimum = max(topology_minimum, 30.0)
+        active_robot_count = (
+            len(self._benchmark_sim_robots())
+            if robot_count is None
+            else max(0, int(robot_count))
+        )
+        if active_robot_count >= dense_threshold:
+            topology_minimum = max(topology_minimum, dense_minimum)
+        return min(120.0, max(requested, topology_minimum))
 
     def _stop_dynamic_benchmark_payload(self) -> dict[str, Any]:
         if self._dynamic_benchmark.get("active"):
@@ -989,11 +1043,20 @@ class OperatorFleetManager:
         wave_robots = config.setdefault("packageWaveRobots", {})
         wave_started = config.setdefault("packageWaveStartedAt", {})
         completed_waves = config.setdefault("packageCompletedWaves", set())
+        completed_wave_indices: set[int] = set()
+        for raw_index in completed_waves:
+            try:
+                completed_wave_indices.add(int(raw_index))
+            except (TypeError, ValueError):
+                continue
+        completed_total = int(config.get("wavesCompleted", 0) or 0)
         expected_robots = len(self._benchmark_sim_robots())
         completed_now = 0
+        finished_indices: set[int] = set()
         for raw_index in sorted(wave_orders, key=int):
             wave_index = int(raw_index)
-            if wave_index in completed_waves:
+            if wave_index in completed_wave_indices:
+                finished_indices.add(wave_index)
                 continue
             order_ids = set(wave_orders.get(raw_index, set()))
             robot_names = set(wave_robots.get(raw_index, set()))
@@ -1013,6 +1076,8 @@ class OperatorFleetManager:
             started_at = float(wave_started.get(raw_index, now) or now)
             duration = max(0.0, now - started_at)
             completed_waves.add(wave_index)
+            completed_wave_indices.add(wave_index)
+            finished_indices.add(wave_index)
             completed_now += 1
             config["lastWaveDurationSec"] = duration
             config["waveDurationTotalSec"] = float(
@@ -1023,7 +1088,16 @@ class OperatorFleetManager:
                 f"package wave {wave_index} completed: "
                 f"{len(order_ids)} orders in {duration:.1f} simulated seconds",
             )
-        config["wavesCompleted"] = len(completed_waves)
+        config["wavesCompleted"] = completed_total + completed_now
+        # The aggregate counters above are the benchmark record. Keeping all
+        # per-wave order-id/name sets forever made this 10 Hz method scan the
+        # complete run history after hours of operation.
+        for wave_index in finished_indices:
+            for mapping in (wave_orders, wave_robots, wave_started):
+                mapping.pop(wave_index, None)
+                mapping.pop(str(wave_index), None)
+            completed_waves.discard(wave_index)
+            completed_waves.discard(str(wave_index))
         return completed_now
 
     def _top_up_package_orders(self, now: float) -> int:
@@ -1282,12 +1356,25 @@ class OperatorFleetManager:
         assignments: list[tuple[Any, str]] = []
         min_hops, max_hops = self._dynamic_goal_hop_window()
         robot_count = max(1, len(robots))
-        free_peripheral = set(peripheral) - occupied_lms
-        excluded_goal_lms = (
-            occupied_lms
-            if len(free_peripheral) >= robot_count
-            else set()
-        )
+        departure_names = {
+            str(robot.name)
+            for robot in robots
+        }
+        coordinated_departure_lms = {
+            str(robot.current_lm)
+            for robot in self._benchmark_sim_robots()
+            if (
+                str(robot.name) in departure_names
+                and str(robot.current_lm) in self.loaded_map.landmarks
+            )
+        }
+        # A target occupied by a robot outside this exact departure cohort
+        # cannot become free as a consequence of the generated batch. Never
+        # drop all occupied-LM exclusions merely because the perimeter is
+        # full: that creates an impossible order behind a parked robot and a
+        # permanent plan/replan loop. Cohort members may still exchange their
+        # current portals as one coordinated permutation.
+        excluded_goal_lms = occupied_lms - coordinated_departure_lms
         # A perimeter-only Kiva layout may have fewer than two parking portals
         # per robot. In that case the wave is a coordinated permutation:
         # targets may be another wave robot's current portal because that
@@ -1426,9 +1513,12 @@ class OperatorFleetManager:
     def _prune_dynamic_order_history(self) -> None:
         config = self._dynamic_benchmark
         counted = config.setdefault("countedTerminalOrders", set())
+        session_prefix = (
+            f"dynamic-{int(config.get('sessionId', 0) or 0)}-"
+        )
         terminal = [
             order for order in self.manager.orders.values()
-            if order.order_id.startswith("dynamic-")
+            if order.order_id.startswith(session_prefix)
             and order.status in {"COMPLETED", "FAILED", "CANCELED"}
         ]
         terminal.sort(key=lambda order: (order.updated_at, order.order_id), reverse=True)
@@ -1452,16 +1542,21 @@ class OperatorFleetManager:
                 float(config.get("lastTerminalAt", 0.0) or 0.0),
                 float(order.updated_at),
             )
-        for order in terminal[240:]:
+        # The operator queue exposes at most 120 records. Retaining additional
+        # terminal benchmark orders only increases every lifecycle scan.
+        for order in terminal[120:]:
             self.manager.orders.pop(order.order_id, None)
             counted.discard(order.order_id)
 
     def _dynamic_benchmark_payload(self) -> dict[str, Any]:
         config = getattr(self, "_dynamic_benchmark", {})
         generated = int(config.get("ordersGenerated", 0) or 0)
+        session_prefix = (
+            f"dynamic-{int(config.get('sessionId', 0) or 0)}-"
+        )
         dynamic_orders = [
             order for order in self.manager.orders.values()
-            if order.order_id.startswith("dynamic-")
+            if order.order_id.startswith(session_prefix)
         ] if hasattr(self, "manager") else []
         self._prune_dynamic_order_history()
         completed = int(config.get("ordersCompleted", 0) or 0)
@@ -1526,6 +1621,10 @@ class OperatorFleetManager:
             "scenario": str(config.get("scenario") or "continuous_random_orders"),
             "seed": int(config.get("seed", 42) or 42),
             "horizonSec": float(config.get("horizonSec", 10.0) or 10.0),
+            "effectiveHorizonSec": round(
+                float(self.manager._rolling_horizon()),
+                3,
+            ),
             "horizonRequestedSec": float(
                 config.get(
                     "horizonRequestedSec",

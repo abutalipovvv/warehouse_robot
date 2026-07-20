@@ -74,6 +74,11 @@ fleet:
   # Only this graph-safe prefix is committed. The next prefix is prepared
   # before the horizon boundary against fresh robot reservations.
   rolling_horizon_sec: 30
+  # Accelerated motion consumes simulated route time faster while MAPF still
+  # runs in wall time. Preserve the planning budget by expanding only the
+  # committed simulation window (10 s at 1x becomes 40 s at 4x).
+  rolling_horizon_scale_with_simulation_time: true
+  rolling_horizon_max_sec: 120
   # Optional discrete cap; 0 means the time horizon is authoritative.
   rolling_horizon_steps: 0
   # Start the next MAPF window well before the 30 s boundary. Continuations
@@ -86,9 +91,10 @@ fleet:
   # display rate with a tightly bounded look-ahead on the committed trajectory.
   simulation_tick_interval_sec: 0.10
   # Fleet Manager Sim can accelerate its complete virtual clock from the web
-  # benchmark panel. Eight times is the hard safety cap for CPU-heavy fleets.
+  # benchmark panel. Four times is the measured safe cap for CPU-heavy fleets;
+  # at 6x/8x Python MAPF cannot reliably finish between physics slices.
   simulation_time_scale: 1.0
-  simulation_time_scale_max: 8.0
+  simulation_time_scale_max: 4.0
   reservation_safety_time_sec: 0.35
   # Do not add a second soft envelope around the Ecom body. The exact oriented
   # footprint plus navigation.collision_margin is already the runtime safety
@@ -113,9 +119,17 @@ fleet:
   wait_time_sec: 1
   wait_cost: 6
   order_dispatch_retry_sec: 0.5
+  # A robot stopped at a rolling boundary physically occupies its LM. Retry
+  # it quickly through a fair least-recently-served queue; never exponentially
+  # abandon the holder while it keeps the aisle closed.
+  rolling_boundary_retry_sec: 0.5
   # Repeatedly impossible dense-traffic requests back off instead of pinning
   # one Python core and starving the simulation clock.
   order_dispatch_retry_max_sec: 4
+  # Two identical no-detour results around unchanged parked bodies are
+  # conclusive. Keep the route-less owner as a physical obstacle and retry
+  # only after blocker occupancy changes (or an explicit operator dispatch).
+  stationary_retry_quarantine_failures: 2
   # Runtime MAPF is dispatched in the background. Small joint groups coordinate
   # new orders without a fleet-wide CBS timeout.
   dispatch_plan_budget_per_tick: 2
@@ -124,8 +138,15 @@ fleet:
   # immediately and keep filling the fleet.
   dispatch_joint_batch_size: 2
   # Continuations already coordinate against committed time reservations.
-  # Planning them one at a time avoids a synchronized CBS spike every 10 s.
+  # Planning them one at a time keeps different prediction offsets isolated
+  # and avoids unsafe sibling routes that do not reserve one another.
   dispatch_rolling_batch_size: 1
+  # Explicit narrow corridors on a dense map need enough committed motion for
+  # the serialized continuation worker to service the complete fleet before
+  # all robots reach their chunk endpoints together. Open maps and smaller
+  # fleets retain the horizon selected in the benchmark UI.
+  dense_controlled_corridor_robot_threshold: 32
+  dense_controlled_corridor_horizon_sec: 30
   # Boundary recovery starts with cheap rotating pairs. Repeated failures grow
   # a fast prioritized-SIPP wave to the coupled stopped component; CBS remains
   # limited to four participants.
@@ -142,13 +163,10 @@ fleet:
   congestion_opposing_load_penalty_m: 1.20
   congestion_node_load_penalty_m: 0.15
   congestion_tie_break_penalty_m: 0.002
-  # Dynamic admission zones work like traffic lights. Robots wait at the last
-  # LM outside an overloaded tile; up to three compatible entrants receive a
-  # short lease while SIPP remains the exact space-time collision authority.
-  # Smart maps already carry explicit controlled corridor resources. A second
-  # coarse 6 m traffic light duplicated those gates and left robots waiting
-  # after corridor admission had already selected a safe owner.
-  traffic_zone_control_enabled: false
+  # Dynamic admission zones are the fleet-wide traffic-flow layer. Robots wait
+  # at the last LM outside an overloaded tile; up to three compatible entrants
+  # receive a short lease while SIPP remains the exact collision authority.
+  traffic_zone_control_enabled: true
   traffic_zone_size_m: 6.0
   traffic_zone_demand_threshold: 6
   traffic_zone_capacity: 3
@@ -190,10 +208,15 @@ fleet:
   cbs_low_level_max_time: 160
   cbs_max_high_level_nodes: 2000
   cbs_max_planning_time_sec: 2.5
-  # Explicit controlled_region edge properties are always honoured. In auto
-  # mode topology-derived corridors are enabled only when every edge carries
-  # the SMART marker, so imported maps keep their previous behaviour.
-  controlled_corridors_enabled: auto
+  # Controlled corridors are an extra, local layer for genuinely narrow
+  # passages marked with the Corridor tool in Traffic Editor. Explicit
+  # controlled_region/holding_point properties remain active independently
+  # from the fleet-wide dynamic traffic zones.
+  controlled_corridors_enabled: true
+  # Never turn a complete SMART graph into capacity-one corridors. Optional
+  # topology inference is kept separate for experiments; production maps use
+  # only the regions explicitly drawn by an operator.
+  controlled_corridor_auto_detect: false
   controlled_corridor_min_edges: 1
   # Select one deterministic entrant before it reaches the boundary. The
   # runtime gate keeps this grant stable, and a parked owner triggers a spatial
@@ -204,6 +227,12 @@ fleet:
   controlled_corridor_replan_after_sec: 8
   # CBS is a local coupled-component solver, never a 50-robot global fallback.
   local_cbs_max_robots: 8
+  # Long-running random-order benchmarks eventually exercise many LM pairs
+  # and route speeds. Bound reusable planner caches so memory reaches a stable
+  # plateau instead of following the lifetime order count.
+  traffic_graph_cache_max_entries: 16
+  controlled_ticks_cache_max_entries: 32
+  heuristic_cache_max_entries: 100000
   reservation_detour_horizon_sec: 8
   # Moving robots create time reservations. They do not rewrite the committed
   # shortest spatial route unless deadlock recovery explicitly requests it.

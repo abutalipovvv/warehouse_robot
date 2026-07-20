@@ -2215,6 +2215,12 @@ body[data-fleet-page="map"] .robot-control-actions {
   stroke-width: 1.15;
 }
 
+.graph-edge.editable.controlled {
+  stroke: #d97706;
+  stroke-width: 1.65;
+  opacity: 0.92;
+}
+
 .graph-edge.editable:hover,
 .graph-edge.selected {
   stroke: #2368ff;
@@ -2324,6 +2330,17 @@ body[data-fleet-page="map"] .robot-control-actions {
   stroke: #143158;
   stroke-width: 1.7;
   filter: drop-shadow(0 4px 8px rgba(20, 49, 88, 0.24));
+}
+
+.landmark.corridor-internal:not(.selected) .landmark-dot {
+  fill: #d97706;
+  stroke: rgba(255, 255, 255, 0.95);
+}
+
+.landmark.corridor-holding:not(.selected) .landmark-dot {
+  stroke: #d97706;
+  stroke-width: 2.4;
+  filter: drop-shadow(0 2px 5px rgba(217, 119, 6, 0.35));
 }
 
 .planned-route {
@@ -2469,6 +2486,19 @@ body[data-fleet-page="map"] .robot-control-actions {
   stroke-linecap: round;
   opacity: 0.86;
   pointer-events: none;
+}
+
+.editor-area-preview {
+  fill: rgba(35, 104, 255, 0.14);
+  stroke: #2368ff;
+  stroke-width: 2;
+  stroke-dasharray: 8 6;
+  pointer-events: none;
+}
+
+.editor-area-preview.corridor {
+  fill: rgba(245, 158, 11, 0.18);
+  stroke: #d97706;
 }
 
 .editor-guide-line {

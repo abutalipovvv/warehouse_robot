@@ -203,6 +203,7 @@ def test_stage_launch_uses_ecom_description_and_keeps_stage_hardware_contract() 
     assert "updateSelectionAnimation(timestamp)" in web_scene
     assert "updateRobotMotion(timestamp)" in web_scene
     assert "const alpha = 1 - Math.exp(-14 * dt);" in web_scene
+    assert "if (entry.poseInterpolated) {" in web_scene
     assert "const robotAnimating = this.updateRobotMotion(timestamp);" in web_scene
     assert "const cap = Number(robotCount || 0) >= 40 ? 1.0 : 1.35;" in web_scene
     assert 'updateRobots(robots, selectedName = "", waitBlockerName = "")' in web_scene
@@ -213,6 +214,7 @@ def test_stage_launch_uses_ecom_description_and_keeps_stage_hardware_contract() 
     assert "waitBlocker ? 0xff7a00" in web_scene
     assert 'this.viewMode === "2d" ? 0.13 : 0.105' in web_scene
     assert "futureRobotTrajectory(robot, active)" in web_scene
+    assert "Math.floor(Math.max(0, Number(robot?.routeClock || 0)) * 2)" not in web_scene
     assert 'addExtrudedPolygon("body", bodyOutline, 0.170, 0.0, body)' in web_scene
     assert 'addExtrudedPolygon("deck", deckOutline, 0.045, 0.160, deck)' in web_scene
     assert "y: 0.300, z: 0.060" in web_scene
@@ -240,12 +242,20 @@ def test_stage_launch_uses_ecom_description_and_keeps_stage_hardware_contract() 
     assert "this.fleetSimManualFrame = window.requestAnimationFrame(publish);" in web_app
     assert "const visualPoseAtAck = this.animatedFleetManualPose(robot) || nextPose;" in web_app
     assert "generation !== this.fleetSimManualGeneration" in web_app
-    assert "this.fleetStreamIntervalMs = 50;" in web_app
+    assert "this.fleetStreamIntervalMs = 100;" in web_app
     assert "this.fleetStatusFreshTimeoutMs = 1500;" in web_app
-    assert "this.fleetNavigationPredictionMaxSec = 0.4;" in web_app
+    assert "this.fleetNavigationInterpolationMinSec = 0.12;" in web_app
+    assert "this.fleetNavigationClockAcceleration = 6;" in web_app
     assert "drawFleetRobotMotionLayer(robotStyle)" in web_app
     assert "while (low + 1 < high)" in web_app
-    assert "baseClock + visualLeadSec" in web_app
+    assert "const allowedClock = Math.min(" in web_app
+    assert "const brakingRate = Math.sqrt(2 * acceleration * headroom);" in web_app
+    assert "fleetVisualClockIsSettling(robot)" in web_app
+    assert '["WAITING", "BLOCKED", "PLANNING"].includes(status)' in web_app
+    assert "poseInterpolated: Boolean(animate)" in web_app
+    assert "this.fleetQueueRenderKey = renderKey;" in web_app
+    assert "fleetQueuedGoalsByRobot()" in web_app
+    assert "baseClock + visualLeadSec" not in web_app
     assert "catchUpRate" not in web_app
     assert "const elapsed = Math.min(0.75" in web_app
     assert "this.setFleetManualAnimation(robot.name, pose, twist);" in web_app
@@ -278,6 +288,57 @@ def test_stage_launch_uses_ecom_description_and_keeps_stage_hardware_contract() 
     ).read_text(encoding="utf-8")
     assert "FindPackageShare('ecom_mobile_robot_description')" in legacy_launch
     assert "'ecom_stage.urdf.xacro'" in legacy_launch
+
+
+def test_fleet_sim_direct_pose_keeps_babylon_render_loop_active() -> None:
+    web_scene = (OPERATOR_STATIC_ROOT / "scene3d.js").read_text(encoding="utf-8")
+    interpolated_branch = web_scene.split(
+        "if (entry.poseInterpolated) {",
+        1,
+    )[1].split("continue;", 1)[0]
+
+    # The direct simulation pose bypasses Babylon's secondary low-pass, but
+    # changing a transform must still mark the frame as animated. Otherwise
+    # animate() skips scene.render() (or falls back to the 66 ms selection
+    # pulse cadence), making otherwise 60 Hz poses look frozen or ~15 FPS.
+    # Keep this conditional: all simulated IDLE poses carry the same flag and
+    # must not force a permanent 60 FPS render loop.
+    assert "distanceSq" in interpolated_branch
+    assert "rotationDelta" in interpolated_branch
+    assert "animating = true;" in interpolated_branch
+
+
+def test_fleet_event_log_uses_a_complete_stable_render_signature() -> None:
+    web_app = _operator_app_source()
+    render_events = web_app.split("renderEvents(events) {", 1)[1]
+
+    assert "const visibleEvents = events.slice().reverse().slice(0, 80);" in render_events
+    assert 'const managerId = String(this.selectedRobot()?.id || "");' in render_events
+    assert "event.stamp || 0" in render_events
+    assert 'event.level || "info"' in render_events
+    assert 'event.message || ""' in render_events
+    assert "if (renderKey === this.fleetEventsRenderKey) {" in render_events
+    assert "this.fleetEventsRenderKey = renderKey;" in render_events
+
+
+def test_fleet_queue_render_signature_covers_every_cached_order_detail() -> None:
+    web_app = _operator_app_source()
+    render_queue = web_app.split("renderFleetQueue() {", 1)[1].split(
+        "renderFleetOrderDetails() {",
+        1,
+    )[0]
+    render_key = render_queue.split("const renderKey = JSON.stringify(", 1)[1].split(
+        "if (renderKey === this.fleetQueueRenderKey)",
+        1,
+    )[0]
+
+    # updatedAt changes on every motion tick, so it must not be the cache key.
+    # These stable fields are nevertheless rendered by the cached rows/details
+    # and can change on a same-status route revision.
+    assert "item.targets" in render_key
+    assert "item.routeNodes" in render_key
+    assert "item.error" in render_key
+    assert "item.updatedAt" not in render_key
 
 
 def _joint_frames(joint: ET.Element) -> tuple[str, str]:

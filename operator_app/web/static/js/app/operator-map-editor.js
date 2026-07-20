@@ -1,4 +1,4 @@
-import { markControlledCorridor } from "../editor/graph-tools.js";
+import { markControlledCorridorArea } from "../editor/graph-tools.js";
 import { OccupancyGrid, OCCUPANCY_VALUES } from "../editor/occupancy-grid.js";
 import { cloneJson } from "../shared/json.js";
 import {
@@ -41,7 +41,6 @@ export const withMapEditor = (Base) => class OperatorAppMapEditor extends Base {
       }
       this.fleetRasterGrid = grid;
       this.fleetRasterDraftRef = targetDraft;
-      this.fleetRasterHistory.clear();
       this.scene3d?.setFloorCanvas(grid.canvas);
       this.syncFleetRasterControls();
       return grid;
@@ -62,6 +61,8 @@ export const withMapEditor = (Base) => class OperatorAppMapEditor extends Base {
     this.fleetRasterGrid = null;
     this.fleetRasterDraftRef = null;
     this.fleetRasterDrag = null;
+    this.fleetCorridorDrag = null;
+    this.fleetEditorAreaPreview = null;
     this.fleetRasterHistory.clear();
     this.syncFleetRasterControls();
   }
@@ -120,8 +121,11 @@ export const withMapEditor = (Base) => class OperatorAppMapEditor extends Base {
         pointerId: hit.pointerId,
         start: point,
         current: point,
+        startWorld: { ...hit.world },
+        currentWorld: { ...hit.world },
         value,
       };
+      this.setFleetEditorAreaPreview("rectangle", hit.world, hit.world);
       return true;
     }
     const patch = this.fleetRasterGrid.beginPatch(
@@ -131,14 +135,14 @@ export const withMapEditor = (Base) => class OperatorAppMapEditor extends Base {
           ? "Unknown brush"
           : "Pencil",
     );
-    const radius = Math.max(1, Math.floor(Number(this.fleetRasterBrushSizeInput?.value) || 1));
-    this.fleetRasterGrid.paintLine(patch, point, point, radius, value);
+    const size = Math.max(1, Math.floor(Number(this.fleetRasterBrushSizeInput?.value) || 1));
+    this.fleetRasterGrid.paintSquareLine(patch, point, point, size, value);
     this.fleetRasterDrag = {
       type: "stroke",
       pointerId: hit.pointerId,
       patch,
       last: point,
-      radius,
+      size,
       value,
     };
     this.scheduleFleetRasterPreview();
@@ -152,13 +156,19 @@ export const withMapEditor = (Base) => class OperatorAppMapEditor extends Base {
     const point = this.fleetRasterPoint(hit.world);
     if (this.fleetRasterDrag.type === "rectangle") {
       this.fleetRasterDrag.current = point;
+      this.fleetRasterDrag.currentWorld = { ...hit.world };
+      this.setFleetEditorAreaPreview(
+        "rectangle",
+        this.fleetRasterDrag.startWorld,
+        this.fleetRasterDrag.currentWorld,
+      );
       return;
     }
-    this.fleetRasterGrid.paintLine(
+    this.fleetRasterGrid.paintSquareLine(
       this.fleetRasterDrag.patch,
       this.fleetRasterDrag.last,
       point,
-      this.fleetRasterDrag.radius,
+      this.fleetRasterDrag.size,
       this.fleetRasterDrag.value,
     );
     this.fleetRasterDrag.last = point;
@@ -168,6 +178,7 @@ export const withMapEditor = (Base) => class OperatorAppMapEditor extends Base {
   endFleetRasterPointer(hit) {
     const drag = this.fleetRasterDrag;
     this.fleetRasterDrag = null;
+    this.setFleetEditorAreaPreview("", null, null);
     if (!drag || !this.fleetRasterGrid) {
       return;
     }
@@ -198,14 +209,81 @@ export const withMapEditor = (Base) => class OperatorAppMapEditor extends Base {
   }
 
   undoFleetRaster() {
+    if (this.fleetRasterDrag) {
+      return;
+    }
+    if (this.fleetCorridorDrag) {
+      return;
+    }
     if (this.fleetRasterHistory.undo()) {
-      this.afterFleetRasterMutation("Fleet raster edit undone.");
+      this.afterFleetMapHistoryMutation("Fleet map edit undone.");
     }
   }
 
   redoFleetRaster() {
+    if (this.fleetRasterDrag) {
+      return;
+    }
+    if (this.fleetCorridorDrag) {
+      return;
+    }
     if (this.fleetRasterHistory.redo()) {
-      this.afterFleetRasterMutation("Fleet raster edit restored.");
+      this.afterFleetMapHistoryMutation("Fleet map edit restored.");
+    }
+  }
+
+  fleetGraphSnapshot() {
+    const draft = this.ensureFleetMapDraft();
+    return {
+      lms: cloneJson(Array.isArray(draft?.lms) ? draft.lms : []),
+      edges: cloneJson(Array.isArray(draft?.edges) ? draft.edges : []),
+      selectedLmName: String(this.fleetSelectedLmName || ""),
+      selectedEdgeKey: String(this.fleetSelectedEdgeKey || ""),
+    };
+  }
+
+  restoreFleetGraphSnapshot(snapshot) {
+    const draft = this.ensureFleetMapDraft();
+    if (!draft || !snapshot) {
+      return;
+    }
+    draft.lms = cloneJson(snapshot.lms || []);
+    draft.edges = cloneJson(snapshot.edges || []);
+    this.fleetSelectedLmName = String(snapshot.selectedLmName || "");
+    this.fleetSelectedEdgeKey = String(snapshot.selectedEdgeKey || "");
+  }
+
+  commitFleetGraphHistory(before, label = "Fleet graph edit") {
+    if (!before) {
+      return false;
+    }
+    const after = this.fleetGraphSnapshot();
+    if (JSON.stringify(before) === JSON.stringify(after)) {
+      this.fleetMapDirty = this.fleetRasterHistory.canUndo;
+      this.syncFleetMapEditorState();
+      return false;
+    }
+    this.fleetRasterHistory.push({
+      label,
+      undo: () => this.restoreFleetGraphSnapshot(before),
+      redo: () => this.restoreFleetGraphSnapshot(after),
+    });
+    this.afterFleetMapHistoryMutation(label);
+    return true;
+  }
+
+  afterFleetMapHistoryMutation(message = "") {
+    this.fleetMapDirty = this.fleetRasterHistory.canUndo;
+    this.markBabylonMapGeometryDirty();
+    if (this.fleetRasterGrid) {
+      this.scheduleFleetRasterPreview(true);
+    }
+    this.syncFleetEditorFields();
+    this.syncFleetRasterControls();
+    this.syncFleetMapEditorState();
+    this.renderOperatorMap();
+    if (message) {
+      this.robotMessageText.textContent = message;
     }
   }
 
@@ -250,31 +328,68 @@ export const withMapEditor = (Base) => class OperatorAppMapEditor extends Base {
     this.fleetMapDraft.map.raster = this.fleetRasterGrid.toPayload();
   }
 
-  handleFleetCorridorLm(lmName) {
-    if (!this.fleetCorridorStartLm) {
-      this.fleetCorridorStartLm = lmName;
-      this.selectFleetEditorLm(lmName);
-      this.fleetMapEditorHelp.textContent = `Corridor start: ${lmName}. Select the opposite holding LM.`;
+  setFleetEditorAreaPreview(kind, start, current) {
+    this.fleetEditorAreaPreview = kind && start && current
+      ? {
+          kind,
+          start: { x: Number(start.x || 0), y: Number(start.y || 0) },
+          current: { x: Number(current.x || 0), y: Number(current.y || 0) },
+        }
+      : null;
+    if (this.scene3d && !this.babylonMapFailed) {
+      this.refreshBabylonEditorState();
+    } else {
+      this.drawFleetEditorOverlay();
+    }
+  }
+
+  beginFleetCorridorPointer(hit) {
+    if (!hit?.world) {
+      return false;
+    }
+    this.fleetCorridorDrag = {
+      pointerId: hit.pointerId,
+      start: { ...hit.world },
+      current: { ...hit.world },
+      before: this.fleetGraphSnapshot(),
+    };
+    this.setFleetEditorAreaPreview("corridor", hit.world, hit.world);
+    return true;
+  }
+
+  moveFleetCorridorPointer(hit) {
+    if (!this.fleetCorridorDrag || !hit?.world) {
       return;
     }
-    const startLm = this.fleetCorridorStartLm;
-    this.fleetCorridorStartLm = "";
-    if (startLm === lmName) {
-      this.fleetMapEditorHelp.textContent = "Corridor selection canceled.";
-      return;
-    }
-    const result = markControlledCorridor(this.fleetMapDraft, startLm, lmName);
-    if (!result) {
-      this.robotMessageText.textContent = `No directed graph route from ${startLm} to ${lmName}.`;
-      return;
-    }
-    this.fleetMapDirty = true;
-    this.markBabylonMapGeometryDirty();
-    this.selectFleetEditorLm(lmName);
-    this.robotMessageText.textContent = (
-      `Controlled corridor ${result.regionId} marked across ${result.path.length - 1} edges.`
+    this.fleetCorridorDrag.current = { ...hit.world };
+    this.setFleetEditorAreaPreview(
+      "corridor",
+      this.fleetCorridorDrag.start,
+      this.fleetCorridorDrag.current,
     );
-    this.renderOperatorBabylonMap({ force: true });
+  }
+
+  endFleetCorridorPointer(hit) {
+    const drag = this.fleetCorridorDrag;
+    this.fleetCorridorDrag = null;
+    this.setFleetEditorAreaPreview("", null, null);
+    if (!drag) {
+      return;
+    }
+    const result = markControlledCorridorArea(
+      this.fleetMapDraft,
+      drag.start,
+      hit?.world || drag.current,
+    );
+    if (!result) {
+      this.robotMessageText.textContent = "The corridor rectangle does not cross any graph edge.";
+      return;
+    }
+    const regionCount = result.regions.length;
+    this.commitFleetGraphHistory(
+      drag.before,
+      `Marked ${regionCount} controlled corridor zone${regionCount === 1 ? "" : "s"} across ${result.edgeCount} directed edges.`,
+    );
   }
 
   reloadFleetMapDraft() {
@@ -327,43 +442,63 @@ export const withMapEditor = (Base) => class OperatorAppMapEditor extends Base {
       return;
     }
 
-    if (bezierHandle) {
+    if (this.fleetMapTool === "corridor" && world) {
+      if (this.beginFleetCorridorPointer({
+        pointerId: event.pointerId,
+        button: event.button,
+        world,
+      })) {
+        this.operatorMapSvg.setPointerCapture(event.pointerId);
+      }
+      return;
+    }
+
+    if (bezierHandle && this.fleetMapTool === "select") {
       const handleEdgeKey = bezierHandle.dataset.edgeKey || this.fleetSelectedEdgeKey;
       this.selectFleetEditorEdge(handleEdgeKey);
       this.fleetEditorBezierDrag = {
         pointerId: event.pointerId,
         edgeKey: handleEdgeKey,
         index: Number(bezierHandle.dataset.bezierIndex || 1),
+        before: this.fleetGraphSnapshot(),
       };
       this.operatorMapSvg.setPointerCapture(event.pointerId);
       return;
     }
 
     if (lmName) {
-      if (this.fleetMapTool === "corridor") {
-        this.handleFleetCorridorLm(lmName);
-        return;
-      }
       this.selectFleetEditorLm(lmName);
       if (this.fleetMapTool === "edge") {
-        this.fleetEditorEdgeDrag = { pointerId: event.pointerId, currentLm: lmName, lastCreated: "" };
-      } else {
-        this.fleetEditorLmDrag = { pointerId: event.pointerId, name: lmName, start: world, moved: false };
+        this.fleetEditorEdgeDrag = {
+          pointerId: event.pointerId,
+          currentLm: lmName,
+          lastCreated: "",
+          before: this.fleetGraphSnapshot(),
+        };
+      } else if (this.fleetMapTool === "select") {
+        this.fleetEditorLmDrag = {
+          pointerId: event.pointerId,
+          name: lmName,
+          start: world,
+          moved: false,
+          before: this.fleetGraphSnapshot(),
+        };
       }
       this.operatorMapSvg.setPointerCapture(event.pointerId);
       return;
     }
 
-    if (edgeKey) {
+    if (edgeKey && this.fleetMapTool === "select") {
       this.selectFleetEditorEdge(edgeKey);
       this.operatorMapSvg.setPointerCapture(event.pointerId);
       return;
     }
 
     if (this.fleetMapTool === "lm" && world) {
+      const before = this.fleetGraphSnapshot();
       const added = this.addFleetEditorLm(world);
       this.selectFleetEditorLm(added.name);
-      this.renderOperatorMap();
+      this.commitFleetGraphHistory(before, `Added landmark ${added.name}.`);
       return;
     }
 
@@ -385,6 +520,11 @@ export const withMapEditor = (Base) => class OperatorAppMapEditor extends Base {
     if (this.fleetRasterDrag?.pointerId === event.pointerId && world) {
       event.preventDefault();
       this.moveFleetRasterPointer({ pointerId: event.pointerId, world });
+      return;
+    }
+    if (this.fleetCorridorDrag?.pointerId === event.pointerId && world) {
+      event.preventDefault();
+      this.moveFleetCorridorPointer({ pointerId: event.pointerId, world });
       return;
     }
     if (this.fleetEditorBezierDrag && this.fleetEditorBezierDrag.pointerId === event.pointerId && world) {
@@ -440,21 +580,38 @@ export const withMapEditor = (Base) => class OperatorAppMapEditor extends Base {
         world: this.eventToMapWorld(event),
       });
     }
+    if (this.fleetCorridorDrag?.pointerId === event.pointerId) {
+      this.endFleetCorridorPointer({
+        pointerId: event.pointerId,
+        world: this.eventToMapWorld(event),
+      });
+    }
     if (this.fleetEditorLmDrag && this.fleetEditorLmDrag.pointerId === event.pointerId) {
+      const drag = this.fleetEditorLmDrag;
       this.fleetEditorLmDrag = null;
       this.fleetEditorGuideWorld = null;
-      this.drawFleetEditorOverlay();
+      if (drag.moved) {
+        this.commitFleetGraphHistory(drag.before, `Moved landmark ${drag.name}.`);
+      } else {
+        this.drawFleetEditorOverlay();
+      }
     }
     if (this.fleetEditorEdgeDrag && this.fleetEditorEdgeDrag.pointerId === event.pointerId) {
+      const drag = this.fleetEditorEdgeDrag;
       this.fleetEditorEdgeDrag = null;
       this.fleetEditorPreview = null;
       this.fleetEditorGuideWorld = null;
-      this.drawFleetEditorOverlay();
+      if (!this.commitFleetGraphHistory(drag.before, "Added graph edge chain.")) {
+        this.drawFleetEditorOverlay();
+      }
     }
     if (this.fleetEditorBezierDrag && this.fleetEditorBezierDrag.pointerId === event.pointerId) {
+      const drag = this.fleetEditorBezierDrag;
       this.fleetEditorBezierDrag = null;
       this.fleetEditorGuideWorld = null;
-      this.drawFleetEditorOverlay();
+      if (!this.commitFleetGraphHistory(drag.before, `Updated curve ${drag.edgeKey}.`)) {
+        this.drawFleetEditorOverlay();
+      }
     }
     if (this.mapDrag && this.mapDrag.pointerId === event.pointerId) {
       if (this.operatorMapSvg.hasPointerCapture(event.pointerId)) {
@@ -601,26 +758,22 @@ export const withMapEditor = (Base) => class OperatorAppMapEditor extends Base {
   }
 
   deleteFleetEditorLm(name) {
+    const before = this.fleetGraphSnapshot();
     const draft = this.ensureFleetMapDraft();
     draft.lms = (draft.lms || []).filter((lm) => lm.name !== name);
     draft.edges = (draft.edges || []).filter((edge) => edge.from !== name && edge.to !== name);
     this.fleetSelectedLmName = "";
     this.fleetSelectedEdgeKey = "";
-    this.fleetMapDirty = true;
-    this.markBabylonMapGeometryDirty();
-    this.syncFleetEditorFields();
-    this.renderOperatorMap();
+    this.commitFleetGraphHistory(before, `Deleted landmark ${name}.`);
   }
 
   deleteFleetEditorEdge(edgeKey) {
+    const before = this.fleetGraphSnapshot();
     const draft = this.ensureFleetMapDraft();
     const [from, to] = edgeKey.split("->");
     draft.edges = (draft.edges || []).filter((edge) => !(edge.from === from && edge.to === to));
     this.fleetSelectedEdgeKey = "";
-    this.fleetMapDirty = true;
-    this.markBabylonMapGeometryDirty();
-    this.syncFleetEditorFields();
-    this.renderOperatorMap();
+    this.commitFleetGraphHistory(before, `Deleted edge ${edgeKey}.`);
   }
 
   lmByName(name) {
@@ -710,6 +863,7 @@ export const withMapEditor = (Base) => class OperatorAppMapEditor extends Base {
       window.alert(`LM already exists: ${nextName}`);
       return;
     }
+    const before = this.fleetGraphSnapshot();
     const oldName = lm.name;
     const nextPoint = this.snapMapPoint({
       x: Number(this.fleetEditorLmXInput.value || lm.x),
@@ -726,9 +880,7 @@ export const withMapEditor = (Base) => class OperatorAppMapEditor extends Base {
       }
     }
     this.fleetSelectedLmName = nextName;
-    this.fleetMapDirty = true;
-    this.syncFleetEditorFields();
-    this.renderOperatorMap();
+    this.commitFleetGraphHistory(before, `Updated landmark ${nextName}.`);
   }
 
   applyFleetEditorEdgeFields() {
@@ -739,6 +891,7 @@ export const withMapEditor = (Base) => class OperatorAppMapEditor extends Base {
     if (!edge) {
       return;
     }
+    const before = this.fleetGraphSnapshot();
     edge.properties = {
       ...(edge.properties || {}),
       direction: normalizeEdgeMotionCode(this.fleetEditorEdgeMotionSelect.value),
@@ -769,10 +922,7 @@ export const withMapEditor = (Base) => class OperatorAppMapEditor extends Base {
       );
       this.fleetSelectedEdgeKey = reverseKey;
     }
-    this.fleetMapDirty = true;
-    this.markBabylonMapGeometryDirty();
-    this.syncFleetEditorFields();
-    this.renderOperatorMap();
+    this.commitFleetGraphHistory(before, `Updated edge ${this.fleetSelectedEdgeKey}.`);
   }
 
   drawFleetEditorPreview(fromName = "", world = null) {
@@ -790,6 +940,21 @@ export const withMapEditor = (Base) => class OperatorAppMapEditor extends Base {
     }
     if (this.fleetEditorGuideWorld) {
       this.drawFleetEditorGuide(this.fleetEditorGuideWorld);
+    }
+    const areaPreview = this.fleetEditorAreaPreview;
+    if (areaPreview?.start && areaPreview?.current) {
+      const start = this.worldToPixel(areaPreview.start);
+      const current = this.worldToPixel(areaPreview.current);
+      const rectangle = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+      rectangle.setAttribute(
+        "class",
+        `editor-area-preview ${areaPreview.kind === "corridor" ? "corridor" : "raster"}`,
+      );
+      rectangle.setAttribute("x", String(Math.min(start.x, current.x)));
+      rectangle.setAttribute("y", String(Math.min(start.y, current.y)));
+      rectangle.setAttribute("width", String(Math.abs(current.x - start.x)));
+      rectangle.setAttribute("height", String(Math.abs(current.y - start.y)));
+      this.operatorEditorLayer.append(rectangle);
     }
     const preview = this.fleetEditorPreview || {};
     const fromName = preview.fromName || "";

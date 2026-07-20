@@ -184,6 +184,36 @@ def test_operator_map_context_and_edge_controls_are_explicit() -> None:
     assert '() => this.applyFleetEditorEdgeFields()' in app_js
 
 
+def test_map_editor_raster_history_is_atomic_and_has_consistent_shortcuts() -> None:
+    app_js = _operator_app_source()
+    editor_js = (OPERATOR_STATIC_ROOT / "map-editor.js").read_text(encoding="utf-8")
+    index_html = (OPERATOR_STATIC_ROOT / "index.html").read_text(encoding="utf-8")
+    editor_html = (OPERATOR_STATIC_ROOT / "map-editor.html").read_text(encoding="utf-8")
+    command_stack_js = (
+        OPERATOR_STATIC_ROOT / "js" / "editor" / "command-stack.js"
+    ).read_text(encoding="utf-8")
+
+    undo_body = command_stack_js[
+        command_stack_js.index("  undo() {"):
+        command_stack_js.index("  redo() {")
+    ]
+    redo_body = command_stack_js[
+        command_stack_js.index("  redo() {"):
+        command_stack_js.index("  notify() {")
+    ]
+    assert undo_body.index("command.undo();") < undo_body.index("this.undoCommands.pop();")
+    assert redo_body.index("command.redo();") < redo_body.index("this.redoCommands.pop();")
+
+    assert "this.fleetMapEditorActive" in app_js
+    assert '&& (key === "z" || key === "y")' in app_js
+    assert "if (this.fleetRasterDrag) {" in app_js
+    assert 'if (key === "y" || event.shiftKey)' in app_js
+    assert '["raster_stroke", "raster_rectangle"].includes(this.dragState?.type)' in editor_js
+    assert 'title="Undo (Ctrl+Z)"' in index_html
+    assert 'title="Redo (Ctrl+Shift+Z or Ctrl+Y)"' in index_html
+    assert 'title="Redo (Ctrl+Shift+Z or Ctrl+Y)"' in editor_html
+
+
 def test_operator_workspace_navigation_and_fleet_sidebar_contract() -> None:
     project_root = Path(__file__).resolve().parents[1]
     app_js = _operator_app_source()

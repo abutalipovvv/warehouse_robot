@@ -209,12 +209,17 @@ export const withMapView = (Base) => class OperatorAppMapView extends Base {
       element.setAttribute("class", [
         "graph-edge",
         this.fleetMapEditorActive ? "editable" : "",
+        this.fleetMapEditorActive && edge.properties?.controlled_region ? "controlled" : "",
         edgeKey === this.fleetSelectedEdgeKey ? "selected" : "",
       ].filter(Boolean).join(" "));
       element.style.strokeWidth = String(this.fleetMapEditorActive ? profile.unit(1.8) : strokeWidth);
       element.dataset.edgeKey = edgeKey;
       element.addEventListener("pointerdown", (event) => {
-        if (!this.fleetMapEditorActive || event.button !== 0) {
+        if (
+          !this.fleetMapEditorActive
+          || this.fleetMapTool !== "select"
+          || event.button !== 0
+        ) {
           return;
         }
         event.preventDefault();
@@ -526,6 +531,11 @@ export const withMapView = (Base) => class OperatorAppMapView extends Base {
       return;
     }
     const style = this.landmarkRenderStyle(payload);
+    const corridorHoldingLms = new Set(
+      (payload.edges || [])
+        .filter((edge) => edge.properties?.controlled_region)
+        .flatMap((edge) => [edge.from, edge.to]),
+    );
     for (const landmark of payload.lms || []) {
       const px = this.worldToPixel(landmark);
       const isNearest = landmark.name === nearest;
@@ -538,6 +548,12 @@ export const withMapView = (Base) => class OperatorAppMapView extends Base {
         isNearest ? "nearest" : "",
         isTarget ? "target" : "",
         isSelected ? "selected" : "",
+        this.fleetMapEditorActive && landmark.properties?.controlled_region ? "corridor-internal" : "",
+        this.fleetMapEditorActive
+          && landmark.properties?.holding_point
+          && corridorHoldingLms.has(landmark.name)
+          ? "corridor-holding"
+          : "",
         (this.navigateMode || this.relocateMode) ? "armed" : "",
       ].filter(Boolean).join(" "));
       group.dataset.lmName = landmark.name;

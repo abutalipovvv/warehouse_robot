@@ -23,7 +23,10 @@ class FleetMapfPlanner:
         self.params = params or {}
         self.route_planner = LmRoutePlanner(landmarks, edges, params=params)
         self.graph = self._build_graph()
-        self._traffic_graph_cache: dict[tuple[float, float, float, bool, int], TrafficGraph] = {}
+        self._traffic_graph_cache: dict[
+            tuple[float, float, float, bool, bool, int],
+            TrafficGraph,
+        ] = {}
         self._controlled_corridor_ticks_cache: dict[tuple[float, float], int] = {}
         self._heuristic_cache: dict[tuple[str, str], float] = {}
         self.edge_by_key = {
@@ -39,6 +42,18 @@ class FleetMapfPlanner:
         self.local_cbs_max_robots = max(
             2,
             int(fleet_params.get("local_cbs_max_robots", 8) or 8),
+        )
+        self.traffic_graph_cache_max_entries = max(
+            1,
+            int(fleet_params.get("traffic_graph_cache_max_entries", 16) or 16),
+        )
+        self.controlled_ticks_cache_max_entries = max(
+            1,
+            int(fleet_params.get("controlled_ticks_cache_max_entries", 32) or 32),
+        )
+        self.heuristic_cache_max_entries = max(
+            1000,
+            int(fleet_params.get("heuristic_cache_max_entries", 100000) or 100000),
         )
         self.time_step_sec = float(fleet_params.get("reservation_time_step_sec", 1.0))
         self.wait_time_sec = float(fleet_params.get("wait_time_sec", self.time_step_sec))
@@ -64,15 +79,37 @@ class FleetMapfPlanner:
         )
         controlled_corridors_value = fleet_params.get(
             "controlled_corridors_enabled",
-            False,
+            True,
         )
         self.controlled_corridors_mode = (
             str(controlled_corridors_value).strip().lower()
             if isinstance(controlled_corridors_value, str)
             else ("enabled" if bool(controlled_corridors_value) else "disabled")
         )
-        self.controlled_corridors_enabled = self._controlled_corridors_are_enabled(
-            controlled_corridors_value,
+        self.controlled_corridors_enabled = (
+            self._controlled_corridor_feature_is_enabled(
+                controlled_corridors_value,
+            )
+        )
+        if "controlled_corridor_auto_detect" in fleet_params:
+            auto_detect_value = fleet_params.get(
+                "controlled_corridor_auto_detect",
+                False,
+            )
+        elif isinstance(controlled_corridors_value, str) and (
+            controlled_corridors_value.strip().lower() in {"auto", "smart"}
+        ):
+            # Backward compatibility for the old combined ``auto`` setting.
+            auto_detect_value = controlled_corridors_value
+        else:
+            # ``controlled_corridors_enabled: true`` now means explicit Traffic
+            # Editor regions only. Topology inference must be requested
+            # separately and can never be enabled accidentally by partial
+            # embedded parameters.
+            auto_detect_value = False
+        self.controlled_corridor_auto_detect = (
+            self.controlled_corridors_enabled
+            and self._controlled_corridors_are_enabled(auto_detect_value)
         )
         self.controlled_corridor_min_edges = max(
             1,
@@ -260,6 +297,9 @@ class FleetMapfPlanner:
                 "deadlock": deadlock,
                 "controlledCorridors": len(traffic_graph.controlled_region_ids()),
                 "controlledCorridorsMode": self.controlled_corridors_mode,
+                "controlledCorridorAutoDetect": (
+                    self.controlled_corridor_auto_detect
+                ),
                 "deadlockReason": (
                     "cyclic traffic dependencies could not be safely ordered"
                     if deadlock
@@ -685,6 +725,7 @@ class FleetMapfPlanner:
             round(self.min_robot_center_distance_m, 6),
             round(self.rotation_min_robot_center_distance_m, 6),
             self.controlled_corridors_enabled,
+            self.controlled_corridor_auto_detect,
             self.controlled_corridor_min_edges,
         )
         cached = self._traffic_graph_cache.get(key)
@@ -698,10 +739,16 @@ class FleetMapfPlanner:
             rotation_min_robot_center_distance_m=(
                 self.rotation_min_robot_center_distance_m
             ),
-            controlled_corridors_enabled=self.controlled_corridors_enabled,
+            explicit_controlled_regions_enabled=self.controlled_corridors_enabled,
+            controlled_corridors_enabled=self.controlled_corridor_auto_detect,
             controlled_corridor_min_edges=self.controlled_corridor_min_edges,
         )
-        self._traffic_graph_cache[key] = graph
+        self._bounded_cache_store(
+            self._traffic_graph_cache,
+            key,
+            graph,
+            self.traffic_graph_cache_max_entries,
+        )
         return graph
 
     def controlled_corridor_max_ticks(
@@ -748,8 +795,25 @@ class FleetMapfPlanner:
             (sum(groups.values()) for groups in region_groups.values()),
             default=0,
         )
-        self._controlled_corridor_ticks_cache[cache_key] = maximum
+        self._bounded_cache_store(
+            self._controlled_corridor_ticks_cache,
+            cache_key,
+            maximum,
+            self.controlled_ticks_cache_max_entries,
+        )
         return maximum
+
+    @staticmethod
+    def _bounded_cache_store(
+        cache: dict[Any, Any],
+        key: Any,
+        value: Any,
+        maximum: int,
+    ) -> None:
+        """Keep lifelong runtime caches useful without retaining all inputs."""
+        if key not in cache and len(cache) >= max(1, int(maximum)):
+            cache.pop(next(iter(cache)), None)
+        cache[key] = value
 
     def _controlled_corridors_are_enabled(self, value: Any) -> bool:
         """Resolve explicit booleans and map-aware SMART auto mode.
@@ -768,6 +832,19 @@ class FleetMapfPlanner:
                     for edge in self.edges
                 )
             return normalized not in {"", "0", "false", "no", "off", "disabled"}
+        return bool(value)
+
+    @staticmethod
+    def _controlled_corridor_feature_is_enabled(value: Any) -> bool:
+        if isinstance(value, str):
+            return value.strip().lower() not in {
+                "",
+                "0",
+                "false",
+                "no",
+                "off",
+                "disabled",
+            }
         return bool(value)
 
     @staticmethod
@@ -1209,7 +1286,12 @@ class FleetMapfPlanner:
         speed = self._route_speed({})
         acceleration = self._route_acceleration({})
         value = max(1.0, self._travel_time(route.length, speed, acceleration) / max(self.time_step_sec, 1e-6))
-        self._heuristic_cache[key] = value
+        self._bounded_cache_store(
+            self._heuristic_cache,
+            key,
+            value,
+            self.heuristic_cache_max_entries,
+        )
         return value
 
     def _trajectory_for_nodes(

@@ -20,6 +20,10 @@ class TrafficCoordinatorMixin:
                 robot.status == "WAITING"
                 and bool(robot.trajectory)
                 and self._is_robot_conflict(robot.last_reason)
+                and not (
+                    robot.wait_resource == "blocked_retreat"
+                    and now < robot.wait_release_at
+                )
             )
         }
         wait_for = {
@@ -91,6 +95,7 @@ class TrafficCoordinatorMixin:
                 continue
             self._active_wait_cycles.pop(cycle_key, None)
             self._wait_cycle_last_arbitration.pop(cycle_key, None)
+            self._coupled_replan_last_attempt.pop(cycle_key, None)
             self._coupled_replan_failures.pop(cycle_key, None)
 
         timeout = self._traffic_replan_after()
@@ -279,6 +284,7 @@ class TrafficCoordinatorMixin:
                 continue
             self._active_wait_cycles.pop(cycle_key, None)
             self._wait_cycle_last_arbitration.pop(cycle_key, None)
+            self._coupled_replan_last_attempt.pop(cycle_key, None)
             self._coupled_replan_failures.pop(cycle_key, None)
             # The geometry of the complete component changed. Give its peers
             # a fresh bounded arbitration window instead of carrying an old
@@ -428,6 +434,13 @@ class TrafficCoordinatorMixin:
         # continuation the dispatcher's next direct prefetch target.
         if self._robot_waits_at_rolling_boundary(terminal):
             self._rolling_prefetch_retry_at.pop(terminal.name, None)
+            terminal.rolling_boundary_since = (
+                terminal.rolling_boundary_since or now
+            )
+            self._rolling_prefetch_eligible_since.setdefault(
+                terminal.name,
+                terminal.rolling_boundary_since,
+            )
             terminal.status = "WAITING"
             terminal.last_reason = "rolling continuation pending"
             terminal.traffic_priority_until = 0.0
@@ -1262,6 +1275,55 @@ class TrafficCoordinatorMixin:
             other_pose = self._predicted_robot_pose(other, offset)
             if other_pose is None:
                 continue
+            incremental_dt = max(0.0, check_clock - robot.route_clock)
+            segment_start_pose = (
+                self._pose_at_trajectory(
+                    robot.trajectory,
+                    robot.route_clock,
+                )
+                or robot.pose
+            )
+            other_segment_start = self._predicted_robot_pose(
+                other,
+                max(0.0, offset - incremental_dt),
+            )
+            if (
+                incremental_dt
+                <= self._runtime_motion_step() + 0.000001
+                and segment_start_pose is not None
+                and other_segment_start is not None
+            ):
+                # Endpoint-only checks can miss two rectangular bodies whose
+                # swept areas cross between 50 ms motion samples. The global
+                # invariant catches that only after movement and visibly
+                # rolls both robots back. Resolve the same crossing here.
+                #
+                # Pair prediction must also model the arbitration decision:
+                # if this robot wins, the lower-priority peer may stop later
+                # in the same tick. Never let the winner rely on that peer
+                # continuing to move out of its way.
+                predicted_sweep_conflict = self._swept_footprints_overlap(
+                    segment_start_pose,
+                    pose,
+                    other_segment_start,
+                    other_pose,
+                )
+                has_right_of_way = self._has_right_of_way(robot, other)
+                stationary_loser_conflict = bool(
+                    has_right_of_way
+                    and self._swept_footprints_overlap(
+                        segment_start_pose,
+                        pose,
+                        other.pose,
+                        other.pose,
+                    )
+                )
+                if stationary_loser_conflict or (
+                    predicted_sweep_conflict and not has_right_of_way
+                ):
+                    if self._is_active_traffic(other):
+                        return f"yield to {other.name}"
+                    return f"occupied by {other.name}"
             rotation_reason = self._rotation_sweep_conflict_reason(
                 robot,
                 other,

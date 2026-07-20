@@ -34,22 +34,27 @@ export class CommandStack {
   }
 
   undo() {
-    const command = this.undoCommands.pop();
+    const command = this.undoCommands[this.undoCommands.length - 1];
     if (!command) {
       return false;
     }
+    // Apply first so a failed command remains available to retry instead of
+    // silently disappearing from the history.
     command.undo();
+    this.undoCommands.pop();
     this.redoCommands.push(command);
     this.notify();
     return true;
   }
 
   redo() {
-    const command = this.redoCommands.pop();
+    const command = this.redoCommands[this.redoCommands.length - 1];
     if (!command) {
       return false;
     }
+    // Keep both stacks unchanged when the command cannot be restored.
     command.redo();
+    this.redoCommands.pop();
     this.undoCommands.push(command);
     this.notify();
     return true;

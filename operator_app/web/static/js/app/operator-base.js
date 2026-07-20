@@ -67,11 +67,12 @@ export class OperatorAppBase {
     this.fleetStatusStreamAttemptedAt = 0;
     this.fleetStatusStreamFallback = false;
     this.fleetHttpFallbackLastAt = 0;
-    // Compact pose/status deltas arrive at 20 Hz. Physics is intentionally
-    // slower; requestAnimationFrame advances a short, bounded portion of the
-    // already committed trajectory between confirmed server clocks.
-    this.fleetStreamIntervalMs = 50;
+    // Match the authoritative 10 Hz simulation clock. requestAnimationFrame
+    // interpolates the committed route at display refresh rate, so requesting
+    // duplicate 20 Hz snapshots only steals CPU from motion/MAPF under load.
+    this.fleetStreamIntervalMs = 100;
     this.fleetRuntimeUiLastAt = 0;
+    this.fleetEventsRenderKey = "";
     this.robotStatusSocket = null;
     this.robotStatusStreamShouldRun = false;
     this.robotStatusReconnectTimer = null;
@@ -105,9 +106,15 @@ export class OperatorAppBase {
     this.fleet2dMotionLastAt = 0;
     this.fleetRuntimeLandmarkKey = "";
     this.fleetVisualClocks = new Map();
-    this.fleetNavigationPredictionMaxSec = 0.4;
+    // Navigation poses are played from a short authoritative interpolation
+    // buffer.  The old clock predicted 0.4 s ahead while the simulation can
+    // commit at most 0.2 s after a delayed physics tick.  Under planner load
+    // that made the picture alternate between prediction and a hard hold.
+    this.fleetNavigationInterpolationMinSec = 0.12;
+    this.fleetNavigationClockAcceleration = 6;
     this.fleetRobotSvgEntries = new Map();
     this.fleetWaitDependencyLine = null;
+    this.fleetQueueRenderKey = "";
     this.fleetManualRobotName = "";
     this.fleetManualLastAt = 0;
     this.fleetManualLookahead = null;
@@ -128,8 +135,9 @@ export class OperatorAppBase {
     this.fleetEditorLmDrag = null;
     this.fleetEditorBezierDrag = null;
     this.fleetEditorPreview = null;
+    this.fleetEditorAreaPreview = null;
     this.fleetEditorGuideWorld = null;
-    this.fleetCorridorStartLm = "";
+    this.fleetCorridorDrag = null;
     this.fleetRasterGrid = null;
     this.fleetRasterDraftRef = null;
     this.fleetRasterLoadPromise = null;
@@ -629,6 +637,25 @@ export class OperatorAppBase {
         return;
       }
       const key = event.key.toLowerCase();
+      if (
+        this.fleetMapEditorActive
+        && (event.ctrlKey || event.metaKey)
+        && (key === "z" || key === "y")
+      ) {
+        event.preventDefault();
+        if (this.fleetRasterDrag) {
+          return;
+        }
+        if (this.fleetCorridorDrag) {
+          return;
+        }
+        if (key === "y" || event.shiftKey) {
+          this.redoFleetRaster();
+        } else {
+          this.undoFleetRaster();
+        }
+        return;
+      }
       if (!["w", "a", "s", "d"].includes(key)) {
         return;
       }
@@ -1046,19 +1073,20 @@ export class OperatorAppBase {
       this.ensureFleetRasterGrid();
     }
     if (this.fleetMapTool !== "corridor") {
-      this.fleetCorridorStartLm = "";
+      this.fleetCorridorDrag = null;
     }
+    this.fleetEditorAreaPreview = null;
     this.fleetMapToolButtons.forEach((button) => button.classList.toggle("active", button.dataset.fleetMapTool === this.fleetMapTool));
     const hints = {
       select: "Select LM/edge. Drag LM. Drag Bezier handles. Right-click LM/edge deletes.",
       lm: "Click empty map space to add an LM.",
       edge: "Hold an LM and drag through other LMs to create edges.",
-      corridor: "Select two holding LMs to mark the complete single-lane corridor.",
-      brush: "Draw occupied map cells on the Babylon floor.",
+      corridor: "Drag a rectangle around each narrow aisle. Every disconnected graph component becomes its own controlled corridor.",
+      brush: "Draw occupied map cells with a square pencil.",
       eraser: "Draw free map cells on the Babylon floor.",
       unknown: "Mark cells as unknown.",
       fill: "Fill one connected occupancy area.",
-      rectangle: "Draw an occupied rectangle.",
+      rectangle: "Press, drag to preview an occupied rectangle, then release to apply it.",
     };
     this.fleetMapEditorHelp.textContent = hints[this.fleetMapTool] || hints.select;
     this.syncFleetRasterControls();
@@ -1089,6 +1117,7 @@ export class OperatorAppBase {
       this.operatorMapPayload = null;
       this.operatorMapSignature = "";
       this.fleetMapDraft = null;
+      this.resetFleetRasterGrid?.();
       this.scene3dStaticKey = "";
       this.scene3dPayload = null;
       if (this.operatorScene3d) {

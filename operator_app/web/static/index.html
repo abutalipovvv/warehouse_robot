@@ -177,8 +177,6 @@
                           <option value="1">1x</option>
                           <option value="2">2x</option>
                           <option value="4">4x</option>
-                          <option value="6">6x</option>
-                          <option value="8">8x</option>
                         </select>
                       </label>
                     </div>
@@ -361,20 +359,20 @@
                     <button class="active" type="button" data-fleet-map-tool="select">Select</button>
                     <button type="button" data-fleet-map-tool="lm">LM</button>
                     <button type="button" data-fleet-map-tool="edge">Edge</button>
-                    <button type="button" data-fleet-map-tool="corridor">Corridor</button>
+                    <button type="button" data-fleet-map-tool="corridor" title="Drag a rectangle around a narrow controlled corridor">Corridor</button>
                     <span class="scene-tool-divider" aria-hidden="true"></span>
-                    <button type="button" data-fleet-map-tool="brush">Pencil</button>
+                    <button type="button" data-fleet-map-tool="brush" title="Draw occupied cells with a square pencil">Pencil</button>
                     <button type="button" data-fleet-map-tool="eraser">Eraser</button>
                     <button type="button" data-fleet-map-tool="unknown">Unknown</button>
                     <button type="button" data-fleet-map-tool="fill">Fill</button>
-                    <button type="button" data-fleet-map-tool="rectangle">Rectangle</button>
+                    <button type="button" data-fleet-map-tool="rectangle" title="Press, drag to preview, then release to draw an occupied rectangle">Rectangle</button>
                     <label class="fleet-raster-size">
                       Size
                       <input id="fleetRasterBrushSizeInput" type="range" min="1" max="32" value="3" />
                       <output id="fleetRasterBrushSizeOutput">3 px</output>
                     </label>
-                    <button id="fleetRasterUndoButton" type="button" disabled>Undo</button>
-                    <button id="fleetRasterRedoButton" type="button" disabled>Redo</button>
+                    <button id="fleetRasterUndoButton" type="button" disabled title="Undo (Ctrl+Z)">Undo</button>
+                    <button id="fleetRasterRedoButton" type="button" disabled title="Redo (Ctrl+Shift+Z or Ctrl+Y)">Redo</button>
                     <span class="scene-tool-divider" aria-hidden="true"></span>
                   </div>
                   <button id="operatorMap2dButton" type="button">2D</button>

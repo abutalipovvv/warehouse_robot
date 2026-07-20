@@ -38,9 +38,11 @@ class TrafficPlanningMixin:
             reservation_offset = 0.0
         hard_blocked_lms = self._hard_blocked_lms(payload)
         blocked_edges = self._hard_blocked_edges(payload) | self._dynamic_blocked_edges()
-        release_owners = (
-            self._release_blocker_names_for_requests(valid_requests)
-            | self._bootstrap_departure_robot_names(valid_requests)
+        held_blockers = self._release_blocker_names_for_requests(valid_requests)
+        release_owners = self._bootstrap_departure_robot_names(valid_requests)
+        reservation_ignored_owners = (
+            held_blockers
+            | release_owners
         )
         release_start_lms = {
             str(request.get("startLm", "")).strip()
@@ -49,14 +51,20 @@ class TrafficPlanningMixin:
         }
         reserved_edge_intervals = self._reserved_edge_intervals(
             valid_requests,
-            ignore_robot_names=release_owners,
+            ignore_robot_names=reservation_ignored_owners,
             prediction_offset=reservation_offset,
         )
         reserved_vertex_intervals = self._reserved_vertex_intervals(
             valid_requests,
-            ignore_robot_names=release_owners,
+            ignore_robot_names=reservation_ignored_owners,
             ignore_nodes=release_start_lms,
             prediction_offset=reservation_offset,
+        )
+        reserved_vertex_intervals.extend(
+            self._held_blocker_vertex_intervals(
+                held_blockers,
+                prediction_offset=reservation_offset,
+            )
         )
         soft_blocked_lms = (
             set()
@@ -164,6 +172,43 @@ class TrafficPlanningMixin:
                 prediction_offset=reservation_offset,
             )
         return result
+
+    def _held_blocker_vertex_intervals(
+        self,
+        robot_names: set[str],
+        *,
+        prediction_offset: float = 0.0,
+    ) -> list[tuple[str, float, float, str]]:
+        """Reserve upstream waiters as stopped bodies, not vanished routes.
+
+        A request that releases the terminal member of a wait chain must not
+        reserve an upstream waiter's old *future* trajectory: that trajectory
+        is intentionally held until the terminal moves. Removing the waiter
+        from every reservation is also unsafe, however, because a local CBS
+        route may then cross its current footprint and conflict as soon as the
+        old route resumes. Keep the current graph LM occupied for the complete
+        temporal horizon while omitting only the stale future edges.
+        """
+        if not robot_names:
+            return []
+        horizon = self._reservation_horizon()
+        intervals: list[tuple[str, float, float, str]] = []
+        for name in sorted(robot_names):
+            robot = self.robots.get(name)
+            if robot is None:
+                continue
+            future_pose = self._predicted_robot_pose(
+                robot,
+                max(0.0, prediction_offset),
+            )
+            lm_name = (
+                self._nearest_lm_for_pose(future_pose)
+                if future_pose is not None
+                else self._nearest_lm_for_robot(robot)
+            )
+            if lm_name in self.landmarks:
+                intervals.append((lm_name, 0.0, horizon, robot.name))
+        return intervals
 
     def _bootstrap_departure_robot_names(
         self,
@@ -1055,6 +1100,20 @@ class TrafficPlanningMixin:
                 continue
             if robot.status not in {"MOVING", "WAITING"} or len(robot.trajectory) < 2:
                 continue
+            trajectory = robot.trajectory
+            future_clock = robot.route_clock + max(0.0, prediction_offset)
+            first_relevant_clock = max(
+                float(trajectory[0].get("t", 0.0) or 0.0),
+                future_clock - safety,
+            )
+            first_index = max(
+                0,
+                self._trajectory_segment_index(
+                    trajectory,
+                    first_relevant_clock,
+                    boundary_belongs_to_previous=True,
+                ) - 1,
+            )
             active_edge: tuple[str, str] | None = None
             active_start = 0.0
             active_end = 0.0
@@ -1078,17 +1137,20 @@ class TrafficPlanningMixin:
                     )
                 active_edge = None
 
-            for index in range(len(robot.trajectory) - 1):
-                start = robot.trajectory[index]
-                end = robot.trajectory[index + 1]
+            for index in range(first_index, len(trajectory) - 1):
+                start = trajectory[index]
+                end = trajectory[index + 1]
+                start_time = float(start.get("t", 0.0) or 0.0) - future_clock
+                end_time = float(end.get("t", 0.0) or 0.0) - future_clock
+                if end_time < -safety:
+                    continue
+                if start_time > horizon + safety:
+                    break
                 edge_id = str(end.get("edgeId") or start.get("edgeId") or "")
                 edge = self._parse_edge_id(edge_id)
                 if edge is None:
                     flush_edge()
                     continue
-                future_clock = robot.route_clock + max(0.0, prediction_offset)
-                start_time = float(start.get("t", 0.0) or 0.0) - future_clock
-                end_time = float(end.get("t", 0.0) or 0.0) - future_clock
                 if edge != active_edge:
                     flush_edge()
                     active_edge = edge
@@ -1152,6 +1214,18 @@ class TrafficPlanningMixin:
             active_edge: tuple[str, str] | None = None
             active_start = 0.0
             active_end = 0.0
+            first_relevant_clock = max(
+                float(robot.trajectory[0].get("t", 0.0) or 0.0),
+                future_clock - safety,
+            )
+            first_index = max(
+                0,
+                self._trajectory_segment_index(
+                    robot.trajectory,
+                    first_relevant_clock,
+                    boundary_belongs_to_previous=True,
+                ) - 1,
+            )
 
             def flush_edge_vertices() -> None:
                 nonlocal active_edge
@@ -1162,13 +1236,15 @@ class TrafficPlanningMixin:
                 add_interval(dst, active_end - safety, active_end + safety, robot.name)
                 active_edge = None
 
-            for index in range(len(robot.trajectory) - 1):
+            for index in range(first_index, len(robot.trajectory) - 1):
                 start = robot.trajectory[index]
                 end = robot.trajectory[index + 1]
                 start_time = float(start.get("t", 0.0) or 0.0) - future_clock
                 end_time = float(end.get("t", 0.0) or 0.0) - future_clock
-                if end_time < -safety or start_time > horizon + safety:
+                if end_time < -safety:
                     continue
+                if start_time > horizon + safety:
+                    break
 
                 edge_id = str(end.get("edgeId") or start.get("edgeId") or "")
                 edge = self._parse_edge_id(edge_id)
@@ -1188,7 +1264,10 @@ class TrafficPlanningMixin:
                     add_interval(wait_lm, start_time - safety, end_time + safety, robot.name)
             flush_edge_vertices()
 
-            final_time = float(robot.trajectory[-1].get("t", 0.0) or 0.0) - robot.route_clock
+            final_time = (
+                float(robot.trajectory[-1].get("t", 0.0) or 0.0)
+                - future_clock
+            )
             final_lm = robot.target_lm if robot.target_lm in self.landmarks else self._nearest_lm_for_robot(robot)
             if final_lm and final_time <= horizon:
                 add_interval(final_lm, final_time - safety, horizon, robot.name)
@@ -1254,9 +1333,45 @@ class TrafficPlanningMixin:
         if not isinstance(fleet, dict):
             return 10.0
         try:
-            return max(0.0, float(fleet.get("rolling_horizon_sec", 10.0) or 0.0))
+            configured = max(
+                0.0,
+                float(fleet.get("rolling_horizon_sec", 10.0) or 0.0),
+            )
         except (TypeError, ValueError):
-            return 10.0
+            configured = 10.0
+        raw_scale_enabled = fleet.get(
+            "rolling_horizon_scale_with_simulation_time",
+            True,
+        )
+        if isinstance(raw_scale_enabled, str):
+            scale_enabled = raw_scale_enabled.strip().lower() not in {
+                "",
+                "0",
+                "false",
+                "no",
+                "off",
+                "disabled",
+            }
+        else:
+            scale_enabled = bool(raw_scale_enabled)
+        if not scale_enabled or configured <= 0.0:
+            return configured
+        try:
+            time_scale = max(1.0, float(self.simulation_time_scale()))
+        except (AttributeError, TypeError, ValueError):
+            time_scale = 1.0
+        try:
+            maximum = max(
+                configured,
+                float(fleet.get("rolling_horizon_max_sec", 120.0) or 120.0),
+            )
+        except (TypeError, ValueError):
+            maximum = max(configured, 120.0)
+        # Motion clocks accelerate, MAPF computation does not. Without this
+        # wall-time invariant window, 10 simulated seconds become only 2.5
+        # real seconds at 4x and the fleet reaches every rolling boundary
+        # before the serialized planner can prepare its continuation.
+        return min(maximum, configured * time_scale)
 
     def _rolling_horizon_steps(self) -> int:
         fleet = self.params.get("fleet", {})

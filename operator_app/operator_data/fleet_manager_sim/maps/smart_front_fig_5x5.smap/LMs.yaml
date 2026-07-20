@@ -1,0 +1,155 @@
+mapName: smart_front_fig_5x5
+coordinateFrame: map_top_left
+LMs:
+- name: S001001
+  x: 0.5
+  y: 0.5
+  ignoreDir: null
+  properties:
+    spin: false
+    smartCell: .
+    waitAllowed: true
+- name: S002001
+  x: 0.5
+  y: 1.5
+  ignoreDir: null
+  properties:
+    spin: false
+    smartCell: .
+    waitAllowed: true
+- name: S002002
+  x: 1.5
+  y: 1.5
+  ignoreDir: null
+  properties:
+    spin: false
+    smartCell: .
+    waitAllowed: true
+- name: S002003
+  x: 2.5
+  y: 1.5
+  ignoreDir: null
+  properties:
+    spin: false
+    smartCell: .
+    waitAllowed: true
+- name: S002004
+  x: 3.5
+  y: 1.5
+  ignoreDir: null
+  properties:
+    spin: false
+    smartCell: .
+    waitAllowed: true
+- name: S003001
+  x: 0.5
+  y: 2.5
+  ignoreDir: null
+  properties:
+    spin: false
+    smartCell: .
+    waitAllowed: true
+- name: S003002
+  x: 1.5
+  y: 2.5
+  ignoreDir: null
+  properties:
+    spin: false
+    smartCell: .
+    waitAllowed: true
+- name: S003003
+  x: 2.5
+  y: 2.5
+  ignoreDir: null
+  properties:
+    spin: false
+    smartCell: .
+    waitAllowed: true
+- name: S003004
+  x: 3.5
+  y: 2.5
+  ignoreDir: null
+  properties:
+    spin: false
+    smartCell: .
+    waitAllowed: true
+- name: S004001
+  x: 0.5
+  y: 3.5
+  ignoreDir: null
+  properties:
+    spin: false
+    smartCell: .
+    waitAllowed: true
+- name: S004002
+  x: 1.5
+  y: 3.5
+  ignoreDir: null
+  properties:
+    spin: false
+    smartCell: .
+    waitAllowed: true
+- name: S004003
+  x: 2.5
+  y: 3.5
+  ignoreDir: null
+  properties:
+    spin: false
+    smartCell: .
+    waitAllowed: true
+- name: S004004
+  x: 3.5
+  y: 3.5
+  ignoreDir: null
+  properties:
+    spin: false
+    smartCell: .
+    waitAllowed: true
+- name: S004005
+  x: 4.5
+  y: 3.5
+  ignoreDir: null
+  properties:
+    spin: false
+    smartCell: .
+    waitAllowed: true
+- name: S005001
+  x: 0.5
+  y: 4.5
+  ignoreDir: null
+  properties:
+    spin: false
+    smartCell: .
+    waitAllowed: true
+- name: S005002
+  x: 1.5
+  y: 4.5
+  ignoreDir: null
+  properties:
+    spin: false
+    smartCell: .
+    waitAllowed: true
+- name: S005003
+  x: 2.5
+  y: 4.5
+  ignoreDir: null
+  properties:
+    spin: false
+    smartCell: .
+    waitAllowed: true
+- name: S005004
+  x: 3.5
+  y: 4.5
+  ignoreDir: null
+  properties:
+    spin: false
+    smartCell: .
+    waitAllowed: true
+- name: S005005
+  x: 4.5
+  y: 4.5
+  ignoreDir: null
+  properties:
+    spin: false
+    smartCell: .
+    waitAllowed: true

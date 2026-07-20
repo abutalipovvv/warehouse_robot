@@ -9,6 +9,48 @@
   "aisleLaneSpacingM": 1.4,
   "cellSizeM": 1.0,
   "cols": 36,
+  "controlledCorridorColumns": [
+    2,
+    13,
+    24,
+    35
+  ],
+  "controlledCorridorCount": 32,
+  "controlledCorridorMode": "explicit_shelf_crossings",
+  "controlledCorridorRowPairs": [
+    [
+      2,
+      4
+    ],
+    [
+      6,
+      8
+    ],
+    [
+      10,
+      12
+    ],
+    [
+      14,
+      16
+    ],
+    [
+      18,
+      20
+    ],
+    [
+      22,
+      24
+    ],
+    [
+      26,
+      28
+    ],
+    [
+      30,
+      32
+    ]
+  ],
   "crossLaneConnectionsPerAisle": 4,
   "directedEdges": 1240,
   "imageHeightPx": 330,

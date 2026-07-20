@@ -141,9 +141,14 @@ class FleetTaskDispatchMixin:
     ) -> int:
         dispatched = self._finish_async_simulated_dispatch() if async_simulated else 0
         now = self._now()
+        self._prune_stationary_order_retry_state()
         queued_orders = [
             order for order in self.orders.values()
             if order.status == "QUEUED"
+            and self._stationary_order_retry_ready(
+                order,
+                force=force,
+            )
             and (
                 force
                 or not order.error
@@ -193,6 +198,13 @@ class FleetTaskDispatchMixin:
                     for entry in prefetch_entries
                 )
             )
+            dispatch_turn_after_prefetch = bool(
+                ready
+                and self._last_async_job_kind in {
+                    "prefetch",
+                    "prefetch_batch",
+                }
+            )
             recovery_turn_after_dispatch = bool(
                 prefetch_repeatedly_blocked
                 and ready
@@ -200,12 +212,22 @@ class FleetTaskDispatchMixin:
             )
             # Fill idle robots before spending the only planner slot on a
             # healthy, non-urgent continuation. A route inside its final
-            # critical seconds still wins, unless its previous recovery
-            # attempt failed; in that case the stationary departure must run
-            # first because it may be the physical blocker.
+            # critical seconds wins the first turn. Once that prefetch
+            # completes, one ready departure receives the next planner turn
+            # before another continuation may run. This bounded alternation
+            # prevents a stream of healthy rolling chunks from leaving
+            # commanded stationary robots route-less indefinitely.
+            #
+            # A failed continuation already uses the same alternating rule:
+            # the stationary departure may be its physical blocker, then the
+            # recovery prefetch receives the following turn.
             if prefetch is not None and (
                 not ready
-                or (prefetch_is_urgent and not prefetch_repeatedly_blocked)
+                or (
+                    not dispatch_turn_after_prefetch
+                    and prefetch_is_urgent
+                    and not prefetch_repeatedly_blocked
+                )
                 or recovery_turn_after_dispatch
             ):
                 self._start_async_rolling_prefetch(prefetch_entries)
@@ -331,6 +353,126 @@ class FleetTaskDispatchMixin:
             if pending is not None and pending.status in {"QUEUED", "PLANNING"}:
                 release.add(blocker.name)
         return release
+
+    def _stationary_retry_failure_limit(self) -> int:
+        fleet = self.params.get("fleet", {})
+        if not isinstance(fleet, dict):
+            fleet = {}
+        try:
+            configured = int(
+                fleet.get("stationary_retry_quarantine_failures", 2) or 2
+            )
+        except (TypeError, ValueError):
+            configured = 2
+        return max(2, min(8, configured))
+
+    def _stationary_blocker_signature(
+        self,
+        blocked_lms: tuple[str, ...],
+    ) -> tuple[tuple[Any, ...], ...]:
+        blocked = set(blocked_lms)
+        signature: list[tuple[Any, ...]] = []
+        for robot in self._runtime_robots():
+            lm_name = self._nearest_lm_for_robot(robot)
+            if lm_name not in blocked:
+                continue
+            pending = self._active_order_for_robot(robot)
+            signature.append(
+                (
+                    robot.name,
+                    lm_name,
+                    robot.status,
+                    int(robot.route_revision),
+                    bool(robot.trajectory),
+                    str(pending.order_id if pending is not None else ""),
+                    str(pending.status if pending is not None else ""),
+                )
+            )
+        return tuple(sorted(signature))
+
+    def _record_stationary_order_failure(
+        self,
+        order: FleetOrder,
+        debug: dict[str, Any],
+    ) -> None:
+        raw_lms = debug.get("softBlockedLms", [])
+        blocked_lms = tuple(sorted({
+            str(lm_name)
+            for lm_name in (
+                raw_lms if isinstance(raw_lms, list) else []
+            )
+            if str(lm_name) in self.landmarks
+        }))
+        if not blocked_lms:
+            owner = str(order.vehicle or order.assigned_robot or "")
+            blocked_lms = tuple(sorted(
+                self._stationary_robot_blocked_lms(
+                    exclude_robot_names={owner} if owner else set(),
+                )
+            ))
+        signature = self._stationary_blocker_signature(blocked_lms)
+        previous = self._stationary_order_retry_state.get(order.order_id, {})
+        same_failure = bool(
+            previous.get("blocked_lms") == blocked_lms
+            and previous.get("signature") == signature
+        )
+        failure_count = (
+            int(previous.get("failure_count", 0) or 0) + 1
+            if same_failure
+            else 1
+        )
+        self._stationary_order_retry_state[order.order_id] = {
+            "blocked_lms": blocked_lms,
+            "signature": signature,
+            "failure_count": failure_count,
+        }
+
+    def _stationary_order_retry_ready(
+        self,
+        order: FleetOrder,
+        *,
+        force: bool = False,
+    ) -> bool:
+        state = self._stationary_order_retry_state.get(order.order_id)
+        if not state:
+            return True
+        if force:
+            return True
+        if int(state.get("failure_count", 0) or 0) < (
+            self._stationary_retry_failure_limit()
+        ):
+            return True
+        blocked_lms = tuple(state.get("blocked_lms", ()))
+        if self._stationary_blocker_signature(blocked_lms) != state.get(
+            "signature"
+        ):
+            self._stationary_order_retry_state.pop(order.order_id, None)
+            return True
+        return False
+
+    def _stationary_order_is_quarantined(
+        self,
+        order: FleetOrder,
+    ) -> bool:
+        state = self._stationary_order_retry_state.get(order.order_id)
+        if (
+            not state
+            or int(state.get("failure_count", 0) or 0)
+            < self._stationary_retry_failure_limit()
+        ):
+            return False
+        blocked_lms = tuple(state.get("blocked_lms", ()))
+        return self._stationary_blocker_signature(blocked_lms) == state.get(
+            "signature"
+        )
+
+    def _clear_stationary_order_retry_state(self, order_id: str) -> None:
+        self._stationary_order_retry_state.pop(str(order_id or ""), None)
+
+    def _prune_stationary_order_retry_state(self) -> None:
+        for order_id in list(self._stationary_order_retry_state):
+            if order_id not in self.orders:
+                self._stationary_order_retry_state.pop(order_id, None)
 
     def _planner_conflict_robot_name(self, reason: str) -> str:
         """Extract the member named by MAPF plan validation failures."""
@@ -731,6 +873,13 @@ class FleetTaskDispatchMixin:
         }
         if not result.get("ok") or not result.get("plans"):
             reason = self._planner_failure_reason(result)
+            debug = result.get("debug")
+            if not isinstance(debug, dict):
+                debug = {}
+            stationary_failure = bool(
+                debug.get("stationaryRobotWait")
+                or "stationary_robot_blocks_route" in reason
+            )
             conflict_robot = self._planner_conflict_robot_name(reason)
             isolated = conflict_robot and any(
                 robot.name == conflict_robot
@@ -745,8 +894,11 @@ class FleetTaskDispatchMixin:
                     order.status = "QUEUED"
                     order.error = ""
                     order.updated_at = self._now()
+                    self._clear_stationary_order_retry_state(order.order_id)
                     continue
                 self._set_order_error(order, reason)
+                if stationary_failure:
+                    self._record_stationary_order_failure(order, debug)
             return 0, handled
 
         result = self._rolling_result(result, final_goals)
@@ -860,7 +1012,16 @@ class FleetTaskDispatchMixin:
     ) -> list[tuple[FleetOrder, FleetRobot, dict[str, Any], str, float]]:
         lead = self._rolling_prefetch_lead()
         now = self._now()
-        candidates: list[tuple[float, str, FleetOrder, FleetRobot, dict[str, Any], str]] = []
+        candidates: list[
+            tuple[
+                tuple[float, float, float, str],
+                FleetOrder,
+                FleetRobot,
+                dict[str, Any],
+                str,
+                float,
+            ]
+        ] = []
         for robot in self._runtime_robots():
             if (
                 robot.is_remote()
@@ -871,8 +1032,6 @@ class FleetTaskDispatchMixin:
                 or not robot.trajectory
             ):
                 continue
-            if now + 0.000001 < self._rolling_prefetch_retry_at.get(robot.name, 0.0):
-                continue
             order = self.orders.get(robot.active_order_id)
             if order is None or order.status in TERMINAL_ORDER_STATUSES:
                 continue
@@ -882,6 +1041,17 @@ class FleetTaskDispatchMixin:
             final_time = float(robot.trajectory[-1].get("t", 0.0) or 0.0)
             remaining = max(0.0, final_time - robot.route_clock)
             if remaining > lead:
+                continue
+            self._rolling_prefetch_eligible_since.setdefault(robot.name, now)
+            if remaining <= 0.000001 and robot.rolling_boundary_since is None:
+                # Normal physics completion records this once. The timestamp
+                # fallback also covers restored state and deterministic tests.
+                robot.rolling_boundary_since = self._rolling_boundary_wait_since(
+                    order,
+                    robot,
+                    now,
+                )
+            if now + 0.000001 < self._rolling_prefetch_retry_at.get(robot.name, 0.0):
                 continue
             start_lm = robot.route_chunk_goal_lm
             planning_goal = self._rolling_planning_goal(start_lm, final_goal, order)
@@ -905,11 +1075,102 @@ class FleetTaskDispatchMixin:
                 planning_goal,
                 final_goal,
             )
-            candidates.append((remaining, robot.name, order, robot, request, final_goal))
+            priority = self._rolling_prefetch_candidate_priority(
+                order,
+                robot,
+                remaining,
+                now,
+            )
+            candidates.append(
+                (priority, order, robot, request, final_goal, remaining)
+            )
         return [
             (order, robot, request, final_goal, remaining)
-            for remaining, _, order, robot, request, final_goal in sorted(candidates)
+            for _, order, robot, request, final_goal, remaining in sorted(
+                candidates,
+                key=lambda item: item[0],
+            )
         ]
+
+    def _rolling_boundary_wait_since(
+        self,
+        order: FleetOrder,
+        robot: FleetRobot,
+        now: float,
+    ) -> float:
+        """Return a stable age for a stopped continuation holder."""
+        if robot.rolling_boundary_since is not None:
+            return min(now, float(robot.rolling_boundary_since))
+        eligible = self._rolling_prefetch_eligible_since.get(robot.name)
+        timestamps = [
+            float(value)
+            for value in (
+                eligible,
+                order.updated_at,
+                robot.updated_at,
+            )
+            if value is not None and float(value) > 0.0
+        ]
+        return min([now, *timestamps]) if timestamps else now
+
+    def _rolling_boundary_priority(
+        self,
+        entry: tuple[FleetOrder, FleetRobot, dict[str, Any], str, float],
+        now: float,
+    ) -> tuple[float, float, str]:
+        """Least-recently-served ordering with oldest-waiter fallback."""
+        order, robot, _, _, _ = entry
+        waiting_since = self._rolling_boundary_wait_since(order, robot, now)
+        last_attempt = self._rolling_prefetch_last_attempt_at.get(robot.name)
+        if last_attempt is None:
+            # Tests and restored older snapshots may contain a failure count
+            # without the new service timestamp. Approximate those completed
+            # turns without allowing failures to erase a genuinely old age.
+            last_attempt = waiting_since + (
+                min(
+                    8,
+                    max(
+                        0,
+                        int(self._rolling_prefetch_failures.get(robot.name, 0)),
+                    ),
+                )
+                * self._rolling_boundary_retry_interval(order)
+            )
+        service_anchor = max(waiting_since, float(last_attempt))
+        return service_anchor, waiting_since, robot.name
+
+    def _rolling_prefetch_candidate_priority(
+        self,
+        order: FleetOrder,
+        robot: FleetRobot,
+        remaining: float,
+        now: float,
+    ) -> tuple[float, float, float, str]:
+        """Earliest-deadline scheduling across motion and stopped holders.
+
+        A moving route's hard deadline is its chunk end. A boundary holder's
+        service deadline is one short retry quantum after its least-recent
+        attempt. This prevents both failure modes: an endless urgent stream
+        cannot starve stopped robots, while a just-serviced blocked holder
+        cannot repeatedly preempt a route that is about to expire.
+        """
+        if remaining <= 0.000001:
+            service_anchor, waiting_since, name = self._rolling_boundary_priority(
+                (order, robot, {}, "", remaining),
+                now,
+            )
+            return (
+                service_anchor + self._rolling_boundary_retry_interval(order),
+                1.0,
+                waiting_since,
+                name,
+            )
+        return (
+            now + remaining,
+            0.0,
+            self._rolling_prefetch_eligible_since.get(robot.name, now),
+            robot.name,
+        )
 
     def _ready_rolling_prefetch_entry(
         self,
@@ -1037,7 +1298,10 @@ class FleetTaskDispatchMixin:
             cohort,
             signature,
         )
-        return [vacancy_entry] if vacancy_entry is not None else []
+        # No free pocket is not a terminal scheduler state. Falling back to
+        # the ordinary fair endpoint queue lets SIPP/local recovery retry when
+        # traffic changes instead of suppressing all continuations forever.
+        return [vacancy_entry] if vacancy_entry is not None else None
 
     def _rolling_collapse_route_prefix(
         self,
@@ -1295,6 +1559,7 @@ class FleetTaskDispatchMixin:
         if not candidates:
             return []
         release_pressure = self._rolling_boundary_release_pressure()
+        now = self._now()
         forced_release = None
         if release_pressure:
             # A terminal holder is the sink of the physical wait chain. Plan
@@ -1310,8 +1575,7 @@ class FleetTaskDispatchMixin:
                 direct_releases.sort(
                     key=lambda entry: (
                         -release_pressure[entry[1].name],
-                        self._rolling_prefetch_failures.get(entry[1].name, 0),
-                        entry[1].name,
+                        *self._rolling_boundary_priority(entry, now),
                     )
                 )
                 forced_release = direct_releases[0]
@@ -1348,8 +1612,7 @@ class FleetTaskDispatchMixin:
             key=lambda entry: (
                 entry[1].name
                 != (forced_release[1].name if forced_release is not None else ""),
-                self._rolling_prefetch_failures.get(entry[1].name, 0),
-                entry[1].name,
+                *self._rolling_boundary_priority(entry, now),
             )
         )
         first = forced_release or endpoint_entries[0]
@@ -1468,9 +1731,9 @@ class FleetTaskDispatchMixin:
             ordered_names.append(name)
             neighbours = sorted(
                 adjacency[name] - seen,
-                key=lambda neighbour: (
-                    self._rolling_prefetch_failures.get(neighbour, 0),
-                    neighbour,
+                key=lambda neighbour: self._rolling_boundary_priority(
+                    by_name[neighbour],
+                    self._now(),
                 ),
             )
             seen.update(neighbours)
@@ -1650,6 +1913,13 @@ class FleetTaskDispatchMixin:
             if self._dispatch_job is not None:
                 return
             self._dispatch_job = job
+        attempt_now = self._now()
+        for _, robot, _, _, offset in prepared:
+            self._rolling_prefetch_last_attempt_at[robot.name] = attempt_now
+            if float(offset) <= 0.000001:
+                robot.rolling_boundary_since = (
+                    robot.rolling_boundary_since or attempt_now
+                )
 
         def run() -> None:
             try:
@@ -1679,7 +1949,16 @@ class FleetTaskDispatchMixin:
         *,
         release_robot_names: set[str],
     ) -> str:
-        """Commit only the next graph-safe corridor exit for a stopped batch."""
+        """Release a stopped boundary with one useful rolling chunk.
+
+        A controlled corridor must be committed through its next safe exit.
+        Outside an explicitly controlled corridor, however, returning the
+        first neighbouring LM creates a three/four-second chunk that becomes
+        an urgent prefetch again immediately. A few recovered robots can then
+        monopolise the single planner worker and leave the rest of the fleet
+        at ``rolling continuation pending``. Ordinary graph space therefore
+        uses the normal horizon-sized rolling goal.
+        """
         try:
             route_nodes = self._ensure_order_spatial_route(
                 order,
@@ -1696,6 +1975,21 @@ class FleetTaskDispatchMixin:
             route_payload["speed"] = order.speed
         speed = self.planner._route_speed(route_payload)
         traffic_graph = self.planner._traffic_graph(speed)
+        first_lane = traffic_graph.lane_for(route_nodes[0], route_nodes[1])
+        start_vertex = traffic_graph.vertices.get(route_nodes[0])
+        if not (
+            first_lane is not None
+            and first_lane.controlled_region_ids
+        ) and not (
+            start_vertex is not None
+            and start_vertex.controlled_region_ids
+        ):
+            return self._rolling_planning_goal(
+                start_lm,
+                final_goal_lm,
+                order,
+                release_robot_names=release_robot_names,
+            )
         exit_index = traffic_graph.extend_route_index_to_controlled_exit(
             route_nodes,
             1,
@@ -1714,9 +2008,15 @@ class FleetTaskDispatchMixin:
             if job is None or not bool(job.get("done")):
                 return 0
             self._dispatch_job = None
+        if bool(job.get("discard")):
+            self._last_async_job_kind = ""
+            return 0
         self._last_async_job_kind = str(job.get("kind") or "dispatch")
 
-        if job.get("kind") in {"prefetch", "prefetch_batch"}:
+        if job.get("kind") in {
+            "prefetch",
+            "prefetch_batch",
+        }:
             return self._finish_async_rolling_prefetch(job)
         if job.get("kind") == "coupled_replan":
             return self._finish_async_coupled_replan(job)
@@ -1875,6 +2175,14 @@ class FleetTaskDispatchMixin:
         *,
         retry_multiplier: float = 1.0,
     ) -> None:
+        if self._robot_waits_at_rolling_boundary(robot):
+            # A stopped robot already holds a physical graph resource. Long
+            # exponential backoff only keeps the aisle closed; fairness is
+            # provided by least-recently-served rotation instead.
+            self._rolling_prefetch_retry_at[robot.name] = (
+                self._now() + self._rolling_boundary_retry_interval(order)
+            )
+            return
         failures = max(
             1,
             int(self._rolling_prefetch_failures.get(robot.name, 0) or 0),
@@ -1892,6 +2200,90 @@ class FleetTaskDispatchMixin:
                 * max(1.0, retry_multiplier)
             )
         )
+
+    def _rolling_boundary_retry_interval(
+        self,
+        order: FleetOrder | None = None,
+    ) -> float:
+        fleet = self.params.get("fleet", {})
+        if not isinstance(fleet, dict):
+            fleet = {}
+        try:
+            configured = max(
+                0.1,
+                float(fleet.get("rolling_boundary_retry_sec", 0.5) or 0.5),
+            )
+        except (TypeError, ValueError):
+            configured = 0.5
+        try:
+            maximum = max(
+                0.1,
+                float(
+                    fleet.get("order_dispatch_retry_max_sec", 4.0)
+                    or 4.0
+                ),
+            )
+        except (TypeError, ValueError):
+            maximum = 4.0
+        return min(configured, maximum)
+
+    def _compact_rolling_trajectory_history(
+        self,
+        robot: FleetRobot,
+    ) -> list[dict[str, Any]]:
+        """Drop executed samples while retaining a graph-safe retreat tail.
+
+        Rolling chunks used to append onto the complete order trajectory.
+        Reservations, websocket serialization and Babylon route updates then
+        became progressively more expensive throughout a long order. Keep
+        the current/future timeline plus the previous distinct LM required by
+        deadlock retreat. Keep the route clock/timestamps monotonic across the
+        append so browser interpolation does not see an artificial route reset.
+        """
+        trajectory = [
+            sample
+            for sample in robot.trajectory
+            if isinstance(sample, dict)
+        ]
+        if len(trajectory) < 3 or robot.route_clock <= 0.000001:
+            return trajectory
+
+        active_index = self._trajectory_segment_index(
+            trajectory,
+            robot.route_clock,
+            boundary_belongs_to_previous=True,
+        )
+        keep_index = 0
+        distinct_lms: list[str] = []
+        for index in range(min(active_index, len(trajectory) - 1), -1, -1):
+            sample = trajectory[index]
+            if float(sample.get("t", 0.0) or 0.0) > robot.route_clock + 0.000001:
+                continue
+            lm_name = str(sample.get("lm") or "").strip()
+            if lm_name not in self.landmarks:
+                continue
+            if not distinct_lms or distinct_lms[-1] != lm_name:
+                distinct_lms.append(lm_name)
+            if len(distinct_lms) >= 2:
+                keep_index = index
+                break
+
+        if keep_index <= 0:
+            return trajectory
+        compacted = [dict(sample) for sample in trajectory[keep_index:]]
+        robot.trajectory = compacted
+        compacted_nodes: list[str] = []
+        for sample in compacted:
+            lm_name = str(sample.get("lm") or "").strip()
+            if (
+                lm_name in self.landmarks
+                and (not compacted_nodes or compacted_nodes[-1] != lm_name)
+            ):
+                compacted_nodes.append(lm_name)
+        if len(compacted_nodes) >= 2:
+            robot.plan_nodes = compacted_nodes
+        robot.trajectory_dirty = True
+        return compacted
 
     def _append_rolling_prefetch(
         self,
@@ -1911,7 +2303,7 @@ class FleetTaskDispatchMixin:
         current pose, status, route clock and physics tick. Runtime collision
         checking remains authoritative for every future sample.
         """
-        current = [sample for sample in robot.trajectory if isinstance(sample, dict)]
+        current = self._compact_rolling_trajectory_history(robot)
         continuation = [sample for sample in plan.get("trajectory", []) if isinstance(sample, dict)]
         if len(current) < 2 or len(continuation) < 2:
             return False
@@ -1968,6 +2360,7 @@ class FleetTaskDispatchMixin:
         robot.last_reason = "rolling route continued"
         robot.blocked_since = None
         robot.updated_at = self._now()
+        self._clear_rolling_prefetch_state(robot.name)
         order.route_nodes = list(combined_nodes)
         order.status = "EXECUTING"
         order.error = ""
@@ -1994,7 +2387,10 @@ class FleetTaskDispatchMixin:
         winner: FleetRobot,
         now: float,
     ) -> bool:
-        if self._last_async_job_kind not in {"prefetch", "prefetch_batch"}:
+        if self._last_async_job_kind not in {
+            "prefetch",
+            "prefetch_batch",
+        }:
             prefetch_entries = self._ready_rolling_prefetch_entries()
             if (
                 prefetch_entries
@@ -2198,7 +2594,9 @@ class FleetTaskDispatchMixin:
             robot.traffic_stall_since = None
             self._clear_wait_dependency(robot)
         self._coupled_replan_failures.pop(cycle_key, None)
+        self._coupled_replan_last_attempt.pop(cycle_key, None)
         self._active_wait_cycles.pop(cycle_key, None)
+        self._wait_cycle_last_arbitration.pop(cycle_key, None)
         self.traffic_metrics["coupledReplansSucceeded"] += 1
         self.traffic_metrics["cycleReplans"] += 1
         self._event(
@@ -2383,7 +2781,14 @@ class FleetTaskDispatchMixin:
         # two-second cap was shorter than the bounded local-CBS budget, so a
         # busy dispatch queue could postpone a continuation until the robot
         # had already stopped at its horizon boundary.
-        return max(1.0, min(8.0, self._rolling_prefetch_lead() * 0.4))
+        try:
+            time_scale = max(1.0, float(self.simulation_time_scale()))
+        except (AttributeError, TypeError, ValueError):
+            time_scale = 1.0
+        return max(
+            1.0,
+            min(8.0 * time_scale, self._rolling_prefetch_lead() * 0.4),
+        )
 
     def _order_dispatch_retry_interval(self, order: FleetOrder | None = None) -> float:
         fleet = self.params.get("fleet", {})
@@ -2538,6 +2943,12 @@ class FleetTaskDispatchMixin:
         robot = self.robots.get(str(request.get("name") or ""))
         rolling_continuation = bool(robot is not None and robot.has_executed_route)
         recovery_group = int(order.dispatch_failures or 0) >= 2
+        # Preparing the request transitions the order to PLANNING and clears
+        # its visible error string. The occupancy record is the durable marker
+        # that this is the same stationary retry.
+        stationary_retry = (
+            order.order_id in self._stationary_order_retry_state
+        )
         traffic_detour = bool(order.traffic_detour_edges)
         payload: dict[str, Any] = {
             "robots": [request],
@@ -2553,7 +2964,10 @@ class FleetTaskDispatchMixin:
             # After repeated failures the dispatcher deliberately builds a
             # small recovery group, where CBS can coordinate the participants
             # instead of treating every neighbour as an immutable obstacle.
-            "allowCbsFallback": not rolling_continuation or recovery_group,
+            "allowCbsFallback": (
+                (not rolling_continuation or recovery_group)
+                and not stationary_retry
+            ),
             # A robot without an executable trajectory is a physical obstacle,
             # not a temporal reservation that may disappear after the rolling
             # horizon. Its LM is excluded on the first attempt and a failed
@@ -2664,6 +3078,8 @@ class FleetTaskDispatchMixin:
         if status in {"EXECUTING", "COMPLETED"}:
             order.dispatch_failures = 0
             order.traffic_blocked_since = None
+        if status not in {"QUEUED", "PLANNING"}:
+            self._clear_stationary_order_retry_state(order.order_id)
         if robot is not None:
             order.assigned_robot = robot.name
             if not order.vehicle and status not in {"PLANNING", "QUEUED"}:
@@ -2678,6 +3094,8 @@ class FleetTaskDispatchMixin:
         order.error = error
         order.dispatch_failures += 1
         error_value = str(error or "").lower()
+        if "stationary_robot_blocks_route" not in error_value:
+            self._clear_stationary_order_retry_state(order.order_id)
         traffic_failure = any(
             marker in error_value
             for marker in (
@@ -2915,6 +3333,9 @@ class FleetTaskDispatchMixin:
         return order.target_lm
 
     def _advance_or_complete_order(self, order: FleetOrder, robot: FleetRobot, now: float) -> bool:
+        # A reached step invalidates any parked-blocker signature collected
+        # while trying to depart toward the previous target.
+        self._clear_stationary_order_retry_state(order.order_id)
         targets = order.targets or ([order.target_lm] if order.target_lm else [])
         if order.step_index + 1 >= len(targets):
             order.status = "COMPLETED"

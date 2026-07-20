@@ -17,6 +17,10 @@ LOWER_LANE_Y = tuple(3.8 + (4.0 * index) for index in range(7))
 UPPER_LANE_Y = tuple(5.2 + (4.0 * index) for index in range(7))
 REMOVED_MIDDLE_Y = tuple(4.5 + (4.0 * index) for index in range(7))
 AISLE_CONNECTOR_COLUMNS = frozenset({2, 13, 24, 35})
+CONTROLLED_CORRIDOR_ROW_PAIRS = tuple(
+    (row, row + 2)
+    for row in range(2, 31, 4)
+)
 
 
 def test_smart_kiva_uses_two_clearance_lanes_per_internal_aisle() -> None:
@@ -104,6 +108,63 @@ def test_smart_kiva_two_lane_graph_is_bidirectional_and_connected() -> None:
     assert ("S024014", "S024013") in edge_pairs
     assert ("S024014", "S024015") in edge_pairs
     assert ("S024013", "S026013") in edge_pairs
+
+
+def test_smart_kiva_marks_each_single_lane_shelf_crossing_as_its_own_corridor() -> None:
+    loaded = WarehouseMapLoader(MAP_DIR).load()
+    regions: dict[str, list[tuple[str, str]]] = defaultdict(list)
+    edge_by_pair = {
+        (edge.from_name, edge.to_name): edge
+        for edge in loaded.edges
+    }
+    for edge in loaded.edges:
+        region_id = str(edge.properties.get("controlled_region") or "")
+        if region_id:
+            regions[region_id].append((edge.from_name, edge.to_name))
+
+    assert len(regions) == (
+        len(AISLE_CONNECTOR_COLUMNS)
+        * len(CONTROLLED_CORRIDOR_ROW_PAIRS)
+    )
+    assert all(len(directed_edges) == 4 for directed_edges in regions.values())
+
+    for column in AISLE_CONNECTOR_COLUMNS:
+        for top_row, bottom_row in CONTROLLED_CORRIDOR_ROW_PAIRS:
+            region_id = (
+                "corridor:smart-kiva:"
+                f"c{column:03d}:r{top_row:03d}-r{bottom_row:03d}"
+            )
+            middle_row = top_row + 1
+            top = f"S{top_row:03d}{column:03d}"
+            middle = f"S{middle_row:03d}{column:03d}"
+            bottom = f"S{bottom_row:03d}{column:03d}"
+            assert set(regions[region_id]) == {
+                (top, middle),
+                (middle, top),
+                (middle, bottom),
+                (bottom, middle),
+            }
+            assert loaded.landmarks[top].properties["holding_point"] is True
+            assert loaded.landmarks[top].properties["can_wait"] is True
+            assert loaded.landmarks[bottom].properties["holding_point"] is True
+            assert loaded.landmarks[bottom].properties["can_wait"] is True
+            assert loaded.landmarks[middle].properties["can_wait"] is False
+            assert (
+                loaded.landmarks[middle].properties["controlled_region"]
+                == region_id
+            )
+
+    # The deliberately paired horizontal aisle lanes stay independent and
+    # continue to use ordinary rolling SIPP/dynamic-zone coordination.
+    assert all(
+        math.isclose(
+            loaded.landmarks[edge_by_pair[edge_pair].from_name].x,
+            loaded.landmarks[edge_by_pair[edge_pair].to_name].x,
+            abs_tol=1e-9,
+        )
+        for directed_edges in regions.values()
+        for edge_pair in directed_edges
+    )
 
 
 def test_smart_kiva_perimeter_uses_one_centered_clearance_lane() -> None:

@@ -1,0 +1,54 @@
+{
+  "robotId": "grpc_127.0.0.1_50051",
+  "source": "robot",
+  "savedAt": "2026-07-17T11:51:12.947804Z",
+  "robot_model": {
+    "source": "nav2",
+    "radius": 0.632,
+    "footprint_segments": 4,
+    "footprint": [
+      {
+        "x": -0.523,
+        "y": -0.353
+      },
+      {
+        "x": 0.477,
+        "y": -0.353
+      },
+      {
+        "x": 0.477,
+        "y": 0.347
+      },
+      {
+        "x": -0.523,
+        "y": 0.347
+      }
+    ],
+    "frames": {
+      "lidar": {
+        "x": 0.325,
+        "y": 0.249,
+        "label": "LiDAR",
+        "color": "#1f6feb"
+      },
+      "imu": {
+        "x": 0,
+        "y": 0,
+        "label": "IMU",
+        "color": "#d95521"
+      },
+      "wheel_left": {
+        "x": -0.043,
+        "y": 0.323,
+        "label": "WL",
+        "color": "#2f3a4a"
+      },
+      "wheel_right": {
+        "x": -0.043,
+        "y": -0.328,
+        "label": "WR",
+        "color": "#2f3a4a"
+      }
+    }
+  }
+}

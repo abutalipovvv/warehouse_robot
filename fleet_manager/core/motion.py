@@ -249,6 +249,11 @@ class FleetMotionRuntimeMixin:
                 self._clear_wait_dependency(robot)
                 if moved_during_tick or robot.route_clock > route_clock_before + 0.000001:
                     self._record_traffic_progress(robot)
+                    # Motion samples can arrive alongside slower HTTP/control
+                    # responses. Give every committed pose a monotonic version
+                    # so the browser never accepts an older route clock merely
+                    # because both packets still carry the planning timestamp.
+                    robot.updated_at = now
             self._update_active_order_from_robot(robot)
             final_time = float(robot.trajectory[-1].get("t", 0.0) or 0.0)
             if final_time > 0.0 and robot.route_clock >= final_time:
@@ -344,7 +349,21 @@ class FleetMotionRuntimeMixin:
         blocked_edges = list(robot.retreat_blocked_edges)
         if target_lm in self.landmarks:
             robot.current_lm = target_lm
-            robot.pose = self._pose_at_landmark(target_lm)
+            landmark_pose = self._pose_at_landmark(target_lm)
+            # The trajectory sample carries the orientation in which the
+            # robot physically reached this LM.  Replacing it with the
+            # landmark helper's synthetic yaw=0 can rotate a rectangular
+            # footprint by 90 degrees in one frame and manufacture an overlap
+            # with a robot on the neighbouring lane. Snap only the position
+            # to the graph LM and preserve the physical arrival orientation.
+            if pose is not None and landmark_pose is not None:
+                robot.pose = {
+                    "x": float(landmark_pose["x"]),
+                    "y": float(landmark_pose["y"]),
+                    "yaw": float(pose.get("yaw", 0.0) or 0.0),
+                }
+            elif pose is None:
+                robot.pose = landmark_pose
         self._clear_deadlock_retreat(robot)
         order = self._active_order_for_robot(robot)
         if order is not None:
@@ -530,114 +549,143 @@ class FleetMotionRuntimeMixin:
         for robot in involved:
             self._restore_runtime_safety_snapshot(robot, snapshots[robot.name], now)
 
+        # One call is one atomic rollback transaction, even when several
+        # disconnected pairs crossed their safety envelopes in the same
+        # physics frame.  Every component is resolved below; counting the
+        # frame once preserves the metric's historical meaning.
+        self.traffic_metrics["runtimeSafetyRollbacks"] += 1
+        remaining_pairs = list(unsafe_pairs)
+
+        def pair_text(pairs: list[tuple[str, str]]) -> str:
+            return ", ".join(f"{first}/{second}" for first, second in pairs)
+
         # If one body has no executable timeline, a priority lease cannot make
         # it clear the near collision. Immediately reverse the moving robot to
         # its previous graph-safe LM and queue a detour; otherwise the same
         # forward substep is rolled back on every physics tick.
-        for first_name, second_name in unsafe_pairs:
-            first = self.robots[first_name]
-            second = self.robots[second_name]
-            if bool(first.trajectory) == bool(second.trajectory):
-                continue
-            blocker = second if first.trajectory else first
-            mover = first if first.trajectory else second
-            if mover.status == "RETREATING":
-                # The reverse step itself can be boxed in by a second body
-                # (A <- retreating robot -> B). Reissuing the same retreat on
-                # every physics tick cannot change that geometry and creates
-                # a visible rollback storm. Preserve the blocked edge, stop
-                # the unusable timeline once, and let spatial dispatch choose
-                # another exit from the robot's current graph landmark.
-                order = self._active_order_for_robot(mover)
-                blocked_edges = list(mover.retreat_blocked_edges)
-                if order is not None and blocked_edges:
-                    order.traffic_detour_edges = list(
-                        dict.fromkeys(blocked_edges)
-                    )
-                if self._queue_active_order_for_background_replan(
-                    mover,
-                    now,
-                    "deadlock retreat blocked; alternate route required",
-                    allow_controlled_corridor_replan=True,
-                ):
+        attempted_stationary_pairs: set[tuple[str, str]] = set()
+        while True:
+            handled_mover = ""
+            for first_name, second_name in remaining_pairs:
+                pair = (first_name, second_name)
+                if pair in attempted_stationary_pairs:
+                    continue
+                attempted_stationary_pairs.add(pair)
+                first = self.robots[first_name]
+                second = self.robots[second_name]
+                if bool(first.trajectory) == bool(second.trajectory):
+                    continue
+                blocker = second if first.trajectory else first
+                mover = first if first.trajectory else second
+                if mover.retreat_target_clock is not None:
+                    # The reverse step itself can be boxed in by a second body
+                    # (A <- retreating robot -> B). Reissuing the same retreat
+                    # on every physics tick cannot change that geometry and
+                    # creates a visible rollback storm. Preserve the blocked
+                    # edge, stop the unusable timeline once, and let spatial
+                    # dispatch choose another exit from the current graph LM.
+                    order = self._active_order_for_robot(mover)
+                    blocked_edges = list(mover.retreat_blocked_edges)
                     if order is not None and blocked_edges:
-                        order.traffic_detour_attempts += 1
-                    self._clear_deadlock_retreat(mover)
-                    self.traffic_metrics["cycleReplans"] += 1
-                    self.traffic_metrics["runtimeSafetyRollbacks"] += 1
-                    pairs = ", ".join(
-                        f"{first_pair}/{second_pair}"
-                        for first_pair, second_pair in unsafe_pairs
+                        order.traffic_detour_edges = list(
+                            dict.fromkeys(blocked_edges)
+                        )
+                    related_pairs = [
+                        unsafe_pair
+                        for unsafe_pair in remaining_pairs
+                        if mover.name in unsafe_pair
+                    ]
+                    if self._queue_active_order_for_background_replan(
+                        mover,
+                        now,
+                        "deadlock retreat blocked; alternate route required",
+                        allow_controlled_corridor_replan=True,
+                    ):
+                        if order is not None and blocked_edges:
+                            order.traffic_detour_attempts += 1
+                        self._clear_deadlock_retreat(mover)
+                        self.traffic_metrics["cycleReplans"] += 1
+                        self._event(
+                            "error",
+                            "runtime safety invariant prevented footprint overlap: "
+                            f"{pair_text(related_pairs)}; blocked retreat for "
+                            f"{mover.name} replaced with alternate route",
+                        )
+                    else:
+                        # A robot can be a few centimetres beyond the last LM
+                        # when its reverse sweep is rejected. It is then
+                        # deliberately not eligible for graph replanning yet.
+                        # Hold the restored, collision-free pose long enough
+                        # for the stationary neighbour's queued departure to
+                        # clear instead of arming the identical reverse step
+                        # again on the next physics frame.
+                        lease_until = now + max(
+                            1.0,
+                            self._deadlock_priority_lease(),
+                        )
+                        mover.status = "WAITING"
+                        mover.last_reason = f"yield to {blocker.name}"
+                        mover.wait_for_robot = blocker.name
+                        mover.wait_resource = "blocked_retreat"
+                        mover.wait_release_at = lease_until
+                        mover.traffic_priority_until = 0.0
+                        mover.blocked_since = mover.blocked_since or now
+                        mover.traffic_stall_since = (
+                            mover.traffic_stall_since or now
+                        )
+                        mover.last_tick_at = now
+                        mover.updated_at = now
+                        blocker.traffic_priority_until = max(
+                            blocker.traffic_priority_until,
+                            lease_until,
+                        )
+                        self._update_active_order_from_robot(mover)
+                        self._event(
+                            "error",
+                            "runtime safety invariant prevented footprint overlap: "
+                            f"{pair_text(related_pairs)}; blocked retreat for "
+                            f"{mover.name} held for {blocker.name}",
+                        )
+                    handled_mover = mover.name
+                    break
+                evacuated_name = self._start_deadlock_corridor_evacuation(
+                    [blocker, mover],
+                    blocker,
+                    now,
+                )
+                if not evacuated_name:
+                    continue
+                evacuated = self.robots.get(evacuated_name)
+                if (
+                    evacuated is not None
+                    and evacuated.status == "RETREATING"
+                ):
+                    evacuated.traffic_priority_until = max(
+                        evacuated.traffic_priority_until,
+                        now + self._deadlock_priority_lease(),
                     )
-                    self._event(
-                        "error",
-                        f"runtime safety invariant prevented footprint overlap: "
-                        f"{pairs}; blocked retreat for {mover.name} replaced "
-                        "with alternate route",
-                    )
-                    return
-                # A robot can be a few centimetres beyond the last LM when
-                # its reverse sweep is rejected. It is then deliberately not
-                # eligible for graph replanning yet. Hold the restored,
-                # collision-free pose long enough for the stationary
-                # neighbour's queued departure to clear instead of arming the
-                # identical reverse step again on the next 10 Hz frame.
-                lease_until = now + max(
-                    1.0,
-                    self._deadlock_priority_lease(),
-                )
-                mover.status = "WAITING"
-                mover.last_reason = f"yield to {blocker.name}"
-                mover.wait_for_robot = blocker.name
-                mover.wait_resource = "blocked_retreat"
-                mover.wait_release_at = lease_until
-                mover.traffic_priority_until = 0.0
-                mover.last_tick_at = now
-                mover.updated_at = now
-                blocker.traffic_priority_until = max(
-                    blocker.traffic_priority_until,
-                    lease_until,
-                )
-                self._update_active_order_from_robot(mover)
-                self.traffic_metrics["runtimeSafetyRollbacks"] += 1
-                pairs = ", ".join(
-                    f"{first_pair}/{second_pair}"
-                    for first_pair, second_pair in unsafe_pairs
-                )
+                related_pairs = [
+                    unsafe_pair
+                    for unsafe_pair in remaining_pairs
+                    if evacuated_name in unsafe_pair
+                ]
                 self._event(
                     "error",
-                    f"runtime safety invariant prevented footprint overlap: "
-                    f"{pairs}; blocked retreat for {mover.name} held for "
-                    f"{blocker.name}",
+                    "runtime safety invariant prevented footprint overlap: "
+                    f"{pair_text(related_pairs)}; rolled back, evacuating "
+                    f"{evacuated_name}",
                 )
-                return
-            evacuated_name = self._start_deadlock_corridor_evacuation(
-                [blocker, mover],
-                blocker,
-                now,
-            )
-            if not evacuated_name:
-                continue
-            evacuated = self.robots.get(evacuated_name)
-            if (
-                evacuated is not None
-                and evacuated.status == "RETREATING"
-            ):
-                evacuated.traffic_priority_until = max(
-                    evacuated.traffic_priority_until,
-                    now + self._deadlock_priority_lease(),
-                )
-            self.traffic_metrics["runtimeSafetyRollbacks"] += 1
-            pairs = ", ".join(
-                f"{first_pair}/{second_pair}"
-                for first_pair, second_pair in unsafe_pairs
-            )
-            self._event(
-                "error",
-                f"runtime safety invariant prevented footprint overlap: {pairs}; "
-                f"rolled back, evacuating {evacuated_name}",
-            )
-            return
+                handled_mover = evacuated_name
+                break
+            if not handled_mover:
+                break
+            # The evacuated/held body is collision-free at its restored pose.
+            # Remove all of its incident conflicts, but continue resolving
+            # every independent pair from this same frame.
+            remaining_pairs = [
+                pair for pair in remaining_pairs
+                if handled_mover not in pair
+            ]
 
         def priority_key(robot: FleetRobot) -> tuple[int, int, str]:
             order = self._active_order_for_robot(robot)
@@ -651,31 +699,58 @@ class FleetMotionRuntimeMixin:
                 robot.name,
             )
 
-        winner = min(involved, key=priority_key)
-        winner.traffic_priority_until = now + self._deadlock_priority_lease()
-        winner.status = "MOVING" if winner.trajectory else "WAITING"
-        winner.last_reason = "runtime safety rollback; priority granted"
-        winner.blocked_since = now
-        winner.traffic_stall_since = winner.traffic_stall_since or now
-        for robot in involved:
-            if robot.name == winner.name:
-                continue
-            robot.status = "WAITING"
-            robot.last_reason = f"yield to {winner.name}"
-            robot.blocked_since = now
-            robot.traffic_stall_since = robot.traffic_stall_since or now
-            robot.wait_for_robot = winner.name
-            robot.wait_resource = "runtime_safety"
-            robot.wait_release_at = winner.traffic_priority_until
-            self._update_active_order_from_robot(robot)
-        self._update_active_order_from_robot(winner)
-        self.traffic_metrics["runtimeSafetyRollbacks"] += 1
-        pairs = ", ".join(f"{first}/{second}" for first, second in unsafe_pairs)
-        self._event(
-            "error",
-            f"runtime safety invariant prevented footprint overlap: {pairs}; "
-            f"rolled back, priority {winner.name}",
-        )
+        # Resolve disconnected conflicts independently. A single global
+        # winner used to stop unrelated aisles, and an early return from the
+        # blocked-retreat branch left later pairs completely unassigned.
+        adjacency: dict[str, set[str]] = {}
+        for first_name, second_name in remaining_pairs:
+            adjacency.setdefault(first_name, set()).add(second_name)
+            adjacency.setdefault(second_name, set()).add(first_name)
+        unseen = set(adjacency)
+        while unseen:
+            root = min(unseen)
+            component_names: set[str] = set()
+            stack = [root]
+            while stack:
+                name = stack.pop()
+                if name in component_names:
+                    continue
+                component_names.add(name)
+                stack.extend(adjacency.get(name, set()) - component_names)
+            unseen.difference_update(component_names)
+            component_pairs = [
+                pair for pair in remaining_pairs
+                if pair[0] in component_names and pair[1] in component_names
+            ]
+            component = [
+                self.robots[name] for name in sorted(component_names)
+            ]
+            winner = min(component, key=priority_key)
+            winner.traffic_priority_until = (
+                now + self._deadlock_priority_lease()
+            )
+            winner.status = "MOVING" if winner.trajectory else "WAITING"
+            winner.last_reason = "runtime safety rollback; priority granted"
+            winner.blocked_since = now
+            winner.traffic_stall_since = winner.traffic_stall_since or now
+            for robot in component:
+                if robot.name == winner.name:
+                    continue
+                robot.status = "WAITING"
+                robot.last_reason = f"yield to {winner.name}"
+                robot.blocked_since = now
+                robot.traffic_stall_since = robot.traffic_stall_since or now
+                robot.wait_for_robot = winner.name
+                robot.wait_resource = "runtime_safety"
+                robot.wait_release_at = winner.traffic_priority_until
+                self._update_active_order_from_robot(robot)
+            self._update_active_order_from_robot(winner)
+            self._event(
+                "error",
+                "runtime safety invariant prevented footprint overlap: "
+                f"{pair_text(component_pairs)}; rolled back, priority "
+                f"{winner.name}",
+            )
 
     def _swept_footprints_overlap(
         self,

@@ -120,6 +120,7 @@ class TrafficRoutingMixin:
                 robot.status in {"IDLE", "ARRIVED"}
                 and pending_order is not None
                 and pending_order.status in {"QUEUED", "PLANNING"}
+                and not self._stationary_order_is_quarantined(pending_order)
             ):
                 continue
             lm_name = self._nearest_lm_for_robot(robot)
@@ -344,7 +345,15 @@ class TrafficRoutingMixin:
             return None
         inside = self._controlled_regions_for_robot(robot)
         lookahead = self._controlled_corridor_entry_lookahead()
-        for index in range(len(robot.trajectory) - 1):
+        first_index = max(
+            0,
+            self._trajectory_segment_index(
+                robot.trajectory,
+                robot.route_clock,
+                boundary_belongs_to_previous=True,
+            ) - 1,
+        )
+        for index in range(first_index, len(robot.trajectory) - 1):
             start = robot.trajectory[index]
             end = robot.trajectory[index + 1]
             start_time = float(start.get("t", 0.0) or 0.0)
@@ -711,6 +720,20 @@ class TrafficRoutingMixin:
             fleet = {}
         return self._positive_float_param(fleet, key, default)
 
+    def _edge_has_explicit_corridor_authority(self, src: str, dst: str) -> bool:
+        """Avoid two independent admission gates on one physical edge.
+
+        Dynamic traffic zones regulate fleet-wide demand. A Traffic Editor
+        controlled corridor is the more precise local authority for its tagged
+        edges, so the coarse zone light must not choose a different winner on
+        the same transition.
+        """
+        graph = self._controlled_corridor_graph
+        if graph is None:
+            return False
+        lane = graph.lane_for(src, dst)
+        return bool(lane is not None and lane.controlled_region_ids)
+
     def _build_traffic_zone_index(self) -> dict[str, str]:
         if not self._traffic_zone_control_enabled() or not self.landmarks:
             return {}
@@ -761,7 +784,15 @@ class TrafficRoutingMixin:
             "traffic_zone_entry_lookahead_sec",
             3.0,
         )
-        for index in range(len(robot.trajectory) - 1):
+        first_index = max(
+            0,
+            self._trajectory_segment_index(
+                robot.trajectory,
+                robot.route_clock,
+                boundary_belongs_to_previous=True,
+            ) - 1,
+        )
+        for index in range(first_index, len(robot.trajectory) - 1):
             start = robot.trajectory[index]
             end = robot.trajectory[index + 1]
             start_time = float(start.get("t", 0.0) or 0.0)
@@ -775,6 +806,8 @@ class TrafficRoutingMixin:
             if parsed is None:
                 continue
             src, dst = parsed
+            if self._edge_has_explicit_corridor_authority(src, dst):
+                continue
             src_zone = self._traffic_zone_by_lm.get(src, "")
             dst_zone = self._traffic_zone_by_lm.get(dst, "")
             if not src_zone or not dst_zone or src_zone == dst_zone:
@@ -1023,6 +1056,8 @@ class TrafficRoutingMixin:
         if edge is None:
             return ""
         src, dst = edge
+        if self._edge_has_explicit_corridor_authority(src, dst):
+            return ""
         source_zone = self._traffic_zone_by_lm.get(src, "")
         target_zone = self._traffic_zone_by_lm.get(dst, "")
         if not source_zone or not target_zone or source_zone == target_zone:

@@ -1,6 +1,6 @@
 import { httpClient } from "./js/api/http-client.js";
 import { CommandStack } from "./js/editor/command-stack.js";
-import { markControlledCorridor } from "./js/editor/graph-tools.js";
+import { markControlledCorridorArea } from "./js/editor/graph-tools.js";
 import { OccupancyGrid, OCCUPANCY_VALUES } from "./js/editor/occupancy-grid.js";
 import { preferences } from "./js/state/preferences.js";
 import { cloneJson, escapeHtml } from "./js/shared/json.js";
@@ -30,7 +30,6 @@ class RobotMapEditorApp {
     this.selection = { type: "none", key: "" };
     this.previewWorld = null;
     this.previewSnapName = "";
-    this.corridorStartLm = "";
     this.dragState = null;
     this.dirty = false;
     this.logs = [];
@@ -359,6 +358,7 @@ class RobotMapEditorApp {
       this.selectedLocalMapName = this.currentLocalMapName;
       this.currentMap.mapName = String(editableMap.mapName || this.currentMap.mapName || mapName);
       this.dirty = false;
+      this.rasterHistory.clear();
       this.currentHasLocalChanges = Boolean(local.hasLocalChanges);
       if (this.currentHasLocalChanges) {
         this.markPendingPush();
@@ -598,9 +598,6 @@ class RobotMapEditorApp {
         this.dragState = null;
       }
     }
-    if (this.selectedTool !== "corridor") {
-      this.corridorStartLm = "";
-    }
     this.toolButtons.forEach((button) => {
       button.classList.toggle("active", button.dataset.tool === this.selectedTool);
     });
@@ -631,9 +628,13 @@ class RobotMapEditorApp {
     if (target instanceof HTMLInputElement || target instanceof HTMLSelectElement || target instanceof HTMLTextAreaElement) {
       return;
     }
-    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "z") {
+    const key = event.key.toLowerCase();
+    if ((event.ctrlKey || event.metaKey) && (key === "z" || key === "y")) {
       event.preventDefault();
-      if (event.shiftKey) {
+      if (this.historyGestureActive()) {
+        return;
+      }
+      if (key === "y" || event.shiftKey) {
         this.redoRaster();
       } else {
         this.undoRaster();
@@ -641,15 +642,83 @@ class RobotMapEditorApp {
     }
   }
 
+  historyGestureActive() {
+    return [
+      "raster_stroke",
+      "raster_rectangle",
+      "corridor_rectangle",
+      "landmark",
+      "handle",
+      "edge_chain",
+    ].includes(this.dragState?.type);
+  }
+
   undoRaster() {
+    if (this.historyGestureActive()) {
+      return;
+    }
     if (this.rasterHistory.undo()) {
-      this.afterRasterMutation("Raster edit undone.");
+      this.afterHistoryMutation("Map edit undone.");
     }
   }
 
   redoRaster() {
+    if (this.historyGestureActive()) {
+      return;
+    }
     if (this.rasterHistory.redo()) {
-      this.afterRasterMutation("Raster edit restored.");
+      this.afterHistoryMutation("Map edit restored.");
+    }
+  }
+
+  graphSnapshot() {
+    return {
+      lms: cloneJson(Array.isArray(this.currentMap?.lms) ? this.currentMap.lms : []),
+      edges: cloneJson(Array.isArray(this.currentMap?.edges) ? this.currentMap.edges : []),
+      selection: cloneJson(this.selection || { type: "none", key: "" }),
+    };
+  }
+
+  restoreGraphSnapshot(snapshot) {
+    if (!this.currentMap || !snapshot) {
+      return;
+    }
+    this.currentMap.lms = cloneJson(snapshot.lms || []);
+    this.currentMap.edges = cloneJson(snapshot.edges || []);
+    this.selection = cloneJson(snapshot.selection || { type: "none", key: "" });
+  }
+
+  commitGraphHistory(before, label = "Graph edit") {
+    if (!before) {
+      return false;
+    }
+    const after = this.graphSnapshot();
+    if (JSON.stringify(before) === JSON.stringify(after)) {
+      this.dirty = this.rasterHistory.canUndo;
+      this.renderWorkflowSummary();
+      return false;
+    }
+    this.rasterHistory.push({
+      label,
+      undo: () => this.restoreGraphSnapshot(before),
+      redo: () => this.restoreGraphSnapshot(after),
+    });
+    this.afterHistoryMutation(label);
+    return true;
+  }
+
+  afterHistoryMutation(message = "") {
+    this.dirty = this.rasterHistory.canUndo;
+    this.babylonRevision += 1;
+    if (this.rasterGrid) {
+      this.scheduleRasterPreview(true);
+      if (!this.babylonScene || this.babylonFailed) {
+        this.currentMap.map.imageDataUrl = this.rasterGrid.toDataUrl();
+      }
+    }
+    this.render();
+    if (message) {
+      this.log("info", message);
     }
   }
 
@@ -698,6 +767,7 @@ class RobotMapEditorApp {
     }
     this.renderWorkflowSummary();
     this.syncRasterControls();
+    this.renderCanvas();
     if (message) {
       this.log("info", message);
     }
@@ -820,7 +890,7 @@ class RobotMapEditorApp {
   }
 
   onPointerDown(event) {
-    if (!this.currentMap) {
+    if (!this.currentMap || event.button !== 0) {
       return;
     }
     const svgPoint = this.eventToSvgPoint(event);
@@ -835,12 +905,25 @@ class RobotMapEditorApp {
       }
       return;
     }
+    if (this.selectedTool === "corridor") {
+      if (this.beginCorridorPointer({
+        pointerId: event.pointerId,
+        button: event.button,
+        world,
+      })) {
+        this.editorSvg.setPointerCapture(event.pointerId);
+      }
+      return;
+    }
     const handle = event.target.closest("[data-handle-index]");
     if (handle && this.selectedTool === "select") {
       this.dragState = {
         type: "handle",
         edgeKey: handle.dataset.edgeKey || "",
         handleIndex: Number(handle.dataset.handleIndex || "0"),
+        pointerId: event.pointerId,
+        before: this.graphSnapshot(),
+        moved: false,
       };
       this.editorSvg.setPointerCapture(event.pointerId);
       return;
@@ -849,16 +932,14 @@ class RobotMapEditorApp {
     const landmarkNode = event.target.closest("[data-lm-name]");
     if (landmarkNode) {
       const lmName = landmarkNode.dataset.lmName || "";
-      if (this.selectedTool === "corridor") {
-        this.handleCorridorToolClick(lmName);
-        return;
-      }
       if (this.selectedTool === "edge") {
         this.selection = { type: "lm", key: lmName };
         this.dragState = {
           type: "edge_chain",
           currentLm: lmName,
           lastCreated: "",
+          pointerId: event.pointerId,
+          before: this.graphSnapshot(),
         };
         this.previewWorld = world;
         this.previewSnapName = lmName;
@@ -871,6 +952,9 @@ class RobotMapEditorApp {
         this.dragState = {
           type: "landmark",
           name: lmName,
+          pointerId: event.pointerId,
+          before: this.graphSnapshot(),
+          moved: false,
         };
         this.editorSvg.setPointerCapture(event.pointerId);
       }
@@ -886,7 +970,9 @@ class RobotMapEditorApp {
     }
 
     if (this.selectedTool === "lm") {
-      this.addLandmark(world);
+      const before = this.graphSnapshot();
+      const name = this.addLandmark(world);
+      this.commitGraphHistory(before, `Added landmark ${name}.`);
       return;
     }
 
@@ -898,6 +984,8 @@ class RobotMapEditorApp {
           type: "edge_chain",
           currentLm: nearest.name,
           lastCreated: "",
+          pointerId: event.pointerId,
+          before: this.graphSnapshot(),
         };
         this.previewWorld = world;
         this.previewSnapName = nearest.name;
@@ -929,6 +1017,13 @@ class RobotMapEditorApp {
       });
       return;
     }
+    if (this.dragState?.type === "corridor_rectangle") {
+      this.moveCorridorPointer({
+        pointerId: event.pointerId,
+        world: this.svgToWorld(svgPoint),
+      });
+      return;
+    }
     if (this.dragState?.type === "pan") {
       const dx = svgPoint.x - this.dragState.start.x;
       const dy = svgPoint.y - this.dragState.start.y;
@@ -943,11 +1038,13 @@ class RobotMapEditorApp {
     if (this.dragState?.type === "landmark") {
       const world = this.svgToWorld(svgPoint);
       this.moveLandmark(this.dragState.name, world);
+      this.dragState.moved = true;
       return;
     }
     if (this.dragState?.type === "handle") {
       const world = this.svgToWorld(svgPoint);
       this.moveCurveHandle(this.dragState.edgeKey, this.dragState.handleIndex, world);
+      this.dragState.moved = true;
       return;
     }
     if (this.dragState?.type === "edge_chain") {
@@ -978,12 +1075,32 @@ class RobotMapEditorApp {
       });
       return;
     }
-    if (this.dragState?.type === "edge_chain") {
-      this.previewWorld = null;
-      this.previewSnapName = "";
-      this.renderInteraction();
+    if (this.dragState?.type === "corridor_rectangle") {
+      const world = event ? this.svgToWorld(this.eventToSvgPoint(event)) : null;
+      this.endCorridorPointer({
+        pointerId: event?.pointerId ?? this.dragState.pointerId,
+        world,
+      });
+      return;
     }
+    const drag = this.dragState;
     this.dragState = null;
+    this.previewWorld = null;
+    this.previewSnapName = "";
+    if (drag?.type === "landmark" && drag.moved) {
+      this.commitGraphHistory(drag.before, `Moved landmark ${drag.name}.`);
+      return;
+    }
+    if (drag?.type === "handle" && drag.moved) {
+      this.commitGraphHistory(drag.before, `Updated curve ${drag.edgeKey}.`);
+      return;
+    }
+    if (drag?.type === "edge_chain") {
+      if (this.commitGraphHistory(drag.before, "Added graph edge chain.")) {
+        return;
+      }
+    }
+    this.renderInteraction();
   }
 
   onBabylonPointerDown(hit) {
@@ -993,6 +1110,9 @@ class RobotMapEditorApp {
     if (RASTER_TOOLS.has(this.selectedTool)) {
       return this.beginRasterPointer(hit);
     }
+    if (this.selectedTool === "corridor") {
+      return this.beginCorridorPointer(hit);
+    }
     if (hit.bezierIndex && hit.edgeKey && this.selectedTool === "select") {
       this.selection = { type: "edge", key: hit.edgeKey };
       this.dragState = {
@@ -1000,15 +1120,13 @@ class RobotMapEditorApp {
         edgeKey: hit.edgeKey,
         handleIndex: Number(hit.bezierIndex),
         pointerId: hit.pointerId,
+        before: this.graphSnapshot(),
+        moved: false,
       };
       this.renderInteraction();
       return true;
     }
     if (hit.lmName) {
-      if (this.selectedTool === "corridor") {
-        this.handleCorridorToolClick(hit.lmName);
-        return true;
-      }
       this.selection = { type: "lm", key: hit.lmName };
       if (this.selectedTool === "edge") {
         this.dragState = {
@@ -1016,11 +1134,18 @@ class RobotMapEditorApp {
           currentLm: hit.lmName,
           lastCreated: "",
           pointerId: hit.pointerId,
+          before: this.graphSnapshot(),
         };
         this.previewWorld = { ...hit.world };
         this.previewSnapName = hit.lmName;
       } else if (this.selectedTool === "select") {
-        this.dragState = { type: "landmark", name: hit.lmName, pointerId: hit.pointerId };
+        this.dragState = {
+          type: "landmark",
+          name: hit.lmName,
+          pointerId: hit.pointerId,
+          before: this.graphSnapshot(),
+          moved: false,
+        };
       }
       this.renderInteraction();
       return true;
@@ -1031,7 +1156,9 @@ class RobotMapEditorApp {
       return true;
     }
     if (this.selectedTool === "lm") {
-      this.addLandmark(hit.world);
+      const before = this.graphSnapshot();
+      const name = this.addLandmark(hit.world);
+      this.commitGraphHistory(before, `Added landmark ${name}.`);
       return true;
     }
     this.selection = { type: "none", key: "" };
@@ -1047,12 +1174,18 @@ class RobotMapEditorApp {
       this.moveRasterPointer(hit);
       return;
     }
+    if (this.dragState.type === "corridor_rectangle") {
+      this.moveCorridorPointer(hit);
+      return;
+    }
     if (this.dragState.type === "landmark") {
       this.moveLandmark(this.dragState.name, hit.world);
+      this.dragState.moved = true;
       return;
     }
     if (this.dragState.type === "handle") {
       this.moveCurveHandle(this.dragState.edgeKey, this.dragState.handleIndex, hit.world);
+      this.dragState.moved = true;
       return;
     }
     if (this.dragState.type === "edge_chain") {
@@ -1081,15 +1214,28 @@ class RobotMapEditorApp {
       this.endRasterPointer(hit);
       return;
     }
-    const geometryChanged = ["landmark", "handle", "edge_chain"].includes(this.dragState?.type);
+    if (this.dragState.type === "corridor_rectangle") {
+      this.endCorridorPointer(hit);
+      return;
+    }
+    const drag = this.dragState;
     this.dragState = null;
     this.previewWorld = null;
     this.previewSnapName = "";
-    if (geometryChanged) {
-      this.render();
-    } else {
-      this.renderBabylonCanvas();
+    if (drag?.type === "landmark" && drag.moved) {
+      this.commitGraphHistory(drag.before, `Moved landmark ${drag.name}.`);
+      return;
     }
+    if (drag?.type === "handle" && drag.moved) {
+      this.commitGraphHistory(drag.before, `Updated curve ${drag.edgeKey}.`);
+      return;
+    }
+    if (drag?.type === "edge_chain") {
+      if (this.commitGraphHistory(drag.before, "Added graph edge chain.")) {
+        return;
+      }
+    }
+    this.renderBabylonCanvas();
   }
 
   beginRasterPointer(hit) {
@@ -1110,8 +1256,11 @@ class RobotMapEditorApp {
         pointerId: hit.pointerId,
         start: point,
         current: point,
+        startWorld: { ...hit.world },
+        currentWorld: { ...hit.world },
         value,
       };
+      this.renderCanvas();
       return true;
     }
     const patch = this.rasterGrid.beginPatch(
@@ -1121,14 +1270,14 @@ class RobotMapEditorApp {
           ? "Unknown brush"
           : "Pencil",
     );
-    const radius = Math.max(1, Math.floor(Number(this.brushSizeInput?.value) || 1));
-    this.rasterGrid.paintLine(patch, point, point, radius, value);
+    const size = Math.max(1, Math.floor(Number(this.brushSizeInput?.value) || 1));
+    this.rasterGrid.paintSquareLine(patch, point, point, size, value);
     this.dragState = {
       type: "raster_stroke",
       pointerId: hit.pointerId,
       patch,
       last: point,
-      radius,
+      size,
       value,
     };
     this.scheduleRasterPreview();
@@ -1142,16 +1291,18 @@ class RobotMapEditorApp {
     }
     if (this.dragState.type === "raster_rectangle") {
       this.dragState.current = point;
+      this.dragState.currentWorld = { ...hit.world };
+      this.renderCanvas();
       return;
     }
     if (this.dragState.type !== "raster_stroke") {
       return;
     }
-    this.rasterGrid.paintLine(
+    this.rasterGrid.paintSquareLine(
       this.dragState.patch,
       this.dragState.last,
       point,
-      this.dragState.radius,
+      this.dragState.size,
       this.dragState.value,
     );
     this.dragState.last = point;
@@ -1172,11 +1323,15 @@ class RobotMapEditorApp {
         hit?.world ? this.rasterPoint(hit.world) : drag.current,
         drag.value,
       );
-      this.commitRasterPatch(patch, "Occupied rectangle added.");
+      if (!this.commitRasterPatch(patch, "Occupied rectangle added.")) {
+        this.renderCanvas();
+      }
       return;
     }
     if (drag.type === "raster_stroke") {
-      this.commitRasterPatch(drag.patch);
+      if (!this.commitRasterPatch(drag.patch)) {
+        this.renderCanvas();
+      }
     }
   }
 
@@ -1192,55 +1347,50 @@ class RobotMapEditorApp {
     }
   }
 
-  handleEdgeToolClick(lmName) {
-    if (!lmName) {
-      return;
+  beginCorridorPointer(hit) {
+    if (!hit?.world) {
+      return false;
     }
-    if (!this.edgeStartLm) {
-      this.edgeStartLm = lmName;
-      this.selection = { type: "lm", key: lmName };
-      this.log("info", `Edge start selected: ${lmName}. Click the destination LM.`);
-      this.renderInteraction({ logs: true });
-      return;
-    }
-    if (this.edgeStartLm === lmName) {
-      this.edgeStartLm = "";
-      this.previewWorld = null;
-      this.renderInteraction();
-      return;
-    }
-    this.createEdge(this.edgeStartLm, lmName);
-    this.edgeStartLm = "";
-    this.previewWorld = null;
-    this.renderInteraction();
+    this.dragState = {
+      type: "corridor_rectangle",
+      pointerId: hit.pointerId,
+      startWorld: { ...hit.world },
+      currentWorld: { ...hit.world },
+      before: this.graphSnapshot(),
+    };
+    this.setStatus("Drag around the narrow graph aisle, then release.");
+    this.renderCanvas();
+    return true;
   }
 
-  handleCorridorToolClick(lmName) {
-    if (!lmName) {
+  moveCorridorPointer(hit) {
+    if (this.dragState?.type !== "corridor_rectangle" || !hit?.world) {
       return;
     }
-    if (!this.corridorStartLm) {
-      this.corridorStartLm = lmName;
-      this.selection = { type: "lm", key: lmName };
-      this.setStatus(`Corridor start: ${lmName}. Select the opposite holding LM.`);
-      this.render();
+    this.dragState.currentWorld = { ...hit.world };
+    this.renderCanvas();
+  }
+
+  endCorridorPointer(hit) {
+    const drag = this.dragState;
+    this.dragState = null;
+    if (!drag || drag.type !== "corridor_rectangle") {
       return;
     }
-    const startLm = this.corridorStartLm;
-    this.corridorStartLm = "";
-    if (startLm === lmName) {
-      this.setStatus("Corridor selection canceled.");
-      this.render();
-      return;
-    }
-    const result = markControlledCorridor(this.currentMap, startLm, lmName);
+    const result = markControlledCorridorArea(
+      this.currentMap,
+      drag.startWorld,
+      hit?.world || drag.currentWorld,
+    );
     if (!result) {
-      this.handleError(new Error(`No directed graph route from ${startLm} to ${lmName}.`));
+      this.setStatus("The corridor rectangle does not cross any graph edge.");
+      this.renderCanvas();
       return;
     }
-    this.selection = { type: "lm", key: lmName };
-    this.markDirty(
-      `Controlled corridor ${result.regionId} marked across ${result.path.length - 1} edges.`,
+    const regionCount = result.regions.length;
+    this.commitGraphHistory(
+      drag.before,
+      `Marked ${regionCount} controlled corridor zone${regionCount === 1 ? "" : "s"} across ${result.edgeCount} directed edges.`,
     );
   }
 
@@ -1258,6 +1408,7 @@ class RobotMapEditorApp {
     });
     this.selection = { type: "lm", key: name };
     this.markDirty(`Added landmark ${name}.`);
+    return name;
   }
 
   moveLandmark(name, world) {
@@ -1322,19 +1473,20 @@ class RobotMapEditorApp {
     if (!this.currentMap) {
       return;
     }
+    const before = this.graphSnapshot();
     if (this.selection.type === "lm") {
       const name = this.selection.key;
       this.currentMap.lms = this.currentMap.lms.filter((item) => item.name !== name);
       this.currentMap.edges = this.currentMap.edges.filter((edge) => edge.from !== name && edge.to !== name);
       this.selection = { type: "none", key: "" };
-      this.markDirty(`Removed landmark ${name}.`);
+      this.commitGraphHistory(before, `Removed landmark ${name}.`);
       return;
     }
     if (this.selection.type === "edge") {
       const key = this.selection.key;
       this.currentMap.edges = this.currentMap.edges.filter((edge) => this.edgeKey(edge) !== key);
       this.selection = { type: "none", key: "" };
-      this.markDirty(`Removed edge ${key}.`);
+      this.commitGraphHistory(before, `Removed edge ${key}.`);
     }
   }
 
@@ -1362,6 +1514,7 @@ class RobotMapEditorApp {
       this.renderInspector();
       return;
     }
+    const before = this.graphSnapshot();
     const previousName = current.name;
     current.name = nextName;
     current.x = this.round(Number.isFinite(nextX) ? nextX : current.x);
@@ -1383,7 +1536,7 @@ class RobotMapEditorApp {
       this.selection = { type: "lm", key: nextName };
     }
     this.refreshConnectedEdges(nextName);
-    this.markDirty(`Updated landmark ${nextName}.`, { quietLog: true });
+    this.commitGraphHistory(before, `Updated landmark ${nextName}.`);
   }
 
   applyEdgeInspector() {
@@ -1394,6 +1547,7 @@ class RobotMapEditorApp {
     if (!edge) {
       return;
     }
+    const before = this.graphSnapshot();
     const nextKind = this.edgeKindSelect.value === "curve" ? "curve" : "line";
     const nextType = String(this.edgeTypeInput.value || "").trim() || (nextKind === "curve" ? "DegenerateBezier" : "FeatureLine");
     const direction = normalizeEdgeMotionCode(this.edgeDirectionSelect.value);
@@ -1457,7 +1611,7 @@ class RobotMapEditorApp {
       this.currentMap.edges = this.currentMap.edges.filter((item) => item !== edge);
       this.selection = { type: "edge", key: this.edgeKey(reverse) };
     }
-    this.markDirty(`Updated edge ${edge.from} -> ${edge.to}.`, { quietLog: true });
+    this.commitGraphHistory(before, `Updated edge ${edge.from} -> ${edge.to}.`);
   }
 
   ensureCurveGeometry(edge) {
@@ -1647,7 +1801,13 @@ class RobotMapEditorApp {
   babylonEditorState() {
     const selectedLmName = this.selection.type === "lm" ? this.selection.key : "";
     const selectedEdgeKey = this.selection.type === "edge" ? this.selection.key : "";
-    const dragging = ["landmark", "handle", "edge_chain"].includes(this.dragState?.type);
+    const dragging = [
+      "landmark",
+      "handle",
+      "edge_chain",
+      "raster_rectangle",
+      "corridor_rectangle",
+    ].includes(this.dragState?.type);
     return {
       active: true,
       revision: this.babylonRevision,
@@ -1658,6 +1818,13 @@ class RobotMapEditorApp {
       preview: this.dragState?.type === "edge_chain" && this.previewWorld
         ? { fromName: this.dragState.currentLm, world: this.previewWorld }
         : null,
+      areaPreview: ["raster_rectangle", "corridor_rectangle"].includes(this.dragState?.type)
+        ? {
+            kind: this.dragState.type === "corridor_rectangle" ? "corridor" : "rectangle",
+            start: this.dragState.startWorld,
+            current: this.dragState.currentWorld,
+          }
+        : null,
       lms: this.currentMap?.lms || [],
       edges: this.currentMap?.edges || [],
     };
@@ -1667,7 +1834,13 @@ class RobotMapEditorApp {
     if (!this.babylonScene || !this.currentMap || this.babylonFailed) {
       return false;
     }
-    const dragging = ["landmark", "handle", "edge_chain"].includes(this.dragState?.type);
+    const dragging = [
+      "landmark",
+      "handle",
+      "edge_chain",
+      "raster_rectangle",
+      "corridor_rectangle",
+    ].includes(this.dragState?.type);
     if ((options.force || this.babylonRenderedRevision !== this.babylonRevision) && !dragging) {
       this.babylonScene.setScene(this.babylonScenePayload(), {
         preserveView: this.babylonRenderedRevision >= 0,
@@ -1729,9 +1902,11 @@ class RobotMapEditorApp {
     );
     for (const edge of this.currentMap.edges) {
       const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+      const selected = this.selection.type === "edge" && this.selection.key === this.edgeKey(edge);
+      const controlled = Boolean(edge.properties?.controlled_region);
       path.setAttribute("fill", "none");
-      path.setAttribute("stroke-width", this.selection.type === "edge" && this.selection.key === this.edgeKey(edge) ? "3.4" : "2.25");
-      path.setAttribute("stroke", this.selection.type === "edge" && this.selection.key === this.edgeKey(edge) ? "var(--edge-selected)" : "var(--edge)");
+      path.setAttribute("stroke-width", selected ? "3.4" : (controlled ? "3" : "2.25"));
+      path.setAttribute("stroke", selected ? "var(--edge-selected)" : (controlled ? "#d97706" : "var(--edge)"));
       path.setAttribute("stroke-linecap", "round");
       path.dataset.edgeKey = this.edgeKey(edge);
       path.setAttribute("d", this.edgePath(edge));
@@ -1749,18 +1924,29 @@ class RobotMapEditorApp {
   renderLandmarks() {
     this.editorLmLayer.innerHTML = "";
     this.syncLmNamesButton();
+    const corridorHoldingLms = new Set(
+      this.currentMap.edges
+        .filter((edge) => edge.properties?.controlled_region)
+        .flatMap((edge) => [edge.from, edge.to]),
+    );
     for (const landmark of this.currentMap.lms) {
       const svgPoint = this.worldToSvg(landmark);
       const group = document.createElementNS("http://www.w3.org/2000/svg", "g");
       group.dataset.lmName = landmark.name;
 
       const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+      const controlled = Boolean(landmark.properties?.controlled_region);
+      const holding = Boolean(
+        landmark.properties?.holding_point
+        && corridorHoldingLms.has(landmark.name)
+      );
+      const selected = this.selection.type === "lm" && this.selection.key === landmark.name;
       circle.setAttribute("cx", String(svgPoint.x));
       circle.setAttribute("cy", String(svgPoint.y));
-      circle.setAttribute("r", this.selection.type === "lm" && this.selection.key === landmark.name ? "7.5" : "6");
-      circle.setAttribute("fill", this.selection.type === "lm" && this.selection.key === landmark.name ? "var(--lm-selected)" : "var(--lm)");
-      circle.setAttribute("stroke", "#ffffff");
-      circle.setAttribute("stroke-width", "2");
+      circle.setAttribute("r", selected ? "7.5" : "6");
+      circle.setAttribute("fill", selected ? "var(--lm-selected)" : (controlled ? "#d97706" : "var(--lm)"));
+      circle.setAttribute("stroke", holding ? "#d97706" : "#ffffff");
+      circle.setAttribute("stroke-width", holding ? "3.5" : "2");
       group.append(circle);
 
       if (this.lmNamesVisible) {
@@ -1827,6 +2013,24 @@ class RobotMapEditorApp {
     const guidePoint = this.currentGuidePoint();
     if (guidePoint) {
       this.drawGuideAtPoint(guidePoint);
+    }
+    if (
+      ["raster_rectangle", "corridor_rectangle"].includes(this.dragState?.type)
+      && this.dragState.startWorld
+      && this.dragState.currentWorld
+    ) {
+      const start = this.worldToSvg(this.dragState.startWorld);
+      const current = this.worldToSvg(this.dragState.currentWorld);
+      const rectangle = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+      rectangle.setAttribute(
+        "class",
+        `editor-area-preview ${this.dragState.type === "corridor_rectangle" ? "corridor" : "raster"}`,
+      );
+      rectangle.setAttribute("x", String(Math.min(start.x, current.x)));
+      rectangle.setAttribute("y", String(Math.min(start.y, current.y)));
+      rectangle.setAttribute("width", String(Math.abs(current.x - start.x)));
+      rectangle.setAttribute("height", String(Math.abs(current.y - start.y)));
+      this.editorPreviewLayer.append(rectangle);
     }
     if (this.selectedTool !== "edge" || this.dragState?.type !== "edge_chain" || !this.dragState.currentLm || !this.previewWorld) {
       return;

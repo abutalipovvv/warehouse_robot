@@ -504,6 +504,19 @@ label {
   stroke-linecap: round;
 }
 
+.editor-area-preview {
+  fill: rgba(35, 104, 255, 0.14);
+  stroke: #2368ff;
+  stroke-width: 2;
+  stroke-dasharray: 8 6;
+  pointer-events: none;
+}
+
+.editor-area-preview.corridor {
+  fill: rgba(245, 158, 11, 0.18);
+  stroke: #d97706;
+}
+
 .editor-snap-ring {
   animation: editorPulse 1.2s ease-in-out infinite;
 }

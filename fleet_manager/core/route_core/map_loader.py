@@ -197,6 +197,18 @@ class WarehouseMapLoader:
             if primitive_edges and (start, goal) not in primitive_edges:
                 continue
 
+            # ``graphs.yaml`` owns geometry while
+            # ``graph_edges_lengths.yaml`` owns the routable edge record.
+            # Editors normally keep their metadata identical, but generated
+            # and imported maps can legitimately add traffic properties (for
+            # example ``controlled_region``) only to the latter.  Choosing
+            # one non-empty mapping discarded those properties silently.
+            # Merge both representations and retain the historical primitive
+            # precedence when the same key exists in both files.
+            properties = {
+                **dict(item.get("properties") or {}),
+                **dict(primitive_properties.get((start, goal)) or {}),
+            }
             edges.append(
                 GraphEdge(
                     from_name=start,
@@ -206,11 +218,7 @@ class WarehouseMapLoader:
                     edge_type=str(item.get("type", "unknown")),
                     world_points=(landmarks[start].to_point(), landmarks[goal].to_point()),
                     geometry=geometries.get((start, goal)),
-                    properties=dict(
-                        primitive_properties.get((start, goal))
-                        or item.get("properties")
-                        or {}
-                    ),
+                    properties=properties,
                 )
             )
         return edges

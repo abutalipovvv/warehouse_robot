@@ -40,6 +40,11 @@ class FleetRobot:
     route_preview: list[dict[str, Any]] = field(default_factory=list)
     route_preview_dirty: bool = False
     has_executed_route: bool = False
+    # First instant at which this robot exhausted a rolling chunk. Keep this
+    # separate from ``updated_at``: runtime status synchronization refreshes
+    # that timestamp on every physics tick and would make an old waiter look
+    # perpetually new to the continuation scheduler.
+    rolling_boundary_since: float | None = None
     pending_route: dict[str, Any] | None = None
     retreat_target_clock: float | None = None
     retreat_target_lm: str = ""
@@ -97,6 +102,7 @@ class FleetRobot:
                 if include_trajectory or self.route_preview_dirty
                 else []
             ),
+            "rollingBoundarySince": self.rolling_boundary_since,
             "trafficPriorityUntil": self.traffic_priority_until,
             "waitDependency": (
                 {

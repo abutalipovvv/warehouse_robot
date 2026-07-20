@@ -1,0 +1,10 @@
+{
+  "operatorRobotId": "grpc_127.0.0.1_50051",
+  "robotId": "grpc_127.0.0.1_50051",
+  "name": "robot1",
+  "identityRobotId": "robot1",
+  "host": "127.0.0.1",
+  "port": 50051,
+  "type": "grpc",
+  "updatedAt": "2026-07-17T11:51:22.744839Z"
+}

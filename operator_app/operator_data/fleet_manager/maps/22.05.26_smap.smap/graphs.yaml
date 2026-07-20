@@ -1,0 +1,2810 @@
+mapName: 22.05.26_smap
+coordinateFrame: map_top_left
+primitives:
+- kind: line
+  line_type: FeatureLine
+  start:
+    x: 22.973
+    y: 8.497
+  end:
+    x: 23.853
+    y: 8.499
+  start_name: LM64
+  end_name: LM66
+  properties:
+    direction: -1
+    directionPosX: 0.32
+    directionPosY: -0.732
+  length_m: 0.880002
+- kind: line
+  line_type: FeatureLine
+  start:
+    x: 23.853
+    y: 8.499
+  end:
+    x: 29.673
+    y: 8.514
+  start_name: LM66
+  end_name: LM86
+  properties:
+    direction: -1
+    directionPosX: 3.92
+    directionPosY: -0.739
+  length_m: 5.820019
+- kind: line
+  line_type: FeatureLine
+  start:
+    x: 20.065
+    y: 8.488
+  end:
+    x: 20.925
+    y: 8.49
+  start_name: LM54
+  end_name: LM56
+  properties:
+    direction: -1
+    directionPosX: -2.559
+    directionPosY: -0.732
+  length_m: 0.860002
+- kind: line
+  line_type: FeatureLine
+  start:
+    x: 20.925
+    y: 8.49
+  end:
+    x: 21.653
+    y: 8.493
+  start_name: LM56
+  end_name: LM61
+  properties:
+    direction: -1
+    directionPosX: -1.519
+    directionPosY: -0.741
+  length_m: 0.728006
+- kind: line
+  line_type: FeatureLine
+  start:
+    x: 25.175
+    y: 6.968
+  end:
+    x: 26.733
+    y: 6.973
+  start_name: LM114
+  end_name: LM121
+  properties:
+    direction: 1
+    directionPosX: 2.88
+    directionPosY: 1.883
+  length_m: 1.558008
+- kind: curve
+  curve_type: DegenerateBezier
+  curve:
+    start:
+      x: 22.093
+      y: 8.494
+    end:
+      x: 21.653
+      y: 8.493
+    control1:
+      x: 21.946
+      y: 8.494
+    control2:
+      x: 21.8
+      y: 8.493
+    start_name: LM62
+    end_name: LM61
+  properties:
+    direction: 0
+    obsExpansion: 0
+    soundName: bmF2aWdhdGlvbg==
+    maxrot: 2.79253
+  length_m: 0.440001
+- kind: curve
+  curve_type: DegenerateBezier
+  curve:
+    start:
+      x: 22.973
+      y: 8.497
+    end:
+      x: 22.533
+      y: 8.495
+    control1:
+      x: 22.826
+      y: 8.496
+    control2:
+      x: 22.68
+      y: 8.496
+    start_name: LM64
+    end_name: LM63
+  properties:
+    direction: 0
+    obsExpansion: 0
+    soundName: bmF2aWdhdGlvbg==
+    maxrot: 2.79253
+  length_m: 0.440005
+- kind: curve
+  curve_type: DegenerateBezier
+  curve:
+    start:
+      x: 22.533
+      y: 8.495
+    end:
+      x: 22.093
+      y: 8.494
+    control1:
+      x: 22.386
+      y: 8.495
+    control2:
+      x: 22.24
+      y: 8.494
+    start_name: LM63
+    end_name: LM62
+  properties:
+    direction: 0
+    obsExpansion: 0
+    soundName: bmF2aWdhdGlvbg==
+    maxrot: 2.79253
+  length_m: 0.440001
+- kind: curve
+  curve_type: DegenerateBezier
+  curve:
+    start:
+      x: 23.853
+      y: 8.499
+    end:
+      x: 23.413
+      y: 8.498
+    control1:
+      x: 23.706
+      y: 8.499
+    control2:
+      x: 23.56
+      y: 8.498
+    start_name: LM66
+    end_name: LM65
+  properties:
+    direction: 0
+    obsExpansion: 0
+    soundName: bmF2aWdhdGlvbg==
+    maxrot: 2.79253
+  length_m: 0.440001
+- kind: curve
+  curve_type: DegenerateBezier
+  curve:
+    start:
+      x: 21.653
+      y: 8.493
+    end:
+      x: 20.925
+      y: 8.49
+    control1:
+      x: 21.41
+      y: 8.492
+    control2:
+      x: 21.168
+      y: 8.491
+    start_name: LM61
+    end_name: LM56
+  properties:
+    direction: 0
+    obsExpansion: 0
+    soundName: bmF2aWdhdGlvbg==
+    maxrot: 2.79253
+  length_m: 0.728006
+- kind: curve
+  curve_type: DegenerateBezier
+  curve:
+    start:
+      x: 19.185
+      y: 8.486
+    end:
+      x: 18.745
+      y: 8.485
+    control1:
+      x: 19.038
+      y: 8.486
+    control2:
+      x: 18.892
+      y: 8.485
+    start_name: LM52
+    end_name: LM51
+  properties:
+    direction: 0
+    movestyle: 0
+    obsExpansion: 0
+    soundName: bmF2aWdhdGlvbg==
+    maxrot: 2.79253
+  length_m: 0.440001
+- kind: curve
+  curve_type: DegenerateBezier
+  curve:
+    start:
+      x: 23.413
+      y: 8.498
+    end:
+      x: 22.973
+      y: 8.497
+    control1:
+      x: 23.266
+      y: 8.498
+    control2:
+      x: 23.12
+      y: 8.497
+    start_name: LM65
+    end_name: LM64
+  properties:
+    direction: 0
+    obsExpansion: 0
+    soundName: bmF2aWdhdGlvbg==
+    maxrot: 2.79253
+  length_m: 0.440001
+- kind: curve
+  curve_type: DegenerateBezier
+  curve:
+    start:
+      x: 20.925
+      y: 8.49
+    end:
+      x: 20.505
+      y: 8.489
+    control1:
+      x: 20.785
+      y: 8.49
+    control2:
+      x: 20.645
+      y: 8.489
+    start_name: LM56
+    end_name: LM55
+  properties:
+    direction: 0
+    obsExpansion: 0
+    soundName: bmF2aWdhdGlvbg==
+    maxrot: 2.79253
+  length_m: 0.420001
+- kind: curve
+  curve_type: DegenerateBezier
+  curve:
+    start:
+      x: 20.065
+      y: 8.488
+    end:
+      x: 19.625
+      y: 8.487
+    control1:
+      x: 19.918
+      y: 8.488
+    control2:
+      x: 19.772
+      y: 8.487
+    start_name: LM54
+    end_name: LM53
+  properties:
+    direction: 0
+    obsExpansion: 0
+    soundName: bmF2aWdhdGlvbg==
+    maxrot: 2.79253
+  length_m: 0.440001
+- kind: curve
+  curve_type: DegenerateBezier
+  curve:
+    start:
+      x: 28.353
+      y: 8.511
+    end:
+      x: 27.913
+      y: 8.51
+    control1:
+      x: 28.206
+      y: 8.511
+    control2:
+      x: 28.06
+      y: 8.51
+    start_name: LM83
+    end_name: LM82
+  properties:
+    direction: 0
+    obsExpansion: 0
+    soundName: bmF2aWdhdGlvbg==
+    maxrot: 2.79253
+  length_m: 0.440001
+- kind: curve
+  curve_type: DegenerateBezier
+  curve:
+    start:
+      x: 28.793
+      y: 8.512
+    end:
+      x: 28.353
+      y: 8.511
+    control1:
+      x: 28.646
+      y: 8.512
+    control2:
+      x: 28.5
+      y: 8.511
+    start_name: LM84
+    end_name: LM83
+  properties:
+    direction: 0
+    obsExpansion: 0
+    soundName: bmF2aWdhdGlvbg==
+    maxrot: 2.79253
+  length_m: 0.440001
+- kind: curve
+  curve_type: DegenerateBezier
+  curve:
+    start:
+      x: 26.315
+      y: 8.505
+    end:
+      x: 25.875
+      y: 8.504
+    control1:
+      x: 26.168
+      y: 8.505
+    control2:
+      x: 26.022
+      y: 8.504
+    start_name: LM75
+    end_name: LM74
+  properties:
+    direction: 0
+    obsExpansion: 0
+    soundName: bmF2aWdhdGlvbg==
+    maxrot: 2.79253
+  length_m: 0.440001
+- kind: curve
+  curve_type: DegenerateBezier
+  curve:
+    start:
+      x: 29.233
+      y: 8.513
+    end:
+      x: 28.793
+      y: 8.512
+    control1:
+      x: 29.086
+      y: 8.513
+    control2:
+      x: 28.94
+      y: 8.512
+    start_name: LM85
+    end_name: LM84
+  properties:
+    direction: 0
+    obsExpansion: 0
+    soundName: bmF2aWdhdGlvbg==
+    maxrot: 2.79253
+  length_m: 0.440001
+- kind: curve
+  curve_type: DegenerateBezier
+  curve:
+    start:
+      x: 25.875
+      y: 8.504
+    end:
+      x: 25.475
+      y: 8.503
+    control1:
+      x: 25.742
+      y: 8.504
+    control2:
+      x: 25.608
+      y: 8.503
+    start_name: LM74
+    end_name: LM73
+  properties:
+    direction: 0
+    obsExpansion: 0
+    soundName: bmF2aWdhdGlvbg==
+    maxrot: 2.79253
+  length_m: 0.400001
+- kind: curve
+  curve_type: DegenerateBezier
+  curve:
+    start:
+      x: 28.932
+      y: 6.979
+    end:
+      x: 28.492
+      y: 6.978
+    control1:
+      x: 28.785
+      y: 6.979
+    control2:
+      x: 28.639
+      y: 6.978
+    start_name: LM126
+    end_name: LM125
+  properties:
+    direction: 0
+    obsExpansion: 0
+    soundName: bmF2aWdhdGlvbg==
+    maxrot: 1.0472
+    maxspeed: 1.2
+    maxacc: 0.5
+    maxdec: 0.6
+    maxrotacc: 0.785398
+    maxrotdec: 0.785398
+  length_m: 0.440001
+- kind: curve
+  curve_type: DegenerateBezier
+  curve:
+    start:
+      x: 27.173
+      y: 6.974
+    end:
+      x: 26.733
+      y: 6.973
+    control1:
+      x: 27.026
+      y: 6.974
+    control2:
+      x: 26.88
+      y: 6.973
+    start_name: LM122
+    end_name: LM121
+  properties:
+    direction: 0
+    obsExpansion: 0
+    soundName: bmF2aWdhdGlvbg==
+    maxrot: 1.0472
+    maxspeed: 1.2
+    maxacc: 0.5
+    maxdec: 0.6
+    maxrotacc: 0.785398
+    maxrotdec: 0.785398
+  length_m: 0.440001
+- kind: curve
+  curve_type: DegenerateBezier
+  curve:
+    start:
+      x: 28.492
+      y: 6.978
+    end:
+      x: 28.052
+      y: 6.977
+    control1:
+      x: 28.345
+      y: 6.978
+    control2:
+      x: 28.199
+      y: 6.977
+    start_name: LM125
+    end_name: LM124
+  properties:
+    direction: 0
+    obsExpansion: 0
+    soundName: bmF2aWdhdGlvbg==
+    maxrot: 1.0472
+    maxspeed: 1.2
+    maxacc: 0.5
+    maxdec: 0.6
+    maxrotacc: 0.785398
+    maxrotdec: 0.785398
+  length_m: 0.440001
+- kind: curve
+  curve_type: DegenerateBezier
+  curve:
+    start:
+      x: 28.052
+      y: 6.977
+    end:
+      x: 27.612
+      y: 6.975
+    control1:
+      x: 27.905
+      y: 6.976
+    control2:
+      x: 27.759
+      y: 6.976
+    start_name: LM124
+    end_name: LM123
+  properties:
+    direction: 0
+    obsExpansion: 0
+    soundName: bmF2aWdhdGlvbg==
+    maxrot: 1.0472
+    maxspeed: 1.2
+    maxacc: 0.5
+    maxdec: 0.6
+    maxrotacc: 0.785398
+    maxrotdec: 0.785398
+  length_m: 0.440005
+- kind: curve
+  curve_type: DegenerateBezier
+  curve:
+    start:
+      x: 27.612
+      y: 6.975
+    end:
+      x: 27.173
+      y: 6.974
+    control1:
+      x: 27.466
+      y: 6.975
+    control2:
+      x: 27.319
+      y: 6.974
+    start_name: LM123
+    end_name: LM122
+  properties:
+    direction: 0
+    obsExpansion: 0
+    soundName: bmF2aWdhdGlvbg==
+    maxrot: 1.0472
+    maxspeed: 1.2
+    maxacc: 0.5
+    maxdec: 0.6
+    maxrotacc: 0.785398
+    maxrotdec: 0.785398
+  length_m: 0.439001
+- kind: curve
+  curve_type: DegenerateBezier
+  curve:
+    start:
+      x: 24.295
+      y: 6.966
+    end:
+      x: 23.855
+      y: 6.965
+    control1:
+      x: 24.148
+      y: 6.966
+    control2:
+      x: 24.002
+      y: 6.965
+    start_name: LM112
+    end_name: LM111
+  properties:
+    direction: 0
+    obsExpansion: 0
+    soundName: bmF2aWdhdGlvbg==
+    maxrot: 1.0472
+    maxspeed: 1.2
+    maxacc: 0.5
+    maxdec: 0.6
+    maxrotacc: 0.785398
+    maxrotdec: 0.785398
+  length_m: 0.440001
+- kind: curve
+  curve_type: DegenerateBezier
+  curve:
+    start:
+      x: 25.175
+      y: 6.968
+    end:
+      x: 24.735
+      y: 6.967
+    control1:
+      x: 25.028
+      y: 6.968
+    control2:
+      x: 24.882
+      y: 6.967
+    start_name: LM114
+    end_name: LM113
+  properties:
+    direction: 0
+    obsExpansion: 0
+    soundName: bmF2aWdhdGlvbg==
+    maxrot: 1.0472
+    maxspeed: 1.2
+    maxacc: 0.5
+    maxdec: 0.6
+    maxrotacc: 0.785398
+    maxrotdec: 0.785398
+  length_m: 0.440001
+- kind: curve
+  curve_type: DegenerateBezier
+  curve:
+    start:
+      x: 25.615
+      y: 6.969
+    end:
+      x: 25.175
+      y: 6.968
+    control1:
+      x: 25.468
+      y: 6.969
+    control2:
+      x: 25.322
+      y: 6.968
+    start_name: LM115
+    end_name: LM114
+  properties:
+    direction: 0
+    obsExpansion: 0
+    soundName: bmF2aWdhdGlvbg==
+    maxrot: 1.0472
+    maxspeed: 1.2
+    maxacc: 0.5
+    maxdec: 0.6
+    maxrotacc: 0.785398
+    maxrotdec: 0.785398
+  length_m: 0.440001
+- kind: curve
+  curve_type: DegenerateBezier
+  curve:
+    start:
+      x: 24.735
+      y: 6.967
+    end:
+      x: 24.295
+      y: 6.966
+    control1:
+      x: 24.588
+      y: 6.967
+    control2:
+      x: 24.442
+      y: 6.966
+    start_name: LM113
+    end_name: LM112
+  properties:
+    direction: 0
+    obsExpansion: 0
+    soundName: bmF2aWdhdGlvbg==
+    maxrot: 1.0472
+    maxspeed: 1.2
+    maxacc: 0.5
+    maxdec: 0.6
+    maxrotacc: 0.785398
+    maxrotdec: 0.785398
+  length_m: 0.440001
+- kind: curve
+  curve_type: DegenerateBezier
+  curve:
+    start:
+      x: 26.025
+      y: 6.97
+    end:
+      x: 25.615
+      y: 6.969
+    control1:
+      x: 25.888
+      y: 6.97
+    control2:
+      x: 25.752
+      y: 6.969
+    start_name: LM116
+    end_name: LM115
+  properties:
+    direction: 0
+    obsExpansion: 0
+    soundName: bmF2aWdhdGlvbg==
+    maxrot: 1.0472
+    maxspeed: 1.2
+    maxacc: 0.5
+    maxdec: 0.6
+    maxrotacc: 0.785398
+    maxrotdec: 0.785398
+  length_m: 0.410001
+- kind: curve
+  curve_type: DegenerateBezier
+  curve:
+    start:
+      x: 21.792
+      y: 6.96
+    end:
+      x: 21.352
+      y: 6.959
+    control1:
+      x: 21.645
+      y: 6.96
+    control2:
+      x: 21.499
+      y: 6.959
+    start_name: LM103
+    end_name: LM102
+  properties:
+    direction: 0
+    obsExpansion: 0
+    soundName: bmF2aWdhdGlvbg==
+    maxrot: 1.0472
+    maxspeed: 1.2
+    maxacc: 0.5
+    maxdec: 0.6
+    maxrotacc: 0.785398
+    maxrotdec: 0.785398
+  length_m: 0.440001
+- kind: curve
+  curve_type: DegenerateBezier
+  curve:
+    start:
+      x: 22.232
+      y: 6.961
+    end:
+      x: 21.792
+      y: 6.96
+    control1:
+      x: 22.085
+      y: 6.961
+    control2:
+      x: 21.939
+      y: 6.96
+    start_name: LM104
+    end_name: LM103
+  properties:
+    direction: 0
+    obsExpansion: 0
+    soundName: bmF2aWdhdGlvbg==
+    maxrot: 1.0472
+    maxspeed: 1.2
+    maxacc: 0.5
+    maxdec: 0.6
+    maxrotacc: 0.785398
+    maxrotdec: 0.785398
+  length_m: 0.440001
+- kind: curve
+  curve_type: DegenerateBezier
+  curve:
+    start:
+      x: 21.352
+      y: 6.959
+    end:
+      x: 20.912
+      y: 6.958
+    control1:
+      x: 21.205
+      y: 6.959
+    control2:
+      x: 21.059
+      y: 6.958
+    start_name: LM102
+    end_name: LM101
+  properties:
+    direction: 0
+    obsExpansion: 0
+    soundName: bmF2aWdhdGlvbg==
+    maxrot: 1.0472
+    maxspeed: 1.2
+    maxacc: 0.5
+    maxdec: 0.6
+    maxrotacc: 0.785398
+    maxrotdec: 0.785398
+  length_m: 0.440001
+- kind: curve
+  curve_type: DegenerateBezier
+  curve:
+    start:
+      x: 18.914
+      y: 6.951
+    end:
+      x: 18.474
+      y: 6.95
+    control1:
+      x: 18.767
+      y: 6.951
+    control2:
+      x: 18.621
+      y: 6.95
+    start_name: LM93
+    end_name: LM92
+  properties:
+    direction: 0
+    obsExpansion: 0
+    soundName: bmF2aWdhdGlvbg==
+    maxrot: 1.0472
+    maxspeed: 1.2
+    maxacc: 0.5
+    maxdec: 0.6
+    maxrotacc: 0.785398
+    maxrotdec: 0.785398
+  length_m: 0.440001
+- kind: curve
+  curve_type: DegenerateBezier
+  curve:
+    start:
+      x: 19.354
+      y: 6.952
+    end:
+      x: 18.914
+      y: 6.951
+    control1:
+      x: 19.207
+      y: 6.952
+    control2:
+      x: 19.061
+      y: 6.951
+    start_name: LM94
+    end_name: LM93
+  properties:
+    direction: 0
+    obsExpansion: 0
+    soundName: bmF2aWdhdGlvbg==
+    maxrot: 1.0472
+    maxspeed: 1.2
+    maxacc: 0.5
+    maxdec: 0.6
+    maxrotacc: 0.785398
+    maxrotdec: 0.785398
+  length_m: 0.440001
+- kind: curve
+  curve_type: DegenerateBezier
+  curve:
+    start:
+      x: 19.794
+      y: 6.953
+    end:
+      x: 19.354
+      y: 6.952
+    control1:
+      x: 19.647
+      y: 6.953
+    control2:
+      x: 19.501
+      y: 6.952
+    start_name: LM95
+    end_name: LM94
+  properties:
+    direction: 0
+    obsExpansion: 0
+    soundName: bmF2aWdhdGlvbg==
+    maxrot: 1.0472
+    maxspeed: 1.2
+    maxacc: 0.5
+    maxdec: 0.6
+    maxrotacc: 0.785398
+    maxrotdec: 0.785398
+  length_m: 0.440001
+- kind: curve
+  curve_type: DegenerateBezier
+  curve:
+    start:
+      x: 20.214
+      y: 6.954
+    end:
+      x: 19.794
+      y: 6.953
+    control1:
+      x: 20.074
+      y: 6.954
+    control2:
+      x: 19.934
+      y: 6.953
+    start_name: LM96
+    end_name: LM95
+  properties:
+    direction: 0
+    obsExpansion: 0
+    soundName: bmF2aWdhdGlvbg==
+    maxrot: 1.0472
+    maxspeed: 1.2
+    maxacc: 0.5
+    maxdec: 0.6
+    maxrotacc: 0.785398
+    maxrotdec: 0.785398
+  length_m: 0.420001
+- kind: curve
+  curve_type: DegenerateBezier
+  curve:
+    start:
+      x: 23.855
+      y: 6.965
+    end:
+      x: 23.112
+      y: 6.963
+    control1:
+      x: 23.607
+      y: 6.964
+    control2:
+      x: 23.36
+      y: 6.964
+    start_name: LM111
+    end_name: LM106
+  properties:
+    direction: 0
+    obsExpansion: 0
+    soundName: bmF2aWdhdGlvbg==
+    maxrot: 1.0472
+    maxspeed: 1.2
+    maxacc: 0.5
+    maxdec: 0.6
+    maxrotacc: 0.785398
+    maxrotdec: 0.785398
+  length_m: 0.743003
+- kind: curve
+  curve_type: DegenerateBezier
+  curve:
+    start:
+      x: 20.912
+      y: 6.958
+    end:
+      x: 20.214
+      y: 6.954
+    control1:
+      x: 20.679
+      y: 6.957
+    control2:
+      x: 20.447
+      y: 6.955
+    start_name: LM101
+    end_name: LM96
+  properties:
+    direction: 0
+    obsExpansion: 0
+    soundName: bmF2aWdhdGlvbg==
+    maxrot: 1.0472
+    maxspeed: 1.2
+    maxacc: 0.5
+    maxdec: 0.6
+    maxrotacc: 0.785398
+    maxrotdec: 0.785398
+  length_m: 0.698012
+- kind: curve
+  curve_type: DegenerateBezier
+  curve:
+    start:
+      x: 18.474
+      y: 6.95
+    end:
+      x: 18.034
+      y: 6.949
+    control1:
+      x: 18.327
+      y: 6.95
+    control2:
+      x: 18.181
+      y: 6.949
+    start_name: LM92
+    end_name: LM91
+  properties:
+    direction: 0
+    obsExpansion: 0
+    soundName: bmF2aWdhdGlvbg==
+    maxrot: 1.0472
+    maxspeed: 1.2
+    maxacc: 0.5
+    maxdec: 0.6
+    maxrotacc: 0.785398
+    maxrotdec: 0.785398
+  length_m: 0.440001
+- kind: curve
+  curve_type: DegenerateBezier
+  curve:
+    start:
+      x: 22.672
+      y: 6.962
+    end:
+      x: 22.232
+      y: 6.961
+    control1:
+      x: 22.525
+      y: 6.962
+    control2:
+      x: 22.379
+      y: 6.961
+    start_name: LM105
+    end_name: LM104
+  properties:
+    direction: 0
+    obsExpansion: 0
+    soundName: bmF2aWdhdGlvbg==
+    maxrot: 1.0472
+    maxspeed: 1.2
+    maxacc: 0.5
+    maxdec: 0.6
+    maxrotacc: 0.785398
+    maxrotdec: 0.785398
+  length_m: 0.440001
+- kind: curve
+  curve_type: DegenerateBezier
+  curve:
+    start:
+      x: 23.112
+      y: 6.963
+    end:
+      x: 22.672
+      y: 6.962
+    control1:
+      x: 22.965
+      y: 6.963
+    control2:
+      x: 22.819
+      y: 6.962
+    start_name: LM106
+    end_name: LM105
+  properties:
+    direction: 0
+    obsExpansion: 0
+    soundName: bmF2aWdhdGlvbg==
+    maxrot: 1.0472
+    maxspeed: 1.2
+    maxacc: 0.5
+    maxdec: 0.6
+    maxrotacc: 0.785398
+    maxrotdec: 0.785398
+  length_m: 0.440001
+- kind: curve
+  curve_type: DegenerateBezier
+  curve:
+    start:
+      x: 26.733
+      y: 6.973
+    end:
+      x: 26.025
+      y: 6.97
+    control1:
+      x: 26.497
+      y: 6.972
+    control2:
+      x: 26.261
+      y: 6.971
+    start_name: LM121
+    end_name: LM116
+  properties:
+    direction: 0
+    obsExpansion: 0
+    soundName: bmF2aWdhdGlvbg==
+    maxrot: 1.0472
+    maxspeed: 1.2
+    maxacc: 0.5
+    maxdec: 0.6
+    maxrotacc: 0.785398
+    maxrotdec: 0.785398
+  length_m: 0.708006
+- kind: curve
+  curve_type: DegenerateBezier
+  curve:
+    start:
+      x: 20.505
+      y: 8.489
+    end:
+      x: 20.065
+      y: 8.488
+    control1:
+      x: 20.358
+      y: 8.489
+    control2:
+      x: 20.212
+      y: 8.488
+    start_name: LM55
+    end_name: LM54
+  properties:
+    direction: 0
+    obsExpansion: 0
+    soundName: bmF2aWdhdGlvbg==
+    maxrot: 2.79253
+  length_m: 0.440001
+- kind: curve
+  curve_type: DegenerateBezier
+  curve:
+    start:
+      x: 16.407
+      y: 6.979
+    end:
+      x: 16.407
+      y: 5.546
+    control1:
+      x: 16.407
+      y: 6.501
+    control2:
+      x: 16.407
+      y: 6.024
+    start_name: LM281
+    end_name: LM280
+  properties:
+    direction: 0
+    obsExpansion: 0
+    soundName: bmF2aWdhdGlvbg==
+    maxrot: 2.79253
+  length_m: 1.433
+- kind: curve
+  curve_type: DegenerateBezier
+  curve:
+    start:
+      x: 16.407
+      y: 8.504
+    end:
+      x: 16.407
+      y: 6.979
+    control1:
+      x: 16.407
+      y: 7.996
+    control2:
+      x: 16.407
+      y: 7.487
+    start_name: LM282
+    end_name: LM281
+  properties:
+    direction: 0
+    obsExpansion: 0
+    soundName: bmF2aWdhdGlvbg==
+    maxrot: 2.79253
+  length_m: 1.525
+- kind: curve
+  curve_type: DegenerateBezier
+  curve:
+    start:
+      x: 18.745
+      y: 8.485
+    end:
+      x: 16.407
+      y: 8.504
+    control1:
+      x: 17.966
+      y: 8.491
+    control2:
+      x: 17.186
+      y: 8.498
+    start_name: LM51
+    end_name: LM282
+  properties:
+    direction: 0
+    movestyle: 0
+    maxrot: 2.79253
+    obsExpansion: 0
+    soundName: bmF2aWdhdGlvbg==
+  length_m: 2.338077
+- kind: curve
+  curve_type: DegenerateBezier
+  curve:
+    start:
+      x: 18.034
+      y: 6.949
+    end:
+      x: 16.407
+      y: 6.979
+    control1:
+      x: 17.492
+      y: 6.959
+    control2:
+      x: 16.949
+      y: 6.969
+    start_name: LM91
+    end_name: LM281
+  properties:
+    direction: 0
+    obsExpansion: 0
+    soundName: bmF2aWdhdGlvbg==
+    maxrot: 2.79253
+  length_m: 1.627277
+- kind: curve
+  curve_type: DegenerateBezier
+  curve:
+    start:
+      x: 32.093
+      y: 5.461
+    end:
+      x: 32.093
+      y: 6.979
+    control1:
+      x: 32.093
+      y: 5.967
+    control2:
+      x: 32.093
+      y: 6.473
+    start_name: LM286
+    end_name: LM287
+  properties:
+    direction: 0
+    movestyle: 0
+    obsExpansion: 0
+    soundName: bmF2aWdhdGlvbg==
+  length_m: 1.518
+- kind: curve
+  curve_type: DegenerateBezier
+  curve:
+    start:
+      x: 32.093
+      y: 6.979
+    end:
+      x: 28.932
+      y: 6.979
+    control1:
+      x: 31.039
+      y: 6.979
+    control2:
+      x: 29.986
+      y: 6.979
+    start_name: LM287
+    end_name: LM126
+  properties:
+    direction: 0
+    movestyle: 0
+    obsExpansion: 0
+    soundName: bmF2aWdhdGlvbg==
+  length_m: 3.161
+- kind: curve
+  curve_type: DegenerateBezier
+  curve:
+    start:
+      x: 29.673
+      y: 8.514
+    end:
+      x: 29.233
+      y: 8.513
+    control1:
+      x: 29.526
+      y: 8.514
+    control2:
+      x: 29.38
+      y: 8.513
+    start_name: LM86
+    end_name: LM85
+  properties:
+    direction: 0
+    obsExpansion: 0
+    soundName: bmF2aWdhdGlvbg==
+    maxrot: 2.79253
+  length_m: 0.440001
+- kind: curve
+  curve_type: DegenerateBezier
+  curve:
+    start:
+      x: 27.913
+      y: 8.51
+    end:
+      x: 27.473
+      y: 8.509
+    control1:
+      x: 27.766
+      y: 8.51
+    control2:
+      x: 27.62
+      y: 8.509
+    start_name: LM82
+    end_name: LM81
+  properties:
+    direction: 0
+    obsExpansion: 0
+    soundName: bmF2aWdhdGlvbg==
+    maxrot: 2.79253
+  length_m: 0.440001
+- kind: curve
+  curve_type: DegenerateBezier
+  curve:
+    start:
+      x: 27.473
+      y: 8.509
+    end:
+      x: 26.755
+      y: 8.506
+    control1:
+      x: 27.234
+      y: 8.508
+    control2:
+      x: 26.994
+      y: 8.507
+    start_name: LM81
+    end_name: LM76
+  properties:
+    direction: 0
+    obsExpansion: 0
+    soundName: bmF2aWdhdGlvbg==
+    maxrot: 2.79253
+  length_m: 0.718006
+- kind: curve
+  curve_type: DegenerateBezier
+  curve:
+    start:
+      x: 26.755
+      y: 8.506
+    end:
+      x: 26.315
+      y: 8.505
+    control1:
+      x: 26.608
+      y: 8.506
+    control2:
+      x: 26.462
+      y: 8.505
+    start_name: LM76
+    end_name: LM75
+  properties:
+    direction: 0
+    obsExpansion: 0
+    soundName: bmF2aWdhdGlvbg==
+    maxrot: 2.79253
+  length_m: 0.440001
+- kind: curve
+  curve_type: DegenerateBezier
+  curve:
+    start:
+      x: 25.475
+      y: 8.503
+    end:
+      x: 25.035
+      y: 8.502
+    control1:
+      x: 25.328
+      y: 8.503
+    control2:
+      x: 25.182
+      y: 8.502
+    start_name: LM73
+    end_name: LM72
+  properties:
+    direction: 0
+    obsExpansion: 0
+    soundName: bmF2aWdhdGlvbg==
+    maxrot: 2.79253
+  length_m: 0.440001
+- kind: curve
+  curve_type: DegenerateBezier
+  curve:
+    start:
+      x: 25.035
+      y: 8.502
+    end:
+      x: 24.595
+      y: 8.501
+    control1:
+      x: 24.888
+      y: 8.502
+    control2:
+      x: 24.742
+      y: 8.501
+    start_name: LM72
+    end_name: LM71
+  properties:
+    direction: 0
+    obsExpansion: 0
+    soundName: bmF2aWdhdGlvbg==
+    maxrot: 2.79253
+  length_m: 0.440001
+- kind: curve
+  curve_type: DegenerateBezier
+  curve:
+    start:
+      x: 24.595
+      y: 8.501
+    end:
+      x: 23.853
+      y: 8.499
+    control1:
+      x: 24.348
+      y: 8.5
+    control2:
+      x: 24.1
+      y: 8.5
+    start_name: LM71
+    end_name: LM66
+  properties:
+    direction: 0
+    obsExpansion: 0
+    soundName: bmF2aWdhdGlvbg==
+    maxrot: 2.79253
+  length_m: 0.742003
+- kind: curve
+  curve_type: DegenerateBezier
+  curve:
+    start:
+      x: 19.625
+      y: 8.487
+    end:
+      x: 19.185
+      y: 8.486
+    control1:
+      x: 19.478
+      y: 8.487
+    control2:
+      x: 19.332
+      y: 8.486
+    start_name: LM53
+    end_name: LM52
+  properties:
+    direction: 0
+    movestyle: 0
+    obsExpansion: 0
+    soundName: bmF2aWdhdGlvbg==
+    maxrot: 2.79253
+  length_m: 0.440001
+- kind: curve
+  curve_type: DegenerateBezier
+  curve:
+    start:
+      x: 32.093
+      y: 5.461
+    end:
+      x: 28.932
+      y: 6.979
+    control1:
+      x: 32.093
+      y: 6.866
+    control2:
+      x: 31.973
+      y: 6.979
+    start_name: LM286
+    end_name: LM126
+  properties:
+    direction: 0
+    movestyle: 0
+    maxspeed: 1
+    maxacc: 1
+    maxdec: 1
+    maxrot: 1.74533
+    maxrotacc: 0.785398
+    obsExpansion: 0
+  length_m: 4.190985
+- kind: curve
+  curve_type: DegenerateBezier
+  curve:
+    start:
+      x: 32.093
+      y: 6.979
+    end:
+      x: 29.673
+      y: 8.514
+    control1:
+      x: 32.093
+      y: 8.356
+    control2:
+      x: 32.088
+      y: 8.514
+    start_name: LM287
+    end_name: LM86
+  properties:
+    direction: 0
+    movestyle: 0
+    maxspeed: 1.2
+    maxacc: 1
+    maxdec: 1
+    maxrot: 1.74533
+    maxrotacc: 0.785398
+    obsExpansion: 0
+  length_m: 3.524914
+- kind: curve
+  curve_type: DegenerateBezier
+  curve:
+    start:
+      x: 18.034
+      y: 6.949
+    end:
+      x: 16.407
+      y: 5.546
+    control1:
+      x: 16.427
+      y: 6.949
+    control2:
+      x: 16.407
+      y: 6.648
+    start_name: LM91
+    end_name: LM280
+  properties:
+    direction: 0
+    movestyle: 0
+    maxspeed: 1.3
+    maxacc: 1
+    maxdec: 1
+    maxrot: 1.74533
+    maxrotacc: 0.785398
+    obsExpansion: 0
+  length_m: 2.638283
+- kind: curve
+  curve_type: DegenerateBezier
+  curve:
+    start:
+      x: 18.745
+      y: 8.485
+    end:
+      x: 16.407
+      y: 6.979
+    control1:
+      x: 16.405
+      y: 8.485
+    control2:
+      x: 16.407
+      y: 8.234
+    start_name: LM51
+    end_name: LM281
+  properties:
+    direction: 0
+    movestyle: 0
+    maxspeed: 1.2
+    maxacc: 1
+    maxdec: 1
+    maxrot: 1.74533
+    maxrotacc: 0.785398
+    obsExpansion: 0
+  length_m: 3.396612
+- kind: curve
+  curve_type: DegenerateBezier
+  curve:
+    start:
+      x: 18.033
+      y: 3.002
+    end:
+      x: 20.516
+      y: 3.001
+    control1:
+      x: 18.861
+      y: 3.002
+    control2:
+      x: 19.688
+      y: 3.001
+    start_name: LM320
+    end_name: LM295
+  properties:
+    direction: 1
+    movestyle: 0
+    obsExpansion: 0
+  length_m: 2.483
+- kind: curve
+  curve_type: DegenerateBezier
+  curve:
+    start:
+      x: 32.093
+      y: 2.971
+    end:
+      x: 32.093
+      y: 5.461
+    control1:
+      x: 32.093
+      y: 3.801
+    control2:
+      x: 32.093
+      y: 4.631
+    start_name: LM319
+    end_name: LM286
+  properties:
+    direction: 0
+    movestyle: 0
+    obsExpansion: 0
+  length_m: 2.49
+- kind: curve
+  curve_type: DegenerateBezier
+  curve:
+    start:
+      x: 16.407
+      y: 3.955
+    end:
+      x: 18.033
+      y: 3.002
+    control1:
+      x: 16.407
+      y: 3.087
+    control2:
+      x: 16.402
+      y: 3.003
+    start_name: LM321
+    end_name: LM320
+  properties:
+    direction: 1
+    movestyle: 0
+    maxspeed: 0.8
+    maxacc: 0.8
+    maxdec: 0.8
+    maxrot: 0.872665
+    maxrotacc: 0.785398
+    virtualLaser: false
+    obsExpansion: 0
+  length_m: 2.308893
+- kind: curve
+  curve_type: DegenerateBezier
+  curve:
+    start:
+      x: 26.058
+      y: 2.988
+    end:
+      x: 26.508
+      y: 2.987
+    control1:
+      x: 26.208
+      y: 2.988
+    control2:
+      x: 26.358
+      y: 2.987
+    start_name: LM307
+    end_name: LM308
+  properties:
+    direction: 1
+    movestyle: 0
+    obsExpansion: 0
+  length_m: 0.450001
+- kind: curve
+  curve_type: DegenerateBezier
+  curve:
+    start:
+      x: 26.508
+      y: 2.987
+    end:
+      x: 26.958
+      y: 2.986
+    control1:
+      x: 26.658
+      y: 2.987
+    control2:
+      x: 26.808
+      y: 2.986
+    start_name: LM308
+    end_name: LM309
+  properties:
+    direction: 1
+    movestyle: 0
+    obsExpansion: 0
+  length_m: 0.450001
+- kind: curve
+  curve_type: DegenerateBezier
+  curve:
+    start:
+      x: 26.958
+      y: 2.986
+    end:
+      x: 27.408
+      y: 2.984
+    control1:
+      x: 27.108
+      y: 2.985
+    control2:
+      x: 27.258
+      y: 2.985
+    start_name: LM309
+    end_name: LM310
+  properties:
+    direction: 1
+    movestyle: 0
+    obsExpansion: 0
+  length_m: 0.450005
+- kind: curve
+  curve_type: DegenerateBezier
+  curve:
+    start:
+      x: 27.408
+      y: 2.984
+    end:
+      x: 27.858
+      y: 2.983
+    control1:
+      x: 27.558
+      y: 2.984
+    control2:
+      x: 27.708
+      y: 2.983
+    start_name: LM310
+    end_name: LM311
+  properties:
+    direction: 1
+    movestyle: 0
+    obsExpansion: 0
+  length_m: 0.450001
+- kind: curve
+  curve_type: DegenerateBezier
+  curve:
+    start:
+      x: 27.858
+      y: 2.983
+    end:
+      x: 28.308
+      y: 2.982
+    control1:
+      x: 28.008
+      y: 2.983
+    control2:
+      x: 28.158
+      y: 2.982
+    start_name: LM311
+    end_name: LM312
+  properties:
+    direction: 1
+    movestyle: 0
+    obsExpansion: 0
+  length_m: 0.450001
+- kind: curve
+  curve_type: DegenerateBezier
+  curve:
+    start:
+      x: 28.308
+      y: 2.982
+    end:
+      x: 28.858
+      y: 2.981
+    control1:
+      x: 28.491
+      y: 2.982
+    control2:
+      x: 28.675
+      y: 2.981
+    start_name: LM312
+    end_name: LM313
+  properties:
+    direction: 1
+    obsExpansion: 0
+  length_m: 0.550001
+- kind: curve
+  curve_type: DegenerateBezier
+  curve:
+    start:
+      x: 28.858
+      y: 2.981
+    end:
+      x: 29.298
+      y: 2.98
+    control1:
+      x: 29.005
+      y: 2.981
+    control2:
+      x: 29.151
+      y: 2.98
+    start_name: LM313
+    end_name: LM314
+  properties:
+    direction: 1
+    obsExpansion: 0
+  length_m: 0.440001
+- kind: curve
+  curve_type: DegenerateBezier
+  curve:
+    start:
+      x: 29.298
+      y: 2.98
+    end:
+      x: 29.738
+      y: 2.979
+    control1:
+      x: 29.445
+      y: 2.98
+    control2:
+      x: 29.591
+      y: 2.979
+    start_name: LM314
+    end_name: LM315
+  properties:
+    direction: 1
+    obsExpansion: 0
+  length_m: 0.440001
+- kind: curve
+  curve_type: DegenerateBezier
+  curve:
+    start:
+      x: 29.738
+      y: 2.979
+    end:
+      x: 30.178
+      y: 2.978
+    control1:
+      x: 29.885
+      y: 2.979
+    control2:
+      x: 30.031
+      y: 2.978
+    start_name: LM315
+    end_name: LM316
+  properties:
+    direction: 1
+    obsExpansion: 0
+  length_m: 0.440001
+- kind: curve
+  curve_type: DegenerateBezier
+  curve:
+    start:
+      x: 30.178
+      y: 2.978
+    end:
+      x: 30.618
+      y: 2.977
+    control1:
+      x: 30.325
+      y: 2.978
+    control2:
+      x: 30.471
+      y: 2.977
+    start_name: LM316
+    end_name: LM317
+  properties:
+    direction: 1
+    obsExpansion: 0
+  length_m: 0.440001
+- kind: curve
+  curve_type: DegenerateBezier
+  curve:
+    start:
+      x: 30.618
+      y: 2.977
+    end:
+      x: 31.058
+      y: 2.976
+    control1:
+      x: 30.765
+      y: 2.977
+    control2:
+      x: 30.911
+      y: 2.976
+    start_name: LM317
+    end_name: LM318
+  properties:
+    direction: 1
+    obsExpansion: 0
+  length_m: 0.440001
+- kind: curve
+  curve_type: DegenerateBezier
+  curve:
+    start:
+      x: 23.308
+      y: 2.994
+    end:
+      x: 23.748
+      y: 2.993
+    control1:
+      x: 23.455
+      y: 2.994
+    control2:
+      x: 23.601
+      y: 2.993
+    start_name: LM301
+    end_name: LM302
+  properties:
+    direction: 1
+    obsExpansion: 0
+  length_m: 0.440001
+- kind: curve
+  curve_type: DegenerateBezier
+  curve:
+    start:
+      x: 23.748
+      y: 2.993
+    end:
+      x: 24.188
+      y: 2.992
+    control1:
+      x: 23.895
+      y: 2.993
+    control2:
+      x: 24.041
+      y: 2.992
+    start_name: LM302
+    end_name: LM303
+  properties:
+    direction: 1
+    obsExpansion: 0
+  length_m: 0.440001
+- kind: curve
+  curve_type: DegenerateBezier
+  curve:
+    start:
+      x: 24.188
+      y: 2.992
+    end:
+      x: 24.628
+      y: 2.991
+    control1:
+      x: 24.335
+      y: 2.992
+    control2:
+      x: 24.481
+      y: 2.991
+    start_name: LM303
+    end_name: LM304
+  properties:
+    direction: 1
+    obsExpansion: 0
+  length_m: 0.440001
+- kind: curve
+  curve_type: DegenerateBezier
+  curve:
+    start:
+      x: 24.628
+      y: 2.991
+    end:
+      x: 25.068
+      y: 2.99
+    control1:
+      x: 24.775
+      y: 2.991
+    control2:
+      x: 24.921
+      y: 2.99
+    start_name: LM304
+    end_name: LM305
+  properties:
+    direction: 1
+    obsExpansion: 0
+  length_m: 0.440001
+- kind: curve
+  curve_type: DegenerateBezier
+  curve:
+    start:
+      x: 25.068
+      y: 2.99
+    end:
+      x: 25.508
+      y: 2.989
+    control1:
+      x: 25.215
+      y: 2.99
+    control2:
+      x: 25.361
+      y: 2.989
+    start_name: LM305
+    end_name: LM306
+  properties:
+    direction: 1
+    obsExpansion: 0
+  length_m: 0.440001
+- kind: curve
+  curve_type: DegenerateBezier
+  curve:
+    start:
+      x: 25.508
+      y: 2.989
+    end:
+      x: 26.058
+      y: 2.988
+    control1:
+      x: 25.691
+      y: 2.989
+    control2:
+      x: 25.875
+      y: 2.988
+    start_name: LM306
+    end_name: LM307
+  properties:
+    direction: 1
+    obsExpansion: 0
+  length_m: 0.550001
+- kind: curve
+  curve_type: DegenerateBezier
+  curve:
+    start:
+      x: 20.516
+      y: 3.001
+    end:
+      x: 20.956
+      y: 3.0
+    control1:
+      x: 20.663
+      y: 3.001
+    control2:
+      x: 20.809
+      y: 3.0
+    start_name: LM295
+    end_name: LM296
+  properties:
+    direction: 1
+    obsExpansion: 0
+  length_m: 0.440001
+- kind: curve
+  curve_type: DegenerateBezier
+  curve:
+    start:
+      x: 20.956
+      y: 3.0
+    end:
+      x: 21.396
+      y: 2.999
+    control1:
+      x: 21.103
+      y: 3.0
+    control2:
+      x: 21.249
+      y: 2.999
+    start_name: LM296
+    end_name: LM297
+  properties:
+    direction: 1
+    obsExpansion: 0
+  length_m: 0.440001
+- kind: curve
+  curve_type: DegenerateBezier
+  curve:
+    start:
+      x: 21.396
+      y: 2.999
+    end:
+      x: 21.836
+      y: 2.997
+    control1:
+      x: 21.543
+      y: 2.998
+    control2:
+      x: 21.689
+      y: 2.998
+    start_name: LM297
+    end_name: LM298
+  properties:
+    direction: 1
+    obsExpansion: 0
+  length_m: 0.440005
+- kind: curve
+  curve_type: DegenerateBezier
+  curve:
+    start:
+      x: 21.836
+      y: 2.997
+    end:
+      x: 22.276
+      y: 2.996
+    control1:
+      x: 21.983
+      y: 2.997
+    control2:
+      x: 22.129
+      y: 2.996
+    start_name: LM298
+    end_name: LM299
+  properties:
+    direction: 1
+    obsExpansion: 0
+  length_m: 0.440001
+- kind: curve
+  curve_type: DegenerateBezier
+  curve:
+    start:
+      x: 22.276
+      y: 2.996
+    end:
+      x: 22.716
+      y: 2.995
+    control1:
+      x: 22.423
+      y: 2.996
+    control2:
+      x: 22.569
+      y: 2.995
+    start_name: LM299
+    end_name: LM300
+  properties:
+    direction: 1
+    obsExpansion: 0
+  length_m: 0.440001
+- kind: curve
+  curve_type: DegenerateBezier
+  curve:
+    start:
+      x: 22.716
+      y: 2.995
+    end:
+      x: 23.308
+      y: 2.994
+    control1:
+      x: 22.913
+      y: 2.995
+    control2:
+      x: 23.111
+      y: 2.994
+    start_name: LM300
+    end_name: LM301
+  properties:
+    direction: 1
+    obsExpansion: 0
+  length_m: 0.592001
+- kind: curve
+  curve_type: DegenerateBezier
+  curve:
+    start:
+      x: 31.058
+      y: 2.976
+    end:
+      x: 32.093
+      y: 2.971
+    control1:
+      x: 31.403
+      y: 2.974
+    control2:
+      x: 31.748
+      y: 2.973
+    start_name: LM318
+    end_name: LM319
+  properties:
+    direction: 1
+    movestyle: 0
+    obsExpansion: 0
+  length_m: 1.035012
+- kind: curve
+  curve_type: DegenerateBezier
+  curve:
+    start:
+      x: 18.709
+      y: 4.428
+    end:
+      x: 19.149
+      y: 4.429
+    control1:
+      x: 18.856
+      y: 4.428
+    control2:
+      x: 19.002
+      y: 4.429
+    start_name: LM131
+    end_name: LM132
+  properties:
+    direction: 0
+    movestyle: 0
+    obsExpansion: 0
+  length_m: 0.440001
+- kind: curve
+  curve_type: DegenerateBezier
+  curve:
+    start:
+      x: 19.149
+      y: 4.429
+    end:
+      x: 19.589
+      y: 4.43
+    control1:
+      x: 19.296
+      y: 4.429
+    control2:
+      x: 19.442
+      y: 4.43
+    start_name: LM132
+    end_name: LM133
+  properties:
+    direction: 0
+    movestyle: 0
+    obsExpansion: 0
+  length_m: 0.440001
+- kind: curve
+  curve_type: DegenerateBezier
+  curve:
+    start:
+      x: 19.589
+      y: 4.43
+    end:
+      x: 20.029
+      y: 4.431
+    control1:
+      x: 19.736
+      y: 4.43
+    control2:
+      x: 19.882
+      y: 4.431
+    start_name: LM133
+    end_name: LM134
+  properties:
+    direction: 0
+    movestyle: 0
+    obsExpansion: 0
+  length_m: 0.440001
+- kind: curve
+  curve_type: DegenerateBezier
+  curve:
+    start:
+      x: 20.029
+      y: 4.431
+    end:
+      x: 20.469
+      y: 4.432
+    control1:
+      x: 20.176
+      y: 4.431
+    control2:
+      x: 20.322
+      y: 4.432
+    start_name: LM134
+    end_name: LM135
+  properties:
+    direction: 0
+    movestyle: 0
+    obsExpansion: 0
+  length_m: 0.440001
+- kind: curve
+  curve_type: DegenerateBezier
+  curve:
+    start:
+      x: 20.469
+      y: 4.432
+    end:
+      x: 20.869
+      y: 4.433
+    control1:
+      x: 20.602
+      y: 4.432
+    control2:
+      x: 20.736
+      y: 4.433
+    start_name: LM135
+    end_name: LM136
+  properties:
+    direction: 0
+    movestyle: 0
+    obsExpansion: 0
+  length_m: 0.400001
+- kind: curve
+  curve_type: DegenerateBezier
+  curve:
+    start:
+      x: 20.869
+      y: 4.433
+    end:
+      x: 21.587
+      y: 4.436
+    control1:
+      x: 21.108
+      y: 4.434
+    control2:
+      x: 21.348
+      y: 4.435
+    start_name: LM136
+    end_name: LM141
+  properties:
+    direction: 0
+    movestyle: 0
+    obsExpansion: 0
+  length_m: 0.718006
+- kind: curve
+  curve_type: DegenerateBezier
+  curve:
+    start:
+      x: 21.587
+      y: 4.436
+    end:
+      x: 22.027
+      y: 4.437
+    control1:
+      x: 21.734
+      y: 4.436
+    control2:
+      x: 21.88
+      y: 4.437
+    start_name: LM141
+    end_name: LM142
+  properties:
+    direction: 0
+    movestyle: 0
+    obsExpansion: 0
+  length_m: 0.440001
+- kind: curve
+  curve_type: DegenerateBezier
+  curve:
+    start:
+      x: 22.027
+      y: 4.437
+    end:
+      x: 22.467
+      y: 4.438
+    control1:
+      x: 22.174
+      y: 4.437
+    control2:
+      x: 22.32
+      y: 4.438
+    start_name: LM142
+    end_name: LM143
+  properties:
+    direction: 0
+    movestyle: 0
+    obsExpansion: 0
+  length_m: 0.440001
+- kind: curve
+  curve_type: DegenerateBezier
+  curve:
+    start:
+      x: 22.467
+      y: 4.438
+    end:
+      x: 22.907
+      y: 4.44
+    control1:
+      x: 22.614
+      y: 4.439
+    control2:
+      x: 22.76
+      y: 4.439
+    start_name: LM143
+    end_name: LM144
+  properties:
+    direction: 0
+    movestyle: 0
+    obsExpansion: 0
+  length_m: 0.440005
+- kind: curve
+  curve_type: DegenerateBezier
+  curve:
+    start:
+      x: 22.907
+      y: 4.44
+    end:
+      x: 23.347
+      y: 4.441
+    control1:
+      x: 23.054
+      y: 4.44
+    control2:
+      x: 23.2
+      y: 4.441
+    start_name: LM144
+    end_name: LM145
+  properties:
+    direction: 0
+    movestyle: 0
+    obsExpansion: 0
+  length_m: 0.440001
+- kind: curve
+  curve_type: DegenerateBezier
+  curve:
+    start:
+      x: 23.347
+      y: 4.441
+    end:
+      x: 23.787
+      y: 4.442
+    control1:
+      x: 23.494
+      y: 4.441
+    control2:
+      x: 23.64
+      y: 4.442
+    start_name: LM145
+    end_name: LM146
+  properties:
+    direction: 0
+    movestyle: 0
+    obsExpansion: 0
+  length_m: 0.440001
+- kind: curve
+  curve_type: DegenerateBezier
+  curve:
+    start:
+      x: 23.787
+      y: 4.442
+    end:
+      x: 24.529
+      y: 4.444
+    control1:
+      x: 24.034
+      y: 4.443
+    control2:
+      x: 24.282
+      y: 4.443
+    start_name: LM146
+    end_name: LM151
+  properties:
+    direction: 0
+    movestyle: 0
+    obsExpansion: 0
+  length_m: 0.742003
+- kind: curve
+  curve_type: DegenerateBezier
+  curve:
+    start:
+      x: 24.529
+      y: 4.444
+    end:
+      x: 24.969
+      y: 4.445
+    control1:
+      x: 24.676
+      y: 4.444
+    control2:
+      x: 24.822
+      y: 4.445
+    start_name: LM151
+    end_name: LM152
+  properties:
+    direction: 0
+    movestyle: 0
+    obsExpansion: 0
+  length_m: 0.440001
+- kind: curve
+  curve_type: DegenerateBezier
+  curve:
+    start:
+      x: 24.969
+      y: 4.445
+    end:
+      x: 25.409
+      y: 4.446
+    control1:
+      x: 25.116
+      y: 4.445
+    control2:
+      x: 25.262
+      y: 4.446
+    start_name: LM152
+    end_name: LM153
+  properties:
+    direction: 0
+    movestyle: 0
+    obsExpansion: 0
+  length_m: 0.440001
+- kind: curve
+  curve_type: DegenerateBezier
+  curve:
+    start:
+      x: 25.409
+      y: 4.446
+    end:
+      x: 25.849
+      y: 4.447
+    control1:
+      x: 25.556
+      y: 4.446
+    control2:
+      x: 25.702
+      y: 4.447
+    start_name: LM153
+    end_name: LM154
+  properties:
+    direction: 0
+    movestyle: 0
+    obsExpansion: 0
+  length_m: 0.440001
+- kind: curve
+  curve_type: DegenerateBezier
+  curve:
+    start:
+      x: 25.849
+      y: 4.447
+    end:
+      x: 26.289
+      y: 4.448
+    control1:
+      x: 25.996
+      y: 4.447
+    control2:
+      x: 26.142
+      y: 4.448
+    start_name: LM154
+    end_name: LM155
+  properties:
+    direction: 0
+    movestyle: 0
+    obsExpansion: 0
+  length_m: 0.440001
+- kind: curve
+  curve_type: DegenerateBezier
+  curve:
+    start:
+      x: 26.289
+      y: 4.448
+    end:
+      x: 26.729
+      y: 4.449
+    control1:
+      x: 26.436
+      y: 4.448
+    control2:
+      x: 26.582
+      y: 4.449
+    start_name: LM155
+    end_name: LM156
+  properties:
+    direction: 0
+    movestyle: 0
+    obsExpansion: 0
+  length_m: 0.440001
+- kind: curve
+  curve_type: DegenerateBezier
+  curve:
+    start:
+      x: 26.729
+      y: 4.449
+    end:
+      x: 27.407
+      y: 4.452
+    control1:
+      x: 26.955
+      y: 4.45
+    control2:
+      x: 27.181
+      y: 4.451
+    start_name: LM156
+    end_name: LM161
+  properties:
+    direction: 0
+    movestyle: 0
+    obsExpansion: 0
+  length_m: 0.678007
+- kind: curve
+  curve_type: DegenerateBezier
+  curve:
+    start:
+      x: 27.407
+      y: 4.452
+    end:
+      x: 27.847
+      y: 4.453
+    control1:
+      x: 27.554
+      y: 4.452
+    control2:
+      x: 27.7
+      y: 4.453
+    start_name: LM161
+    end_name: LM162
+  properties:
+    direction: 0
+    movestyle: 0
+    obsExpansion: 0
+  length_m: 0.440001
+- kind: curve
+  curve_type: DegenerateBezier
+  curve:
+    start:
+      x: 27.847
+      y: 4.453
+    end:
+      x: 28.287
+      y: 4.454
+    control1:
+      x: 27.994
+      y: 4.453
+    control2:
+      x: 28.14
+      y: 4.454
+    start_name: LM162
+    end_name: LM163
+  properties:
+    direction: 0
+    movestyle: 0
+    obsExpansion: 0
+  length_m: 0.440001
+- kind: curve
+  curve_type: DegenerateBezier
+  curve:
+    start:
+      x: 28.287
+      y: 4.454
+    end:
+      x: 28.727
+      y: 4.455
+    control1:
+      x: 28.434
+      y: 4.454
+    control2:
+      x: 28.58
+      y: 4.455
+    start_name: LM163
+    end_name: LM164
+  properties:
+    direction: 0
+    movestyle: 0
+    obsExpansion: 0
+  length_m: 0.440001
+- kind: curve
+  curve_type: DegenerateBezier
+  curve:
+    start:
+      x: 28.727
+      y: 4.455
+    end:
+      x: 29.167
+      y: 4.456
+    control1:
+      x: 28.874
+      y: 4.455
+    control2:
+      x: 29.02
+      y: 4.456
+    start_name: LM164
+    end_name: LM165
+  properties:
+    direction: 0
+    movestyle: 0
+    obsExpansion: 0
+  length_m: 0.440001
+- kind: curve
+  curve_type: DegenerateBezier
+  curve:
+    start:
+      x: 29.167
+      y: 4.456
+    end:
+      x: 29.607
+      y: 4.457
+    control1:
+      x: 29.314
+      y: 4.456
+    control2:
+      x: 29.46
+      y: 4.457
+    start_name: LM165
+    end_name: LM166
+  properties:
+    direction: 0
+    movestyle: 0
+    obsExpansion: 0
+  length_m: 0.440001
+- kind: curve
+  curve_type: DegenerateBezier
+  curve:
+    start:
+      x: 16.407
+      y: 5.546
+    end:
+      x: 18.709
+      y: 4.428
+    control1:
+      x: 16.407
+      y: 4.508
+    control2:
+      x: 16.406
+      y: 4.423
+    start_name: LM280
+    end_name: LM131
+  properties:
+    direction: 0
+    maxspeed: 1.3
+    maxacc: 1
+    maxdec: 1
+    maxrot: 1.74533
+    maxrotacc: 0.785398
+    obsExpansion: 0
+  length_m: 3.085114
+- kind: curve
+  curve_type: DegenerateBezier
+  curve:
+    start:
+      x: 29.607
+      y: 4.457
+    end:
+      x: 32.093
+      y: 5.461
+    control1:
+      x: 31.956
+      y: 4.463
+    control2:
+      x: 32.093
+      y: 4.522
+    start_name: LM166
+    end_name: LM286
+  properties:
+    direction: 0
+    maxspeed: 1.3
+    maxacc: 1
+    maxdec: 1
+    maxrot: 1.74533
+    maxrotacc: 0.785398
+    obsExpansion: 0
+  length_m: 3.136818
+- kind: curve
+  curve_type: DegenerateBezier
+  curve:
+    start:
+      x: 14.821
+      y: 6.979
+    end:
+      x: 16.407
+      y: 6.979
+    control1:
+      x: 15.35
+      y: 6.979
+    control2:
+      x: 15.878
+      y: 6.979
+    start_name: LM292
+    end_name: LM281
+  properties:
+    direction: 2
+    movestyle: 0
+  length_m: 1.586
+- kind: curve
+  curve_type: DegenerateBezier
+  curve:
+    start:
+      x: 16.407
+      y: 6.979
+    end:
+      x: 14.821
+      y: 6.979
+    control1:
+      x: 15.878
+      y: 6.979
+    control2:
+      x: 15.35
+      y: 6.979
+    start_name: LM281
+    end_name: LM292
+  properties:
+    direction: 2
+    movestyle: 0
+  length_m: 1.586
+- kind: curve
+  curve_type: DegenerateBezier
+  curve:
+    start:
+      x: 14.821
+      y: 8.514
+    end:
+      x: 16.407
+      y: 8.504
+    control1:
+      x: 15.35
+      y: 8.511
+    control2:
+      x: 15.878
+      y: 8.507
+    start_name: LM293
+    end_name: LM282
+  properties:
+    direction: 2
+    movestyle: 0
+  length_m: 1.586032
+- kind: curve
+  curve_type: DegenerateBezier
+  curve:
+    start:
+      x: 16.407
+      y: 8.504
+    end:
+      x: 14.821
+      y: 8.514
+    control1:
+      x: 15.878
+      y: 8.507
+    control2:
+      x: 15.35
+      y: 8.511
+    start_name: LM282
+    end_name: LM293
+  properties:
+    direction: 2
+    movestyle: 0
+  length_m: 1.586032
+- kind: curve
+  curve_type: DegenerateBezier
+  curve:
+    start:
+      x: 16.407
+      y: 5.546
+    end:
+      x: 16.407
+      y: 4.054
+    control1:
+      x: 16.407
+      y: 5.049
+    control2:
+      x: 16.407
+      y: 4.551
+    start_name: LM280
+    end_name: LM322
+  properties:
+    direction: 0
+    movestyle: 0
+    obsExpansion: 0
+  length_m: 1.492
+- kind: curve
+  curve_type: DegenerateBezier
+  curve:
+    start:
+      x: 16.407
+      y: 4.054
+    end:
+      x: 16.407
+      y: 3.955
+    control1:
+      x: 16.407
+      y: 4.021
+    control2:
+      x: 16.407
+      y: 3.988
+    start_name: LM322
+    end_name: LM321
+  properties:
+    direction: 1
+    movestyle: 0
+    obsExpansion: 0
+  length_m: 0.099
+- kind: curve
+  curve_type: DegenerateBezier
+  curve:
+    start:
+      x: 14.821
+      y: 4.054
+    end:
+      x: 16.407
+      y: 4.054
+    control1:
+      x: 15.35
+      y: 4.054
+    control2:
+      x: 15.878
+      y: 4.054
+    start_name: LM323
+    end_name: LM322
+  properties:
+    direction: 2
+    movestyle: 0
+  length_m: 1.586
+- kind: curve
+  curve_type: DegenerateBezier
+  curve:
+    start:
+      x: 16.407
+      y: 4.054
+    end:
+      x: 14.821
+      y: 4.054
+    control1:
+      x: 15.878
+      y: 4.054
+    control2:
+      x: 15.35
+      y: 4.054
+    start_name: LM322
+    end_name: LM323
+  properties:
+    direction: 2
+    movestyle: 0
+  length_m: 1.586

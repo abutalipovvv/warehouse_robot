@@ -352,6 +352,7 @@ export const withSceneNavigation = (Base) => class OperatorAppSceneNavigation ex
       || this.fleetEditorEdgeDrag
       || this.fleetEditorBezierDrag
       || this.fleetRasterDrag
+      || this.fleetCorridorDrag
     );
     return {
       active: Boolean(this.fleetMapEditorActive && this.mapViewMode === "2d"),
@@ -361,6 +362,7 @@ export const withSceneNavigation = (Base) => class OperatorAppSceneNavigation ex
       selectedLmName: this.fleetSelectedLmName,
       selectedEdgeKey: this.fleetSelectedEdgeKey,
       preview: this.fleetEditorPreview,
+      areaPreview: this.fleetEditorAreaPreview,
       lms: Array.isArray(payload.lms) ? payload.lms : [],
       edges: Array.isArray(payload.edges) ? payload.edges : [],
     };
@@ -471,36 +473,48 @@ export const withSceneNavigation = (Base) => class OperatorAppSceneNavigation ex
     if (FLEET_RASTER_TOOLS.has(this.fleetMapTool)) {
       return this.beginFleetRasterPointer(hit);
     }
-    if (hit.bezierIndex && hit.edgeKey) {
+    if (this.fleetMapTool === "corridor") {
+      return this.beginFleetCorridorPointer(hit);
+    }
+    if (hit.bezierIndex && hit.edgeKey && this.fleetMapTool === "select") {
       this.selectFleetEditorEdge(hit.edgeKey);
       this.fleetEditorBezierDrag = {
         pointerId: hit.pointerId,
         edgeKey: hit.edgeKey,
         index: Number(hit.bezierIndex),
+        before: this.fleetGraphSnapshot(),
       };
       return true;
     }
     if (hit.lmName) {
-      if (this.fleetMapTool === "corridor") {
-        this.handleFleetCorridorLm(hit.lmName);
-        return true;
-      }
       this.selectFleetEditorLm(hit.lmName);
       if (this.fleetMapTool === "edge") {
-        this.fleetEditorEdgeDrag = { pointerId: hit.pointerId, currentLm: hit.lmName, lastCreated: "" };
-      } else {
-        this.fleetEditorLmDrag = { pointerId: hit.pointerId, name: hit.lmName, start: hit.world, moved: false };
+        this.fleetEditorEdgeDrag = {
+          pointerId: hit.pointerId,
+          currentLm: hit.lmName,
+          lastCreated: "",
+          before: this.fleetGraphSnapshot(),
+        };
+      } else if (this.fleetMapTool === "select") {
+        this.fleetEditorLmDrag = {
+          pointerId: hit.pointerId,
+          name: hit.lmName,
+          start: hit.world,
+          moved: false,
+          before: this.fleetGraphSnapshot(),
+        };
       }
       return true;
     }
-    if (hit.edgeKey) {
+    if (hit.edgeKey && this.fleetMapTool === "select") {
       this.selectFleetEditorEdge(hit.edgeKey);
       return true;
     }
     if (this.fleetMapTool === "lm") {
+      const before = this.fleetGraphSnapshot();
       const added = this.addFleetEditorLm(hit.world);
       this.selectFleetEditorLm(added.name);
-      this.renderOperatorBabylonMap({ force: true });
+      this.commitFleetGraphHistory(before, `Added landmark ${added.name}.`);
       return true;
     }
     this.fleetSelectedLmName = "";
@@ -521,6 +535,10 @@ export const withSceneNavigation = (Base) => class OperatorAppSceneNavigation ex
     }
     if (this.fleetRasterDrag?.pointerId === hit.pointerId) {
       this.moveFleetRasterPointer(hit);
+      return;
+    }
+    if (this.fleetCorridorDrag?.pointerId === hit.pointerId) {
+      this.moveFleetCorridorPointer(hit);
       return;
     }
     if (this.fleetEditorBezierDrag?.pointerId === hit.pointerId) {
@@ -581,17 +599,31 @@ export const withSceneNavigation = (Base) => class OperatorAppSceneNavigation ex
       this.endFleetRasterPointer(hit);
       return;
     }
+    if (this.fleetCorridorDrag?.pointerId === hit?.pointerId) {
+      this.endFleetCorridorPointer(hit);
+      return;
+    }
+    const lmDrag = this.fleetEditorLmDrag;
+    const edgeDrag = this.fleetEditorEdgeDrag;
+    const bezierDrag = this.fleetEditorBezierDrag;
     const geometryChanged = Boolean(
-      this.fleetEditorLmDrag
-      || this.fleetEditorEdgeDrag
-      || this.fleetEditorBezierDrag
+      lmDrag
+      || edgeDrag
+      || bezierDrag
     );
     this.fleetEditorLmDrag = null;
     this.fleetEditorEdgeDrag = null;
     this.fleetEditorBezierDrag = null;
     this.fleetEditorPreview = null;
     if (geometryChanged) {
-      this.renderOperatorBabylonMap({ force: true });
+      const committed = (
+        (lmDrag?.moved && this.commitFleetGraphHistory(lmDrag.before, `Moved landmark ${lmDrag.name}.`))
+        || (edgeDrag && this.commitFleetGraphHistory(edgeDrag.before, "Added graph edge chain."))
+        || (bezierDrag && this.commitFleetGraphHistory(bezierDrag.before, `Updated curve ${bezierDrag.edgeKey}.`))
+      );
+      if (!committed) {
+        this.renderOperatorBabylonMap({ force: true });
+      }
     } else {
       this.refreshBabylonEditorState();
     }

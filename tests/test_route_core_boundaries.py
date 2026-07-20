@@ -162,3 +162,65 @@ def test_not_specified_motion_codes_are_normalized_without_losing_forward_zero()
     assert forward[0]["properties"]["direction"] == 0
     assert unspecified.motion_direction_code() == -1
     assert unspecified.motion_direction_label(unspecified.motion_direction_code()) == "not_specified"
+
+
+def test_map_loader_merges_routing_and_geometry_edge_properties(
+    tmp_path: Path,
+) -> None:
+    from fleet_manager.core.route_core.map_loader import WarehouseMapLoader
+    from fleet_manager.core.route_core.models import Landmark, MapMetadata
+
+    (tmp_path / "graphs.yaml").write_text(
+        """
+mapName: test
+coordinateFrame: map_top_left
+primitives:
+  - kind: line
+    start: {x: 0.0, y: 0.0}
+    end: {x: 1.0, y: 0.0}
+    start_name: A
+    end_name: B
+    properties:
+      direction: 1
+      smart: true
+""".lstrip(),
+        encoding="utf-8",
+    )
+    (tmp_path / "graph_edges_lengths.yaml").write_text(
+        """
+- from: A
+  to: B
+  length: 1.0
+  kind: line
+  type: FeatureLine
+  properties:
+    direction: 0
+    controlled_region: corridor:test
+""".lstrip(),
+        encoding="utf-8",
+    )
+    landmarks = {
+        "A": Landmark(name="A", x=0.0, y=0.0),
+        "B": Landmark(name="B", x=1.0, y=0.0),
+    }
+    metadata = MapMetadata(
+        map_name="test",
+        width=10,
+        height=10,
+        resolution=1.0,
+        ros_origin=(0.0, 0.0, 0.0),
+        image_data_url="",
+    )
+
+    edges = WarehouseMapLoader(tmp_path)._load_edges(
+        tmp_path / "graph_edges_lengths.yaml",
+        landmarks,
+        metadata,
+    )
+
+    assert len(edges) == 1
+    assert edges[0].properties == {
+        "direction": 1,
+        "controlled_region": "corridor:test",
+        "smart": True,
+    }

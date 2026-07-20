@@ -121,10 +121,44 @@ def test_controlled_corridor_auto_mode_only_enables_fully_smart_graphs() -> None
     )
 
     assert smart_planner.controlled_corridors_enabled
+    assert smart_planner.controlled_corridor_auto_detect
     assert smart_planner.controlled_corridors_mode == "auto"
     assert len(smart_planner._traffic_graph(1.0).controlled_region_ids()) == 1
-    assert not ordinary_planner.controlled_corridors_enabled
+    assert ordinary_planner.controlled_corridors_enabled
+    assert not ordinary_planner.controlled_corridor_auto_detect
     assert ordinary_planner._traffic_graph(1.0).controlled_region_ids() == ()
+
+
+def test_explicit_only_mode_does_not_turn_smart_graph_into_corridors() -> None:
+    landmarks = _landmarks("A", "B", "C")
+    smart_edges = [
+        _edge(landmarks, start, goal)
+        for start, goal in (
+            ("A", "B"),
+            ("B", "A"),
+            ("B", "C"),
+            ("C", "B"),
+        )
+    ]
+    for edge in smart_edges:
+        edge.properties["smart"] = True
+
+    planner = FleetMapfPlanner(
+        landmarks,
+        smart_edges,
+        params={
+            "fleet": {
+                "controlled_corridors_enabled": True,
+                "controlled_corridor_auto_detect": False,
+            }
+        },
+    )
+
+    graph = planner._traffic_graph(1.0)
+    assert planner.controlled_corridors_enabled
+    assert not planner.controlled_corridor_auto_detect
+    assert graph.controlled_region_ids() == ()
+    assert all(vertex.can_wait for vertex in graph.vertices.values())
 
 
 def test_controlled_corridor_can_cover_single_edge_between_junctions() -> None:
@@ -180,6 +214,39 @@ def test_explicit_editor_corridor_properties_work_without_auto_detection() -> No
     assert graph.extend_route_index_to_controlled_exit(["A", "B", "C", "D"], 1) == 3
 
 
+def test_edge_authored_corridor_infers_internal_non_waiting_vertices() -> None:
+    landmarks = _landmarks("A", "B", "C", "D")
+    region = "corridor:painted-zone"
+    edges = []
+    for first, second in (("A", "B"), ("B", "C"), ("C", "D")):
+        for src, dst in ((first, second), (second, first)):
+            edge = _edge(landmarks, src, dst)
+            edge.properties["controlled_region"] = region
+            edges.append(edge)
+
+    graph = TrafficGraph.from_route_core(
+        landmarks,
+        edges,
+        default_speed_mps=1.0,
+        explicit_controlled_regions_enabled=True,
+        controlled_corridors_enabled=False,
+    )
+
+    assert graph.vertices["A"].controlled_region_ids == ()
+    assert graph.vertices["A"].can_wait
+    assert graph.vertices["B"].controlled_region_ids == (region,)
+    assert not graph.vertices["B"].can_wait
+    assert graph.vertices["C"].controlled_region_ids == (region,)
+    assert not graph.vertices["C"].can_wait
+    assert graph.vertices["D"].controlled_region_ids == ()
+    assert graph.vertices["D"].can_wait
+    assert ResourceId("controlled_region", region) in graph.vertex_resources("B")
+    assert graph.extend_route_index_to_controlled_exit(
+        ["A", "B", "C", "D"],
+        1,
+    ) == 3
+
+
 def test_rolling_sipp_serializes_head_on_controlled_corridor_without_internal_waits() -> None:
     landmarks = {
         name: Landmark(name=name, x=x, y=y)
@@ -219,6 +286,7 @@ def test_rolling_sipp_serializes_head_on_controlled_corridor_without_internal_wa
                 "cbs_low_level_max_time": 24,
                 "mapf_min_robot_center_distance_m": 0.1,
                 "controlled_corridors_enabled": True,
+                "controlled_corridor_auto_detect": True,
             },
         },
     )
@@ -280,6 +348,7 @@ def test_cbs_branches_on_whole_controlled_corridor_occupation() -> None:
                 "cbs_max_planning_time_sec": 2.0,
                 "mapf_min_robot_center_distance_m": 0.1,
                 "controlled_corridors_enabled": True,
+                "controlled_corridor_auto_detect": True,
             },
         },
     )

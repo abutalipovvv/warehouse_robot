@@ -17,6 +17,14 @@ UPPER_LANE_ROWS = frozenset(range(6, 31, 4))
 REMOVED_PERIMETER_ROWS = frozenset({1, 33})
 REMOVED_PERIMETER_COLUMNS = frozenset({1, 36})
 AISLE_CONNECTOR_COLUMNS = frozenset({2, 13, 24, 35})
+# Shelf crossings are the genuinely single-lane parts of this map.  Each
+# crossing is a small local controlled corridor with one internal LM; the
+# open horizontal aisles retain their two independent passing lanes.
+CONTROLLED_CORRIDOR_COLUMNS = AISLE_CONNECTOR_COLUMNS
+CONTROLLED_CORRIDOR_ROW_PAIRS = tuple(
+    (row, row + 2)
+    for row in range(2, 31, 4)
+)
 PGM_WIDTH = 360
 PGM_HEIGHT = 330
 SHELF_PIXEL_ROW_STARTS = tuple(range(20, 301, 40))
@@ -58,6 +66,27 @@ def _lane_x(column: int, current_x: float) -> float:
     return current_x
 
 
+def _controlled_corridor_region(
+    start: dict[str, Any],
+    goal: dict[str, Any],
+) -> str:
+    start_row, start_column = _grid_position(str(start["name"]))
+    goal_row, goal_column = _grid_position(str(goal["name"]))
+    if (
+        start_column != goal_column
+        or start_column not in CONTROLLED_CORRIDOR_COLUMNS
+    ):
+        return ""
+    edge_top, edge_bottom = sorted((start_row, goal_row))
+    for top, bottom in CONTROLLED_CORRIDOR_ROW_PAIRS:
+        if top <= edge_top and edge_bottom <= bottom:
+            return (
+                "corridor:smart-kiva:"
+                f"c{start_column:03d}:r{top:03d}-r{bottom:03d}"
+            )
+    return ""
+
+
 def _edge(start: dict[str, Any], goal: dict[str, Any]) -> dict[str, Any]:
     length = round(
         math.hypot(
@@ -66,13 +95,17 @@ def _edge(start: dict[str, Any], goal: dict[str, Any]) -> dict[str, Any]:
         ),
         6,
     )
+    properties = dict(EDGE_PROPERTIES)
+    controlled_region = _controlled_corridor_region(start, goal)
+    if controlled_region:
+        properties["controlled_region"] = controlled_region
     return {
         "from": start["name"],
         "to": goal["name"],
         "length": length,
         "kind": "line",
         "type": "FeatureLine",
-        "properties": dict(EDGE_PROPERTIES),
+        "properties": properties,
     }
 
 
@@ -89,7 +122,7 @@ def _primitive(
         "end": {"x": goal["x"], "y": goal["y"]},
         "start_name": start["name"],
         "end_name": goal["name"],
-        "properties": dict(EDGE_PROPERTIES),
+        "properties": dict(edge.get("properties") or EDGE_PROPERTIES),
         "length_m": edge["length"],
     }
 
@@ -181,6 +214,28 @@ def rebuild(map_dir: Path = MAP_DIR) -> None:
         landmarks_by_grid[key]
         for key in sorted(landmarks_by_grid)
     ]
+    corridor_regions_by_lm: dict[str, set[str]] = {}
+    for edge in edges:
+        region_id = str(edge["properties"].get("controlled_region") or "")
+        if not region_id:
+            continue
+        corridor_regions_by_lm.setdefault(str(edge["from"]), set()).add(region_id)
+        corridor_regions_by_lm.setdefault(str(edge["to"]), set()).add(region_id)
+    for landmark in landmarks:
+        regions = corridor_regions_by_lm.get(str(landmark["name"]), set())
+        if not regions:
+            continue
+        properties = dict(landmark.get("properties") or {})
+        row, _column = _grid_position(str(landmark["name"]))
+        if any(row in pair for pair in CONTROLLED_CORRIDOR_ROW_PAIRS):
+            properties["can_wait"] = True
+            properties["holding_point"] = True
+            properties.pop("controlled_region", None)
+        else:
+            properties["can_wait"] = False
+            properties["controlled_region"] = sorted(regions)[0]
+            properties.pop("holding_point", None)
+        landmark["properties"] = properties
     landmarks_by_name = {
         str(landmark["name"]): landmark
         for landmark in landmarks
@@ -226,6 +281,16 @@ def rebuild(map_dir: Path = MAP_DIR) -> None:
             "aisleLaneSpacingM": 1.4,
             "aisleConnectorColumns": sorted(AISLE_CONNECTOR_COLUMNS),
             "crossLaneConnectionsPerAisle": len(AISLE_CONNECTOR_COLUMNS),
+            "controlledCorridorColumns": sorted(CONTROLLED_CORRIDOR_COLUMNS),
+            "controlledCorridorRowPairs": [
+                list(pair)
+                for pair in CONTROLLED_CORRIDOR_ROW_PAIRS
+            ],
+            "controlledCorridorCount": (
+                len(CONTROLLED_CORRIDOR_COLUMNS)
+                * len(CONTROLLED_CORRIDOR_ROW_PAIRS)
+            ),
+            "controlledCorridorMode": "explicit_shelf_crossings",
             "internalCrossAisleWidthM": 1.4,
             "perimeterLaneClearanceM": 1.0,
             "perimeterLaneCount": 1,

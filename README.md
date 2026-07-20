@@ -46,11 +46,17 @@ order:
 4. Local CBS resolves only the small coupled component that SIPP could not
    separate. Persistent stalls may retreat one robot and request a global
    congestion-aware detour to the same goal.
+5. Explicit controlled corridors are an optional local admission layer for
+   genuinely narrow passages. An operator marks their edges and legal holding
+   LMs with the Corridor tool in Traffic Editor. They do not replace dynamic
+   traffic zones, SIPP or CBS, and automatic whole-map corridor inference is
+   disabled by default.
 
 Traffic tuning is under `fleet` in `fleet_manager/config/params.yaml`. The principal
-settings are `congestion_*`, `traffic_zone_*`, `rolling_horizon_sec`, and
-`local_cbs_max_robots`. Runtime state exposes zone demand, occupancy, queue and
-phase in `trafficFlow`.
+settings are `congestion_*`, `traffic_zone_*`, `rolling_horizon_sec`,
+`controlled_corridors_enabled`, `controlled_corridor_auto_detect`, and
+`local_cbs_max_robots`. Runtime state exposes zone and controlled-corridor
+demand, occupancy, queue and phase in `trafficFlow`.
 
 Install gRPC runtime on the operator/server and on each robot:
 

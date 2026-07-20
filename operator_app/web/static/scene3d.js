@@ -1607,6 +1607,7 @@ export class OperatorScene3D {
   setEditorState(state = {}) {
     const nextState = { ...state };
     const previewState = nextState.preview;
+    const areaPreviewState = nextState.areaPreview;
     const signature = [
       this.viewMode,
       Number(nextState.revision || 0),
@@ -1618,6 +1619,11 @@ export class OperatorScene3D {
       String(previewState?.fromName || ""),
       Number(previewState?.world?.x || 0).toFixed(3),
       Number(previewState?.world?.y || 0).toFixed(3),
+      String(areaPreviewState?.kind || ""),
+      Number(areaPreviewState?.start?.x || 0).toFixed(3),
+      Number(areaPreviewState?.start?.y || 0).toFixed(3),
+      Number(areaPreviewState?.current?.x || 0).toFixed(3),
+      Number(areaPreviewState?.current?.y || 0).toFixed(3),
     ].join(":");
     this.editorState = nextState;
     if (!this.scene) {
@@ -1630,6 +1636,11 @@ export class OperatorScene3D {
     this.editorRoot?.dispose(false, true);
     this.editorRoot = new B.TransformNode("editor-root", this.scene);
     const active = Boolean(this.editorState.active && this.viewMode === "2d");
+    if (this.canvas) {
+      this.canvas.style.cursor = active && this.editorState.tool !== "select"
+        ? "crosshair"
+        : "";
+    }
     if (this.graphMesh) {
       this.graphMesh.isPickable = active;
     }
@@ -1648,6 +1659,26 @@ export class OperatorScene3D {
     const selectedEdgeKey = String(this.editorState.selectedEdgeKey || "");
     const overlayLines = [];
     const overlayKeys = [];
+    const corridorLines = [];
+    const corridorKeys = [];
+    const corridorPairs = new Set();
+    for (const edge of edges) {
+      const regionId = String(edge?.properties?.controlled_region || "");
+      if (!regionId) {
+        continue;
+      }
+      const edgeNames = [String(edge.from || ""), String(edge.to || "")].sort();
+      const pairKey = `${regionId}:${edgeNames[0]}<=>${edgeNames[1]}`;
+      if (corridorPairs.has(pairKey)) {
+        continue;
+      }
+      corridorPairs.add(pairKey);
+      const points = this.editorEdgePoints(edge, lmIndex);
+      if (points.length >= 2) {
+        corridorLines.push(points);
+        corridorKeys.push(pairKey);
+      }
+    }
 
     if (selectedLmName) {
       const selectedLm = lmIndex.get(selectedLmName);
@@ -1713,6 +1744,58 @@ export class OperatorScene3D {
         ]);
         overlayKeys.push("preview");
       }
+    }
+    const areaPreview = this.editorState.areaPreview;
+    if (areaPreview?.start && areaPreview?.current) {
+      const minX = Math.min(
+        Number(areaPreview.start.x || 0),
+        Number(areaPreview.current.x || 0),
+      );
+      const maxX = Math.max(
+        Number(areaPreview.start.x || 0),
+        Number(areaPreview.current.x || 0),
+      );
+      const minY = Math.min(
+        Number(areaPreview.start.y || 0),
+        Number(areaPreview.current.y || 0),
+      );
+      const maxY = Math.max(
+        Number(areaPreview.start.y || 0),
+        Number(areaPreview.current.y || 0),
+      );
+      const width = Math.max(0.001, maxX - minX);
+      const depth = Math.max(0.001, maxY - minY);
+      const area = B.MeshBuilder.CreateGround("editor-area-preview", {
+        width,
+        height: depth,
+      }, this.scene);
+      area.position.set((minX + maxX) / 2, 0.102, (minY + maxY) / 2);
+      const corridor = areaPreview.kind === "corridor";
+      area.material = this.unlitMaterial(
+        `editor-area-preview-material-${corridor ? "corridor" : "raster"}`,
+        corridor ? 0xed7d12 : COLORS.editor,
+        corridor ? 0.2 : 0.14,
+      );
+      area.parent = this.editorRoot;
+      area.isPickable = false;
+      overlayLines.push([
+        new B.Vector3(minX, 0.11, minY),
+        new B.Vector3(maxX, 0.11, minY),
+        new B.Vector3(maxX, 0.11, maxY),
+        new B.Vector3(minX, 0.11, maxY),
+        new B.Vector3(minX, 0.11, minY),
+      ]);
+      overlayKeys.push("area-preview");
+    }
+    if (corridorLines.length) {
+      this.createRibbonBatch(
+        "editor-corridor-overlay",
+        corridorLines,
+        Math.max(0.075, Math.max(this.bounds.width, this.bounds.depth) / 560),
+        this.unlitMaterial("editor-corridor-overlay-material", 0xd97706, 0.82),
+        this.editorRoot,
+        corridorKeys,
+      );
     }
     if (overlayLines.length) {
       this.createRibbonBatch(
@@ -2036,6 +2119,7 @@ export class OperatorScene3D {
           footprintKey,
           active: null,
           waitBlocker: null,
+          poseInterpolated: Boolean(robot?.poseInterpolated),
           targetPose: {
             x: Number(pose.x || 0),
             y: Number(pose.y || 0),
@@ -2083,6 +2167,7 @@ export class OperatorScene3D {
         y: Number(pose.y || 0),
         yaw: Number(pose.yaw || 0),
       };
+      entry.poseInterpolated = Boolean(robot?.poseInterpolated);
     }
     return true;
   }
@@ -2105,6 +2190,7 @@ export class OperatorScene3D {
       y: Number(pose.y || 0),
       yaw: Number(pose.yaw || 0),
     };
+    entry.poseInterpolated = Boolean(robot?.poseInterpolated);
     const alertText = this.robotAlertLabel(robot);
     const alertSeverity = this.robotAlertSeverity(robot);
     const labelText = alertText
@@ -2217,11 +2303,9 @@ export class OperatorScene3D {
       ? Math.min(0.05, Math.max(0.001, (now - this.lastRobotMotionAt) / 1000))
       : (1 / 60);
     this.lastRobotMotionAt = now;
-    // Status packets and collision decisions arrive on a lower-frequency
-    // server clock. A critically damped visual follow removes the 10 Hz
-    // stair-step without predicting outside the server-approved pose. The
-    // previous gain (32) converged almost completely in one packet interval,
-    // so turns and short recovery moves still looked like discrete jumps.
+    // Real gRPC status snapshots do not own the simulation's display-clock
+    // interpolation, so retain a soft follow for those lower-rate poses.
+    // Fleet Manager Sim entries are tagged poseInterpolated and bypass it.
     const alpha = 1 - Math.exp(-14 * dt);
     let animating = false;
     for (const entry of this.robotObjects.values()) {
@@ -2238,6 +2322,18 @@ export class OperatorScene3D {
         Math.cos(targetRotation - group.rotation.y),
       );
       const distanceSq = (dx * dx) + (dz * dz);
+      if (entry.poseInterpolated) {
+        // The application already supplies a 60 Hz display-clock pose for
+        // simulated robots. Babylon must still render whenever that direct
+        // target changed; otherwise its on-demand loop sees no animation and
+        // presents only occasional selection/UI frames.
+        if (distanceSq > 0.00000001 || Math.abs(rotationDelta) > 0.0001) {
+          animating = true;
+        }
+        group.position.set(Number(target.x || 0), 0, Number(target.y || 0));
+        group.rotation.y = targetRotation;
+        continue;
+      }
       if (distanceSq <= 0.00000001 && Math.abs(rotationDelta) <= 0.0001) {
         group.position.set(Number(target.x || 0), 0, Number(target.y || 0));
         group.rotation.y = targetRotation;
@@ -2677,8 +2773,6 @@ export class OperatorScene3D {
   futureRobotTrajectory(robot, active) {
     const trajectory = Array.isArray(robot?.trajectory) ? robot.trajectory : [];
     const preview = active && Array.isArray(robot?.routePreview) ? robot.routePreview : [];
-    const clock = Math.max(0, Number(robot?.routeClock || 0));
-    const pose = this.robotPose(robot);
     const result = [];
     const append = (point) => {
       const next = {
@@ -2698,15 +2792,9 @@ export class OperatorScene3D {
       }
       result.push(next);
     };
-    if (Number.isFinite(Number(pose.x)) && Number.isFinite(Number(pose.y))) {
-      append(pose);
-    }
-
     if (preview.some((point) => String(point?.phase || "") === "forecast")) {
       for (const point of trajectory) {
-        if (Number(point?.t || 0) + 0.0001 >= clock) {
-          append(point);
-        }
+        append(point);
       }
       for (const point of preview) {
         if (String(point?.phase || "") === "forecast") {
@@ -2717,11 +2805,8 @@ export class OperatorScene3D {
     }
 
     const source = preview.length >= 2 ? preview : trajectory;
-    const hasClock = source.some((point) => Number.isFinite(Number(point?.t)));
     for (const point of source) {
-      if (!hasClock || Number(point?.t || 0) + 0.0001 >= clock) {
-        append(point);
-      }
+      append(point);
     }
     return result;
   }
@@ -2784,7 +2869,8 @@ export class OperatorScene3D {
       active ? "active" : "idle",
       this.viewMode,
       robot?.routeRevision || "",
-      Math.floor(Math.max(0, Number(robot?.routeClock || 0)) * 2),
+      robot?.routeChunkIndex || "",
+      Array.isArray(robot?.routePreview) ? robot.routePreview.length : 0,
       route.length,
       first.t ?? "",
       Number(first.x || 0).toFixed(3),

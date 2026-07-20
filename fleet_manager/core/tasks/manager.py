@@ -82,6 +82,30 @@ class FleetTaskManager:
         pending.sort(key=lambda order: (order.created_at, order.order_id))
         return pending
 
+    def pending_by_robot(self) -> dict[str, list[FleetOrder]]:
+        """Build one active-order index for a complete fleet snapshot.
+
+        Calling ``pending_for_robot`` once per robot made every websocket
+        snapshot O(robots * lifetime_orders). Lifelong benchmarks retain a
+        bounded terminal history for the operator, so that repeated scan
+        gradually stole the runtime thread from rolling prefetch.
+        """
+        pending: dict[str, list[FleetOrder]] = {}
+        for order in self.orders.values():
+            if order.status in TERMINAL_ORDER_STATUSES:
+                continue
+            owners = {
+                order.vehicle,
+                order.assigned_robot,
+            }
+            owners.discard("")
+            owners.discard(None)
+            for owner in owners:
+                pending.setdefault(owner, []).append(order)
+        for orders in pending.values():
+            orders.sort(key=lambda order: (order.created_at, order.order_id))
+        return pending
+
     def clear(self) -> None:
         self.orders.clear()
 

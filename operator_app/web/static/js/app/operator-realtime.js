@@ -1312,7 +1312,13 @@ export const withRealtime = (Base) => class OperatorAppRealtime extends Base {
       return true;
     }
     const robots = Array.isArray(this.currentStatus?.robots) ? this.currentStatus.robots : [];
-    return robots.some((robot) => this.shouldAnimateFleetRobot(robot) && ["MOVING", "MANUAL"].includes(String(robot.status || "")));
+    return robots.some((robot) => (
+      this.shouldAnimateFleetRobot(robot)
+      && (
+        ["MOVING", "MANUAL"].includes(String(robot.status || ""))
+        || this.fleetVisualClockIsSettling(robot)
+      )
+    ));
   }
 
   fleetRenderRobots() {
@@ -1353,6 +1359,24 @@ export const withRealtime = (Base) => class OperatorAppRealtime extends Base {
     }
   }
 
+  fleetVisualClockIsSettling(robot) {
+    const status = String(robot?.status || "");
+    const trajectory = Array.isArray(robot?.trajectory) ? robot.trajectory : [];
+    if (
+      !["WAITING", "BLOCKED", "PLANNING"].includes(status)
+      || trajectory.length < 2
+    ) {
+      return false;
+    }
+    const prior = this.fleetVisualClocks.get(this.fleetVisualRouteKey(robot));
+    if (!prior) {
+      return false;
+    }
+    const baseClock = Math.max(0, Number(robot?.routeClock || 0));
+    const priorClock = Math.max(0, Number(prior.clock || 0));
+    return priorClock + 0.0001 < baseClock;
+  }
+
   pruneFleetVisualClocks(robots) {
     if (!this.fleetVisualClocks?.size) {
       return;
@@ -1361,7 +1385,10 @@ export const withRealtime = (Base) => class OperatorAppRealtime extends Base {
     for (const robot of robots) {
       const status = String(robot?.status || "");
       const trajectory = Array.isArray(robot?.trajectory) ? robot.trajectory : [];
-      if (status === "MOVING" && trajectory.length >= 2) {
+      if (
+        trajectory.length >= 2
+        && (status === "MOVING" || this.fleetVisualClockIsSettling(robot))
+      ) {
         activeKeys.add(this.fleetVisualRouteKey(robot));
       }
     }
@@ -1382,6 +1409,11 @@ export const withRealtime = (Base) => class OperatorAppRealtime extends Base {
       ...robot,
       routeClock,
       pose: pose || robot.pose || null,
+      // Both navigation and manual simulated poses already use the display
+      // requestAnimationFrame clock. Babylon must apply them directly instead
+      // of adding a second exponential chase that repeatedly slows down and
+      // catches up with the first interpolator.
+      poseInterpolated: Boolean(animate),
     };
   }
 
@@ -1389,7 +1421,7 @@ export const withRealtime = (Base) => class OperatorAppRealtime extends Base {
     const baseClock = Math.max(0, Number(robot?.routeClock || 0));
     const trajectory = Array.isArray(robot?.trajectory) ? robot.trajectory : [];
     const status = String(robot?.status || "");
-    if (status !== "MOVING" || trajectory.length < 2 || !this.fleetStatusReceivedAt) {
+    if (trajectory.length < 2 || !this.fleetStatusReceivedAt) {
       this.clearFleetVisualClock(robot);
       return baseClock;
     }
@@ -1399,48 +1431,154 @@ export const withRealtime = (Base) => class OperatorAppRealtime extends Base {
     const prior = this.fleetVisualClocks.get(key) || null;
     const now = performance.now();
     const priorServerClock = prior ? Math.max(0, Number(prior.serverClock || 0)) : 0;
-    const routeClockReset = Boolean(prior && baseClock < priorServerClock - 0.25);
-    let visualClock = baseClock;
-    let serverUpdatedAt = now;
+    const routeClockReset = Boolean(prior && baseClock < priorServerClock - 0.05);
+    const timeScale = Math.max(1, Number(this.currentStatus?.simulationTimeScale || 1));
+    if (status !== "MOVING") {
+      const canSettle = (
+        ["WAITING", "BLOCKED", "PLANNING"].includes(status)
+        && prior
+        && !routeClockReset
+        && Math.max(0, Number(prior.clock || 0)) + 0.0001 < baseClock
+      );
+      if (!canSettle) {
+        this.clearFleetVisualClock(robot);
+        return baseClock;
+      }
+      const priorClock = Math.max(0, Number(prior.clock || 0));
+      const frameDt = Math.min(
+        0.10,
+        Math.max(0, (now - Number(prior.updatedAt || now)) / 1000),
+      );
+      const acceleration = Math.max(
+        timeScale,
+        Number(this.fleetNavigationClockAcceleration || 6) * timeScale,
+      );
+      let visualRate = Math.max(0, Number(prior.visualRate || 0));
+      const observedRate = Math.min(
+        1.15 * timeScale,
+        Math.max(0.05 * timeScale, Number(prior.observedRate || timeScale)),
+      );
+      const headroom = Math.max(0, baseClock - priorClock);
+      const brakingRate = Math.sqrt(2 * acceleration * headroom);
+      const targetRate = Math.min(observedRate, brakingRate);
+      const rateStep = acceleration * frameDt;
+      if (visualRate < targetRate) {
+        visualRate = Math.min(targetRate, visualRate + rateStep);
+      } else {
+        visualRate = Math.max(targetRate, visualRate - rateStep);
+      }
+      const settledClock = Math.min(
+        baseClock,
+        priorClock + (visualRate * frameDt),
+      );
+      if (baseClock - settledClock <= 0.0001) {
+        this.clearFleetVisualClock(robot);
+        return baseClock;
+      }
+      this.fleetVisualClocks.set(key, {
+        ...prior,
+        clock: settledClock,
+        serverClock: baseClock,
+        observedRate,
+        visualRate,
+        updatedAt: now,
+      });
+      return settledClock;
+    }
+    const minimumDelay = Math.max(
+      0.08,
+      Number(this.fleetNavigationInterpolationMinSec || 0.12),
+    );
+    let visualClock = Math.max(0, baseClock - (minimumDelay * timeScale));
+    let observedRate = timeScale;
+    let visualRate = timeScale;
+    let serverSampleAt = now;
+    let samplePeriodSec = 0.10;
+
     if (prior && !routeClockReset) {
       const priorClock = Math.max(0, Number(prior.clock || 0));
-      const timeScale = Math.max(1, Number(this.currentStatus?.simulationTimeScale || 1));
-      // Collision checks run ahead of committed motion. Continue at nominal
-      // speed between confirmed clocks instead of freezing and then driving
-      // 15% faster to compensate for a delayed packet. The lead is bounded
-      // and never leaves the already committed graph trajectory.
-      serverUpdatedAt = Math.abs(baseClock - priorServerClock) > 0.0001
-        ? now
-        : Number(prior.serverUpdatedAt || prior.updatedAt || now);
-      const packetAgeSec = Math.max(
-        0,
-        (now - serverUpdatedAt) / 1000,
+      const frameDt = Math.min(
+        0.10,
+        Math.max(0, (now - Number(prior.updatedAt || now)) / 1000),
       );
-      const maximumLeadClock = Math.min(
-        1.2,
-        this.fleetNavigationPredictionMaxSec * timeScale,
+      observedRate = Math.min(
+        1.15 * timeScale,
+        Math.max(
+          0.05 * timeScale,
+          Number(prior.observedRate || timeScale),
+        ),
       );
-      const visualLeadSec = Math.min(
-        maximumLeadClock,
-        packetAgeSec * timeScale,
+      visualRate = Math.min(
+        1.15 * timeScale,
+        Math.max(0, Number(prior.visualRate ?? observedRate)),
       );
-      const targetClock = Math.min(finalTime, baseClock + visualLeadSec);
-      const frameDelta = status === "MOVING"
-        ? Math.min(
-          0.12 * timeScale,
-          Math.max(0, (now - Number(prior.updatedAt || now)) / 1000)
-            * timeScale,
-        )
-        : 0;
-      visualClock = targetClock >= priorClock
-        ? Math.min(targetClock, priorClock + frameDelta)
-        : priorClock;
+      serverSampleAt = Number(prior.serverSampleAt || prior.updatedAt || now);
+      samplePeriodSec = Math.max(
+        0.04,
+        Math.min(0.50, Number(prior.samplePeriodSec || 0.10)),
+      );
+
+      const serverDelta = baseClock - priorServerClock;
+      if (serverDelta > 0.0001) {
+        const rawPeriod = Math.max(0.001, (now - serverSampleAt) / 1000);
+        const rawRate = Math.max(
+          0,
+          Math.min(1.15 * timeScale, serverDelta / rawPeriod),
+        );
+        // A slow EMA follows sustained backend load without copying one late
+        // packet's apparent catch-up speed into the visual motion.
+        observedRate = (observedRate * 0.75) + (rawRate * 0.25);
+        samplePeriodSec = (samplePeriodSec * 0.75)
+          + (Math.min(0.50, rawPeriod) * 0.25);
+        serverSampleAt = now;
+      }
+
+      const sampleAgeSec = Math.max(0, (now - serverSampleAt) / 1000);
+      const interpolationDelaySec = Math.max(
+        minimumDelay,
+        Math.min(0.30, samplePeriodSec * 1.25),
+      );
+      // Reconstruct a clock slightly behind the newest authoritative sample.
+      // With regular 10 Hz samples this ceiling is continuous across packets:
+      // the new server delta exactly replaces the elapsed part of the buffer.
+      const allowedClock = Math.min(
+        baseClock,
+        Math.max(
+          priorClock,
+          baseClock
+            + (observedRate * Math.min(sampleAgeSec, interpolationDelaySec))
+            - (observedRate * interpolationDelaySec),
+        ),
+      );
+      const headroom = Math.max(0, allowedClock - priorClock);
+      const acceleration = Math.max(
+        timeScale,
+        Number(this.fleetNavigationClockAcceleration || 6) * timeScale,
+      );
+      // The braking bound makes a delayed server sample produce a smooth
+      // deceleration before the authoritative ceiling, never a hard plateau
+      // followed by an over-speed catch-up pulse.
+      const brakingRate = Math.sqrt(2 * acceleration * headroom);
+      const targetRate = Math.min(observedRate * 1.05, brakingRate);
+      const rateStep = acceleration * frameDt;
+      if (visualRate < targetRate) {
+        visualRate = Math.min(targetRate, visualRate + rateStep);
+      } else {
+        visualRate = Math.max(targetRate, visualRate - rateStep);
+      }
+      visualClock = Math.min(
+        allowedClock,
+        priorClock + (visualRate * frameDt),
+      );
     }
     visualClock = Math.min(finalTime, Math.max(0, visualClock));
     this.fleetVisualClocks.set(key, {
       clock: visualClock,
       serverClock: baseClock,
-      serverUpdatedAt,
+      serverSampleAt,
+      samplePeriodSec,
+      observedRate,
+      visualRate,
       updatedAt: now,
     });
     return visualClock;
@@ -1448,7 +1586,13 @@ export const withRealtime = (Base) => class OperatorAppRealtime extends Base {
 
   animatedFleetRobotPose(robot, routeClock) {
     const trajectory = Array.isArray(robot?.trajectory) ? robot.trajectory : [];
-    if (String(robot?.status || "") === "MOVING" && trajectory.length >= 2) {
+    if (
+      trajectory.length >= 2
+      && (
+        String(robot?.status || "") === "MOVING"
+        || this.fleetVisualClockIsSettling(robot)
+      )
+    ) {
       return this.interpolateTrajectory(trajectory, routeClock);
     }
     const manualPose = this.animatedFleetManualPose(robot);

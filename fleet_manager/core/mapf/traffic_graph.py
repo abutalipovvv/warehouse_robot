@@ -53,12 +53,16 @@ class TrafficGraph:
         default_speed_mps: float,
         min_robot_center_distance_m: float = 0.0,
         rotation_min_robot_center_distance_m: float = 0.0,
+        explicit_controlled_regions_enabled: bool = True,
         controlled_corridors_enabled: bool = False,
         controlled_corridor_min_edges: int = 2,
     ) -> "TrafficGraph":
         edge_keys = {(edge.from_name, edge.to_name) for edge in edges}
         vertices = {
-            name: _traffic_vertex_from_landmark(landmark)
+            name: _traffic_vertex_from_landmark(
+                landmark,
+                controlled_regions_enabled=explicit_controlled_regions_enabled,
+            )
             for name, landmark in landmarks.items()
         }
         vertices = _with_clearance_zones(
@@ -78,9 +82,16 @@ class TrafficGraph:
                 edge,
                 default_speed_mps=default_speed_mps,
                 has_reverse=(edge.to_name, edge.from_name) in edge_keys,
+                controlled_regions_enabled=explicit_controlled_regions_enabled,
             )
             lanes[lane.id] = lane
             outgoing.setdefault(lane.from_lm, []).append(lane.id)
+        if explicit_controlled_regions_enabled:
+            vertices = _with_explicit_controlled_region_vertices(
+                vertices,
+                lanes,
+                landmarks,
+            )
         if controlled_corridors_enabled:
             vertices, lanes = _with_controlled_corridors(
                 vertices,
@@ -214,7 +225,11 @@ def lane_id(from_lm: str, to_lm: str) -> str:
     return f"{from_lm}->{to_lm}"
 
 
-def _traffic_vertex_from_landmark(landmark: Landmark) -> TrafficVertex:
+def _traffic_vertex_from_landmark(
+    landmark: Landmark,
+    *,
+    controlled_regions_enabled: bool = True,
+) -> TrafficVertex:
     properties = landmark.properties if isinstance(landmark.properties, Mapping) else {}
     name = str(landmark.name)
     return TrafficVertex(
@@ -236,9 +251,18 @@ def _traffic_vertex_from_landmark(landmark: Landmark) -> TrafficVertex:
         is_parking=_bool_property(properties, ("is_parking", "isParking", "parking", "parkPoint"), name.upper().startswith("PP")),
         is_charger=_bool_property(properties, ("is_charger", "isCharger", "charger", "chargePoint"), name.upper().startswith("CP")),
         mutex_zone_ids=_string_tuple_property(properties, ("mutex_zone", "mutexZone", "mutex_group", "mutexGroup")),
-        controlled_region_ids=_string_tuple_property(
-            properties,
-            ("controlled_region", "controlledRegion", "corridor_region", "corridorRegion"),
+        controlled_region_ids=(
+            _string_tuple_property(
+                properties,
+                (
+                    "controlled_region",
+                    "controlledRegion",
+                    "corridor_region",
+                    "corridorRegion",
+                ),
+            )
+            if controlled_regions_enabled
+            else ()
         ),
     )
 
@@ -447,6 +471,7 @@ def _traffic_lane_from_edge(
     *,
     default_speed_mps: float,
     has_reverse: bool,
+    controlled_regions_enabled: bool = True,
 ) -> TrafficLane:
     properties = edge.properties if isinstance(edge.properties, Mapping) else {}
     group_id = _string_property(properties, ("lane_group", "laneGroup", "lane_group_id", "laneGroupId", "resource_id", "resourceId"))
@@ -465,12 +490,119 @@ def _traffic_lane_from_edge(
         lane_group_id=group_id,
         capacity=_int_property(properties, ("capacity", "trafficCapacity", "laneCapacity"), 1),
         mutex_zone_ids=_string_tuple_property(properties, ("mutex_zone", "mutexZone", "mutex_group", "mutexGroup")),
-        controlled_region_ids=_string_tuple_property(
-            properties,
-            ("controlled_region", "controlledRegion", "corridor_region", "corridorRegion"),
+        controlled_region_ids=(
+            _string_tuple_property(
+                properties,
+                (
+                    "controlled_region",
+                    "controlledRegion",
+                    "corridor_region",
+                    "corridorRegion",
+                ),
+            )
+            if controlled_regions_enabled
+            else ()
         ),
         centerline=_edge_centerline(edge),
     )
+
+
+def _with_explicit_controlled_region_vertices(
+    vertices: dict[str, TrafficVertex],
+    lanes: dict[str, TrafficLane],
+    landmarks: Mapping[str, Landmark],
+) -> dict[str, TrafficVertex]:
+    """Complete edge-authored corridor regions at internal graph vertices.
+
+    A Traffic Editor rectangle primarily selects graph edges.  The edge
+    resource is enough while a robot is moving, but a robot exactly on an
+    untagged intermediate LM would otherwise appear to have left the region.
+    That releases the admission token and also lets SIPP schedule a wait in
+    the middle of a narrow passage.
+
+    Infer membership only where the same explicit region continues through at
+    least two distinct neighbouring LMs.  Single-edge endpoints stay outside
+    as legal stop lines.  An explicit holding-point/corridor-boundary property
+    always wins.  This preserves a deliberately authored stop line (normally
+    paired with separate region IDs on its two sides).
+    """
+    regional_neighbors: dict[str, dict[str, set[str]]] = {
+        name: {}
+        for name in vertices
+    }
+    for lane in lanes.values():
+        for region_id in lane.controlled_region_ids:
+            regional_neighbors.setdefault(lane.from_lm, {}).setdefault(
+                region_id,
+                set(),
+            ).add(lane.to_lm)
+            regional_neighbors.setdefault(lane.to_lm, {}).setdefault(
+                region_id,
+                set(),
+            ).add(lane.from_lm)
+
+    updated: dict[str, TrafficVertex] = {}
+    for name, vertex in vertices.items():
+        landmark = landmarks.get(name)
+        properties = (
+            landmark.properties
+            if landmark is not None and isinstance(landmark.properties, Mapping)
+            else {}
+        )
+        is_boundary = _bool_property(
+            properties,
+            (
+                "holding_point",
+                "holdingPoint",
+                "safe_holding_point",
+                "safeHoldingPoint",
+                "corridor_boundary",
+                "corridorBoundary",
+            ),
+            False,
+        )
+        inferred_regions = (
+            ()
+            if is_boundary
+            else tuple(sorted(
+                region_id
+                for region_id, neighbors in regional_neighbors.get(
+                    name,
+                    {},
+                ).items()
+                if len(neighbors) >= 2
+            ))
+        )
+        region_ids = tuple(dict.fromkeys(
+            (*vertex.controlled_region_ids, *inferred_regions)
+        ))
+        has_explicit_wait_policy = any(
+            key in properties
+            for key in (
+                "can_wait",
+                "canWait",
+                "allow_wait",
+                "allowWait",
+                "wait_allowed",
+                "waitAllowed",
+            )
+        )
+        can_wait = vertex.can_wait
+        if region_ids and not is_boundary and not has_explicit_wait_policy:
+            can_wait = False
+        updated[name] = TrafficVertex(
+            id=vertex.id,
+            x=vertex.x,
+            y=vertex.y,
+            can_wait=can_wait,
+            is_parking=vertex.is_parking,
+            is_charger=vertex.is_charger,
+            mutex_zone_ids=vertex.mutex_zone_ids,
+            controlled_region_ids=region_ids,
+            clearance_zone_ids=vertex.clearance_zone_ids,
+            rotation_conflict_lms=vertex.rotation_conflict_lms,
+        )
+    return updated
 
 
 def _with_controlled_corridors(

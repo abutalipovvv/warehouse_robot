@@ -45,13 +45,13 @@
             <button id="toolSelectButton" class="active" type="button" data-tool="select">Select</button>
             <button id="toolLmButton" type="button" data-tool="lm">LM</button>
             <button id="toolEdgeButton" type="button" data-tool="edge">Edge</button>
-            <button id="toolCorridorButton" type="button" data-tool="corridor" title="Mark a single-lane controlled corridor">Corridor</button>
+            <button id="toolCorridorButton" type="button" data-tool="corridor" title="Drag a rectangle around a narrow controlled corridor">Corridor</button>
             <span class="tool-divider" aria-hidden="true"></span>
-            <button id="toolBrushButton" type="button" data-tool="brush" title="Draw occupied cells">Pencil</button>
+            <button id="toolBrushButton" type="button" data-tool="brush" title="Draw occupied cells with a square pencil">Pencil</button>
             <button id="toolEraserButton" type="button" data-tool="eraser" title="Draw free cells">Eraser</button>
             <button id="toolUnknownButton" type="button" data-tool="unknown" title="Draw unknown cells">Unknown</button>
             <button id="toolFillButton" type="button" data-tool="fill" title="Fill a connected area">Fill</button>
-            <button id="toolRectangleButton" type="button" data-tool="rectangle" title="Draw an occupied rectangle">Rectangle</button>
+            <button id="toolRectangleButton" type="button" data-tool="rectangle" title="Press, drag to preview, then release to draw an occupied rectangle">Rectangle</button>
             </div>
             <span class="tool-divider" aria-hidden="true"></span>
             <label class="brush-size-control" for="brushSizeInput">
@@ -60,7 +60,7 @@
               <output id="brushSizeOutput" for="brushSizeInput">3 px</output>
             </label>
             <button id="undoRasterButton" type="button" disabled title="Undo (Ctrl+Z)">Undo</button>
-            <button id="redoRasterButton" type="button" disabled title="Redo (Ctrl+Shift+Z)">Redo</button>
+            <button id="redoRasterButton" type="button" disabled title="Redo (Ctrl+Shift+Z or Ctrl+Y)">Redo</button>
             <span class="tool-divider" aria-hidden="true"></span>
             <button id="refreshMapsButton" type="button">Refresh</button>
             <button id="zoomInButton" type="button">Zoom +</button>

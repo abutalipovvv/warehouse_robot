@@ -116,7 +116,7 @@ def test_time_scale_action_keeps_simulation_and_uses_virtual_order_time(monkeypa
     })
 
     assert scaled["simulationTimeScale"] == 4.0
-    assert scaled["simulationTimeScaleMax"] == 8.0
+    assert scaled["simulationTimeScaleMax"] == 4.0
     assert list(service.manager.robots) == ["bench_001"]
 
     service.benchmark_payload({
@@ -140,7 +140,10 @@ def test_time_scale_action_keeps_simulation_and_uses_virtual_order_time(monkeypa
 
     assert generated == 1
     assert int(service._dynamic_benchmark["ordersGenerated"]) == first_generated + 1
-    assert service._dynamic_benchmark_payload()["timeScale"] == 4.0
+    metrics = service._dynamic_benchmark_payload()
+    assert metrics["timeScale"] == 4.0
+    assert metrics["horizonSec"] == 5.0
+    assert metrics["effectiveHorizonSec"] == 20.0
 
 
 def test_continuous_generator_replenishes_every_uncovered_robot_in_one_pump() -> None:
@@ -238,6 +241,56 @@ def test_package_generator_replenishes_a_robot_before_the_wave_finishes() -> Non
     assert metrics["robotsWithoutOrders"] == 0
 
 
+def test_partial_package_wave_never_targets_robot_outside_departure_cohort(
+    monkeypatch,
+) -> None:
+    service = OperatorFleetManager(
+        DEFAULT_FLEET_SIM_MAP_DIR,
+        DEFAULT_FLEET_MAP_DIR.parents[2] / "config" / "params.yaml",
+        manager_id=FLEET_MANAGER_SIM_ID,
+        mode="simulation",
+    )
+    service.benchmark_payload(
+        {"action": "add", "count": 3, "seed": 42, "reset": False}
+    )
+    robots = sorted(
+        service._benchmark_sim_robots(),
+        key=lambda robot: robot.name,
+    )
+    peripheral = service._benchmark_peripheral_lms(3)
+    assert len(peripheral) >= 2
+    departing_lm, parked_lm = peripheral[:2]
+    robots[0].current_lm = departing_lm
+    robots[1].current_lm = parked_lm
+    monkeypatch.setattr(
+        service,
+        "_benchmark_peripheral_lms",
+        lambda _count: [departing_lm, parked_lm],
+    )
+    observed_exclusions: list[set[str]] = []
+
+    def reachable_goals(origin, used_goals, excluded_lms, *_args, **_kwargs):
+        observed_exclusions.append(set(excluded_lms))
+        return [
+            name
+            for name in (departing_lm, parked_lm)
+            if (
+                name != origin
+                and name not in used_goals
+                and name not in excluded_lms
+            )
+        ]
+
+    monkeypatch.setattr(service, "_forward_benchmark_goals", reachable_goals)
+
+    assignments = service._package_wave_assignments([robots[0]], 2)
+
+    assert assignments == []
+    assert observed_exclusions
+    assert all(parked_lm in excluded for excluded in observed_exclusions)
+    assert all(departing_lm not in excluded for excluded in observed_exclusions)
+
+
 def test_package_order_waves_use_perimeter_and_keep_metrics_after_stop(monkeypatch) -> None:
     clock = [1_000.0]
     monkeypatch.setattr(runtime_module, "time", lambda: clock[0])
@@ -325,7 +378,7 @@ def test_package_order_waves_use_perimeter_and_keep_metrics_after_stop(monkeypat
     assert metrics["elapsedSimSec"] == 50.0
 
 
-def test_smart_kiva_benchmark_keeps_parking_goals_out_of_controlled_corridors() -> None:
+def test_smart_kiva_benchmark_uses_dynamic_zones_with_local_explicit_corridors() -> None:
     smart_map = DEFAULT_FLEET_MAP_DIR.parent / "smart_kiva_large_w_mode.smap"
     service = OperatorFleetManager(
         smart_map,
@@ -354,22 +407,27 @@ def test_smart_kiva_benchmark_keeps_parking_goals_out_of_controlled_corridors() 
         "queueDepth": 1,
     })
 
-    # The requested benchmark horizon controls rolling-route commitment and
-    # is raised to this map's topology-safe minimum. It must not also inflate
-    # the independently configured reservation window from 10 to 30 seconds:
-    # runtime reservation visibility already has its own corridor-safe floor.
-    assert result["benchmark"]["horizonRequestedSec"] == 10
-    assert result["benchmark"]["horizonSec"] == 30
-    assert service.manager.params["fleet"]["rolling_horizon_sec"] == 30
-    assert service.manager.params["fleet"]["reservation_horizon_sec"] == 10
-    corridor_floor = (
-        service.manager.planner.controlled_corridor_max_ticks()
-        * service.manager._reservation_time_step()
+    # SMART metadata does not turn every aisle into a capacity-one region.
+    # Only the 32 explicitly authored shelf crossings raise the rolling window
+    # to their small topology floor; the previous configured 30 s value must
+    # not make a later 10 s benchmark request sticky.
+    corridor_ticks = service.manager.planner.controlled_corridor_max_ticks()
+    topology_floor = (
+        corridor_ticks * service.manager._reservation_time_step()
+        + service.manager._controlled_corridor_entry_lookahead()
         + (2.0 * service.manager._reservation_safety_time())
     )
-    effective_reservation = service.manager._reservation_horizon()
-    assert abs(effective_reservation - corridor_floor) < 0.000001
-    assert effective_reservation < result["benchmark"]["horizonSec"]
+    assert result["benchmark"]["horizonRequestedSec"] == 10
+    assert result["benchmark"]["horizonSec"] == topology_floor
+    assert result["benchmark"]["horizonSec"] < 30
+    assert service.manager.params["fleet"]["rolling_horizon_sec"] == topology_floor
+    assert service.manager.params["fleet"]["reservation_horizon_sec"] == 10
+    assert corridor_ticks == 3
+    assert len(
+        service.manager.planner._traffic_graph(1.0).controlled_region_ids()
+    ) == 32
+    assert service.manager._reservation_horizon() == 10
+    assert service.manager._traffic_zone_control_enabled()
 
     assert result["benchmark"]["ordersGenerated"] == 20
     targets = {
@@ -380,6 +438,42 @@ def test_smart_kiva_benchmark_keeps_parking_goals_out_of_controlled_corridors() 
     assert len(targets) == 20
     assert all(service._benchmark_goal_lm_is_safe(lm_id) for lm_id in targets)
     assert all(len(service.manager.planner.graph.get(lm_id, {})) <= 3 for lm_id in targets)
+
+
+def test_dense_controlled_corridor_horizon_floor_is_map_and_fleet_specific() -> None:
+    params_path = DEFAULT_FLEET_MAP_DIR.parents[2] / "config" / "params.yaml"
+    smart_map = DEFAULT_FLEET_MAP_DIR.parent / "smart_kiva_large_w_mode.smap"
+    smart_service = OperatorFleetManager(
+        smart_map,
+        params_path,
+        manager_id=FLEET_MANAGER_SIM_ID,
+        mode="simulation",
+    )
+    open_service = OperatorFleetManager(
+        DEFAULT_FLEET_MAP_DIR,
+        params_path,
+        manager_id=FLEET_MANAGER_SIM_ID,
+        mode="simulation",
+    )
+
+    topology_floor = (
+        smart_service.manager.planner.controlled_corridor_max_ticks()
+        * smart_service.manager._reservation_time_step()
+        + smart_service.manager._controlled_corridor_entry_lookahead()
+        + (2.0 * smart_service.manager._reservation_safety_time())
+    )
+    assert smart_service._safe_dynamic_rolling_horizon(
+        10.0,
+        robot_count=20,
+    ) == topology_floor
+    assert smart_service._safe_dynamic_rolling_horizon(
+        10.0,
+        robot_count=50,
+    ) == 30.0
+    assert open_service._safe_dynamic_rolling_horizon(
+        10.0,
+        robot_count=50,
+    ) == 10.0
 
 
 def test_simulated_order_replans_after_rolling_horizon_without_completing() -> None:

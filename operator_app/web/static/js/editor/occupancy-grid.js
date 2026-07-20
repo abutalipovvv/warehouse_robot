@@ -114,6 +114,36 @@ export class OccupancyGrid {
     this.renderPatch(patch);
   }
 
+  paintSquareLine(patch, from, to, size, value) {
+    const start = this.normalizePoint(from);
+    const goal = this.normalizePoint(to);
+    const brushSize = clamp(Math.floor(Number(size) || 1), 1, 64);
+    const pixelValue = clamp(Math.round(Number(value) || 0), 0, 255);
+    let x = start.x;
+    let y = start.y;
+    const dx = Math.abs(goal.x - start.x);
+    const sx = start.x < goal.x ? 1 : -1;
+    const dy = -Math.abs(goal.y - start.y);
+    const sy = start.y < goal.y ? 1 : -1;
+    let error = dx + dy;
+    while (true) {
+      this.paintSquare(patch, x, y, brushSize, pixelValue);
+      if (x === goal.x && y === goal.y) {
+        break;
+      }
+      const error2 = 2 * error;
+      if (error2 >= dy) {
+        error += dy;
+        x += sx;
+      }
+      if (error2 <= dx) {
+        error += dx;
+        y += sy;
+      }
+    }
+    this.renderPatch(patch);
+  }
+
   paintRectangle(patch, from, to, value) {
     const start = this.normalizePoint(from);
     const goal = this.normalizePoint(to);
@@ -248,6 +278,19 @@ export class OccupancyGrid {
         if ((dx * dx) + (dy * dy) <= radiusSquared) {
           this.setPixel(patch, x, y, value);
         }
+      }
+    }
+  }
+
+  paintSquare(patch, centerX, centerY, size, value) {
+    const brushSize = clamp(Math.floor(Number(size) || 1), 1, 64);
+    const left = centerX - Math.floor((brushSize - 1) / 2);
+    const top = centerY - Math.floor((brushSize - 1) / 2);
+    for (let y = top; y < top + brushSize; y += 1) {
+      if (y < 0 || y >= this.height) continue;
+      for (let x = left; x < left + brushSize; x += 1) {
+        if (x < 0 || x >= this.width) continue;
+        this.setPixel(patch, x, y, value);
       }
     }
   }
