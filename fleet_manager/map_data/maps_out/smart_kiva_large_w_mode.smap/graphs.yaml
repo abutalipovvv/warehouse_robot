@@ -15855,7 +15855,6 @@ primitives:
     direction: 2
     capacity: 1
     smart: true
-    controlled_region: corridor:smart-kiva:c002:r002-r004
   length_m: 1.5
 - kind: line
   line_type: FeatureLine
@@ -15871,7 +15870,6 @@ primitives:
     direction: 2
     capacity: 1
     smart: true
-    controlled_region: corridor:smart-kiva:c002:r002-r004
   length_m: 1.5
 - kind: line
   line_type: FeatureLine
@@ -15887,7 +15885,6 @@ primitives:
     direction: 2
     capacity: 1
     smart: true
-    controlled_region: corridor:smart-kiva:c013:r002-r004
   length_m: 1.5
 - kind: line
   line_type: FeatureLine
@@ -15903,7 +15900,6 @@ primitives:
     direction: 2
     capacity: 1
     smart: true
-    controlled_region: corridor:smart-kiva:c013:r002-r004
   length_m: 1.5
 - kind: line
   line_type: FeatureLine
@@ -15919,7 +15915,6 @@ primitives:
     direction: 2
     capacity: 1
     smart: true
-    controlled_region: corridor:smart-kiva:c024:r002-r004
   length_m: 1.5
 - kind: line
   line_type: FeatureLine
@@ -15935,7 +15930,6 @@ primitives:
     direction: 2
     capacity: 1
     smart: true
-    controlled_region: corridor:smart-kiva:c024:r002-r004
   length_m: 1.5
 - kind: line
   line_type: FeatureLine
@@ -15951,7 +15945,6 @@ primitives:
     direction: 2
     capacity: 1
     smart: true
-    controlled_region: corridor:smart-kiva:c035:r002-r004
   length_m: 1.5
 - kind: line
   line_type: FeatureLine
@@ -15967,7 +15960,6 @@ primitives:
     direction: 2
     capacity: 1
     smart: true
-    controlled_region: corridor:smart-kiva:c035:r002-r004
   length_m: 1.5
 - kind: line
   line_type: FeatureLine
@@ -15983,7 +15975,6 @@ primitives:
     direction: 2
     capacity: 1
     smart: true
-    controlled_region: corridor:smart-kiva:c002:r002-r004
   length_m: 1.3
 - kind: line
   line_type: FeatureLine
@@ -15999,7 +15990,6 @@ primitives:
     direction: 2
     capacity: 1
     smart: true
-    controlled_region: corridor:smart-kiva:c002:r002-r004
   length_m: 1.3
 - kind: line
   line_type: FeatureLine
@@ -16015,7 +16005,6 @@ primitives:
     direction: 2
     capacity: 1
     smart: true
-    controlled_region: corridor:smart-kiva:c013:r002-r004
   length_m: 1.3
 - kind: line
   line_type: FeatureLine
@@ -16031,7 +16020,6 @@ primitives:
     direction: 2
     capacity: 1
     smart: true
-    controlled_region: corridor:smart-kiva:c013:r002-r004
   length_m: 1.3
 - kind: line
   line_type: FeatureLine
@@ -16047,7 +16035,6 @@ primitives:
     direction: 2
     capacity: 1
     smart: true
-    controlled_region: corridor:smart-kiva:c024:r002-r004
   length_m: 1.3
 - kind: line
   line_type: FeatureLine
@@ -16063,7 +16050,6 @@ primitives:
     direction: 2
     capacity: 1
     smart: true
-    controlled_region: corridor:smart-kiva:c024:r002-r004
   length_m: 1.3
 - kind: line
   line_type: FeatureLine
@@ -16079,7 +16065,6 @@ primitives:
     direction: 2
     capacity: 1
     smart: true
-    controlled_region: corridor:smart-kiva:c035:r002-r004
   length_m: 1.3
 - kind: line
   line_type: FeatureLine
@@ -16095,7 +16080,6 @@ primitives:
     direction: 2
     capacity: 1
     smart: true
-    controlled_region: corridor:smart-kiva:c035:r002-r004
   length_m: 1.3
 - kind: line
   line_type: FeatureLine
@@ -16231,7 +16215,6 @@ primitives:
     direction: 2
     capacity: 1
     smart: true
-    controlled_region: corridor:smart-kiva:c002:r006-r008
   length_m: 1.3
 - kind: line
   line_type: FeatureLine
@@ -16247,7 +16230,6 @@ primitives:
     direction: 2
     capacity: 1
     smart: true
-    controlled_region: corridor:smart-kiva:c002:r006-r008
   length_m: 1.3
 - kind: line
   line_type: FeatureLine
@@ -16263,7 +16245,6 @@ primitives:
     direction: 2
     capacity: 1
     smart: true
-    controlled_region: corridor:smart-kiva:c013:r006-r008
   length_m: 1.3
 - kind: line
   line_type: FeatureLine
@@ -16279,7 +16260,6 @@ primitives:
     direction: 2
     capacity: 1
     smart: true
-    controlled_region: corridor:smart-kiva:c013:r006-r008
   length_m: 1.3
 - kind: line
   line_type: FeatureLine
@@ -16295,7 +16275,6 @@ primitives:
     direction: 2
     capacity: 1
     smart: true
-    controlled_region: corridor:smart-kiva:c024:r006-r008
   length_m: 1.3
 - kind: line
   line_type: FeatureLine
@@ -16311,7 +16290,6 @@ primitives:
     direction: 2
     capacity: 1
     smart: true
-    controlled_region: corridor:smart-kiva:c024:r006-r008
   length_m: 1.3
 - kind: line
   line_type: FeatureLine
@@ -16327,7 +16305,6 @@ primitives:
     direction: 2
     capacity: 1
     smart: true
-    controlled_region: corridor:smart-kiva:c035:r006-r008
   length_m: 1.3
 - kind: line
   line_type: FeatureLine
@@ -16343,7 +16320,6 @@ primitives:
     direction: 2
     capacity: 1
     smart: true
-    controlled_region: corridor:smart-kiva:c035:r006-r008
   length_m: 1.3
 - kind: line
   line_type: FeatureLine
@@ -16359,7 +16335,6 @@ primitives:
     direction: 2
     capacity: 1
     smart: true
-    controlled_region: corridor:smart-kiva:c002:r006-r008
   length_m: 1.3
 - kind: line
   line_type: FeatureLine
@@ -16375,7 +16350,6 @@ primitives:
     direction: 2
     capacity: 1
     smart: true
-    controlled_region: corridor:smart-kiva:c002:r006-r008
   length_m: 1.3
 - kind: line
   line_type: FeatureLine
@@ -16391,7 +16365,6 @@ primitives:
     direction: 2
     capacity: 1
     smart: true
-    controlled_region: corridor:smart-kiva:c013:r006-r008
   length_m: 1.3
 - kind: line
   line_type: FeatureLine
@@ -16407,7 +16380,6 @@ primitives:
     direction: 2
     capacity: 1
     smart: true
-    controlled_region: corridor:smart-kiva:c013:r006-r008
   length_m: 1.3
 - kind: line
   line_type: FeatureLine
@@ -16423,7 +16395,6 @@ primitives:
     direction: 2
     capacity: 1
     smart: true
-    controlled_region: corridor:smart-kiva:c024:r006-r008
   length_m: 1.3
 - kind: line
   line_type: FeatureLine
@@ -16439,7 +16410,6 @@ primitives:
     direction: 2
     capacity: 1
     smart: true
-    controlled_region: corridor:smart-kiva:c024:r006-r008
   length_m: 1.3
 - kind: line
   line_type: FeatureLine
@@ -16455,7 +16425,6 @@ primitives:
     direction: 2
     capacity: 1
     smart: true
-    controlled_region: corridor:smart-kiva:c035:r006-r008
   length_m: 1.3
 - kind: line
   line_type: FeatureLine
@@ -16471,7 +16440,6 @@ primitives:
     direction: 2
     capacity: 1
     smart: true
-    controlled_region: corridor:smart-kiva:c035:r006-r008
   length_m: 1.3
 - kind: line
   line_type: FeatureLine
@@ -16607,7 +16575,6 @@ primitives:
     direction: 2
     capacity: 1
     smart: true
-    controlled_region: corridor:smart-kiva:c002:r010-r012
   length_m: 1.3
 - kind: line
   line_type: FeatureLine
@@ -16623,7 +16590,6 @@ primitives:
     direction: 2
     capacity: 1
     smart: true
-    controlled_region: corridor:smart-kiva:c002:r010-r012
   length_m: 1.3
 - kind: line
   line_type: FeatureLine
@@ -16639,7 +16605,6 @@ primitives:
     direction: 2
     capacity: 1
     smart: true
-    controlled_region: corridor:smart-kiva:c013:r010-r012
   length_m: 1.3
 - kind: line
   line_type: FeatureLine
@@ -16655,7 +16620,6 @@ primitives:
     direction: 2
     capacity: 1
     smart: true
-    controlled_region: corridor:smart-kiva:c013:r010-r012
   length_m: 1.3
 - kind: line
   line_type: FeatureLine
@@ -16671,7 +16635,6 @@ primitives:
     direction: 2
     capacity: 1
     smart: true
-    controlled_region: corridor:smart-kiva:c024:r010-r012
   length_m: 1.3
 - kind: line
   line_type: FeatureLine
@@ -16687,7 +16650,6 @@ primitives:
     direction: 2
     capacity: 1
     smart: true
-    controlled_region: corridor:smart-kiva:c024:r010-r012
   length_m: 1.3
 - kind: line
   line_type: FeatureLine
@@ -16703,7 +16665,6 @@ primitives:
     direction: 2
     capacity: 1
     smart: true
-    controlled_region: corridor:smart-kiva:c035:r010-r012
   length_m: 1.3
 - kind: line
   line_type: FeatureLine
@@ -16719,7 +16680,6 @@ primitives:
     direction: 2
     capacity: 1
     smart: true
-    controlled_region: corridor:smart-kiva:c035:r010-r012
   length_m: 1.3
 - kind: line
   line_type: FeatureLine
@@ -16735,7 +16695,6 @@ primitives:
     direction: 2
     capacity: 1
     smart: true
-    controlled_region: corridor:smart-kiva:c002:r010-r012
   length_m: 1.3
 - kind: line
   line_type: FeatureLine
@@ -16751,7 +16710,6 @@ primitives:
     direction: 2
     capacity: 1
     smart: true
-    controlled_region: corridor:smart-kiva:c002:r010-r012
   length_m: 1.3
 - kind: line
   line_type: FeatureLine
@@ -16767,7 +16725,6 @@ primitives:
     direction: 2
     capacity: 1
     smart: true
-    controlled_region: corridor:smart-kiva:c013:r010-r012
   length_m: 1.3
 - kind: line
   line_type: FeatureLine
@@ -16783,7 +16740,6 @@ primitives:
     direction: 2
     capacity: 1
     smart: true
-    controlled_region: corridor:smart-kiva:c013:r010-r012
   length_m: 1.3
 - kind: line
   line_type: FeatureLine
@@ -16799,7 +16755,6 @@ primitives:
     direction: 2
     capacity: 1
     smart: true
-    controlled_region: corridor:smart-kiva:c024:r010-r012
   length_m: 1.3
 - kind: line
   line_type: FeatureLine
@@ -16815,7 +16770,6 @@ primitives:
     direction: 2
     capacity: 1
     smart: true
-    controlled_region: corridor:smart-kiva:c024:r010-r012
   length_m: 1.3
 - kind: line
   line_type: FeatureLine
@@ -16831,7 +16785,6 @@ primitives:
     direction: 2
     capacity: 1
     smart: true
-    controlled_region: corridor:smart-kiva:c035:r010-r012
   length_m: 1.3
 - kind: line
   line_type: FeatureLine
@@ -16847,7 +16800,6 @@ primitives:
     direction: 2
     capacity: 1
     smart: true
-    controlled_region: corridor:smart-kiva:c035:r010-r012
   length_m: 1.3
 - kind: line
   line_type: FeatureLine
@@ -16983,7 +16935,6 @@ primitives:
     direction: 2
     capacity: 1
     smart: true
-    controlled_region: corridor:smart-kiva:c002:r014-r016
   length_m: 1.3
 - kind: line
   line_type: FeatureLine
@@ -16999,7 +16950,6 @@ primitives:
     direction: 2
     capacity: 1
     smart: true
-    controlled_region: corridor:smart-kiva:c002:r014-r016
   length_m: 1.3
 - kind: line
   line_type: FeatureLine
@@ -17015,7 +16965,6 @@ primitives:
     direction: 2
     capacity: 1
     smart: true
-    controlled_region: corridor:smart-kiva:c013:r014-r016
   length_m: 1.3
 - kind: line
   line_type: FeatureLine
@@ -17031,7 +16980,6 @@ primitives:
     direction: 2
     capacity: 1
     smart: true
-    controlled_region: corridor:smart-kiva:c013:r014-r016
   length_m: 1.3
 - kind: line
   line_type: FeatureLine
@@ -17047,7 +16995,6 @@ primitives:
     direction: 2
     capacity: 1
     smart: true
-    controlled_region: corridor:smart-kiva:c024:r014-r016
   length_m: 1.3
 - kind: line
   line_type: FeatureLine
@@ -17063,7 +17010,6 @@ primitives:
     direction: 2
     capacity: 1
     smart: true
-    controlled_region: corridor:smart-kiva:c024:r014-r016
   length_m: 1.3
 - kind: line
   line_type: FeatureLine
@@ -17079,7 +17025,6 @@ primitives:
     direction: 2
     capacity: 1
     smart: true
-    controlled_region: corridor:smart-kiva:c035:r014-r016
   length_m: 1.3
 - kind: line
   line_type: FeatureLine
@@ -17095,7 +17040,6 @@ primitives:
     direction: 2
     capacity: 1
     smart: true
-    controlled_region: corridor:smart-kiva:c035:r014-r016
   length_m: 1.3
 - kind: line
   line_type: FeatureLine
@@ -17111,7 +17055,6 @@ primitives:
     direction: 2
     capacity: 1
     smart: true
-    controlled_region: corridor:smart-kiva:c002:r014-r016
   length_m: 1.3
 - kind: line
   line_type: FeatureLine
@@ -17127,7 +17070,6 @@ primitives:
     direction: 2
     capacity: 1
     smart: true
-    controlled_region: corridor:smart-kiva:c002:r014-r016
   length_m: 1.3
 - kind: line
   line_type: FeatureLine
@@ -17143,7 +17085,6 @@ primitives:
     direction: 2
     capacity: 1
     smart: true
-    controlled_region: corridor:smart-kiva:c013:r014-r016
   length_m: 1.3
 - kind: line
   line_type: FeatureLine
@@ -17159,7 +17100,6 @@ primitives:
     direction: 2
     capacity: 1
     smart: true
-    controlled_region: corridor:smart-kiva:c013:r014-r016
   length_m: 1.3
 - kind: line
   line_type: FeatureLine
@@ -17175,7 +17115,6 @@ primitives:
     direction: 2
     capacity: 1
     smart: true
-    controlled_region: corridor:smart-kiva:c024:r014-r016
   length_m: 1.3
 - kind: line
   line_type: FeatureLine
@@ -17191,7 +17130,6 @@ primitives:
     direction: 2
     capacity: 1
     smart: true
-    controlled_region: corridor:smart-kiva:c024:r014-r016
   length_m: 1.3
 - kind: line
   line_type: FeatureLine
@@ -17207,7 +17145,6 @@ primitives:
     direction: 2
     capacity: 1
     smart: true
-    controlled_region: corridor:smart-kiva:c035:r014-r016
   length_m: 1.3
 - kind: line
   line_type: FeatureLine
@@ -17223,7 +17160,6 @@ primitives:
     direction: 2
     capacity: 1
     smart: true
-    controlled_region: corridor:smart-kiva:c035:r014-r016
   length_m: 1.3
 - kind: line
   line_type: FeatureLine
@@ -17359,7 +17295,6 @@ primitives:
     direction: 2
     capacity: 1
     smart: true
-    controlled_region: corridor:smart-kiva:c002:r018-r020
   length_m: 1.3
 - kind: line
   line_type: FeatureLine
@@ -17375,7 +17310,6 @@ primitives:
     direction: 2
     capacity: 1
     smart: true
-    controlled_region: corridor:smart-kiva:c002:r018-r020
   length_m: 1.3
 - kind: line
   line_type: FeatureLine
@@ -17391,7 +17325,6 @@ primitives:
     direction: 2
     capacity: 1
     smart: true
-    controlled_region: corridor:smart-kiva:c013:r018-r020
   length_m: 1.3
 - kind: line
   line_type: FeatureLine
@@ -17407,7 +17340,6 @@ primitives:
     direction: 2
     capacity: 1
     smart: true
-    controlled_region: corridor:smart-kiva:c013:r018-r020
   length_m: 1.3
 - kind: line
   line_type: FeatureLine
@@ -17423,7 +17355,6 @@ primitives:
     direction: 2
     capacity: 1
     smart: true
-    controlled_region: corridor:smart-kiva:c024:r018-r020
   length_m: 1.3
 - kind: line
   line_type: FeatureLine
@@ -17439,7 +17370,6 @@ primitives:
     direction: 2
     capacity: 1
     smart: true
-    controlled_region: corridor:smart-kiva:c024:r018-r020
   length_m: 1.3
 - kind: line
   line_type: FeatureLine
@@ -17455,7 +17385,6 @@ primitives:
     direction: 2
     capacity: 1
     smart: true
-    controlled_region: corridor:smart-kiva:c035:r018-r020
   length_m: 1.3
 - kind: line
   line_type: FeatureLine
@@ -17471,7 +17400,6 @@ primitives:
     direction: 2
     capacity: 1
     smart: true
-    controlled_region: corridor:smart-kiva:c035:r018-r020
   length_m: 1.3
 - kind: line
   line_type: FeatureLine
@@ -17487,7 +17415,6 @@ primitives:
     direction: 2
     capacity: 1
     smart: true
-    controlled_region: corridor:smart-kiva:c002:r018-r020
   length_m: 1.3
 - kind: line
   line_type: FeatureLine
@@ -17503,7 +17430,6 @@ primitives:
     direction: 2
     capacity: 1
     smart: true
-    controlled_region: corridor:smart-kiva:c002:r018-r020
   length_m: 1.3
 - kind: line
   line_type: FeatureLine
@@ -17519,7 +17445,6 @@ primitives:
     direction: 2
     capacity: 1
     smart: true
-    controlled_region: corridor:smart-kiva:c013:r018-r020
   length_m: 1.3
 - kind: line
   line_type: FeatureLine
@@ -17535,7 +17460,6 @@ primitives:
     direction: 2
     capacity: 1
     smart: true
-    controlled_region: corridor:smart-kiva:c013:r018-r020
   length_m: 1.3
 - kind: line
   line_type: FeatureLine
@@ -17551,7 +17475,6 @@ primitives:
     direction: 2
     capacity: 1
     smart: true
-    controlled_region: corridor:smart-kiva:c024:r018-r020
   length_m: 1.3
 - kind: line
   line_type: FeatureLine
@@ -17567,7 +17490,6 @@ primitives:
     direction: 2
     capacity: 1
     smart: true
-    controlled_region: corridor:smart-kiva:c024:r018-r020
   length_m: 1.3
 - kind: line
   line_type: FeatureLine
@@ -17583,7 +17505,6 @@ primitives:
     direction: 2
     capacity: 1
     smart: true
-    controlled_region: corridor:smart-kiva:c035:r018-r020
   length_m: 1.3
 - kind: line
   line_type: FeatureLine
@@ -17599,7 +17520,6 @@ primitives:
     direction: 2
     capacity: 1
     smart: true
-    controlled_region: corridor:smart-kiva:c035:r018-r020
   length_m: 1.3
 - kind: line
   line_type: FeatureLine
@@ -17735,7 +17655,6 @@ primitives:
     direction: 2
     capacity: 1
     smart: true
-    controlled_region: corridor:smart-kiva:c002:r022-r024
   length_m: 1.3
 - kind: line
   line_type: FeatureLine
@@ -17751,7 +17670,6 @@ primitives:
     direction: 2
     capacity: 1
     smart: true
-    controlled_region: corridor:smart-kiva:c002:r022-r024
   length_m: 1.3
 - kind: line
   line_type: FeatureLine
@@ -17767,7 +17685,6 @@ primitives:
     direction: 2
     capacity: 1
     smart: true
-    controlled_region: corridor:smart-kiva:c013:r022-r024
   length_m: 1.3
 - kind: line
   line_type: FeatureLine
@@ -17783,7 +17700,6 @@ primitives:
     direction: 2
     capacity: 1
     smart: true
-    controlled_region: corridor:smart-kiva:c013:r022-r024
   length_m: 1.3
 - kind: line
   line_type: FeatureLine
@@ -17799,7 +17715,6 @@ primitives:
     direction: 2
     capacity: 1
     smart: true
-    controlled_region: corridor:smart-kiva:c024:r022-r024
   length_m: 1.3
 - kind: line
   line_type: FeatureLine
@@ -17815,7 +17730,6 @@ primitives:
     direction: 2
     capacity: 1
     smart: true
-    controlled_region: corridor:smart-kiva:c024:r022-r024
   length_m: 1.3
 - kind: line
   line_type: FeatureLine
@@ -17831,7 +17745,6 @@ primitives:
     direction: 2
     capacity: 1
     smart: true
-    controlled_region: corridor:smart-kiva:c035:r022-r024
   length_m: 1.3
 - kind: line
   line_type: FeatureLine
@@ -17847,7 +17760,6 @@ primitives:
     direction: 2
     capacity: 1
     smart: true
-    controlled_region: corridor:smart-kiva:c035:r022-r024
   length_m: 1.3
 - kind: line
   line_type: FeatureLine
@@ -17863,7 +17775,6 @@ primitives:
     direction: 2
     capacity: 1
     smart: true
-    controlled_region: corridor:smart-kiva:c002:r022-r024
   length_m: 1.3
 - kind: line
   line_type: FeatureLine
@@ -17879,7 +17790,6 @@ primitives:
     direction: 2
     capacity: 1
     smart: true
-    controlled_region: corridor:smart-kiva:c002:r022-r024
   length_m: 1.3
 - kind: line
   line_type: FeatureLine
@@ -17895,7 +17805,6 @@ primitives:
     direction: 2
     capacity: 1
     smart: true
-    controlled_region: corridor:smart-kiva:c013:r022-r024
   length_m: 1.3
 - kind: line
   line_type: FeatureLine
@@ -17911,7 +17820,6 @@ primitives:
     direction: 2
     capacity: 1
     smart: true
-    controlled_region: corridor:smart-kiva:c013:r022-r024
   length_m: 1.3
 - kind: line
   line_type: FeatureLine
@@ -17927,7 +17835,6 @@ primitives:
     direction: 2
     capacity: 1
     smart: true
-    controlled_region: corridor:smart-kiva:c024:r022-r024
   length_m: 1.3
 - kind: line
   line_type: FeatureLine
@@ -17943,7 +17850,6 @@ primitives:
     direction: 2
     capacity: 1
     smart: true
-    controlled_region: corridor:smart-kiva:c024:r022-r024
   length_m: 1.3
 - kind: line
   line_type: FeatureLine
@@ -17959,7 +17865,6 @@ primitives:
     direction: 2
     capacity: 1
     smart: true
-    controlled_region: corridor:smart-kiva:c035:r022-r024
   length_m: 1.3
 - kind: line
   line_type: FeatureLine
@@ -17975,7 +17880,6 @@ primitives:
     direction: 2
     capacity: 1
     smart: true
-    controlled_region: corridor:smart-kiva:c035:r022-r024
   length_m: 1.3
 - kind: line
   line_type: FeatureLine
@@ -18111,7 +18015,6 @@ primitives:
     direction: 2
     capacity: 1
     smart: true
-    controlled_region: corridor:smart-kiva:c002:r026-r028
   length_m: 1.3
 - kind: line
   line_type: FeatureLine
@@ -18127,7 +18030,6 @@ primitives:
     direction: 2
     capacity: 1
     smart: true
-    controlled_region: corridor:smart-kiva:c002:r026-r028
   length_m: 1.3
 - kind: line
   line_type: FeatureLine
@@ -18143,7 +18045,6 @@ primitives:
     direction: 2
     capacity: 1
     smart: true
-    controlled_region: corridor:smart-kiva:c013:r026-r028
   length_m: 1.3
 - kind: line
   line_type: FeatureLine
@@ -18159,7 +18060,6 @@ primitives:
     direction: 2
     capacity: 1
     smart: true
-    controlled_region: corridor:smart-kiva:c013:r026-r028
   length_m: 1.3
 - kind: line
   line_type: FeatureLine
@@ -18175,7 +18075,6 @@ primitives:
     direction: 2
     capacity: 1
     smart: true
-    controlled_region: corridor:smart-kiva:c024:r026-r028
   length_m: 1.3
 - kind: line
   line_type: FeatureLine
@@ -18191,7 +18090,6 @@ primitives:
     direction: 2
     capacity: 1
     smart: true
-    controlled_region: corridor:smart-kiva:c024:r026-r028
   length_m: 1.3
 - kind: line
   line_type: FeatureLine
@@ -18207,7 +18105,6 @@ primitives:
     direction: 2
     capacity: 1
     smart: true
-    controlled_region: corridor:smart-kiva:c035:r026-r028
   length_m: 1.3
 - kind: line
   line_type: FeatureLine
@@ -18223,7 +18120,6 @@ primitives:
     direction: 2
     capacity: 1
     smart: true
-    controlled_region: corridor:smart-kiva:c035:r026-r028
   length_m: 1.3
 - kind: line
   line_type: FeatureLine
@@ -18239,7 +18135,6 @@ primitives:
     direction: 2
     capacity: 1
     smart: true
-    controlled_region: corridor:smart-kiva:c002:r026-r028
   length_m: 1.3
 - kind: line
   line_type: FeatureLine
@@ -18255,7 +18150,6 @@ primitives:
     direction: 2
     capacity: 1
     smart: true
-    controlled_region: corridor:smart-kiva:c002:r026-r028
   length_m: 1.3
 - kind: line
   line_type: FeatureLine
@@ -18271,7 +18165,6 @@ primitives:
     direction: 2
     capacity: 1
     smart: true
-    controlled_region: corridor:smart-kiva:c013:r026-r028
   length_m: 1.3
 - kind: line
   line_type: FeatureLine
@@ -18287,7 +18180,6 @@ primitives:
     direction: 2
     capacity: 1
     smart: true
-    controlled_region: corridor:smart-kiva:c013:r026-r028
   length_m: 1.3
 - kind: line
   line_type: FeatureLine
@@ -18303,7 +18195,6 @@ primitives:
     direction: 2
     capacity: 1
     smart: true
-    controlled_region: corridor:smart-kiva:c024:r026-r028
   length_m: 1.3
 - kind: line
   line_type: FeatureLine
@@ -18319,7 +18210,6 @@ primitives:
     direction: 2
     capacity: 1
     smart: true
-    controlled_region: corridor:smart-kiva:c024:r026-r028
   length_m: 1.3
 - kind: line
   line_type: FeatureLine
@@ -18335,7 +18225,6 @@ primitives:
     direction: 2
     capacity: 1
     smart: true
-    controlled_region: corridor:smart-kiva:c035:r026-r028
   length_m: 1.3
 - kind: line
   line_type: FeatureLine
@@ -18351,7 +18240,6 @@ primitives:
     direction: 2
     capacity: 1
     smart: true
-    controlled_region: corridor:smart-kiva:c035:r026-r028
   length_m: 1.3
 - kind: line
   line_type: FeatureLine
@@ -18487,7 +18375,6 @@ primitives:
     direction: 2
     capacity: 1
     smart: true
-    controlled_region: corridor:smart-kiva:c002:r030-r032
   length_m: 1.3
 - kind: line
   line_type: FeatureLine
@@ -18503,7 +18390,6 @@ primitives:
     direction: 2
     capacity: 1
     smart: true
-    controlled_region: corridor:smart-kiva:c002:r030-r032
   length_m: 1.3
 - kind: line
   line_type: FeatureLine
@@ -18519,7 +18405,6 @@ primitives:
     direction: 2
     capacity: 1
     smart: true
-    controlled_region: corridor:smart-kiva:c013:r030-r032
   length_m: 1.3
 - kind: line
   line_type: FeatureLine
@@ -18535,7 +18420,6 @@ primitives:
     direction: 2
     capacity: 1
     smart: true
-    controlled_region: corridor:smart-kiva:c013:r030-r032
   length_m: 1.3
 - kind: line
   line_type: FeatureLine
@@ -18551,7 +18435,6 @@ primitives:
     direction: 2
     capacity: 1
     smart: true
-    controlled_region: corridor:smart-kiva:c024:r030-r032
   length_m: 1.3
 - kind: line
   line_type: FeatureLine
@@ -18567,7 +18450,6 @@ primitives:
     direction: 2
     capacity: 1
     smart: true
-    controlled_region: corridor:smart-kiva:c024:r030-r032
   length_m: 1.3
 - kind: line
   line_type: FeatureLine
@@ -18583,7 +18465,6 @@ primitives:
     direction: 2
     capacity: 1
     smart: true
-    controlled_region: corridor:smart-kiva:c035:r030-r032
   length_m: 1.3
 - kind: line
   line_type: FeatureLine
@@ -18599,7 +18480,6 @@ primitives:
     direction: 2
     capacity: 1
     smart: true
-    controlled_region: corridor:smart-kiva:c035:r030-r032
   length_m: 1.3
 - kind: line
   line_type: FeatureLine
@@ -18615,7 +18495,6 @@ primitives:
     direction: 2
     capacity: 1
     smart: true
-    controlled_region: corridor:smart-kiva:c002:r030-r032
   length_m: 1.5
 - kind: line
   line_type: FeatureLine
@@ -18631,7 +18510,6 @@ primitives:
     direction: 2
     capacity: 1
     smart: true
-    controlled_region: corridor:smart-kiva:c002:r030-r032
   length_m: 1.5
 - kind: line
   line_type: FeatureLine
@@ -18647,7 +18525,6 @@ primitives:
     direction: 2
     capacity: 1
     smart: true
-    controlled_region: corridor:smart-kiva:c013:r030-r032
   length_m: 1.5
 - kind: line
   line_type: FeatureLine
@@ -18663,7 +18540,6 @@ primitives:
     direction: 2
     capacity: 1
     smart: true
-    controlled_region: corridor:smart-kiva:c013:r030-r032
   length_m: 1.5
 - kind: line
   line_type: FeatureLine
@@ -18679,7 +18555,6 @@ primitives:
     direction: 2
     capacity: 1
     smart: true
-    controlled_region: corridor:smart-kiva:c024:r030-r032
   length_m: 1.5
 - kind: line
   line_type: FeatureLine
@@ -18695,7 +18570,6 @@ primitives:
     direction: 2
     capacity: 1
     smart: true
-    controlled_region: corridor:smart-kiva:c024:r030-r032
   length_m: 1.5
 - kind: line
   line_type: FeatureLine
@@ -18711,7 +18585,6 @@ primitives:
     direction: 2
     capacity: 1
     smart: true
-    controlled_region: corridor:smart-kiva:c035:r030-r032
   length_m: 1.5
 - kind: line
   line_type: FeatureLine
@@ -18727,5 +18600,4 @@ primitives:
     direction: 2
     capacity: 1
     smart: true
-    controlled_region: corridor:smart-kiva:c035:r030-r032
   length_m: 1.5

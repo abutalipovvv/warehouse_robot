@@ -11,6 +11,15 @@ import yaml
 
 from .map_loader import WarehouseMapLoader
 from .models import LoadedMapData
+from fleet_manager.core.traffic.corridors import strip_derived_traffic_properties
+
+
+MAP_SUPPORT_YAML_FILES = {
+    "LMs.yaml",
+    "graphs.yaml",
+    "graph_edges_lengths.yaml",
+    "traffic_zones.yaml",
+}
 
 
 def save_editable_map(
@@ -28,6 +37,7 @@ def save_editable_map(
     map_name = str(payload.get("mapName") or target_dir.stem.replace(".smap", "")).strip()
     landmarks = _normalize_landmarks(payload.get("lms") or payload.get("landmarks") or [])
     edges = _normalize_edges(payload.get("edges") or [], landmarks)
+    traffic_zones = _normalize_traffic_zones(payload.get("trafficZones") or [])
 
     _write_occupancy_raster(target_dir, payload)
     _write_yaml(
@@ -49,6 +59,14 @@ def save_editable_map(
     _write_yaml(
         target_dir / "graph_edges_lengths.yaml",
         [_edge_to_length_item(edge) for edge in edges],
+    )
+    _write_yaml(
+        target_dir / "traffic_zones.yaml",
+        {
+            "mapName": map_name,
+            "coordinateFrame": "map_top_left",
+            "zones": traffic_zones,
+        },
     )
     return WarehouseMapLoader(target_dir).load()
 
@@ -108,7 +126,7 @@ def _find_ros_map_yaml(map_dir: Path) -> Path:
     candidates = sorted(
         path
         for path in map_dir.glob("*.yaml")
-        if path.name not in {"LMs.yaml", "graphs.yaml", "graph_edges_lengths.yaml"}
+        if path.name not in MAP_SUPPORT_YAML_FILES
     )
     if not candidates:
         raise FileNotFoundError(f"No ROS map yaml found in {map_dir}")
@@ -154,7 +172,9 @@ def _normalize_landmarks(raw_items: Any) -> list[dict[str, Any]]:
                 "x": _round_m(item.get("x")),
                 "y": _round_m(item.get("y")),
                 "ignoreDir": item.get("ignoreDir"),
-                "properties": dict(item.get("properties") or {}),
+                "properties": strip_derived_traffic_properties(
+                    item.get("properties") or {}
+                ),
             }
         )
     if not landmarks:
@@ -182,7 +202,9 @@ def _normalize_edges(raw_items: Any, landmarks: list[dict[str, Any]]) -> list[di
             continue
         seen.add(key)
 
-        properties = dict(item.get("properties") or {})
+        properties = strip_derived_traffic_properties(
+            item.get("properties") or {}
+        )
         raw_direction = properties.get(
             "direction",
             item.get("motionDirectionCode", -1),
@@ -205,6 +227,49 @@ def _normalize_edges(raw_items: Any, landmarks: list[dict[str, Any]]) -> list[di
                 "type": edge_type,
                 "properties": properties,
                 "geometry": geometry,
+            }
+        )
+    return result
+
+
+def _normalize_traffic_zones(raw_items: Any) -> list[dict[str, Any]]:
+    if not isinstance(raw_items, list):
+        raise ValueError("trafficZones must be a list")
+    result: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for index, item in enumerate(raw_items):
+        if not isinstance(item, dict):
+            continue
+        zone_id = str(item.get("id") or item.get("zoneId") or f"corridor:{index + 1}").strip()
+        if not zone_id or zone_id in seen:
+            raise ValueError(f"duplicate or empty traffic zone id: {zone_id!r}")
+        bounds = item.get("bounds")
+        if not isinstance(bounds, dict):
+            raise ValueError(f"traffic zone {zone_id} has no rectangle bounds")
+        min_x = _round_m(bounds.get("minX", bounds.get("min_x")))
+        min_y = _round_m(bounds.get("minY", bounds.get("min_y")))
+        max_x = _round_m(bounds.get("maxX", bounds.get("max_x")))
+        max_y = _round_m(bounds.get("maxY", bounds.get("max_y")))
+        if max_x < min_x:
+            min_x, max_x = max_x, min_x
+        if max_y < min_y:
+            min_y, max_y = max_y, min_y
+        if math.isclose(min_x, max_x) or math.isclose(min_y, max_y):
+            raise ValueError(f"traffic zone {zone_id} rectangle is empty")
+        seen.add(zone_id)
+        result.append(
+            {
+                "id": zone_id,
+                "kind": str(item.get("kind") or "controlled_corridor"),
+                "shape": "rectangle",
+                "bounds": {
+                    "minX": min_x,
+                    "minY": min_y,
+                    "maxX": max_x,
+                    "maxY": max_y,
+                },
+                "capacity": max(1, int(item.get("capacity") or 1)),
+                "properties": dict(item.get("properties") or {}),
             }
         )
     return result

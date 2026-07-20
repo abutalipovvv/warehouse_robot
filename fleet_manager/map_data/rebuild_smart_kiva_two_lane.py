@@ -66,27 +66,6 @@ def _lane_x(column: int, current_x: float) -> float:
     return current_x
 
 
-def _controlled_corridor_region(
-    start: dict[str, Any],
-    goal: dict[str, Any],
-) -> str:
-    start_row, start_column = _grid_position(str(start["name"]))
-    goal_row, goal_column = _grid_position(str(goal["name"]))
-    if (
-        start_column != goal_column
-        or start_column not in CONTROLLED_CORRIDOR_COLUMNS
-    ):
-        return ""
-    edge_top, edge_bottom = sorted((start_row, goal_row))
-    for top, bottom in CONTROLLED_CORRIDOR_ROW_PAIRS:
-        if top <= edge_top and edge_bottom <= bottom:
-            return (
-                "corridor:smart-kiva:"
-                f"c{start_column:03d}:r{top:03d}-r{bottom:03d}"
-            )
-    return ""
-
-
 def _edge(start: dict[str, Any], goal: dict[str, Any]) -> dict[str, Any]:
     length = round(
         math.hypot(
@@ -96,9 +75,6 @@ def _edge(start: dict[str, Any], goal: dict[str, Any]) -> dict[str, Any]:
         6,
     )
     properties = dict(EDGE_PROPERTIES)
-    controlled_region = _controlled_corridor_region(start, goal)
-    if controlled_region:
-        properties["controlled_region"] = controlled_region
     return {
         "from": start["name"],
         "to": goal["name"],
@@ -175,6 +151,15 @@ def rebuild(map_dir: Path = MAP_DIR) -> None:
             "x": _lane_x(column, float(source["x"])),
             "y": _lane_y(row, float(source["y"])),
         }
+        properties = dict(landmark.get("properties") or {})
+        for legacy_key in (
+            "controlled_region",
+            "controlled_region_capacity",
+            "holding_point",
+            "can_wait",
+        ):
+            properties.pop(legacy_key, None)
+        landmark["properties"] = properties
         landmarks_by_grid[(row, column)] = landmark
 
     row_numbers = sorted({row for row, _column in landmarks_by_grid})
@@ -214,28 +199,6 @@ def rebuild(map_dir: Path = MAP_DIR) -> None:
         landmarks_by_grid[key]
         for key in sorted(landmarks_by_grid)
     ]
-    corridor_regions_by_lm: dict[str, set[str]] = {}
-    for edge in edges:
-        region_id = str(edge["properties"].get("controlled_region") or "")
-        if not region_id:
-            continue
-        corridor_regions_by_lm.setdefault(str(edge["from"]), set()).add(region_id)
-        corridor_regions_by_lm.setdefault(str(edge["to"]), set()).add(region_id)
-    for landmark in landmarks:
-        regions = corridor_regions_by_lm.get(str(landmark["name"]), set())
-        if not regions:
-            continue
-        properties = dict(landmark.get("properties") or {})
-        row, _column = _grid_position(str(landmark["name"]))
-        if any(row in pair for pair in CONTROLLED_CORRIDOR_ROW_PAIRS):
-            properties["can_wait"] = True
-            properties["holding_point"] = True
-            properties.pop("controlled_region", None)
-        else:
-            properties["can_wait"] = False
-            properties["controlled_region"] = sorted(regions)[0]
-            properties.pop("holding_point", None)
-        landmark["properties"] = properties
     landmarks_by_name = {
         str(landmark["name"]): landmark
         for landmark in landmarks
@@ -265,6 +228,53 @@ def rebuild(map_dir: Path = MAP_DIR) -> None:
             "primitives": [
                 _primitive(edge, landmarks_by_name)
                 for edge in edges
+            ],
+        },
+    )
+    _write_yaml(
+        map_dir / "traffic_zones.yaml",
+        {
+            "mapName": MAP_NAME,
+            "coordinateFrame": "map_top_left",
+            "zones": [
+                {
+                    "id": (
+                        "corridor:smart-kiva:"
+                        f"c{column:03d}:r{top:03d}-r{bottom:03d}"
+                    ),
+                    "kind": "controlled_corridor",
+                    "shape": "rectangle",
+                    "bounds": {
+                        "minX": round(
+                            float(landmarks_by_grid[(top, column)]["x"]) - 0.18,
+                            6,
+                        ),
+                        "minY": round(
+                            min(
+                                float(landmarks_by_grid[(top, column)]["y"]),
+                                float(landmarks_by_grid[(bottom, column)]["y"]),
+                            ) - 0.08,
+                            6,
+                        ),
+                        "maxX": round(
+                            float(landmarks_by_grid[(top, column)]["x"]) + 0.18,
+                            6,
+                        ),
+                        "maxY": round(
+                            max(
+                                float(landmarks_by_grid[(top, column)]["y"]),
+                                float(landmarks_by_grid[(bottom, column)]["y"]),
+                            ) + 0.08,
+                            6,
+                        ),
+                    },
+                    "capacity": 1,
+                    "properties": {
+                        "policy": "traffic_light",
+                    },
+                }
+                for column in sorted(CONTROLLED_CORRIDOR_COLUMNS)
+                for top, bottom in CONTROLLED_CORRIDOR_ROW_PAIRS
             ],
         },
     )

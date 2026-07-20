@@ -9,8 +9,6 @@ LMs:
     spin: false
     smartCell: .
     waitAllowed: true
-    can_wait: true
-    holding_point: true
 - name: S002003
   x: 2.5
   y: 1.0
@@ -99,8 +97,6 @@ LMs:
     spin: false
     smartCell: .
     waitAllowed: true
-    can_wait: true
-    holding_point: true
 - name: S002014
   x: 13.5
   y: 1.0
@@ -189,8 +185,6 @@ LMs:
     spin: false
     smartCell: .
     waitAllowed: true
-    can_wait: true
-    holding_point: true
 - name: S002025
   x: 24.5
   y: 1.0
@@ -279,8 +273,6 @@ LMs:
     spin: false
     smartCell: .
     waitAllowed: true
-    can_wait: true
-    holding_point: true
 - name: S003002
   x: 1.0
   y: 2.5
@@ -289,8 +281,6 @@ LMs:
     spin: false
     smartCell: .
     waitAllowed: true
-    can_wait: false
-    controlled_region: corridor:smart-kiva:c002:r002-r004
 - name: S003013
   x: 12.5
   y: 2.5
@@ -299,8 +289,6 @@ LMs:
     spin: false
     smartCell: .
     waitAllowed: true
-    can_wait: false
-    controlled_region: corridor:smart-kiva:c013:r002-r004
 - name: S003024
   x: 23.5
   y: 2.5
@@ -309,8 +297,6 @@ LMs:
     spin: false
     smartCell: .
     waitAllowed: true
-    can_wait: false
-    controlled_region: corridor:smart-kiva:c024:r002-r004
 - name: S003035
   x: 35.0
   y: 2.5
@@ -319,8 +305,6 @@ LMs:
     spin: false
     smartCell: .
     waitAllowed: true
-    can_wait: false
-    controlled_region: corridor:smart-kiva:c035:r002-r004
 - name: S004002
   x: 1.0
   y: 3.8
@@ -329,8 +313,6 @@ LMs:
     spin: false
     smartCell: .
     waitAllowed: true
-    can_wait: true
-    holding_point: true
 - name: S004003
   x: 2.5
   y: 3.8
@@ -419,8 +401,6 @@ LMs:
     spin: false
     smartCell: .
     waitAllowed: true
-    can_wait: true
-    holding_point: true
 - name: S004014
   x: 13.5
   y: 3.8
@@ -509,8 +489,6 @@ LMs:
     spin: false
     smartCell: .
     waitAllowed: true
-    can_wait: true
-    holding_point: true
 - name: S004025
   x: 24.5
   y: 3.8
@@ -599,8 +577,6 @@ LMs:
     spin: false
     smartCell: .
     waitAllowed: true
-    can_wait: true
-    holding_point: true
 - name: S006002
   x: 1.0
   y: 5.2
@@ -609,8 +585,6 @@ LMs:
     spin: false
     smartCell: .
     waitAllowed: true
-    can_wait: true
-    holding_point: true
 - name: S006003
   x: 2.5
   y: 5.2
@@ -699,8 +673,6 @@ LMs:
     spin: false
     smartCell: .
     waitAllowed: true
-    can_wait: true
-    holding_point: true
 - name: S006014
   x: 13.5
   y: 5.2
@@ -789,8 +761,6 @@ LMs:
     spin: false
     smartCell: .
     waitAllowed: true
-    can_wait: true
-    holding_point: true
 - name: S006025
   x: 24.5
   y: 5.2
@@ -879,8 +849,6 @@ LMs:
     spin: false
     smartCell: .
     waitAllowed: true
-    can_wait: true
-    holding_point: true
 - name: S007002
   x: 1.0
   y: 6.5
@@ -889,8 +857,6 @@ LMs:
     spin: false
     smartCell: .
     waitAllowed: true
-    can_wait: false
-    controlled_region: corridor:smart-kiva:c002:r006-r008
 - name: S007013
   x: 12.5
   y: 6.5
@@ -899,8 +865,6 @@ LMs:
     spin: false
     smartCell: .
     waitAllowed: true
-    can_wait: false
-    controlled_region: corridor:smart-kiva:c013:r006-r008
 - name: S007024
   x: 23.5
   y: 6.5
@@ -909,8 +873,6 @@ LMs:
     spin: false
     smartCell: .
     waitAllowed: true
-    can_wait: false
-    controlled_region: corridor:smart-kiva:c024:r006-r008
 - name: S007035
   x: 35.0
   y: 6.5
@@ -919,8 +881,6 @@ LMs:
     spin: false
     smartCell: .
     waitAllowed: true
-    can_wait: false
-    controlled_region: corridor:smart-kiva:c035:r006-r008
 - name: S008002
   x: 1.0
   y: 7.8
@@ -929,8 +889,6 @@ LMs:
     spin: false
     smartCell: .
     waitAllowed: true
-    can_wait: true
-    holding_point: true
 - name: S008003
   x: 2.5
   y: 7.8
@@ -1019,8 +977,6 @@ LMs:
     spin: false
     smartCell: .
     waitAllowed: true
-    can_wait: true
-    holding_point: true
 - name: S008014
   x: 13.5
   y: 7.8
@@ -1109,8 +1065,6 @@ LMs:
     spin: false
     smartCell: .
     waitAllowed: true
-    can_wait: true
-    holding_point: true
 - name: S008025
   x: 24.5
   y: 7.8
@@ -1199,8 +1153,6 @@ LMs:
     spin: false
     smartCell: .
     waitAllowed: true
-    can_wait: true
-    holding_point: true
 - name: S010002
   x: 1.0
   y: 9.2
@@ -1209,8 +1161,6 @@ LMs:
     spin: false
     smartCell: .
     waitAllowed: true
-    can_wait: true
-    holding_point: true
 - name: S010003
   x: 2.5
   y: 9.2
@@ -1299,8 +1249,6 @@ LMs:
     spin: false
     smartCell: .
     waitAllowed: true
-    can_wait: true
-    holding_point: true
 - name: S010014
   x: 13.5
   y: 9.2
@@ -1389,8 +1337,6 @@ LMs:
     spin: false
     smartCell: .
     waitAllowed: true
-    can_wait: true
-    holding_point: true
 - name: S010025
   x: 24.5
   y: 9.2
@@ -1479,8 +1425,6 @@ LMs:
     spin: false
     smartCell: .
     waitAllowed: true
-    can_wait: true
-    holding_point: true
 - name: S011002
   x: 1.0
   y: 10.5
@@ -1489,8 +1433,6 @@ LMs:
     spin: false
     smartCell: .
     waitAllowed: true
-    can_wait: false
-    controlled_region: corridor:smart-kiva:c002:r010-r012
 - name: S011013
   x: 12.5
   y: 10.5
@@ -1499,8 +1441,6 @@ LMs:
     spin: false
     smartCell: .
     waitAllowed: true
-    can_wait: false
-    controlled_region: corridor:smart-kiva:c013:r010-r012
 - name: S011024
   x: 23.5
   y: 10.5
@@ -1509,8 +1449,6 @@ LMs:
     spin: false
     smartCell: .
     waitAllowed: true
-    can_wait: false
-    controlled_region: corridor:smart-kiva:c024:r010-r012
 - name: S011035
   x: 35.0
   y: 10.5
@@ -1519,8 +1457,6 @@ LMs:
     spin: false
     smartCell: .
     waitAllowed: true
-    can_wait: false
-    controlled_region: corridor:smart-kiva:c035:r010-r012
 - name: S012002
   x: 1.0
   y: 11.8
@@ -1529,8 +1465,6 @@ LMs:
     spin: false
     smartCell: .
     waitAllowed: true
-    can_wait: true
-    holding_point: true
 - name: S012003
   x: 2.5
   y: 11.8
@@ -1619,8 +1553,6 @@ LMs:
     spin: false
     smartCell: .
     waitAllowed: true
-    can_wait: true
-    holding_point: true
 - name: S012014
   x: 13.5
   y: 11.8
@@ -1709,8 +1641,6 @@ LMs:
     spin: false
     smartCell: .
     waitAllowed: true
-    can_wait: true
-    holding_point: true
 - name: S012025
   x: 24.5
   y: 11.8
@@ -1799,8 +1729,6 @@ LMs:
     spin: false
     smartCell: .
     waitAllowed: true
-    can_wait: true
-    holding_point: true
 - name: S014002
   x: 1.0
   y: 13.2
@@ -1809,8 +1737,6 @@ LMs:
     spin: false
     smartCell: .
     waitAllowed: true
-    can_wait: true
-    holding_point: true
 - name: S014003
   x: 2.5
   y: 13.2
@@ -1899,8 +1825,6 @@ LMs:
     spin: false
     smartCell: .
     waitAllowed: true
-    can_wait: true
-    holding_point: true
 - name: S014014
   x: 13.5
   y: 13.2
@@ -1989,8 +1913,6 @@ LMs:
     spin: false
     smartCell: .
     waitAllowed: true
-    can_wait: true
-    holding_point: true
 - name: S014025
   x: 24.5
   y: 13.2
@@ -2079,8 +2001,6 @@ LMs:
     spin: false
     smartCell: .
     waitAllowed: true
-    can_wait: true
-    holding_point: true
 - name: S015002
   x: 1.0
   y: 14.5
@@ -2089,8 +2009,6 @@ LMs:
     spin: false
     smartCell: .
     waitAllowed: true
-    can_wait: false
-    controlled_region: corridor:smart-kiva:c002:r014-r016
 - name: S015013
   x: 12.5
   y: 14.5
@@ -2099,8 +2017,6 @@ LMs:
     spin: false
     smartCell: .
     waitAllowed: true
-    can_wait: false
-    controlled_region: corridor:smart-kiva:c013:r014-r016
 - name: S015024
   x: 23.5
   y: 14.5
@@ -2109,8 +2025,6 @@ LMs:
     spin: false
     smartCell: .
     waitAllowed: true
-    can_wait: false
-    controlled_region: corridor:smart-kiva:c024:r014-r016
 - name: S015035
   x: 35.0
   y: 14.5
@@ -2119,8 +2033,6 @@ LMs:
     spin: false
     smartCell: .
     waitAllowed: true
-    can_wait: false
-    controlled_region: corridor:smart-kiva:c035:r014-r016
 - name: S016002
   x: 1.0
   y: 15.8
@@ -2129,8 +2041,6 @@ LMs:
     spin: false
     smartCell: .
     waitAllowed: true
-    can_wait: true
-    holding_point: true
 - name: S016003
   x: 2.5
   y: 15.8
@@ -2219,8 +2129,6 @@ LMs:
     spin: false
     smartCell: .
     waitAllowed: true
-    can_wait: true
-    holding_point: true
 - name: S016014
   x: 13.5
   y: 15.8
@@ -2309,8 +2217,6 @@ LMs:
     spin: false
     smartCell: .
     waitAllowed: true
-    can_wait: true
-    holding_point: true
 - name: S016025
   x: 24.5
   y: 15.8
@@ -2399,8 +2305,6 @@ LMs:
     spin: false
     smartCell: .
     waitAllowed: true
-    can_wait: true
-    holding_point: true
 - name: S018002
   x: 1.0
   y: 17.2
@@ -2409,8 +2313,6 @@ LMs:
     spin: false
     smartCell: .
     waitAllowed: true
-    can_wait: true
-    holding_point: true
 - name: S018003
   x: 2.5
   y: 17.2
@@ -2499,8 +2401,6 @@ LMs:
     spin: false
     smartCell: .
     waitAllowed: true
-    can_wait: true
-    holding_point: true
 - name: S018014
   x: 13.5
   y: 17.2
@@ -2589,8 +2489,6 @@ LMs:
     spin: false
     smartCell: .
     waitAllowed: true
-    can_wait: true
-    holding_point: true
 - name: S018025
   x: 24.5
   y: 17.2
@@ -2679,8 +2577,6 @@ LMs:
     spin: false
     smartCell: .
     waitAllowed: true
-    can_wait: true
-    holding_point: true
 - name: S019002
   x: 1.0
   y: 18.5
@@ -2689,8 +2585,6 @@ LMs:
     spin: false
     smartCell: .
     waitAllowed: true
-    can_wait: false
-    controlled_region: corridor:smart-kiva:c002:r018-r020
 - name: S019013
   x: 12.5
   y: 18.5
@@ -2699,8 +2593,6 @@ LMs:
     spin: false
     smartCell: .
     waitAllowed: true
-    can_wait: false
-    controlled_region: corridor:smart-kiva:c013:r018-r020
 - name: S019024
   x: 23.5
   y: 18.5
@@ -2709,8 +2601,6 @@ LMs:
     spin: false
     smartCell: .
     waitAllowed: true
-    can_wait: false
-    controlled_region: corridor:smart-kiva:c024:r018-r020
 - name: S019035
   x: 35.0
   y: 18.5
@@ -2719,8 +2609,6 @@ LMs:
     spin: false
     smartCell: .
     waitAllowed: true
-    can_wait: false
-    controlled_region: corridor:smart-kiva:c035:r018-r020
 - name: S020002
   x: 1.0
   y: 19.8
@@ -2729,8 +2617,6 @@ LMs:
     spin: false
     smartCell: .
     waitAllowed: true
-    can_wait: true
-    holding_point: true
 - name: S020003
   x: 2.5
   y: 19.8
@@ -2819,8 +2705,6 @@ LMs:
     spin: false
     smartCell: .
     waitAllowed: true
-    can_wait: true
-    holding_point: true
 - name: S020014
   x: 13.5
   y: 19.8
@@ -2909,8 +2793,6 @@ LMs:
     spin: false
     smartCell: .
     waitAllowed: true
-    can_wait: true
-    holding_point: true
 - name: S020025
   x: 24.5
   y: 19.8
@@ -2999,8 +2881,6 @@ LMs:
     spin: false
     smartCell: .
     waitAllowed: true
-    can_wait: true
-    holding_point: true
 - name: S022002
   x: 1.0
   y: 21.2
@@ -3009,8 +2889,6 @@ LMs:
     spin: false
     smartCell: .
     waitAllowed: true
-    can_wait: true
-    holding_point: true
 - name: S022003
   x: 2.5
   y: 21.2
@@ -3099,8 +2977,6 @@ LMs:
     spin: false
     smartCell: .
     waitAllowed: true
-    can_wait: true
-    holding_point: true
 - name: S022014
   x: 13.5
   y: 21.2
@@ -3189,8 +3065,6 @@ LMs:
     spin: false
     smartCell: .
     waitAllowed: true
-    can_wait: true
-    holding_point: true
 - name: S022025
   x: 24.5
   y: 21.2
@@ -3279,8 +3153,6 @@ LMs:
     spin: false
     smartCell: .
     waitAllowed: true
-    can_wait: true
-    holding_point: true
 - name: S023002
   x: 1.0
   y: 22.5
@@ -3289,8 +3161,6 @@ LMs:
     spin: false
     smartCell: .
     waitAllowed: true
-    can_wait: false
-    controlled_region: corridor:smart-kiva:c002:r022-r024
 - name: S023013
   x: 12.5
   y: 22.5
@@ -3299,8 +3169,6 @@ LMs:
     spin: false
     smartCell: .
     waitAllowed: true
-    can_wait: false
-    controlled_region: corridor:smart-kiva:c013:r022-r024
 - name: S023024
   x: 23.5
   y: 22.5
@@ -3309,8 +3177,6 @@ LMs:
     spin: false
     smartCell: .
     waitAllowed: true
-    can_wait: false
-    controlled_region: corridor:smart-kiva:c024:r022-r024
 - name: S023035
   x: 35.0
   y: 22.5
@@ -3319,8 +3185,6 @@ LMs:
     spin: false
     smartCell: .
     waitAllowed: true
-    can_wait: false
-    controlled_region: corridor:smart-kiva:c035:r022-r024
 - name: S024002
   x: 1.0
   y: 23.8
@@ -3329,8 +3193,6 @@ LMs:
     spin: false
     smartCell: .
     waitAllowed: true
-    can_wait: true
-    holding_point: true
 - name: S024003
   x: 2.5
   y: 23.8
@@ -3419,8 +3281,6 @@ LMs:
     spin: false
     smartCell: .
     waitAllowed: true
-    can_wait: true
-    holding_point: true
 - name: S024014
   x: 13.5
   y: 23.8
@@ -3509,8 +3369,6 @@ LMs:
     spin: false
     smartCell: .
     waitAllowed: true
-    can_wait: true
-    holding_point: true
 - name: S024025
   x: 24.5
   y: 23.8
@@ -3599,8 +3457,6 @@ LMs:
     spin: false
     smartCell: .
     waitAllowed: true
-    can_wait: true
-    holding_point: true
 - name: S026002
   x: 1.0
   y: 25.2
@@ -3609,8 +3465,6 @@ LMs:
     spin: false
     smartCell: .
     waitAllowed: true
-    can_wait: true
-    holding_point: true
 - name: S026003
   x: 2.5
   y: 25.2
@@ -3699,8 +3553,6 @@ LMs:
     spin: false
     smartCell: .
     waitAllowed: true
-    can_wait: true
-    holding_point: true
 - name: S026014
   x: 13.5
   y: 25.2
@@ -3789,8 +3641,6 @@ LMs:
     spin: false
     smartCell: .
     waitAllowed: true
-    can_wait: true
-    holding_point: true
 - name: S026025
   x: 24.5
   y: 25.2
@@ -3879,8 +3729,6 @@ LMs:
     spin: false
     smartCell: .
     waitAllowed: true
-    can_wait: true
-    holding_point: true
 - name: S027002
   x: 1.0
   y: 26.5
@@ -3889,8 +3737,6 @@ LMs:
     spin: false
     smartCell: .
     waitAllowed: true
-    can_wait: false
-    controlled_region: corridor:smart-kiva:c002:r026-r028
 - name: S027013
   x: 12.5
   y: 26.5
@@ -3899,8 +3745,6 @@ LMs:
     spin: false
     smartCell: .
     waitAllowed: true
-    can_wait: false
-    controlled_region: corridor:smart-kiva:c013:r026-r028
 - name: S027024
   x: 23.5
   y: 26.5
@@ -3909,8 +3753,6 @@ LMs:
     spin: false
     smartCell: .
     waitAllowed: true
-    can_wait: false
-    controlled_region: corridor:smart-kiva:c024:r026-r028
 - name: S027035
   x: 35.0
   y: 26.5
@@ -3919,8 +3761,6 @@ LMs:
     spin: false
     smartCell: .
     waitAllowed: true
-    can_wait: false
-    controlled_region: corridor:smart-kiva:c035:r026-r028
 - name: S028002
   x: 1.0
   y: 27.8
@@ -3929,8 +3769,6 @@ LMs:
     spin: false
     smartCell: .
     waitAllowed: true
-    can_wait: true
-    holding_point: true
 - name: S028003
   x: 2.5
   y: 27.8
@@ -4019,8 +3857,6 @@ LMs:
     spin: false
     smartCell: .
     waitAllowed: true
-    can_wait: true
-    holding_point: true
 - name: S028014
   x: 13.5
   y: 27.8
@@ -4109,8 +3945,6 @@ LMs:
     spin: false
     smartCell: .
     waitAllowed: true
-    can_wait: true
-    holding_point: true
 - name: S028025
   x: 24.5
   y: 27.8
@@ -4199,8 +4033,6 @@ LMs:
     spin: false
     smartCell: .
     waitAllowed: true
-    can_wait: true
-    holding_point: true
 - name: S030002
   x: 1.0
   y: 29.2
@@ -4209,8 +4041,6 @@ LMs:
     spin: false
     smartCell: .
     waitAllowed: true
-    can_wait: true
-    holding_point: true
 - name: S030003
   x: 2.5
   y: 29.2
@@ -4299,8 +4129,6 @@ LMs:
     spin: false
     smartCell: .
     waitAllowed: true
-    can_wait: true
-    holding_point: true
 - name: S030014
   x: 13.5
   y: 29.2
@@ -4389,8 +4217,6 @@ LMs:
     spin: false
     smartCell: .
     waitAllowed: true
-    can_wait: true
-    holding_point: true
 - name: S030025
   x: 24.5
   y: 29.2
@@ -4479,8 +4305,6 @@ LMs:
     spin: false
     smartCell: .
     waitAllowed: true
-    can_wait: true
-    holding_point: true
 - name: S031002
   x: 1.0
   y: 30.5
@@ -4489,8 +4313,6 @@ LMs:
     spin: false
     smartCell: .
     waitAllowed: true
-    can_wait: false
-    controlled_region: corridor:smart-kiva:c002:r030-r032
 - name: S031013
   x: 12.5
   y: 30.5
@@ -4499,8 +4321,6 @@ LMs:
     spin: false
     smartCell: .
     waitAllowed: true
-    can_wait: false
-    controlled_region: corridor:smart-kiva:c013:r030-r032
 - name: S031024
   x: 23.5
   y: 30.5
@@ -4509,8 +4329,6 @@ LMs:
     spin: false
     smartCell: .
     waitAllowed: true
-    can_wait: false
-    controlled_region: corridor:smart-kiva:c024:r030-r032
 - name: S031035
   x: 35.0
   y: 30.5
@@ -4519,8 +4337,6 @@ LMs:
     spin: false
     smartCell: .
     waitAllowed: true
-    can_wait: false
-    controlled_region: corridor:smart-kiva:c035:r030-r032
 - name: S032002
   x: 1.0
   y: 32.0
@@ -4529,8 +4345,6 @@ LMs:
     spin: false
     smartCell: .
     waitAllowed: true
-    can_wait: true
-    holding_point: true
 - name: S032003
   x: 2.5
   y: 32.0
@@ -4619,8 +4433,6 @@ LMs:
     spin: false
     smartCell: .
     waitAllowed: true
-    can_wait: true
-    holding_point: true
 - name: S032014
   x: 13.5
   y: 32.0
@@ -4709,8 +4521,6 @@ LMs:
     spin: false
     smartCell: .
     waitAllowed: true
-    can_wait: true
-    holding_point: true
 - name: S032025
   x: 24.5
   y: 32.0
@@ -4799,5 +4609,3 @@ LMs:
     spin: false
     smartCell: .
     waitAllowed: true
-    can_wait: true
-    holding_point: true

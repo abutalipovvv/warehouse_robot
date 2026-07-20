@@ -110,23 +110,21 @@ def test_smart_kiva_two_lane_graph_is_bidirectional_and_connected() -> None:
     assert ("S024013", "S026013") in edge_pairs
 
 
-def test_smart_kiva_marks_each_single_lane_shelf_crossing_as_its_own_corridor() -> None:
+def test_smart_kiva_compiles_geometric_corridors_with_external_stop_lines() -> None:
     loaded = WarehouseMapLoader(MAP_DIR).load()
     regions: dict[str, list[tuple[str, str]]] = defaultdict(list)
-    edge_by_pair = {
-        (edge.from_name, edge.to_name): edge
-        for edge in loaded.edges
-    }
     for edge in loaded.edges:
-        region_id = str(edge.properties.get("controlled_region") or "")
-        if region_id:
-            regions[region_id].append((edge.from_name, edge.to_name))
+        for region_id in str(
+            edge.properties.get("controlled_region") or ""
+        ).split(","):
+            if region_id:
+                regions[region_id].append((edge.from_name, edge.to_name))
 
     assert len(regions) == (
         len(AISLE_CONNECTOR_COLUMNS)
         * len(CONTROLLED_CORRIDOR_ROW_PAIRS)
     )
-    assert all(len(directed_edges) == 4 for directed_edges in regions.values())
+    assert len(loaded.traffic_zones) == len(regions)
 
     for column in AISLE_CONNECTOR_COLUMNS:
         for top_row, bottom_row in CONTROLLED_CORRIDOR_ROW_PAIRS:
@@ -138,33 +136,34 @@ def test_smart_kiva_marks_each_single_lane_shelf_crossing_as_its_own_corridor() 
             top = f"S{top_row:03d}{column:03d}"
             middle = f"S{middle_row:03d}{column:03d}"
             bottom = f"S{bottom_row:03d}{column:03d}"
-            assert set(regions[region_id]) == {
-                (top, middle),
-                (middle, top),
-                (middle, bottom),
-                (bottom, middle),
-            }
-            assert loaded.landmarks[top].properties["holding_point"] is True
-            assert loaded.landmarks[top].properties["can_wait"] is True
-            assert loaded.landmarks[bottom].properties["holding_point"] is True
-            assert loaded.landmarks[bottom].properties["can_wait"] is True
+            assert (top, middle) in regions[region_id]
+            assert (middle, top) in regions[region_id]
+            assert (middle, bottom) in regions[region_id]
+            assert (bottom, middle) in regions[region_id]
+            assert loaded.landmarks[top].properties["can_wait"] is False
+            assert loaded.landmarks[bottom].properties["can_wait"] is False
             assert loaded.landmarks[middle].properties["can_wait"] is False
-            assert (
-                loaded.landmarks[middle].properties["controlled_region"]
-                == region_id
-            )
+            for name in (top, middle, bottom):
+                assert region_id in str(
+                    loaded.landmarks[name].properties["controlled_region"]
+                ).split(",")
 
-    # The deliberately paired horizontal aisle lanes stay independent and
-    # continue to use ordinary rolling SIPP/dynamic-zone coordination.
-    assert all(
-        math.isclose(
-            loaded.landmarks[edge_by_pair[edge_pair].from_name].x,
-            loaded.landmarks[edge_by_pair[edge_pair].to_name].x,
-            abs_tol=1e-9,
-        )
-        for directed_edges in regions.values()
-        for edge_pair in directed_edges
-    )
+            # A rectangle encloses the narrow centre line.  The immediate
+            # lateral LMs remain outside and act as the traffic lights.
+            for row in (top_row, bottom_row):
+                for side_column in (column - 1, column + 1):
+                    holding = f"S{row:03d}{side_column:03d}"
+                    if holding not in loaded.landmarks:
+                        continue
+                    assert loaded.landmarks[holding].properties["holding_point"] is True
+                    assert loaded.landmarks[holding].properties["can_wait"] is True
+
+    # The exact live trouble spots are never legal wait vertices.
+    assert loaded.landmarks["S014013"].properties["can_wait"] is False
+    assert loaded.landmarks["S016013"].properties["can_wait"] is False
+    for name in ("S012012", "S014012", "S012014", "S014014"):
+        assert loaded.landmarks[name].properties["holding_point"] is True
+        assert loaded.landmarks[name].properties["can_wait"] is True
 
 
 def test_smart_kiva_perimeter_uses_one_centered_clearance_lane() -> None:

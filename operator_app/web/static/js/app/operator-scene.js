@@ -365,6 +365,7 @@ export const withSceneNavigation = (Base) => class OperatorAppSceneNavigation ex
       areaPreview: this.fleetEditorAreaPreview,
       lms: Array.isArray(payload.lms) ? payload.lms : [],
       edges: Array.isArray(payload.edges) ? payload.edges : [],
+      trafficZones: Array.isArray(payload.trafficZones) ? payload.trafficZones : [],
     };
   }
 

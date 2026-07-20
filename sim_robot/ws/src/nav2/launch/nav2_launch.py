@@ -39,7 +39,7 @@ def _default_map_yaml(pkg_path: str) -> str:
     candidates = sorted(
         path
         for path in map_dir.glob("*.yaml")
-        if path.name not in {"LMs.yaml", "graphs.yaml", "graph_edges_lengths.yaml"}
+        if path.name not in {"LMs.yaml", "graphs.yaml", "graph_edges_lengths.yaml", "traffic_zones.yaml"}
     )
     if candidates:
         return str(candidates[0])

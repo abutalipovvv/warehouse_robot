@@ -194,6 +194,36 @@ export const withMapView = (Base) => class OperatorAppMapView extends Base {
       edges.map((edge) => this.edgeKey(edge.from, edge.to)),
     );
     this.operatorGraphLayer.innerHTML = "";
+    if (this.fleetMapEditorActive) {
+      for (const zone of payload?.trafficZones || []) {
+        if (
+          String(zone?.kind || "") !== "controlled_corridor"
+          || String(zone?.shape || "rectangle") !== "rectangle"
+        ) {
+          continue;
+        }
+        const bounds = zone?.bounds || {};
+        const start = this.worldToPixel({
+          x: Number(bounds.minX),
+          y: Number(bounds.minY),
+        });
+        const goal = this.worldToPixel({
+          x: Number(bounds.maxX),
+          y: Number(bounds.maxY),
+        });
+        if (![start.x, start.y, goal.x, goal.y].every(Number.isFinite)) {
+          continue;
+        }
+        const rectangle = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+        rectangle.setAttribute("class", "editor-area-preview corridor saved");
+        rectangle.dataset.trafficZoneId = String(zone.id || "");
+        rectangle.setAttribute("x", String(Math.min(start.x, goal.x)));
+        rectangle.setAttribute("y", String(Math.min(start.y, goal.y)));
+        rectangle.setAttribute("width", String(Math.abs(goal.x - start.x)));
+        rectangle.setAttribute("height", String(Math.abs(goal.y - start.y)));
+        this.operatorGraphLayer.append(rectangle);
+      }
+    }
     const profile = this.mapVisualProfile(payload);
     const strokeWidth = profile.unit(profile.massive ? 0.55 : (profile.dense ? 0.75 : 1.05));
     if (!this.fleetMapEditorActive && profile.dense) {

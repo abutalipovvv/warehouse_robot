@@ -237,6 +237,7 @@ export const withMapEditor = (Base) => class OperatorAppMapEditor extends Base {
     return {
       lms: cloneJson(Array.isArray(draft?.lms) ? draft.lms : []),
       edges: cloneJson(Array.isArray(draft?.edges) ? draft.edges : []),
+      trafficZones: cloneJson(Array.isArray(draft?.trafficZones) ? draft.trafficZones : []),
       selectedLmName: String(this.fleetSelectedLmName || ""),
       selectedEdgeKey: String(this.fleetSelectedEdgeKey || ""),
     };
@@ -249,6 +250,7 @@ export const withMapEditor = (Base) => class OperatorAppMapEditor extends Base {
     }
     draft.lms = cloneJson(snapshot.lms || []);
     draft.edges = cloneJson(snapshot.edges || []);
+    draft.trafficZones = cloneJson(snapshot.trafficZones || []);
     this.fleetSelectedLmName = String(snapshot.selectedLmName || "");
     this.fleetSelectedEdgeKey = String(snapshot.selectedEdgeKey || "");
   }
@@ -388,7 +390,7 @@ export const withMapEditor = (Base) => class OperatorAppMapEditor extends Base {
     const regionCount = result.regions.length;
     this.commitFleetGraphHistory(
       drag.before,
-      `Marked ${regionCount} controlled corridor zone${regionCount === 1 ? "" : "s"} across ${result.edgeCount} directed edges.`,
+      `Added ${regionCount} controlled corridor rectangle; Core will compile ${result.edgeCount} intersecting directed edges and external stop lines.`,
     );
   }
 

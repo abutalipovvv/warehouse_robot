@@ -32,7 +32,7 @@ def find_ros_map_yaml(map_dir: Path) -> Path:
     candidates = sorted(
         path
         for path in directory.glob("*.yaml")
-        if path.name not in {"LMs.yaml", "graphs.yaml", "graph_edges_lengths.yaml"}
+        if path.name not in {"LMs.yaml", "graphs.yaml", "graph_edges_lengths.yaml", "traffic_zones.yaml"}
     )
     if not candidates:
         raise FileNotFoundError(f"No ROS map yaml found in {directory}")

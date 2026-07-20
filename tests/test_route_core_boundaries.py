@@ -224,3 +224,62 @@ primitives:
         "controlled_region": "corridor:test",
         "smart": True,
     }
+
+
+def test_geometric_corridor_is_compiled_by_core_not_the_map_generator() -> None:
+    from fleet_manager.core.route_core.models import (
+        GraphEdge,
+        Landmark,
+        TrafficZone,
+        WorldPoint,
+    )
+    from fleet_manager.core.traffic.corridors import (
+        compile_controlled_corridor_zones,
+    )
+
+    landmarks = {
+        name: Landmark(name=name, x=x, y=0.0)
+        for name, x in (("HOLD_LEFT", 0.0), ("INNER_A", 1.0), ("INNER_B", 2.0), ("HOLD_RIGHT", 3.0))
+    }
+    edges = [
+        GraphEdge(
+            from_name=src,
+            to_name=dst,
+            length=1.0,
+            kind="line",
+            edge_type="FeatureLine",
+            world_points=(
+                landmarks[src].to_point(),
+                landmarks[dst].to_point(),
+            ),
+        )
+        for first, second in (
+            ("HOLD_LEFT", "INNER_A"),
+            ("INNER_A", "INNER_B"),
+            ("INNER_B", "HOLD_RIGHT"),
+        )
+        for src, dst in ((first, second), (second, first))
+    ]
+    zone = TrafficZone(
+        zone_id="corridor:any-map",
+        kind="controlled_corridor",
+        min_x=0.9,
+        min_y=-0.2,
+        max_x=2.1,
+        max_y=0.2,
+    )
+
+    compiled_lms, compiled_edges = compile_controlled_corridor_zones(
+        landmarks,
+        edges,
+        [zone],
+    )
+
+    assert compiled_lms["INNER_A"].properties["can_wait"] is False
+    assert compiled_lms["INNER_B"].properties["can_wait"] is False
+    assert compiled_lms["HOLD_LEFT"].properties["holding_point"] is True
+    assert compiled_lms["HOLD_RIGHT"].properties["holding_point"] is True
+    assert all(
+        edge.properties["controlled_region"] == zone.zone_id
+        for edge in compiled_edges
+    )

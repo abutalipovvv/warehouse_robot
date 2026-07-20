@@ -89,3 +89,37 @@ def test_save_editable_map_rejects_raster_dimension_mismatch(tmp_path: Path) -> 
         save_editable_map(map_dir, payload)
 
     assert (map_dir / "map.pgm").read_bytes() == original
+
+
+def test_traffic_zone_round_trip_keeps_geometry_as_the_source_of_truth(
+    tmp_path: Path,
+) -> None:
+    map_dir = _make_map(tmp_path)
+    payload = build_editable_map_payload(map_dir)
+    payload["trafficZones"] = [
+        {
+            "id": "corridor:test",
+            "kind": "controlled_corridor",
+            "shape": "rectangle",
+            "bounds": {
+                "minX": 0.0,
+                "minY": 0.0,
+                "maxX": 0.1,
+                "maxY": 0.1,
+            },
+            "capacity": 1,
+            "properties": {"policy": "traffic_light"},
+        }
+    ]
+
+    loaded = save_editable_map(map_dir, payload)
+    editable = build_editable_map_payload(map_dir)
+    raw_lms = yaml.safe_load(
+        (map_dir / "LMs.yaml").read_text(encoding="utf-8")
+    )["LMs"]
+
+    assert len(loaded.traffic_zones) == 1
+    assert loaded.landmarks["LM1"].properties["can_wait"] is False
+    assert editable["trafficZones"][0]["id"] == "corridor:test"
+    assert "_traffic_zone_derived" not in raw_lms[0].get("properties", {})
+    assert "controlled_region" not in raw_lms[0].get("properties", {})

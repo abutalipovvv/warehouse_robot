@@ -5968,6 +5968,70 @@ def test_controlled_corridor_exit_boundary_selects_the_next_corridor() -> None:
     assert manager._controlled_corridor_winners == {robot.name: next_region}
 
 
+def test_consecutive_corridor_transition_never_stops_inside_upstream_zone() -> None:
+    region_a = "corridor:a"
+    region_b = "corridor:b"
+    landmarks = {
+        "HOLD": Landmark(name="HOLD", x=0.0, y=0.0),
+        "A": Landmark(
+            name="A",
+            x=1.0,
+            y=0.0,
+            properties={"can_wait": False, "controlled_region": region_a},
+        ),
+        "B": Landmark(
+            name="B",
+            x=2.0,
+            y=0.0,
+            properties={"can_wait": False, "controlled_region": region_b},
+        ),
+    }
+    edges = [
+        GraphEdge(
+            from_name=src,
+            to_name=dst,
+            length=1.0,
+            kind="line",
+            edge_type="FeatureLine",
+            world_points=(landmarks[src].to_point(), landmarks[dst].to_point()),
+            properties={"controlled_region": regions},
+        )
+        for src, dst, regions in (
+            ("HOLD", "A", region_a),
+            ("A", "B", f"{region_a},{region_b}"),
+        )
+    ]
+    manager = FleetManagerSim(
+        landmarks,
+        edges,
+        params={
+            "navigation": {"route_speed": 1.0, "route_acceleration": 1.0},
+            "fleet": {
+                "controlled_corridors_enabled": True,
+                "controlled_corridor_auto_detect": False,
+                "traffic_zone_control_enabled": False,
+            },
+        },
+    )
+    robot = FleetRobot(
+        name="r1",
+        current_lm="A",
+        target_lm="B",
+        status="MOVING",
+        pose={"x": 1.0, "y": 0.0, "yaw": 0.0},
+        trajectory=[
+            {"t": 0.0, "x": 1.0, "y": 0.0, "yaw": 0.0, "edgeId": "A->B", "lm": "A"},
+            {"t": 1.0, "x": 2.0, "y": 0.0, "yaw": 0.0, "edgeId": "A->B", "lm": "B"},
+        ],
+    )
+    manager.robots = {robot.name: robot}
+    manager._controlled_corridor_leases[region_b] = ("other", 100.0)
+    manager._controlled_corridor_winners = {"other": region_b}
+
+    assert manager._next_controlled_corridor_entry(robot) is None
+    assert manager._controlled_corridor_admission_reason(robot, 0.1) == ""
+
+
 def test_controlled_corridor_owner_wins_and_boundary_entrant_queues_detour() -> None:
     manager = _manager()
     now = time()

@@ -1,90 +1,3 @@
-export function shortestEdgePath(edges, startLm, goalLm) {
-  const distances = new Map([[startLm, 0]]);
-  const previous = new Map();
-  const queue = [startLm];
-  while (queue.length) {
-    queue.sort((first, second) => (
-      (distances.get(first) ?? Number.POSITIVE_INFINITY)
-      - (distances.get(second) ?? Number.POSITIVE_INFINITY)
-    ));
-    const current = queue.shift();
-    if (current === goalLm) {
-      break;
-    }
-    for (const edge of edges || []) {
-      if (edge.from !== current) {
-        continue;
-      }
-      const distance = (distances.get(current) || 0)
-        + Math.max(0.000001, Number(edge.length || 1));
-      if (distance >= (distances.get(edge.to) ?? Number.POSITIVE_INFINITY)) {
-        continue;
-      }
-      distances.set(edge.to, distance);
-      previous.set(edge.to, current);
-      if (!queue.includes(edge.to)) {
-        queue.push(edge.to);
-      }
-    }
-  }
-  if (!distances.has(goalLm)) {
-    return [];
-  }
-  const path = [goalLm];
-  while (path[0] !== startLm) {
-    const parent = previous.get(path[0]);
-    if (!parent) {
-      return [];
-    }
-    path.unshift(parent);
-  }
-  return path;
-}
-
-export function markControlledCorridor(mapPayload, startLm, goalLm) {
-  const edges = Array.isArray(mapPayload?.edges) ? mapPayload.edges : [];
-  const landmarks = Array.isArray(mapPayload?.lms) ? mapPayload.lms : [];
-  const path = shortestEdgePath(edges, startLm, goalLm);
-  if (path.length < 2) {
-    return null;
-  }
-  const regionId = `corridor:${[startLm, goalLm].sort().join("<=>")}`;
-  for (let index = 0; index + 1 < path.length; index += 1) {
-    const from = path[index];
-    const to = path[index + 1];
-    for (const edge of edges) {
-      if (
-        (edge.from === from && edge.to === to)
-        || (edge.from === to && edge.to === from)
-      ) {
-        edge.properties = edge.properties && typeof edge.properties === "object"
-          ? edge.properties
-          : {};
-        edge.properties.controlled_region = regionId;
-      }
-    }
-  }
-  const byName = new Map(landmarks.map((landmark) => [landmark.name, landmark]));
-  path.forEach((name, index) => {
-    const landmark = byName.get(name);
-    if (!landmark) {
-      return;
-    }
-    landmark.properties = landmark.properties && typeof landmark.properties === "object"
-      ? landmark.properties
-      : {};
-    if (index === 0 || index === path.length - 1) {
-      landmark.properties.can_wait = true;
-      landmark.properties.holding_point = true;
-      delete landmark.properties.controlled_region;
-    } else {
-      landmark.properties.can_wait = false;
-      landmark.properties.controlled_region = regionId;
-    }
-  });
-  return { regionId, path };
-}
-
 function normalizedArea(start, goal) {
   const firstX = Number(start?.x);
   const firstY = Number(start?.y);
@@ -183,180 +96,55 @@ function edgeIntersectsArea(edge, area, byName) {
   return pointInsideArea(edgeMidpoint(edge, byName), area);
 }
 
-function corridorAreaId(area, componentIndex) {
-  const value = (number) => Number(number).toFixed(3).replace(/-0\.000/, "0.000");
-  return [
-    "corridor:zone",
-    `${value(area.minX)},${value(area.minY)}`,
-    `${value(area.maxX)},${value(area.maxY)}`,
-    componentIndex + 1,
-  ].join(":");
-}
-
-function undirectedEdgeKey(first, second) {
-  return [String(first || ""), String(second || "")].sort().join("\u0000");
-}
-
-function corridorChainId(names, area, componentIndex) {
-  if (names.length >= 2 && names[0] !== names[names.length - 1]) {
-    return `corridor:${[names[0], names[names.length - 1]].sort().join("<=>")}`;
-  }
-  return corridorAreaId(area, componentIndex);
-}
-
-function selectedCorridorChains(selectedEdges) {
-  const pairs = new Map();
-  for (const edge of selectedEdges) {
-    const from = String(edge.from || "");
-    const to = String(edge.to || "");
-    if (!from || !to || from === to) {
-      continue;
-    }
-    const key = undirectedEdgeKey(from, to);
-    if (!pairs.has(key)) {
-      pairs.set(key, { key, first: from, second: to, edges: [] });
-    }
-    pairs.get(key).edges.push(edge);
-  }
-  const adjacency = new Map();
-  const append = (name, key) => {
-    if (!adjacency.has(name)) {
-      adjacency.set(name, new Set());
-    }
-    adjacency.get(name).add(key);
-  };
-  for (const pair of pairs.values()) {
-    append(pair.first, pair.key);
-    append(pair.second, pair.key);
-  }
-  const otherName = (pair, name) => (pair.first === name ? pair.second : pair.first);
-  const visited = new Set();
-  const chains = [];
-  const walk = (startName, firstKey) => {
-    const pairKeys = [];
-    const names = [startName];
-    let currentName = startName;
-    let currentKey = firstKey;
-    while (currentKey && !visited.has(currentKey)) {
-      visited.add(currentKey);
-      pairKeys.push(currentKey);
-      const pair = pairs.get(currentKey);
-      currentName = otherName(pair, currentName);
-      names.push(currentName);
-      const candidates = [...(adjacency.get(currentName) || [])]
-        .filter((key) => !visited.has(key));
-      if ((adjacency.get(currentName)?.size || 0) !== 2 || candidates.length !== 1) {
-        break;
-      }
-      [currentKey] = candidates;
-    }
-    chains.push({
-      names,
-      pairKeys,
-      edges: pairKeys.flatMap((key) => pairs.get(key)?.edges || []),
-    });
-  };
-
-  const terminals = [...adjacency.keys()]
-    .filter((name) => (adjacency.get(name)?.size || 0) !== 2)
-    .sort();
-  for (const name of terminals) {
-    for (const key of [...(adjacency.get(name) || [])].sort()) {
-      if (!visited.has(key)) {
-        walk(name, key);
-      }
-    }
-  }
-  for (const key of [...pairs.keys()].sort()) {
-    if (!visited.has(key)) {
-      walk(pairs.get(key).first, key);
-    }
-  }
-  return { adjacency, chains };
-}
-
 /**
- * Mark every maximal non-branching graph chain whose midpoint intersects a
- * dragged rectangular editor area as its own controlled corridor.
- *
- * Directed reverse edges share the same region.  Graph nodes at the boundary
- * of the selected component remain holding points, while strictly internal
- * nodes become non-waiting corridor resources.  Splitting disconnected
- * chains is important: a single rectangle may cross several warehouse aisles
- * or a junction and those branches must not unnecessarily serialize one
- * another.
+ * Store a geometric corridor policy.  Graph membership, non-waiting internal
+ * LMs and outside stop lines are compiled by Fleet Manager Core when the map
+ * is loaded.  The editor deliberately does not bake policy into individual
+ * edges, so the same feature works for every map and survives graph edits.
  */
 export function markControlledCorridorArea(mapPayload, start, goal) {
   const area = normalizedArea(start, goal);
   const edges = Array.isArray(mapPayload?.edges) ? mapPayload.edges : [];
   const landmarks = Array.isArray(mapPayload?.lms) ? mapPayload.lms : [];
-  if (!area || !edges.length || !landmarks.length) {
+  if (
+    !area
+    || Math.abs(area.maxX - area.minX) < 0.001
+    || Math.abs(area.maxY - area.minY) < 0.001
+  ) {
     return null;
   }
   const byName = new Map(landmarks.map((landmark) => [String(landmark.name || ""), landmark]));
   const selectedEdges = edges.filter((edge) => edgeIntersectsArea(edge, area, byName));
-  if (!selectedEdges.length) {
-    return null;
+  const zones = Array.isArray(mapPayload?.trafficZones)
+    ? mapPayload.trafficZones
+    : [];
+  mapPayload.trafficZones = zones;
+  const coordinateKey = [
+    area.minX,
+    area.minY,
+    area.maxX,
+    area.maxY,
+  ].map((value) => Number(value).toFixed(3).replace(/[^0-9]/g, "")).join("-");
+  const baseId = `corridor:zone:${coordinateKey}`;
+  let regionId = baseId;
+  let suffix = 2;
+  const ids = new Set(zones.map((zone) => String(zone?.id || "")));
+  while (ids.has(regionId)) {
+    regionId = `${baseId}:${suffix}`;
+    suffix += 1;
   }
-
-  const { adjacency, chains } = selectedCorridorChains(selectedEdges);
-  const selectedEdgeSet = new Set(selectedEdges);
-  const regions = [];
-  chains.forEach((chain, componentIndex) => {
-    const names = new Set(chain.names);
-    const componentEdges = chain.edges;
-    if (!componentEdges.length) {
-      return;
-    }
-    const regionId = corridorChainId(chain.names, area, componentIndex);
-    for (const edge of componentEdges) {
-      edge.properties = edge.properties && typeof edge.properties === "object"
-        ? edge.properties
-        : {};
-      edge.properties.controlled_region = regionId;
-    }
-
-    const boundaryNames = new Set();
-    for (const name of names) {
-      const selectedNeighbors = adjacency.get(name)?.size || 0;
-      const hasOutsideEdge = edges.some((edge) => (
-        !selectedEdgeSet.has(edge)
-        && (String(edge.from || "") === name || String(edge.to || "") === name)
-      ));
-      const isChainEndpoint = name === chain.names[0] || name === chain.names[chain.names.length - 1];
-      if (isChainEndpoint || selectedNeighbors > 2 || hasOutsideEdge) {
-        boundaryNames.add(name);
-      }
-    }
-    for (const name of names) {
-      const landmark = byName.get(name);
-      if (!landmark) {
-        continue;
-      }
-      landmark.properties = landmark.properties && typeof landmark.properties === "object"
-        ? landmark.properties
-        : {};
-      if (boundaryNames.has(name)) {
-        landmark.properties.can_wait = true;
-        landmark.properties.holding_point = true;
-        delete landmark.properties.controlled_region;
-      } else {
-        landmark.properties.can_wait = false;
-        delete landmark.properties.holding_point;
-        landmark.properties.controlled_region = regionId;
-      }
-    }
-    regions.push({
-      regionId,
-      edgeCount: componentEdges.length,
-      lmCount: names.size,
-      holdingLms: [...boundaryNames].sort(),
-    });
+  zones.push({
+    id: regionId,
+    kind: "controlled_corridor",
+    shape: "rectangle",
+    bounds: { ...area },
+    capacity: 1,
+    properties: {},
   });
   return {
     area,
-    regions,
+    regions: [{ regionId }],
     edgeCount: selectedEdges.length,
-    lmCount: new Set(selectedEdges.flatMap((edge) => [edge.from, edge.to])).size,
+    lmCount: landmarks.filter((landmark) => pointInsideArea(landmark, area)).length,
   };
 }

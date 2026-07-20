@@ -1,7 +1,66 @@
 {
-  "savedAt": "2026-07-17T11:06:04.424218Z",
-  "sourceMapName": "smart_kiva_large_w_mode",
-  "robotSignature": "7b46286cdc73ad829ea705b8159443fa92d6362785da5e577f82883690a16236",
+  "aisleConnectorColumns": [
+    2,
+    13,
+    24,
+    35
+  ],
+  "aisleLaneClearanceM": 0.8,
+  "aisleLaneSpacingM": 1.4,
+  "controlledCorridorColumns": [
+    2,
+    13,
+    24,
+    35
+  ],
+  "controlledCorridorCount": 32,
+  "controlledCorridorMode": "explicit_shelf_crossings",
+  "controlledCorridorRowPairs": [
+    [
+      2,
+      4
+    ],
+    [
+      6,
+      8
+    ],
+    [
+      10,
+      12
+    ],
+    [
+      14,
+      16
+    ],
+    [
+      18,
+      20
+    ],
+    [
+      22,
+      24
+    ],
+    [
+      26,
+      28
+    ],
+    [
+      30,
+      32
+    ]
+  ],
+  "crossLaneConnectionsPerAisle": 4,
+  "directedEdges": 1240,
+  "internalCrossAisleWidthM": 1.4,
+  "landmarks": 576,
+  "lastSyncAt": "2026-07-17T11:06:04.424227Z",
+  "layoutVariant": "two_lane_clearance",
+  "perimeterLaneClearanceM": 1.0,
+  "perimeterLaneCount": 1,
+  "removedMiddleRows": 7,
   "robotMapName": "smart_kiva_large_w_mode",
-  "lastSyncAt": "2026-07-17T11:06:04.424227Z"
+  "robotSignature": "7b46286cdc73ad829ea705b8159443fa92d6362785da5e577f82883690a16236",
+  "savedAt": "2026-07-17T11:06:04.424218Z",
+  "shelfEndTrimM": 0.2,
+  "sourceMapName": "smart_kiva_large_w_mode"
 }

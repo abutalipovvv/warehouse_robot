@@ -11,6 +11,12 @@ from .planner import LmRoutePlanner
 
 
 DEFAULT_ROUTE_CATALOG_MAX_PAIRS = 20000
+MAP_SUPPORT_YAML_FILES = {
+    "LMs.yaml",
+    "graphs.yaml",
+    "graph_edges_lengths.yaml",
+    "traffic_zones.yaml",
+}
 
 
 def find_ros_map_yaml(map_dir: Path) -> Path:
@@ -18,7 +24,7 @@ def find_ros_map_yaml(map_dir: Path) -> Path:
     candidates = sorted(
         path
         for path in directory.glob("*.yaml")
-        if path.name not in {"LMs.yaml", "graphs.yaml", "graph_edges_lengths.yaml"}
+        if path.name not in MAP_SUPPORT_YAML_FILES
     )
     if not candidates:
         raise FileNotFoundError(f"No ROS map yaml found in {directory}")
@@ -45,6 +51,7 @@ def build_editable_map_payload(
         "map": loaded_map.map_metadata.to_dict(),
         "lms": [item.to_dict() for item in landmarks],
         "edges": [edge.to_dict() for edge in loaded_map.edges],
+        "trafficZones": [zone.to_dict() for zone in loaded_map.traffic_zones],
         "routes": routes,
         "routesMeta": routes_meta,
         "defaultGoal": landmarks[-1].name if landmarks else "",
@@ -135,6 +142,7 @@ def editable_map_signature(payload: dict[str, Any]) -> str:
         "map": payload.get("map") or {},
         "lms": payload.get("lms") or [],
         "edges": payload.get("edges") or [],
+        "trafficZones": payload.get("trafficZones") or [],
     }
     encoded = json.dumps(normalized, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()

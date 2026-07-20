@@ -374,6 +374,17 @@ class TrafficRoutingMixin:
             src_vertex = graph.vertices.get(src)
             dst_vertex = graph.vertices.get(dst)
             for region_id in lane.controlled_region_ids:
+                if (
+                    src_vertex is not None
+                    and src_vertex.controlled_region_ids
+                    and region_id not in src_vertex.controlled_region_ids
+                ):
+                    # This is a direct transition from one authored corridor
+                    # zone into another.  Stopping here would park the body in
+                    # the upstream narrow zone. Rolling SIPP already reserved
+                    # both temporal resources, so the runtime light must only
+                    # gate entries whose source is an external safe LM.
+                    continue
                 at_exit_boundary = (
                     self._controlled_corridor_pose_is_at_lm(robot.pose, dst)
                     and (
@@ -394,20 +405,19 @@ class TrafficRoutingMixin:
                     and region_id in src_vertex.controlled_region_ids
                 ):
                     continue
-                holding_lm = ""
-                for previous_index in range(index, -1, -1):
-                    previous_lm = str(
-                        robot.trajectory[previous_index].get("lm") or ""
-                    ).strip()
-                    if not previous_lm or previous_lm == src:
-                        continue
-                    previous_vertex = graph.vertices.get(previous_lm)
-                    if previous_vertex is not None and previous_vertex.can_wait:
-                        holding_lm = previous_lm
-                    # Only the immediately preceding graph LM is a valid
-                    # stop-line. Searching farther back could hold a robot
-                    # inside another controlled region.
-                    break
+                # A geometric corridor starts at the boundary crossing edge.
+                # Its outside endpoint is the stop line authored by Core.
+                # Holding one LM farther back was ambiguous at junctions and
+                # could select a point inside a neighbouring narrow zone.
+                holding_lm = (
+                    src
+                    if (
+                        src_vertex is not None
+                        and src_vertex.can_wait
+                        and region_id not in src_vertex.controlled_region_ids
+                    )
+                    else ""
+                )
                 return {
                     "region": region_id,
                     "src": src,
@@ -621,6 +631,13 @@ class TrafficRoutingMixin:
         src_vertex = graph.vertices.get(src)
         for region_id in lane.controlled_region_ids:
             if region_id in inside:
+                continue
+            if (
+                src_vertex is not None
+                and src_vertex.controlled_region_ids
+            ):
+                # Never create a red-light stop inside an upstream corridor.
+                # Consecutive region transitions are scheduled by SIPP.
                 continue
             if (
                 src_vertex is not None

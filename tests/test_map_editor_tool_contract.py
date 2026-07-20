@@ -33,14 +33,17 @@ def test_corridor_tool_is_a_previewed_rectangular_graph_selection() -> None:
     assert "editor-area-preview" in scene
 
 
-def test_corridor_area_uses_midpoints_and_splits_branched_graphs_into_chains() -> None:
+def test_corridor_area_persists_geometry_for_core_compilation() -> None:
     graph_tools = read("js/editor/graph-tools.js")
 
     assert "function edgeMidpoint(" in graph_tools
     assert "return pointInsideArea(edgeMidpoint(edge, byName), area);" in graph_tools
-    assert "function selectedCorridorChains(" in graph_tools
-    assert "selectedNeighbors > 2" in graph_tools
-    assert "corridorChainId(chain.names" in graph_tools
+    assert "mapPayload.trafficZones = zones;" in graph_tools
+    assert 'kind: "controlled_corridor"' in graph_tools
+    assert 'shape: "rectangle"' in graph_tools
+    assert "edge.properties.controlled_region = regionId" not in graph_tools[
+        graph_tools.index("export function markControlledCorridorArea") :
+    ]
 
 
 def test_pencil_is_square_and_rectangle_has_live_preview_in_both_editors() -> None:
@@ -70,6 +73,7 @@ def test_undo_redo_history_covers_graph_and_raster_gestures() -> None:
     standalone_editor = read("map-editor.js")
 
     assert "fleetGraphSnapshot()" in fleet_editor
+    assert "trafficZones:" in fleet_editor
     assert "commitFleetGraphHistory(before" in fleet_editor
     assert 'undo: () => this.restoreFleetGraphSnapshot(before)' in fleet_editor
     assert 'redo: () => this.restoreFleetGraphSnapshot(after)' in fleet_editor
@@ -78,6 +82,7 @@ def test_undo_redo_history_covers_graph_and_raster_gestures() -> None:
     assert 'key === "z" || key === "y"' in base
 
     assert "graphSnapshot()" in standalone_editor
+    assert "trafficZones:" in standalone_editor
     assert "commitGraphHistory(before" in standalone_editor
     assert 'undo: () => this.restoreGraphSnapshot(before)' in standalone_editor
     assert 'redo: () => this.restoreGraphSnapshot(after)' in standalone_editor
@@ -99,7 +104,7 @@ def test_standalone_graph_mutations_are_recorded_as_atomic_commands() -> None:
         "Removed edge",
         "Updated landmark",
         "Updated edge",
-        "controlled corridor zone",
+        "controlled corridor rectangle",
     ):
         assert label in editor
     assert "this.rasterHistory.clear();" in editor

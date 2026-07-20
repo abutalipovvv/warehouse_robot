@@ -2444,7 +2444,7 @@ class OperatorFleetManager:
         candidates = sorted(
             path
             for path in self.map_dir.glob("*.yaml")
-            if path.name not in {"LMs.yaml", "graphs.yaml", "graph_edges_lengths.yaml"}
+            if path.name not in {"LMs.yaml", "graphs.yaml", "graph_edges_lengths.yaml", "traffic_zones.yaml"}
         )
         if not candidates:
             raise FileNotFoundError(f"No ROS map yaml found in {self.map_dir}")

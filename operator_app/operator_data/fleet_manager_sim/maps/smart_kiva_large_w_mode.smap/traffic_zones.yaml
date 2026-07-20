@@ -1,0 +1,355 @@
+mapName: smart_kiva_large_w_mode
+coordinateFrame: map_top_left
+zones:
+- id: corridor:smart-kiva:c002:r002-r004
+  kind: controlled_corridor
+  shape: rectangle
+  bounds:
+    minX: 0.82
+    minY: 0.92
+    maxX: 1.18
+    maxY: 3.88
+  capacity: 1
+  properties:
+    policy: traffic_light
+- id: corridor:smart-kiva:c002:r006-r008
+  kind: controlled_corridor
+  shape: rectangle
+  bounds:
+    minX: 0.82
+    minY: 5.12
+    maxX: 1.18
+    maxY: 7.88
+  capacity: 1
+  properties:
+    policy: traffic_light
+- id: corridor:smart-kiva:c002:r010-r012
+  kind: controlled_corridor
+  shape: rectangle
+  bounds:
+    minX: 0.82
+    minY: 9.12
+    maxX: 1.18
+    maxY: 11.88
+  capacity: 1
+  properties:
+    policy: traffic_light
+- id: corridor:smart-kiva:c002:r014-r016
+  kind: controlled_corridor
+  shape: rectangle
+  bounds:
+    minX: 0.82
+    minY: 13.12
+    maxX: 1.18
+    maxY: 15.88
+  capacity: 1
+  properties:
+    policy: traffic_light
+- id: corridor:smart-kiva:c002:r018-r020
+  kind: controlled_corridor
+  shape: rectangle
+  bounds:
+    minX: 0.82
+    minY: 17.12
+    maxX: 1.18
+    maxY: 19.88
+  capacity: 1
+  properties:
+    policy: traffic_light
+- id: corridor:smart-kiva:c002:r022-r024
+  kind: controlled_corridor
+  shape: rectangle
+  bounds:
+    minX: 0.82
+    minY: 21.12
+    maxX: 1.18
+    maxY: 23.88
+  capacity: 1
+  properties:
+    policy: traffic_light
+- id: corridor:smart-kiva:c002:r026-r028
+  kind: controlled_corridor
+  shape: rectangle
+  bounds:
+    minX: 0.82
+    minY: 25.12
+    maxX: 1.18
+    maxY: 27.88
+  capacity: 1
+  properties:
+    policy: traffic_light
+- id: corridor:smart-kiva:c002:r030-r032
+  kind: controlled_corridor
+  shape: rectangle
+  bounds:
+    minX: 0.82
+    minY: 29.12
+    maxX: 1.18
+    maxY: 32.08
+  capacity: 1
+  properties:
+    policy: traffic_light
+- id: corridor:smart-kiva:c013:r002-r004
+  kind: controlled_corridor
+  shape: rectangle
+  bounds:
+    minX: 12.32
+    minY: 0.92
+    maxX: 12.68
+    maxY: 3.88
+  capacity: 1
+  properties:
+    policy: traffic_light
+- id: corridor:smart-kiva:c013:r006-r008
+  kind: controlled_corridor
+  shape: rectangle
+  bounds:
+    minX: 12.32
+    minY: 5.12
+    maxX: 12.68
+    maxY: 7.88
+  capacity: 1
+  properties:
+    policy: traffic_light
+- id: corridor:smart-kiva:c013:r010-r012
+  kind: controlled_corridor
+  shape: rectangle
+  bounds:
+    minX: 12.32
+    minY: 9.12
+    maxX: 12.68
+    maxY: 11.88
+  capacity: 1
+  properties:
+    policy: traffic_light
+- id: corridor:smart-kiva:c013:r014-r016
+  kind: controlled_corridor
+  shape: rectangle
+  bounds:
+    minX: 12.32
+    minY: 13.12
+    maxX: 12.68
+    maxY: 15.88
+  capacity: 1
+  properties:
+    policy: traffic_light
+- id: corridor:smart-kiva:c013:r018-r020
+  kind: controlled_corridor
+  shape: rectangle
+  bounds:
+    minX: 12.32
+    minY: 17.12
+    maxX: 12.68
+    maxY: 19.88
+  capacity: 1
+  properties:
+    policy: traffic_light
+- id: corridor:smart-kiva:c013:r022-r024
+  kind: controlled_corridor
+  shape: rectangle
+  bounds:
+    minX: 12.32
+    minY: 21.12
+    maxX: 12.68
+    maxY: 23.88
+  capacity: 1
+  properties:
+    policy: traffic_light
+- id: corridor:smart-kiva:c013:r026-r028
+  kind: controlled_corridor
+  shape: rectangle
+  bounds:
+    minX: 12.32
+    minY: 25.12
+    maxX: 12.68
+    maxY: 27.88
+  capacity: 1
+  properties:
+    policy: traffic_light
+- id: corridor:smart-kiva:c013:r030-r032
+  kind: controlled_corridor
+  shape: rectangle
+  bounds:
+    minX: 12.32
+    minY: 29.12
+    maxX: 12.68
+    maxY: 32.08
+  capacity: 1
+  properties:
+    policy: traffic_light
+- id: corridor:smart-kiva:c024:r002-r004
+  kind: controlled_corridor
+  shape: rectangle
+  bounds:
+    minX: 23.32
+    minY: 0.92
+    maxX: 23.68
+    maxY: 3.88
+  capacity: 1
+  properties:
+    policy: traffic_light
+- id: corridor:smart-kiva:c024:r006-r008
+  kind: controlled_corridor
+  shape: rectangle
+  bounds:
+    minX: 23.32
+    minY: 5.12
+    maxX: 23.68
+    maxY: 7.88
+  capacity: 1
+  properties:
+    policy: traffic_light
+- id: corridor:smart-kiva:c024:r010-r012
+  kind: controlled_corridor
+  shape: rectangle
+  bounds:
+    minX: 23.32
+    minY: 9.12
+    maxX: 23.68
+    maxY: 11.88
+  capacity: 1
+  properties:
+    policy: traffic_light
+- id: corridor:smart-kiva:c024:r014-r016
+  kind: controlled_corridor
+  shape: rectangle
+  bounds:
+    minX: 23.32
+    minY: 13.12
+    maxX: 23.68
+    maxY: 15.88
+  capacity: 1
+  properties:
+    policy: traffic_light
+- id: corridor:smart-kiva:c024:r018-r020
+  kind: controlled_corridor
+  shape: rectangle
+  bounds:
+    minX: 23.32
+    minY: 17.12
+    maxX: 23.68
+    maxY: 19.88
+  capacity: 1
+  properties:
+    policy: traffic_light
+- id: corridor:smart-kiva:c024:r022-r024
+  kind: controlled_corridor
+  shape: rectangle
+  bounds:
+    minX: 23.32
+    minY: 21.12
+    maxX: 23.68
+    maxY: 23.88
+  capacity: 1
+  properties:
+    policy: traffic_light
+- id: corridor:smart-kiva:c024:r026-r028
+  kind: controlled_corridor
+  shape: rectangle
+  bounds:
+    minX: 23.32
+    minY: 25.12
+    maxX: 23.68
+    maxY: 27.88
+  capacity: 1
+  properties:
+    policy: traffic_light
+- id: corridor:smart-kiva:c024:r030-r032
+  kind: controlled_corridor
+  shape: rectangle
+  bounds:
+    minX: 23.32
+    minY: 29.12
+    maxX: 23.68
+    maxY: 32.08
+  capacity: 1
+  properties:
+    policy: traffic_light
+- id: corridor:smart-kiva:c035:r002-r004
+  kind: controlled_corridor
+  shape: rectangle
+  bounds:
+    minX: 34.82
+    minY: 0.92
+    maxX: 35.18
+    maxY: 3.88
+  capacity: 1
+  properties:
+    policy: traffic_light
+- id: corridor:smart-kiva:c035:r006-r008
+  kind: controlled_corridor
+  shape: rectangle
+  bounds:
+    minX: 34.82
+    minY: 5.12
+    maxX: 35.18
+    maxY: 7.88
+  capacity: 1
+  properties:
+    policy: traffic_light
+- id: corridor:smart-kiva:c035:r010-r012
+  kind: controlled_corridor
+  shape: rectangle
+  bounds:
+    minX: 34.82
+    minY: 9.12
+    maxX: 35.18
+    maxY: 11.88
+  capacity: 1
+  properties:
+    policy: traffic_light
+- id: corridor:smart-kiva:c035:r014-r016
+  kind: controlled_corridor
+  shape: rectangle
+  bounds:
+    minX: 34.82
+    minY: 13.12
+    maxX: 35.18
+    maxY: 15.88
+  capacity: 1
+  properties:
+    policy: traffic_light
+- id: corridor:smart-kiva:c035:r018-r020
+  kind: controlled_corridor
+  shape: rectangle
+  bounds:
+    minX: 34.82
+    minY: 17.12
+    maxX: 35.18
+    maxY: 19.88
+  capacity: 1
+  properties:
+    policy: traffic_light
+- id: corridor:smart-kiva:c035:r022-r024
+  kind: controlled_corridor
+  shape: rectangle
+  bounds:
+    minX: 34.82
+    minY: 21.12
+    maxX: 35.18
+    maxY: 23.88
+  capacity: 1
+  properties:
+    policy: traffic_light
+- id: corridor:smart-kiva:c035:r026-r028
+  kind: controlled_corridor
+  shape: rectangle
+  bounds:
+    minX: 34.82
+    minY: 25.12
+    maxX: 35.18
+    maxY: 27.88
+  capacity: 1
+  properties:
+    policy: traffic_light
+- id: corridor:smart-kiva:c035:r030-r032
+  kind: controlled_corridor
+  shape: rectangle
+  bounds:
+    minX: 34.82
+    minY: 29.12
+    maxX: 35.18
+    maxY: 32.08
+  capacity: 1
+  properties:
+    policy: traffic_light

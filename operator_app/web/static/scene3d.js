@@ -273,7 +273,10 @@ export class OperatorScene3D {
     this.latestSelectedRobotName = "";
     this.latestWaitBlockerName = "";
     this.maxInactiveRoutePoints = 48;
-    this.maxActiveRoutePoints = 220;
+    // A selected route is an operator diagnostic, not a coarse traffic hint.
+    // Keep its graph turns intact; aggressive point thinning made long routes
+    // appear truncated or cut diagonally across several LMs.
+    this.maxActiveRoutePoints = 2048;
     this.renderPixelRatio = Math.min(1.35, window.devicePixelRatio || 1);
     this.appliedPixelRatio = 0;
     this.lastAnimationRenderAt = 0;
@@ -1608,6 +1611,16 @@ export class OperatorScene3D {
     const nextState = { ...state };
     const previewState = nextState.preview;
     const areaPreviewState = nextState.areaPreview;
+    const trafficZoneSignature = (nextState.trafficZones || []).map((zone) => {
+      const bounds = zone?.bounds || {};
+      return [
+        zone?.id || "",
+        Number(bounds.minX).toFixed(3),
+        Number(bounds.minY).toFixed(3),
+        Number(bounds.maxX).toFixed(3),
+        Number(bounds.maxY).toFixed(3),
+      ].join(",");
+    }).join(";");
     const signature = [
       this.viewMode,
       Number(nextState.revision || 0),
@@ -1624,6 +1637,7 @@ export class OperatorScene3D {
       Number(areaPreviewState?.start?.y || 0).toFixed(3),
       Number(areaPreviewState?.current?.x || 0).toFixed(3),
       Number(areaPreviewState?.current?.y || 0).toFixed(3),
+      trafficZoneSignature,
     ].join(":");
     this.editorState = nextState;
     if (!this.scene) {
@@ -1678,6 +1692,45 @@ export class OperatorScene3D {
         corridorLines.push(points);
         corridorKeys.push(pairKey);
       }
+    }
+    for (const zone of this.editorState.trafficZones || []) {
+      if (
+        String(zone?.kind || "") !== "controlled_corridor"
+        || String(zone?.shape || "rectangle") !== "rectangle"
+      ) {
+        continue;
+      }
+      const bounds = zone?.bounds || {};
+      const minX = Number(bounds.minX);
+      const minY = Number(bounds.minY);
+      const maxX = Number(bounds.maxX);
+      const maxY = Number(bounds.maxY);
+      if (![minX, minY, maxX, maxY].every(Number.isFinite)) {
+        continue;
+      }
+      const width = Math.max(0.001, Math.abs(maxX - minX));
+      const depth = Math.max(0.001, Math.abs(maxY - minY));
+      const area = B.MeshBuilder.CreateGround(
+        `editor-saved-corridor-${String(zone.id || "")}`,
+        { width, height: depth },
+        this.scene,
+      );
+      area.position.set((minX + maxX) / 2, 0.1, (minY + maxY) / 2);
+      area.material = this.unlitMaterial(
+        `editor-saved-corridor-material-${String(zone.id || "")}`,
+        0xed7d12,
+        0.18,
+      );
+      area.parent = this.editorRoot;
+      area.isPickable = false;
+      overlayLines.push([
+        new B.Vector3(minX, 0.108, minY),
+        new B.Vector3(maxX, 0.108, minY),
+        new B.Vector3(maxX, 0.108, maxY),
+        new B.Vector3(minX, 0.108, maxY),
+        new B.Vector3(minX, 0.108, minY),
+      ]);
+      overlayKeys.push(`traffic-zone:${String(zone.id || "")}`);
     }
 
     if (selectedLmName) {
@@ -2749,7 +2802,9 @@ export class OperatorScene3D {
       return;
     }
     this.removeRobotRoute(name);
-    const maxPoints = this.maxActiveRoutePoints;
+    const maxPoints = active
+      ? this.maxActiveRoutePoints
+      : Math.min(256, this.maxActiveRoutePoints);
     const routeHeight = this.viewMode === "2d" ? 0.048 : 0.095;
     const points = this.sampleTrajectory(trajectory, maxPoints)
       .map((point) => new B.Vector3(Number(point.x || 0), routeHeight, Number(point.y || 0)));

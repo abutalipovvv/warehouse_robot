@@ -675,6 +675,7 @@ class RobotMapEditorApp {
     return {
       lms: cloneJson(Array.isArray(this.currentMap?.lms) ? this.currentMap.lms : []),
       edges: cloneJson(Array.isArray(this.currentMap?.edges) ? this.currentMap.edges : []),
+      trafficZones: cloneJson(Array.isArray(this.currentMap?.trafficZones) ? this.currentMap.trafficZones : []),
       selection: cloneJson(this.selection || { type: "none", key: "" }),
     };
   }
@@ -685,6 +686,7 @@ class RobotMapEditorApp {
     }
     this.currentMap.lms = cloneJson(snapshot.lms || []);
     this.currentMap.edges = cloneJson(snapshot.edges || []);
+    this.currentMap.trafficZones = cloneJson(snapshot.trafficZones || []);
     this.selection = cloneJson(snapshot.selection || { type: "none", key: "" });
   }
 
@@ -1390,7 +1392,7 @@ class RobotMapEditorApp {
     const regionCount = result.regions.length;
     this.commitGraphHistory(
       drag.before,
-      `Marked ${regionCount} controlled corridor zone${regionCount === 1 ? "" : "s"} across ${result.edgeCount} directed edges.`,
+      `Added ${regionCount} controlled corridor rectangle; Core will compile ${result.edgeCount} intersecting directed edges and external stop lines.`,
     );
   }
 
@@ -1795,6 +1797,7 @@ class RobotMapEditorApp {
       walls: [],
       lms: this.currentMap?.lms || [],
       edges: this.currentMap?.edges || [],
+      trafficZones: this.currentMap?.trafficZones || [],
     };
   }
 
@@ -2010,6 +2013,34 @@ class RobotMapEditorApp {
 
   renderPreview() {
     this.editorPreviewLayer.innerHTML = "";
+    for (const zone of this.currentMap?.trafficZones || []) {
+      if (
+        String(zone?.kind || "") !== "controlled_corridor"
+        || String(zone?.shape || "rectangle") !== "rectangle"
+      ) {
+        continue;
+      }
+      const bounds = zone?.bounds || {};
+      const start = this.worldToSvg({
+        x: Number(bounds.minX),
+        y: Number(bounds.minY),
+      });
+      const goal = this.worldToSvg({
+        x: Number(bounds.maxX),
+        y: Number(bounds.maxY),
+      });
+      if (![start.x, start.y, goal.x, goal.y].every(Number.isFinite)) {
+        continue;
+      }
+      const rectangle = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+      rectangle.setAttribute("class", "editor-area-preview corridor saved");
+      rectangle.dataset.trafficZoneId = String(zone.id || "");
+      rectangle.setAttribute("x", String(Math.min(start.x, goal.x)));
+      rectangle.setAttribute("y", String(Math.min(start.y, goal.y)));
+      rectangle.setAttribute("width", String(Math.abs(goal.x - start.x)));
+      rectangle.setAttribute("height", String(Math.abs(goal.y - start.y)));
+      this.editorPreviewLayer.append(rectangle);
+    }
     const guidePoint = this.currentGuidePoint();
     if (guidePoint) {
       this.drawGuideAtPoint(guidePoint);
