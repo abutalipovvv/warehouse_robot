@@ -509,6 +509,24 @@ def _with_controlled_corridors(
             False,
         )
 
+    def is_explicit_holding_point(name: str) -> bool:
+        landmark = landmarks.get(name)
+        properties = (
+            landmark.properties
+            if landmark is not None and isinstance(landmark.properties, Mapping)
+            else {}
+        )
+        return _bool_property(
+            properties,
+            (
+                "holding_point",
+                "holdingPoint",
+                "safe_holding_point",
+                "safeHoldingPoint",
+            ),
+            False,
+        )
+
     boundaries = {
         name
         for name, vertex in vertices.items()
@@ -555,22 +573,49 @@ def _with_controlled_corridors(
         for name, lane in lanes.items()
     }
     internal_nodes: set[str] = set()
+    stopline_nodes: set[str] = set()
     for chain in chains:
         region_id = f"{chain[0]}<=>{chain[-1]}"
         for node in chain[1:-1]:
             vertex_regions[node].append(region_id)
             internal_nodes.add(node)
+        # Keep one legal stop line on each approach while the controlled
+        # region remains capacity-one. This gives a delayed rolling handoff a
+        # place to pause without parking inside the multi-exit junction.
+        if len(chain) > 2:
+            stopline_nodes.add(chain[1])
+            stopline_nodes.add(chain[-2])
         for start, end in zip(chain, chain[1:]):
             for lane_name in (lane_id(start, end), lane_id(end, start)):
                 if lane_name in lane_regions:
                     lane_regions[lane_name].append(region_id)
+
+    # A graph intersection is a transfer box, not a queueing pocket. Allowing
+    # SIPP or a rolling chunk to wait there lets one stopped robot occupy the
+    # exits of several otherwise independent corridor regions. Real maps can
+    # opt a widened intersection back in with an explicit holding-point flag.
+    transit_junctions = {
+        name
+        for name, vertex in vertices.items()
+        if len(adjacency.get(name, ())) >= 3
+        and not vertex.is_parking
+        and not vertex.is_charger
+        and not is_explicit_holding_point(name)
+    }
 
     updated_vertices = {
         name: TrafficVertex(
             id=vertex.id,
             x=vertex.x,
             y=vertex.y,
-            can_wait=vertex.can_wait and name not in internal_nodes,
+            can_wait=(
+                vertex.can_wait
+                and name not in transit_junctions
+                and (
+                    name not in internal_nodes
+                    or name in stopline_nodes
+                )
+            ),
             is_parking=vertex.is_parking,
             is_charger=vertex.is_charger,
             mutex_zone_ids=vertex.mutex_zone_ids,

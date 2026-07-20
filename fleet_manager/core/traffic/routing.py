@@ -92,31 +92,34 @@ class TrafficRoutingMixin:
     ) -> set[str]:
         """Return graph LMs occupied by robots that have no motion timeline.
 
-        Moving/waiting trajectories remain temporal SIPP reservations. A
-        QUEUED/PLANNING order alone is not proof that an IDLE/ARRIVED robot is
-        about to move: dispatch may be delayed or fail, so until an executable
-        trajectory is committed its current LM remains a persistent physical
-        obstacle. The only bootstrap exception is a newly spawned robot whose
-        first dispatch has never failed; this prevents a freshly created fleet
-        from treating every initial spawn as an immutable wall. Once a robot
-        has executed any route it never receives that exception again. Coupled
-        request owners are explicitly excluded by name so they may receive a
-        coordinated departure plan in that same request.
+        Moving/waiting trajectories remain temporal SIPP reservations. An
+        enabled IDLE/ARRIVED robot with a QUEUED/PLANNING assignment is a
+        commanded departure, not permanent storage. Serialized dispatch must
+        be allowed to route the rest of that departure wave; exact runtime
+        footprint checks hold an early route until the neighbour really moves.
+        STOPPED robots and robots without an assignment remain persistent
+        physical obstacles. Coupled request owners are explicitly excluded by
+        name so they may receive a coordinated departure plan in that request.
         """
         excluded = exclude_robot_names or set()
         blocked: set[str] = set()
         for robot in self._runtime_robots():
             if robot.name in excluded:
                 continue
-            if robot.status in {"MOVING", "WAITING", "RETREATING"} and robot.trajectory:
+            exhausted_rolling_holder = self._robot_waits_at_rolling_boundary(
+                robot
+            )
+            if (
+                robot.status in {"MOVING", "WAITING", "RETREATING"}
+                and robot.trajectory
+                and not exhausted_rolling_holder
+            ):
                 continue
             pending_order = self._active_order_for_robot(robot)
             if (
                 robot.status in {"IDLE", "ARRIVED"}
-                and not robot.has_executed_route
                 and pending_order is not None
                 and pending_order.status in {"QUEUED", "PLANNING"}
-                and int(pending_order.dispatch_failures or 0) == 0
             ):
                 continue
             lm_name = self._nearest_lm_for_robot(robot)
@@ -360,7 +363,21 @@ class TrafficRoutingMixin:
             if lane is None:
                 continue
             src_vertex = graph.vertices.get(src)
+            dst_vertex = graph.vertices.get(dst)
             for region_id in lane.controlled_region_ids:
+                at_exit_boundary = (
+                    self._controlled_corridor_pose_is_at_lm(robot.pose, dst)
+                    and (
+                        dst_vertex is None
+                        or region_id not in dst_vertex.controlled_region_ids
+                    )
+                )
+                if at_exit_boundary:
+                    # The trajectory clock can still be a few milliseconds
+                    # short of the tagged destination sample while the pose is
+                    # already on its external boundary. This is an exit from
+                    # the previous corridor, not a new admission candidate.
+                    continue
                 if region_id in inside:
                     continue
                 if (
@@ -547,7 +564,11 @@ class TrafficRoutingMixin:
         check_clock: float,
     ) -> str:
         graph = self._controlled_corridor_graph
-        if graph is None or not robot.trajectory:
+        if (
+            graph is None
+            or not robot.trajectory
+            or robot.status == "RETREATING"
+        ):
             return ""
         inside = self._controlled_regions_for_robot(robot)
         upcoming = self._next_controlled_corridor_entry(robot)
@@ -611,6 +632,52 @@ class TrafficRoutingMixin:
                 region_id,
             )
         return ""
+
+    def _transfer_controlled_corridor_lease(
+        self,
+        winner: FleetRobot,
+        participants: list[FleetRobot],
+        now: float,
+    ) -> bool:
+        """Make deadlock arbitration and the corridor gate one decision."""
+        reason = str(winner.last_reason or "")
+        prefix = "corridor admission wait at "
+        marker = " for "
+        if not reason.startswith(prefix) or marker not in reason:
+            return False
+        region_id = reason.split(marker, 1)[1].split("; owner ", 1)[0].strip()
+        if not region_id:
+            return False
+        participant_names = {robot.name for robot in participants}
+        owners = set(self._controlled_corridor_occupancy.get(region_id, []))
+        if owners and not owners.issubset(participant_names):
+            return False
+        # A lease is only an admission signal; it must never contradict a
+        # robot body that already occupies the controlled corridor.  Let the
+        # physical owner leave before granting an outside entrant.
+        if owners and winner.name not in owners:
+            return False
+        lease_owner, _ = self._controlled_corridor_leases.get(
+            region_id,
+            ("", 0.0),
+        )
+        if lease_owner and lease_owner not in participant_names:
+            return False
+        duration = max(
+            0.5,
+            self._controlled_corridor_param(
+                "controlled_corridor_admission_lease_sec",
+                4.0,
+            ),
+            self._controlled_corridor_entry_lookahead() + 1.0,
+        )
+        self._controlled_corridor_leases[region_id] = (
+            winner.name,
+            now + duration,
+        )
+        self._controlled_corridor_winners.pop(lease_owner, None)
+        self._controlled_corridor_winners[winner.name] = region_id
+        return True
 
     def _controlled_corridor_wait_reason(
         self,
@@ -1162,15 +1229,6 @@ class TrafficRoutingMixin:
         speed = self.planner._route_speed(route_payload)
         acceleration = self.planner._route_acceleration(route_payload)
         traffic_graph = self.planner._traffic_graph(speed)
-        if order.dispatch_failures > 0:
-            # Recovery still makes the smallest useful progress, but never
-            # hands a rolling token off at an internal no-wait corridor LM.
-            selected_index = traffic_graph.extend_route_index_to_controlled_exit(
-                route_nodes,
-                1,
-            )
-            return str(route_nodes[selected_index])
-
         elapsed = 0.0
         selected_index = 1
         for index in range(1, len(route_nodes)):
@@ -1195,7 +1253,89 @@ class TrafficRoutingMixin:
             route_nodes,
             selected_index,
         )
+        selected_index = self._rolling_safe_hold_index(
+            route_nodes,
+            selected_index,
+            final_goal_lm,
+            traffic_graph=traffic_graph,
+        )
         return str(route_nodes[selected_index])
+
+    def _rolling_safe_hold_index(
+        self,
+        route_nodes: list[str],
+        selected_index: int,
+        final_goal_lm: str,
+        *,
+        traffic_graph: Any | None = None,
+    ) -> int:
+        """Keep a failed rolling handoff out of a transit intersection.
+
+        Auto-corridor maps use degree-three/four LMs as boundaries between
+        independently controlled regions. Those LMs are transfer boxes, not
+        parking pockets. If a background continuation misses its deadline,
+        ending the committed chunk there blocks every incident corridor.
+
+        Stop far enough *inside the inbound controlled region* instead. The
+        robot retains that region's occupancy token, while the junction and
+        all unrelated exits remain usable. A ready prefetch is still appended
+        before this point, so healthy traffic never observes the safe hold.
+        """
+        if not route_nodes:
+            return 0
+        selected_index = max(0, min(int(selected_index), len(route_nodes) - 1))
+        selected_lm = str(route_nodes[selected_index])
+        if selected_lm == final_goal_lm:
+            return selected_index
+
+        if traffic_graph is None:
+            traffic_graph = self.planner._traffic_graph(
+                self.planner._route_speed({}),
+            )
+        selected_vertex = traffic_graph.vertices.get(selected_lm)
+        if selected_index > 0 and (
+            selected_vertex is None
+            or selected_vertex.can_wait
+        ):
+            return selected_index
+
+        clearance = max(
+            0.60,
+            float(self.planner.min_robot_center_distance_m),
+        )
+        distance = 0.0
+        for cursor in range(selected_index - 1, 0, -1):
+            src = str(route_nodes[cursor])
+            dst = str(route_nodes[cursor + 1])
+            edge = self.planner.edge_by_key.get((src, dst))
+            if edge is not None:
+                distance += max(0.0, float(edge.length))
+            else:
+                first = self.landmarks.get(src)
+                second = self.landmarks.get(dst)
+                if first is not None and second is not None:
+                    distance += math.hypot(first.x - second.x, first.y - second.y)
+            vertex = traffic_graph.vertices.get(src)
+            if (
+                distance + 0.000001 >= clearance
+                and cursor > 0
+                and vertex is not None
+                and vertex.can_wait
+            ):
+                return cursor
+
+        # The no-wait transfer box can be the immediate successor of the
+        # current stop line. Backtracking would then make a zero-length
+        # continuation, so cross the junction and target the next legal stop
+        # line instead.
+        for cursor in range(selected_index + 1, len(route_nodes)):
+            node = str(route_nodes[cursor])
+            if node == final_goal_lm:
+                return cursor
+            vertex = traffic_graph.vertices.get(node)
+            if vertex is not None and vertex.can_wait:
+                return cursor
+        return selected_index
 
     def _wait_only_rolling_plan(
         self,
@@ -1264,9 +1404,22 @@ class TrafficRoutingMixin:
             )
             if route_speed <= 0.0:
                 route_speed = self.planner._route_speed({})
-            chunk_index = self.planner._traffic_graph(
-                route_speed
-            ).extend_route_index_to_controlled_exit(nodes, chunk_index)
+            traffic_graph = self.planner._traffic_graph(route_speed)
+            chunk_index = traffic_graph.extend_route_index_to_controlled_exit(
+                nodes,
+                chunk_index,
+            )
+            # Temporal reservations can consume part of the horizon after the
+            # request's graph-safe waypoint was selected. The result trimmer
+            # may therefore stop earlier than that waypoint; apply the same
+            # stop-line rule here or it can recreate a no-wait junction chunk
+            # even though _rolling_planning_goal chose a safe endpoint.
+            chunk_index = self._rolling_safe_hold_index(
+                nodes,
+                chunk_index,
+                final_goal,
+                traffic_graph=traffic_graph,
+            )
 
             chunk_goal = nodes[chunk_index]
             arrival_time = max(0.0, float(times[chunk_index] - times[0]) * time_step)

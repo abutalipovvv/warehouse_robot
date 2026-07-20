@@ -35,7 +35,7 @@ def test_traffic_graph_groups_reverse_lanes_as_same_resource() -> None:
 
 
 def test_traffic_graph_builds_whole_controlled_corridor_resource() -> None:
-    landmarks = _landmarks("A", "B", "C", "D")
+    landmarks = _landmarks("A", "B", "C", "D", "E")
     edges = [
         _edge(landmarks, start, goal)
         for start, goal in (
@@ -45,6 +45,8 @@ def test_traffic_graph_builds_whole_controlled_corridor_resource() -> None:
             ("C", "B"),
             ("C", "D"),
             ("D", "C"),
+            ("D", "E"),
+            ("E", "D"),
         )
     ]
     graph = TrafficGraph.from_route_core(
@@ -58,15 +60,27 @@ def test_traffic_graph_builds_whole_controlled_corridor_resource() -> None:
 
     assert len(region_ids) == 1
     assert graph.vertices["A"].can_wait
-    assert not graph.vertices["B"].can_wait
+    assert graph.vertices["B"].can_wait
     assert not graph.vertices["C"].can_wait
     assert graph.vertices["D"].can_wait
+    assert graph.vertices["E"].can_wait
     assert all(
         ResourceId("controlled_region", region_ids[0])
         in graph.lane_resources(graph.lane_for(start, goal))
-        for start, goal in (("A", "B"), ("B", "C"), ("C", "D"))
+        for start, goal in (
+            ("A", "B"),
+            ("B", "C"),
+            ("C", "D"),
+            ("D", "E"),
+        )
     )
-    assert graph.extend_route_index_to_controlled_exit(["A", "B", "C", "D"], 1) == 3
+    assert (
+        graph.extend_route_index_to_controlled_exit(
+            ["A", "B", "C", "D", "E"],
+            1,
+        )
+        == 4
+    )
 
 
 def test_controlled_corridor_auto_mode_only_enables_fully_smart_graphs() -> None:
@@ -584,6 +598,27 @@ def test_rolling_sipp_never_uses_vertex_at_safe_interval_end() -> None:
                 occupied[(time_tick, node)] = name
 
 
+def test_rolling_sipp_observes_the_runtime_planning_deadline() -> None:
+    landmarks = _landmarks("A", "B")
+    graph = TrafficGraph.from_route_core(
+        landmarks,
+        [_edge(landmarks, "A", "B")],
+        default_speed_mps=1.0,
+    )
+    planner = RollingSippPlanner(
+        graph,
+        low_level_max_time=12,
+        max_planning_time_sec=0.0,
+    )
+
+    result = planner.plan_for_robots(
+        [LmRobotRequest("r1", "A", "B")]
+    )
+
+    assert result.plans == {}
+    assert result.debug.reason == "rolling_sipp:planning_timeout"
+
+
 def test_rolling_sipp_backend_waits_for_reserved_vertex_interval() -> None:
     planner = FleetMapfPlanner(
         _landmarks("A", "B", "C"),
@@ -651,7 +686,7 @@ def test_rolling_sipp_does_not_wait_on_non_waitable_lm() -> None:
     )
 
     assert not result["ok"]
-    assert result["debug"]["reason"].startswith("cannot_wait:A")
+    assert "cannot_wait:A" in result["debug"]["reason"]
 
 
 def test_zero_tick_constraints_are_not_dropped() -> None:

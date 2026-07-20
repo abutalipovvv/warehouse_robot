@@ -221,6 +221,7 @@ class LmCBSEnvironment:
         global_edge_constraints: set[EdgeConstraint] | None = None,
         global_vertex_intervals: list[VertexIntervalConstraint] | None = None,
         global_edge_intervals: list[EdgeIntervalConstraint] | None = None,
+        global_resource_intervals: list[ResourceIntervalConstraint] | None = None,
         heuristic_fn: Callable[[NodeName, NodeName], float] | None = None,
         move_cost_fn: Callable[[NodeName, NodeName], int] | None = None,
         heading_fn: Callable[[NodeName, NodeName], float] | None = None,
@@ -231,6 +232,7 @@ class LmCBSEnvironment:
         can_wait_fn: Callable[[NodeName], bool] | None = None,
         low_level_max_time: int = 128,
         wait_cost: int = 6,
+        planning_deadline: float | None = None,
     ) -> None:
         self.graph = graph
         self.agent_requests = agent_requests
@@ -239,6 +241,7 @@ class LmCBSEnvironment:
         self.global_edge_constraints = global_edge_constraints or set()
         self.global_vertex_intervals = global_vertex_intervals or []
         self.global_edge_intervals = global_edge_intervals or []
+        self.global_resource_intervals = set(global_resource_intervals or [])
         self.heuristic_fn = heuristic_fn or (lambda _node, _goal: 0.0)
         self.move_cost_fn = move_cost_fn or (lambda _src, _dst: 1)
         self.heading_fn = heading_fn or (lambda _src, _dst: 0.0)
@@ -249,6 +252,7 @@ class LmCBSEnvironment:
         self.can_wait_fn = can_wait_fn or (lambda _node: True)
         self.low_level_max_time = max(1, int(low_level_max_time))
         self.wait_cost = max(1, int(wait_cost))
+        self.planning_deadline = planning_deadline
         self.agent_dict: dict[str, dict[str, State]] = {}
         self.constraint_dict: dict[str, Constraints] = {}
         self.constraints = Constraints()
@@ -299,7 +303,10 @@ class LmCBSEnvironment:
                 return False
         if self.vertex_resources_fn is not None:
             goal_resources = set(self.vertex_resources_fn(state.node))
-            for interval in constraints.resource_interval_constraints:
+            for interval in (
+                constraints.resource_interval_constraints
+                | self.global_resource_intervals
+            ):
                 if interval.resource in goal_resources and interval.end_time >= state.time:
                     return False
         return True
@@ -443,7 +450,10 @@ class LmCBSEnvironment:
                 interval.start_time,
                 interval.end_time,
             )
-            for interval in self.constraints.resource_interval_constraints
+            for interval in (
+                self.constraints.resource_interval_constraints
+                | self.global_resource_intervals
+            )
         )
 
     def _time_in_interval(self, time_value: int, start_time: int, end_time: int) -> bool:
@@ -1011,13 +1021,20 @@ class LmCBSEnvironment:
         solution: dict[str, list[State]] = {}
         for agent_name in self.agent_dict.keys():
             self.constraints = self.constraint_dict.setdefault(agent_name, Constraints())
+            # A successful search may still probe a constrained neighbor and
+            # leave its diagnostic behind.  Do not attribute that stale
+            # detail to a later agent whose initial search fails.
+            self.last_failure = ""
             local_solution = self.low_level_search(agent_name, self.low_level_max_time)
             if not local_solution:
-                if not self.last_failure:
+                if self.last_failure != "planning_timeout":
                     request = self.agent_dict[agent_name]
+                    detail = self.last_failure or (
+                        f"{request['start'].node}->{request['goal'].node}"
+                    )
                     self.last_failure = (
                         f"no_low_level_path:{agent_name}:"
-                        f"{request['start'].node}->{request['goal'].node}"
+                        f"{detail}"
                     )
                 return None
             solution[agent_name] = local_solution
@@ -1046,7 +1063,23 @@ class LmCBSEnvironment:
         heappush(open_heap, (self.admissible_heuristic(initial_state, agent_name), counter, initial_state))
         open_set.add(initial_state)
 
+        expansions = 0
         while open_heap:
+            # The high-level CBS deadline used to be checked only between
+            # conflict nodes. A single constrained A* search can itself
+            # explore for minutes, monopolising the runtime planner while
+            # every robot waits. Poll infrequently enough to keep the hot
+            # loop cheap, but guarantee a bounded response time.
+            expansions += 1
+            if (
+                expansions == 1
+                or expansions % 128 == 0
+            ) and (
+                self.planning_deadline is not None
+                and py_time.monotonic() >= self.planning_deadline
+            ):
+                self.last_failure = "planning_timeout"
+                return None
             _, _, current = heappop(open_heap)
             if current not in open_set:
                 continue
@@ -1119,6 +1152,7 @@ class LmCBSPlanner:
         reserved_edge_constraints: list[tuple[int, NodeName, NodeName]] | None = None,
         reserved_vertex_intervals: list[tuple[int, int, NodeName, str]] | None = None,
         reserved_edge_intervals: list[tuple[int, int, NodeName, NodeName, str]] | None = None,
+        reserved_resource_intervals: list[tuple[int, int, object]] | None = None,
         move_cost_fn: Callable[[NodeName, NodeName], int] | None = None,
         low_level_max_time: int | None = None,
         max_high_level_nodes: int | None = None,
@@ -1130,6 +1164,7 @@ class LmCBSPlanner:
         reserved_edge_constraints = reserved_edge_constraints or []
         reserved_vertex_intervals = reserved_vertex_intervals or []
         reserved_edge_intervals = reserved_edge_intervals or []
+        reserved_resource_intervals = reserved_resource_intervals or []
         ll_max_time = self.low_level_max_time if low_level_max_time is None else max(1, int(low_level_max_time))
         hl_max_nodes = self.max_high_level_nodes if max_high_level_nodes is None else max(1, int(max_high_level_nodes))
         planning_budget = (
@@ -1138,6 +1173,7 @@ class LmCBSPlanner:
             else max(0.0, float(max_planning_time_sec))
         )
         planning_start = py_time.monotonic()
+        planning_deadline = planning_start + planning_budget
 
         global_vertex_constraints = {
             VertexConstraint(time=t, node=node)
@@ -1167,6 +1203,15 @@ class LmCBSPlanner:
             )
             for start, end, src, dst, owner in reserved_edge_intervals
             if src and dst
+        ]
+        global_resource_intervals = [
+            ResourceIntervalConstraint(
+                start_time=max(0, int(start)),
+                end_time=max(0, int(end)),
+                resource=resource,
+            )
+            for start, end, resource in reserved_resource_intervals
+            if resource is not None
         ]
 
         if not robot_requests:
@@ -1209,6 +1254,7 @@ class LmCBSPlanner:
             global_edge_constraints=global_edge_constraints,
             global_vertex_intervals=global_vertex_intervals,
             global_edge_intervals=global_edge_intervals,
+            global_resource_intervals=global_resource_intervals,
             heuristic_fn=self.heuristic_fn,
             move_cost_fn=move_cost_fn or self.move_cost_fn,
             heading_fn=self.heading_fn,
@@ -1219,6 +1265,7 @@ class LmCBSPlanner:
             can_wait_fn=self.can_wait_fn,
             low_level_max_time=ll_max_time,
             wait_cost=self.wait_cost,
+            planning_deadline=planning_deadline,
         )
 
         open_set: set[HighLevelNode] = set()
@@ -1231,7 +1278,11 @@ class LmCBSPlanner:
         env.constraint_dict = start.constraint_dict
         start.solution = env.compute_solution() or {}
         if not start.solution:
-            debug.reason = env.last_failure or "initial_solution_failed"
+            debug.reason = (
+                f"planning_timeout:{planning_budget:.3f}s"
+                if env.last_failure == "planning_timeout"
+                else env.last_failure or "initial_solution_failed"
+            )
             return PlannerResult(plans={}, debug=debug)
         start.cost = env.compute_solution_cost(start.solution)
         open_set.add(start)

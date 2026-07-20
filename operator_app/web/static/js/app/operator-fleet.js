@@ -1445,6 +1445,9 @@ export const withFleetUi = (Base) => class OperatorAppFleetUi extends Base {
     if (reason.startsWith("planned traffic wait")) {
       return "planned traffic wait";
     }
+    if (reason === "rolling continuation pending") {
+      return "planning next route segment";
+    }
     if (/obstacle|blocked edge/i.test(reason)) {
       return "blocked by obstacle";
     }
@@ -1475,6 +1478,9 @@ export const withFleetUi = (Base) => class OperatorAppFleetUi extends Base {
     }
     if (reason === "route replan queued") {
       return "replanning route";
+    }
+    if (reason === "rolling continuation pending") {
+      return "planning next route segment";
     }
     if (/deadlock/i.test(reason)) {
       return ["WAITING", "MOVING", "RETREATING"].includes(status)

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from time import monotonic
 from typing import Callable
 
 from .lm_cbs import LmRobotPlan, LmRobotRequest, PlannerDebug, PlannerResult
@@ -23,6 +24,7 @@ class RollingSippPlanner:
         turn_cost_fn: Callable[[float, float], int] | None = None,
         low_level_max_time: int = 160,
         wait_cost: int = 6,
+        max_planning_time_sec: float = 5.0,
     ) -> None:
         self.graph = graph
         self.heuristic_fn = heuristic_fn
@@ -31,6 +33,10 @@ class RollingSippPlanner:
         self.turn_cost_fn = turn_cost_fn
         self.low_level_max_time = max(1, int(low_level_max_time))
         self.wait_cost = max(1, int(wait_cost))
+        self.max_planning_time_sec = max(
+            0.0,
+            float(max_planning_time_sec),
+        )
 
     def validate_plans(
         self,
@@ -73,6 +79,7 @@ class RollingSippPlanner:
         reserved_edge_intervals: list[tuple[int, int, NodeName, NodeName, str]] | None = None,
     ) -> PlannerResult:
         debug = PlannerDebug(reason="rolling_sipp:init")
+        planning_deadline = monotonic() + self.max_planning_time_sec
         blocked_set = set(blocked_nodes or [])
         blocked_edge_set = set(blocked_edges or set())
         if not robot_requests:
@@ -117,6 +124,12 @@ class RollingSippPlanner:
         max_priority_repairs = max(2, min(32, len(robot_requests) * 2))
 
         while True:
+            if monotonic() >= planning_deadline:
+                debug.reason = "rolling_sipp:planning_timeout"
+                debug.conflicts_resolved = priority_repairs
+                debug.expanded_nodes = expanded_nodes
+                debug.high_level_nodes = len(seen_orders)
+                return PlannerResult(plans={}, debug=debug)
             reservations = ReservationTable(self.graph.reservation_capacities())
             self._apply_static_reservations(
                 reservations,
@@ -129,6 +142,12 @@ class RollingSippPlanner:
             plans: dict[str, LmRobotPlan] = {}
             retry_with_new_order = False
             for request in ordered_requests:
+                if monotonic() >= planning_deadline:
+                    debug.reason = "rolling_sipp:planning_timeout"
+                    debug.conflicts_resolved = priority_repairs
+                    debug.expanded_nodes = expanded_nodes
+                    debug.high_level_nodes = len(seen_orders)
+                    return PlannerResult(plans={}, debug=debug)
                 path = sipp.plan(
                     SippRobotRequest(
                         robot_name=request.robot_name,
@@ -140,10 +159,17 @@ class RollingSippPlanner:
                     reservations,
                     blocked_nodes=blocked_set,
                     blocked_edges=blocked_edge_set,
+                    planning_deadline=planning_deadline,
                 )
                 expanded_nodes += sipp.expanded_nodes
                 if path is None:
                     failure = sipp.last_failure or f"rolling_sipp:no_path:{request.robot_name}"
+                    if failure.startswith("planning_timeout:"):
+                        debug.reason = "rolling_sipp:planning_timeout"
+                        debug.conflicts_resolved = priority_repairs
+                        debug.expanded_nodes = expanded_nodes
+                        debug.high_level_nodes = len(seen_orders)
+                        return PlannerResult(plans={}, debug=debug)
                     blockers = self._blocking_plan_owners(
                         failure,
                         reservations,
@@ -172,6 +198,11 @@ class RollingSippPlanner:
                         debug.reason = f"{failure}:priority_cycle"
                     elif blockers and priority_repairs >= max_priority_repairs:
                         debug.reason = f"{failure}:priority_repair_limit"
+                    elif not blockers:
+                        debug.reason = (
+                            f"no_low_level_path:{request.robot_name}:"
+                            f"{failure}"
+                        )
                     debug.conflicts_resolved = priority_repairs
                     debug.expanded_nodes = expanded_nodes
                     debug.high_level_nodes = len(seen_orders)

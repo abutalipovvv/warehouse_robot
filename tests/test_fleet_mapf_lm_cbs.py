@@ -102,6 +102,55 @@ def test_low_level_horizon_rejects_late_goal() -> None:
     assert result.debug.reason.startswith("no_low_level_path")
 
 
+def test_initial_resource_failure_names_the_responsible_request() -> None:
+    planner = LmCBSPlanner(
+        {
+            "A": ["A_GOAL"],
+            "A_GOAL": [],
+            "B": ["B_GOAL"],
+            "B_GOAL": [],
+        },
+        vertex_resources_fn=lambda node: (f"vertex:{node}",),
+        low_level_max_time=10,
+        max_high_level_nodes=100,
+    )
+
+    result = planner.plan_for_robots(
+        [
+            LmRobotRequest("r1", "A", "A_GOAL"),
+            LmRobotRequest("r2", "B", "B_GOAL"),
+        ],
+        reserved_resource_intervals=[(0, 10, "vertex:B")],
+    )
+
+    assert result.plans == {}
+    assert (
+        result.debug.reason
+        == "no_low_level_path:r2:resource_constrained:B@0"
+    )
+
+
+def test_planning_deadline_also_bounds_initial_low_level_search() -> None:
+    # A deadline of zero is deliberately tiny: the initial A* phase must
+    # observe it before CBS reaches its high-level timeout check.
+    graph = {
+        f"N{index}": [f"N{index + 1}"] if index < 199 else []
+        for index in range(200)
+    }
+    planner = LmCBSPlanner(
+        graph,
+        low_level_max_time=400,
+        max_planning_time_sec=0.0,
+    )
+
+    result = planner.plan_for_robots(
+        [LmRobotRequest("r1", "N0", "N199")]
+    )
+
+    assert not result.plans
+    assert result.debug.reason == "planning_timeout:0.000s"
+
+
 def test_cbs_reserves_rotation_before_entering_an_edge() -> None:
     planner = LmCBSPlanner(
         {"A": ["B"], "B": []},
@@ -141,6 +190,25 @@ def test_cbs_constrains_shared_topometric_resource_directly() -> None:
     assert result.debug.reason == "success"
     assert result.debug.conflicts_resolved == 1
     assert sorted(plan.times[-1] for plan in result.plans.values()) == [1, 2]
+
+
+def test_cbs_honors_external_compound_resource_intervals() -> None:
+    planner = LmCBSPlanner(
+        {"A": ["B"], "B": ["C"], "C": []},
+        vertex_resources_fn=lambda node: (f"vertex:{node}",),
+        lane_resources_fn=lambda _start, _goal: ("corridor:shared",),
+        low_level_max_time=12,
+        max_high_level_nodes=100,
+    )
+
+    result = planner.plan_for_robots(
+        [LmRobotRequest("r1", "A", "C")],
+        reserved_resource_intervals=[(0, 2, "corridor:shared")],
+    )
+
+    assert result.debug.reason == "success"
+    assert result.plans["r1"].nodes == ["A", "A", "A", "A", "B", "C"]
+    assert result.plans["r1"].times == [0, 1, 2, 3, 4, 5]
 
 
 def assert_no_space_time_conflicts(plans) -> None:

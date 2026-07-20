@@ -202,7 +202,7 @@ def test_stage_launch_uses_ecom_description_and_keeps_stage_hardware_contract() 
     assert "group.metadata.selectionHaloMesh = selectionHaloMesh" in web_scene
     assert "updateSelectionAnimation(timestamp)" in web_scene
     assert "updateRobotMotion(timestamp)" in web_scene
-    assert "const alpha = 1 - Math.exp(-32 * dt);" in web_scene
+    assert "const alpha = 1 - Math.exp(-14 * dt);" in web_scene
     assert "const robotAnimating = this.updateRobotMotion(timestamp);" in web_scene
     assert "const cap = Number(robotCount || 0) >= 40 ? 1.0 : 1.35;" in web_scene
     assert 'updateRobots(robots, selectedName = "", waitBlockerName = "")' in web_scene

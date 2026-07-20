@@ -2174,6 +2174,9 @@ export class OperatorScene3D {
     if (reason === "route replan queued") {
       return "replanning route";
     }
+    if (reason === "rolling continuation pending") {
+      return "planning next route segment";
+    }
     if (/deadlock/i.test(reason)) {
       return ["WAITING", "MOVING", "RETREATING"].includes(status)
         ? "deadlock: resolving"
@@ -2214,7 +2217,12 @@ export class OperatorScene3D {
       ? Math.min(0.05, Math.max(0.001, (now - this.lastRobotMotionAt) / 1000))
       : (1 / 60);
     this.lastRobotMotionAt = now;
-    const alpha = 1 - Math.exp(-32 * dt);
+    // Status packets and collision decisions arrive on a lower-frequency
+    // server clock. A critically damped visual follow removes the 10 Hz
+    // stair-step without predicting outside the server-approved pose. The
+    // previous gain (32) converged almost completely in one packet interval,
+    // so turns and short recovery moves still looked like discrete jumps.
+    const alpha = 1 - Math.exp(-14 * dt);
     let animating = false;
     for (const entry of this.robotObjects.values()) {
       const target = entry.targetPose;

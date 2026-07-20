@@ -143,6 +143,101 @@ def test_time_scale_action_keeps_simulation_and_uses_virtual_order_time(monkeypa
     assert service._dynamic_benchmark_payload()["timeScale"] == 4.0
 
 
+def test_continuous_generator_replenishes_every_uncovered_robot_in_one_pump() -> None:
+    service = OperatorFleetManager(
+        DEFAULT_FLEET_MAP_DIR,
+        DEFAULT_FLEET_MAP_DIR.parents[2] / "config" / "params.yaml",
+        manager_id=FLEET_MANAGER_SIM_ID,
+        mode="simulation",
+    )
+    service.benchmark_payload(
+        {"action": "add", "count": 6, "seed": 42, "reset": False}
+    )
+    service.benchmark_payload({
+        "action": "plan",
+        "count": 6,
+        "seed": 42,
+        "reset": False,
+        "horizonSec": 10,
+        "orderIntervalSec": 30,
+        "queueDepth": 1,
+    })
+
+    first_orders = sorted(
+        (
+            order
+            for order in service.manager.orders.values()
+            if order.order_id.startswith("dynamic-")
+        ),
+        key=lambda order: order.order_id,
+    )
+    assert len(first_orders) == 6
+    uncovered_names = {order.vehicle for order in first_orders[:4]}
+    now = service._runtime_now()
+    for order in first_orders[:4]:
+        order.status = "COMPLETED"
+        order.updated_at = now
+
+    assert service._pump_dynamic_benchmark(now=now) == 4
+    assert all(
+        service._dynamic_order_depth(robot.name) == 1
+        for robot in service._benchmark_sim_robots()
+    )
+    metrics = service._dynamic_benchmark_payload()
+    assert metrics["robotsWithOrders"] == 6
+    assert metrics["robotsWithoutOrders"] == 0
+    replacement_vehicles = {
+        order.vehicle
+        for order in service.manager.orders.values()
+        if order.order_id.startswith("dynamic-")
+        and order.status not in {"COMPLETED", "FAILED", "CANCELED"}
+        and order.vehicle in uncovered_names
+    }
+    assert replacement_vehicles == uncovered_names
+
+
+def test_package_generator_replenishes_a_robot_before_the_wave_finishes() -> None:
+    service = OperatorFleetManager(
+        DEFAULT_FLEET_SIM_MAP_DIR,
+        DEFAULT_FLEET_MAP_DIR.parents[2] / "config" / "params.yaml",
+        manager_id=FLEET_MANAGER_SIM_ID,
+        mode="simulation",
+    )
+    service.benchmark_payload(
+        {"action": "add", "count": 8, "seed": 42, "reset": False}
+    )
+    service.benchmark_payload({
+        "action": "package_waves",
+        "count": 8,
+        "seed": 42,
+        "reset": False,
+        "horizonSec": 10,
+        "queueDepth": 1,
+    })
+
+    first_wave_ids = set(service._dynamic_benchmark["waveOrderIds"])
+    completed_order = service.manager.orders[min(first_wave_ids)]
+    completed_robot = completed_order.vehicle
+    now = service._runtime_now()
+    completed_order.status = "COMPLETED"
+    completed_order.updated_at = now
+
+    assert service._pump_dynamic_benchmark(now=now) == 1
+    assert service._dynamic_benchmark["wavesCompleted"] == 0
+    assert service._dynamic_benchmark["waveIndex"] == 2
+    assert service._dynamic_benchmark["packageWaveRobots"][2] == {
+        completed_robot
+    }
+    assert all(
+        service._dynamic_order_depth(robot.name) == 1
+        for robot in service._benchmark_sim_robots()
+    )
+    metrics = service._dynamic_benchmark_payload()
+    assert metrics["ordersGenerated"] == 9
+    assert metrics["robotsWithOrders"] == 8
+    assert metrics["robotsWithoutOrders"] == 0
+
+
 def test_package_order_waves_use_perimeter_and_keep_metrics_after_stop(monkeypatch) -> None:
     clock = [1_000.0]
     monkeypatch.setattr(runtime_module, "time", lambda: clock[0])
@@ -228,6 +323,63 @@ def test_package_order_waves_use_perimeter_and_keep_metrics_after_stop(monkeypat
     assert metrics["wavesCompleted"] == 2
     assert metrics["throughputOrdersPerMin"] == 19.2
     assert metrics["elapsedSimSec"] == 50.0
+
+
+def test_smart_kiva_benchmark_keeps_parking_goals_out_of_controlled_corridors() -> None:
+    smart_map = DEFAULT_FLEET_MAP_DIR.parent / "smart_kiva_large_w_mode.smap"
+    service = OperatorFleetManager(
+        smart_map,
+        DEFAULT_FLEET_MAP_DIR.parents[2] / "config" / "params.yaml",
+        manager_id=FLEET_MANAGER_SIM_ID,
+        mode="simulation",
+    )
+
+    spawn_lms = service._benchmark_spawn_lms(20, 42)
+    peripheral_lms = service._benchmark_peripheral_lms(20)
+    assert len(spawn_lms) == 20
+    assert len(peripheral_lms) >= 20
+    assert all(service._benchmark_wait_lm_is_safe(lm_id) for lm_id in spawn_lms)
+    assert all(service._benchmark_goal_lm_is_safe(lm_id) for lm_id in peripheral_lms)
+    assert all(len(service.manager.planner.graph.get(lm_id, {})) <= 3 for lm_id in peripheral_lms)
+
+    service.benchmark_payload(
+        {"action": "add", "count": 20, "seed": 42, "reset": False}
+    )
+    result = service.benchmark_payload({
+        "action": "package_waves",
+        "count": 20,
+        "seed": 42,
+        "reset": False,
+        "horizonSec": 10,
+        "queueDepth": 1,
+    })
+
+    # The requested benchmark horizon controls rolling-route commitment and
+    # is raised to this map's topology-safe minimum. It must not also inflate
+    # the independently configured reservation window from 10 to 30 seconds:
+    # runtime reservation visibility already has its own corridor-safe floor.
+    assert result["benchmark"]["horizonRequestedSec"] == 10
+    assert result["benchmark"]["horizonSec"] == 30
+    assert service.manager.params["fleet"]["rolling_horizon_sec"] == 30
+    assert service.manager.params["fleet"]["reservation_horizon_sec"] == 10
+    corridor_floor = (
+        service.manager.planner.controlled_corridor_max_ticks()
+        * service.manager._reservation_time_step()
+        + (2.0 * service.manager._reservation_safety_time())
+    )
+    effective_reservation = service.manager._reservation_horizon()
+    assert abs(effective_reservation - corridor_floor) < 0.000001
+    assert effective_reservation < result["benchmark"]["horizonSec"]
+
+    assert result["benchmark"]["ordersGenerated"] == 20
+    targets = {
+        order.target_lm
+        for order in service.manager.orders.values()
+        if order.order_id.startswith("dynamic-")
+    }
+    assert len(targets) == 20
+    assert all(service._benchmark_goal_lm_is_safe(lm_id) for lm_id in targets)
+    assert all(len(service.manager.planner.graph.get(lm_id, {})) <= 3 for lm_id in targets)
 
 
 def test_simulated_order_replans_after_rolling_horizon_without_completing() -> None:

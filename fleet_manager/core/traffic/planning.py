@@ -38,7 +38,10 @@ class TrafficPlanningMixin:
             reservation_offset = 0.0
         hard_blocked_lms = self._hard_blocked_lms(payload)
         blocked_edges = self._hard_blocked_edges(payload) | self._dynamic_blocked_edges()
-        release_owners = self._release_blocker_names_for_requests(valid_requests)
+        release_owners = (
+            self._release_blocker_names_for_requests(valid_requests)
+            | self._bootstrap_departure_robot_names(valid_requests)
+        )
         release_start_lms = {
             str(request.get("startLm", "")).strip()
             for request in valid_requests
@@ -161,6 +164,40 @@ class TrafficPlanningMixin:
                 prediction_offset=reservation_offset,
             )
         return result
+
+    def _bootstrap_departure_robot_names(
+        self,
+        requests: list[dict[str, Any]],
+    ) -> set[str]:
+        """Temporarily release stationary robots that are queued to depart.
+
+        Benchmark fleets are dispatched by a serialized worker, so most fresh
+        robots—and later, robots between two orders—do not yet have a committed
+        timeline while another departure is planned. Treating commanded
+        departures as infinite reservations makes a dense fleet impossible to
+        restart. Runtime footprint checks remain authoritative until each
+        departure is committed. STOPPED robots and robots without a pending
+        assignment remain persistent obstacles.
+        """
+        request_names = {
+            str(request.get("name") or "").strip()
+            for request in requests
+        }
+        released: set[str] = set()
+        for robot in self._runtime_robots():
+            if (
+                robot.name in request_names
+                or robot.trajectory
+                or robot.status not in {"IDLE", "ARRIVED"}
+            ):
+                continue
+            order = self._active_order_for_robot(robot)
+            if (
+                order is not None
+                and order.status in {"QUEUED", "PLANNING"}
+            ):
+                released.add(robot.name)
+        return released
 
     def _apply_planner_result(
         self,
@@ -353,16 +390,20 @@ class TrafficPlanningMixin:
                 str(conflict["other"]),
                 prediction_offset=prediction_offset,
             )
-            if (
-                float(conflict["time"]) <= self._continuous_collision_step()
-                and wait_duration >= self._reservation_horizon()
-            ):
-                # A stationary robot already occupies the first pose. Adding
-                # the same horizon-sized wait ten times cannot resolve it and
-                # was a major source of visible planner stalls/event spam.
+            if wait_duration >= self._reservation_horizon() - 0.000001:
+                # ``_wait_duration_for_conflict`` returns a full-horizon wait
+                # when the owner never clears.  That value is a no-clearance
+                # sentinel, not a valid schedule.  Inserting it used to push a
+                # future collision just beyond the finite validation horizon,
+                # so the poisoned trajectory was accepted and permanently
+                # reserved both ends of a narrow corridor.
                 self._event(
                     "warn",
-                    f"{robot_name} immediate corridor block by {conflict['other']}; detour required",
+                    (
+                        f"{robot_name} corridor block by {conflict['other']} "
+                        "does not clear inside the reservation horizon; "
+                        "detour required"
+                    ),
                 )
                 break
             trajectory = self._insert_trajectory_wait(
@@ -417,10 +458,28 @@ class TrafficPlanningMixin:
         waits = 0
         total_wait = 0.0
         max_iterations = self._batch_wait_max_iterations()
+        seen_dependencies: set[tuple[int, int, str]] = set()
         for _ in range(max_iterations):
             conflict = self._first_batch_trajectory_conflict(scheduled)
             if conflict is None:
                 break
+            dependency = (
+                int(conflict["priorityIndex"]),
+                int(conflict["waitIndex"]),
+                str(conflict["edge"]),
+            )
+            if dependency in seen_dependencies:
+                self._event(
+                    "warn",
+                    (
+                        "batch reservation made no progress for "
+                        f"{scheduled[dependency[1]].get('robot')} behind "
+                        f"{scheduled[dependency[0]].get('robot')} on "
+                        f"{dependency[2]}"
+                    ),
+                )
+                break
+            seen_dependencies.add(dependency)
             waiting_plan = scheduled[int(conflict["waitIndex"])]
             priority_plan = scheduled[int(conflict["priorityIndex"])]
             trajectory = [
@@ -440,6 +499,31 @@ class TrafficPlanningMixin:
                 priority_trajectory,
                 float(conflict["time"]),
             )
+            if wait_duration >= max(
+                2.0,
+                self._reservation_horizon(),
+            ) - 0.000001:
+                # This is the peer equivalent of the no-clearance sentinel
+                # used by corridor scheduling.  Appending it only shifts the
+                # same collision past a finite validation window.
+                self._event(
+                    "warn",
+                    (
+                        f"{waiting_plan.get('robot')} cannot wait for "
+                        f"{priority_plan.get('robot')}: peer does not clear "
+                        "inside the reservation horizon"
+                    ),
+                )
+                break
+            if (
+                total_wait + wait_duration
+                > self._reservation_horizon() + 0.000001
+            ):
+                self._event(
+                    "warn",
+                    "batch reservation wait budget exhausted; joint replan required",
+                )
+                break
             trajectory = self._insert_trajectory_wait(
                 trajectory,
                 int(wait_point["index"]),
@@ -560,22 +644,11 @@ class TrafficPlanningMixin:
                         continue
                     priority_edge = self._edge_id_at_trajectory(priority_trajectory, t) or "unknown"
                     waiting_edge = self._edge_id_at_trajectory(waiting_trajectory, t) or "unknown"
-                    if waiting_edge.startswith("WAIT@") and not priority_edge.startswith("WAIT@"):
-                        return {
-                            "time": t,
-                            "priorityIndex": wait_index,
-                            "waitIndex": priority_index,
-                            "edge": priority_edge,
-                        }
-                    priority_entry = self._edge_start_time_at_trajectory(priority_trajectory, t)
-                    waiting_entry = self._edge_start_time_at_trajectory(waiting_trajectory, t)
-                    if priority_entry > waiting_entry + step:
-                        return {
-                            "time": t,
-                            "priorityIndex": wait_index,
-                            "waitIndex": priority_index,
-                            "edge": priority_edge,
-                        }
+                    # Keep one deterministic winner for the complete pair.
+                    # Flipping priority after an inserted WAIT made two
+                    # head-on plans alternately delay each other forever.
+                    # ``candidate_pairs`` is sorted by plan index, which
+                    # preserves the request/MAPF priority order.
                     return {
                         "time": t,
                         "priorityIndex": priority_index,

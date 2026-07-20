@@ -102,9 +102,29 @@ class FleetManagerCore(
         self._dispatch_job: dict[str, Any] | None = None
         self._last_async_job_kind = ""
         self._rolling_prefetch_retry_at: dict[str, float] = {}
+        # A continuation normally remains a cheap one/two-robot SIPP request.
+        # Failed boundary holders rotate through cheap pair attempts, then the
+        # fast SIPP recovery wave grows to include the coupled stopped group.
+        # Exponential CBS remains capped to small local groups.
+        self._rolling_prefetch_failures: dict[str, int] = {}
+        # A fully stopped rolling cohort is released in dependency order. If
+        # its dependency graph is cyclic, one robot is sent to a free waiting
+        # pocket. Do not retry a pocket that already failed while every robot
+        # is still at the exact same route revision.
+        self._rolling_vacancy_recovery_signature: tuple[
+            tuple[str, str, int], ...
+        ] = ()
+        self._rolling_vacancy_recovery_blacklist: set[
+            tuple[tuple[tuple[str, str, int], ...], str, str]
+        ] = set()
         self._coupled_replan_last_attempt: dict[tuple[str, ...], float] = {}
         self._coupled_replan_failures: dict[tuple[str, ...], int] = {}
         self._active_wait_cycles: dict[tuple[str, ...], float] = {}
+        # Runtime collision checks run at 10 Hz, while a right-of-way lease
+        # intentionally lasts seconds.  Remember the last arbitration per
+        # component so a stalled lease can escalate without being re-granted
+        # and logged on every physics frame.
+        self._wait_cycle_last_arbitration: dict[tuple[str, ...], float] = {}
         # Populated only while a physics tick is advancing. All pairwise
         # predictions must use the same clocks from the start of that tick;
         # otherwise iteration order makes an already-updated peer appear one

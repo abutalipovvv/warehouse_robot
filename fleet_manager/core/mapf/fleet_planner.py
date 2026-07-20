@@ -523,6 +523,26 @@ class FleetMapfPlanner:
             max_planning_time_sec=self.max_planning_time_sec,
             wait_cost=self.wait_cost,
         )
+        # CBS must see the same compound resources as the SIPP validator.
+        # A reserved internal LM occupies its whole controlled corridor, and a
+        # reserved edge also consumes lane-group/endpoint clearance resources.
+        # Previously CBS constrained only the literal node/edge, produced a
+        # nominal solution through that region, and the validator rejected it
+        # as ``cbs_resource_conflict`` on every retry.
+        reserved_resource_intervals: set[tuple[int, int, object]] = set()
+        for tick, node in reserved_vertex_constraints:
+            for resource in traffic_graph.vertex_resources(node):
+                reserved_resource_intervals.add((tick, tick, resource))
+        for start, end, node, _owner in reserved_vertex_intervals:
+            for resource in traffic_graph.vertex_resources(node):
+                reserved_resource_intervals.add((start, end, resource))
+        for tick, src, dst in reserved_edge_constraints:
+            for resource in lane_resources(src, dst):
+                reserved_resource_intervals.add((tick, tick, resource))
+        if self.reserved_edge_hard_constraints_enabled:
+            for start, end, src, dst, _owner in reserved_edge_intervals:
+                for resource in lane_resources(src, dst):
+                    reserved_resource_intervals.add((start, end, resource))
         result = planner.plan_for_robots(
             requests,
             blocked_nodes=sorted(blocked_lms),
@@ -533,6 +553,10 @@ class FleetMapfPlanner:
                 reserved_edge_intervals
                 if self.reserved_edge_hard_constraints_enabled
                 else []
+            ),
+            reserved_resource_intervals=sorted(
+                reserved_resource_intervals,
+                key=lambda item: (item[0], item[1], str(item[2])),
             ),
         )
         if result.plans:
@@ -602,6 +626,7 @@ class FleetMapfPlanner:
             ),
             low_level_max_time=low_level_max_time,
             wait_cost=self.wait_cost,
+            max_planning_time_sec=self.max_planning_time_sec,
         )
         return planner.plan_for_robots(
             requests,
@@ -1049,6 +1074,14 @@ class FleetMapfPlanner:
             return None
 
     def _edge_tick_cost(self, src: str, dst: str, speed: float, acceleration: float | None = None) -> int:
+        # Graph landmarks are scheduling vertices, not physical stop points.
+        # Applying a complete accelerate/decelerate profile independently to
+        # every 0.5 m edge made a robot brake to zero at every map cell and
+        # turned a 1.37 m/s route into roughly 0.25 m/s stop-and-go motion.
+        # Reserve consecutive MOVE edges at their speed limit; explicit WAIT
+        # and ROTATE actions still own separate ticks. Route execution and the
+        # renderer interpolate continuously across the resulting timestamps.
+        del acceleration
         if src == dst:
             return 1
         edge = self.edge_by_key.get((src, dst))
@@ -1062,7 +1095,7 @@ class FleetMapfPlanner:
         else:
             length = max(float(edge.length), 0.0)
             edge_speed = self._edge_speed(edge, speed)
-        travel_time = self._travel_time(length, edge_speed, acceleration)
+        travel_time = length / max(0.02, edge_speed)
         return max(1, math.ceil(travel_time / max(self.time_step_sec, 0.001)))
 
     def _edge_speed(self, edge: GraphEdge, default_speed: float) -> float:
@@ -1259,7 +1292,11 @@ class FleetMapfPlanner:
             segment = self._annotate_sample_distances(samples)
             segment_length = max(segment[-1]["s"] if segment else 0.0, 1e-6)
             segment_yaw = float(segment[1]["yaw"] if len(segment) > 1 else segment[0]["yaw"])
-            continuous_duration = self._travel_time(segment_length, speed, acceleration)
+            continuous_duration = (
+                segment_length / max(0.02, speed)
+                if has_kinematic_timing
+                else self._travel_time(segment_length, speed, acceleration)
+            )
             stretch_motion = self.stretch_motion_to_reservation_ticks if stretch_motion_to_reservation_ticks is None else stretch_motion_to_reservation_ticks
             rotate_duration = 0.0
             if rotate_enabled and not has_kinematic_timing:

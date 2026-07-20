@@ -747,7 +747,10 @@ class OperatorFleetManager:
                 "to finish before starting a new generator"
             )
 
-        horizon_sec = max(1.0, min(120.0, float(horizon_sec)))
+        requested_horizon_sec = max(1.0, min(120.0, float(horizon_sec)))
+        horizon_sec = self._safe_dynamic_rolling_horizon(
+            requested_horizon_sec,
+        )
         generation_mode = (
             "package_waves"
             if str(generation_mode).strip().lower() == "package_waves"
@@ -764,7 +767,10 @@ class OperatorFleetManager:
             fleet = {}
             self.manager.params["fleet"] = fleet
         fleet["rolling_horizon_sec"] = horizon_sec
-        fleet["reservation_horizon_sec"] = horizon_sec
+        # ``horizonSec`` controls the committed rolling window only. Keep the
+        # independently configured reservation horizon; the fleet runtime
+        # already raises it to the longest controlled-corridor traversal plus
+        # its safety margin when that topology needs more look-ahead.
         self.manager.reset_traffic_flow_state()
         for key in getattr(self.manager, "traffic_metrics", {}):
             self.manager.traffic_metrics[key] = 0
@@ -783,6 +789,7 @@ class OperatorFleetManager:
             "startedAt": now,
             "stoppedAt": 0.0,
             "horizonSec": horizon_sec,
+            "horizonRequestedSec": requested_horizon_sec,
             "orderIntervalSec": order_interval_sec,
             "queueDepth": queue_depth,
             "ordersGenerated": 0,
@@ -814,6 +821,11 @@ class OperatorFleetManager:
             "waveStartedAt": 0.0,
             "lastWaveDurationSec": 0.0,
             "waveDurationTotalSec": 0.0,
+            "packageWaveOrderIds": {},
+            "packageWaveRobots": {},
+            "packageWaveStartedAt": {},
+            "packageCompletedWaves": set(),
+            "packageRobotRounds": {},
         }
         # Queue the first order for every robot atomically.  Dispatch is
         # intentionally deferred so MAPF can see small coupled groups instead
@@ -845,6 +857,33 @@ class OperatorFleetManager:
             "state": state,
         })
 
+    def _safe_dynamic_rolling_horizon(self, requested: float) -> float:
+        """Keep a benchmark window long enough for a corridor transfer."""
+        requested = max(1.0, min(120.0, float(requested)))
+        fleet = self.manager.params.get("fleet", {})
+        if not isinstance(fleet, dict):
+            fleet = {}
+        try:
+            configured = max(
+                1.0,
+                float(fleet.get("rolling_horizon_sec", requested) or requested),
+            )
+        except (TypeError, ValueError):
+            configured = requested
+        corridor_ticks = self.manager.planner.controlled_corridor_max_ticks()
+        if corridor_ticks <= 0:
+            return requested
+        corridor_sec = (
+            corridor_ticks
+            * self.manager._reservation_time_step()
+        )
+        topology_minimum = (
+            corridor_sec
+            + self.manager._controlled_corridor_entry_lookahead()
+            + (2.0 * self.manager._reservation_safety_time())
+        )
+        return min(120.0, max(requested, configured, topology_minimum))
+
     def _stop_dynamic_benchmark_payload(self) -> dict[str, Any]:
         if self._dynamic_benchmark.get("active"):
             self._dynamic_benchmark["active"] = False
@@ -865,11 +904,11 @@ class OperatorFleetManager:
         config = getattr(self, "_dynamic_benchmark", {})
         self._prune_dynamic_order_history()
         if str(config.get("generationMode") or "continuous") == "package_waves":
-            wave_ready = self._finish_package_wave_if_terminal(now)
-            if not config.get("active") or not wave_ready:
+            self._finish_terminal_package_waves(now)
+            if not config.get("active"):
                 config["lastPumpAt"] = now
                 return 0
-            generated = self._generate_package_order_wave(now)
+            generated = self._top_up_package_orders(now)
             config["lastPumpAt"] = now
             return generated
         if not config.get("active"):
@@ -879,15 +918,39 @@ class OperatorFleetManager:
         next_order_at = config.setdefault("nextOrderAt", {})
         interval = float(config.get("orderIntervalSec", 3.0) or 3.0)
         queue_depth = int(config.get("queueDepth", 2) or 2)
+        depths = {
+            robot.name: self._dynamic_order_depth(robot.name)
+            for robot in robots
+        }
         due = [
             robot for robot in robots
-            if now >= float(next_order_at.get(robot.name, now))
-            and self._dynamic_order_depth(robot.name) < queue_depth
+            if depths[robot.name] < queue_depth
+            and (
+                depths[robot.name] == 0
+                or now >= float(next_order_at.get(robot.name, now))
+            )
         ]
-        due.sort(key=lambda robot: (float(next_order_at.get(robot.name, now)), robot.name))
+        # Coverage is the hard invariant. Queue-depth prefill may stay
+        # throttled, but every robot with zero orders is replenished in this
+        # same pump instead of waiting behind a two-robot batch limit.
+        due.sort(
+            key=lambda robot: (
+                depths[robot.name] != 0,
+                float(next_order_at.get(robot.name, now)),
+                robot.name,
+            )
+        )
         generated = 0
         initial_wave = not bool(config.get("initialWaveQueued", False))
-        batch_limit = len(due) if initial_wave else self._dynamic_generation_batch_size()
+        uncovered_count = sum(depths[robot.name] == 0 for robot in due)
+        batch_limit = (
+            len(due)
+            if initial_wave
+            else min(
+                len(due),
+                uncovered_count + self._dynamic_generation_batch_size(),
+            )
+        )
         for robot in due[:batch_limit]:
             started = perf_counter()
             try:
@@ -920,50 +983,86 @@ class OperatorFleetManager:
         self._prune_dynamic_order_history()
         return generated
 
-    def _finish_package_wave_if_terminal(self, now: float) -> bool:
+    def _finish_terminal_package_waves(self, now: float) -> int:
         config = self._dynamic_benchmark
-        wave_ids = set(config.get("waveOrderIds", set()))
-        if not wave_ids:
-            return True
-        pending = [
-            order_id
-            for order_id in wave_ids
+        wave_orders = config.setdefault("packageWaveOrderIds", {})
+        wave_robots = config.setdefault("packageWaveRobots", {})
+        wave_started = config.setdefault("packageWaveStartedAt", {})
+        completed_waves = config.setdefault("packageCompletedWaves", set())
+        expected_robots = len(self._benchmark_sim_robots())
+        completed_now = 0
+        for raw_index in sorted(wave_orders, key=int):
+            wave_index = int(raw_index)
+            if wave_index in completed_waves:
+                continue
+            order_ids = set(wave_orders.get(raw_index, set()))
+            robot_names = set(wave_robots.get(raw_index, set()))
             if (
+                expected_robots <= 0
+                or len(order_ids) != expected_robots
+                or len(robot_names) != expected_robots
+            ):
+                continue
+            if any(
                 order_id in self.manager.orders
                 and self.manager.orders[order_id].status
                 not in {"COMPLETED", "FAILED", "CANCELED"}
+                for order_id in order_ids
+            ):
+                continue
+            started_at = float(wave_started.get(raw_index, now) or now)
+            duration = max(0.0, now - started_at)
+            completed_waves.add(wave_index)
+            completed_now += 1
+            config["lastWaveDurationSec"] = duration
+            config["waveDurationTotalSec"] = float(
+                config.get("waveDurationTotalSec", 0.0) or 0.0
+            ) + duration
+            self.manager._event(
+                "info",
+                f"package wave {wave_index} completed: "
+                f"{len(order_ids)} orders in {duration:.1f} simulated seconds",
             )
-        ]
-        if pending:
-            return False
-        started_at = float(config.get("waveStartedAt", now) or now)
-        duration = max(0.0, now - started_at)
-        config["wavesCompleted"] = int(config.get("wavesCompleted", 0) or 0) + 1
-        config["lastWaveDurationSec"] = duration
-        config["waveDurationTotalSec"] = float(
-            config.get("waveDurationTotalSec", 0.0) or 0.0
-        ) + duration
-        config["waveOrderIds"] = set()
-        self.manager._event(
-            "info",
-            f"package wave {int(config.get('waveIndex', 0) or 0)} completed: "
-            f"{len(wave_ids)} orders in {duration:.1f} simulated seconds",
-        )
-        return True
+        config["wavesCompleted"] = len(completed_waves)
+        return completed_now
 
-    def _generate_package_order_wave(self, now: float) -> int:
+    def _top_up_package_orders(self, now: float) -> int:
         config = self._dynamic_benchmark
-        robots = self._benchmark_sim_robots()
+        robots = [
+            robot
+            for robot in self._benchmark_sim_robots()
+            if self._dynamic_order_depth(robot.name) == 0
+        ]
         if not robots:
             return 0
-        wave_index = int(config.get("waveIndex", 0) or 0) + 1
+        robot_rounds = config.setdefault("packageRobotRounds", {})
+        by_wave: dict[int, list[Any]] = {}
+        for robot in robots:
+            wave_index = int(robot_rounds.get(robot.name, 0) or 0) + 1
+            by_wave.setdefault(wave_index, []).append(robot)
+        return sum(
+            self._generate_package_orders_for_wave(group, wave_index, now)
+            for wave_index, group in sorted(by_wave.items())
+        )
+
+    def _generate_package_order_wave(self, now: float) -> int:
+        """Backward-compatible entry point for package coverage generation."""
+        return self._top_up_package_orders(now)
+
+    def _generate_package_orders_for_wave(
+        self,
+        robots: list[Any],
+        wave_index: int,
+        now: float,
+    ) -> int:
+        config = self._dynamic_benchmark
         assignments = self._package_wave_assignments(robots, wave_index)
         if len(assignments) != len(robots):
             last_failure = float(config.get("lastWaveFailureAt", 0.0) or 0.0)
             if now - last_failure >= 5.0:
                 self.manager._event(
                     "warn",
-                    f"package wave {wave_index} pending: assigned "
+                    f"package wave {wave_index} coverage pending: assigned "
                     f"{len(assignments)}/{len(robots)} peripheral goals",
                 )
                 config["lastWaveFailureAt"] = now
@@ -972,7 +1071,13 @@ class OperatorFleetManager:
             ) + max(1, len(robots) - len(assignments))
             return 0
 
-        order_ids: set[str] = set()
+        wave_orders = config.setdefault("packageWaveOrderIds", {})
+        wave_robots = config.setdefault("packageWaveRobots", {})
+        wave_started = config.setdefault("packageWaveStartedAt", {})
+        robot_rounds = config.setdefault("packageRobotRounds", {})
+        order_ids = wave_orders.setdefault(wave_index, set())
+        robot_names = wave_robots.setdefault(wave_index, set())
+        new_wave = not order_ids
         generated = 0
         started = perf_counter()
         for index, (robot, target_lm) in enumerate(assignments):
@@ -996,6 +1101,8 @@ class OperatorFleetManager:
                 )
                 continue
             order_ids.add(str(order_payload["id"]))
+            robot_names.add(str(robot.name))
+            robot_rounds[str(robot.name)] = wave_index
             generated += 1
             self._record_generated_dynamic_order(order_payload, now)
         config["dispatchElapsedMs"] = float(
@@ -1008,16 +1115,22 @@ class OperatorFleetManager:
             config["generationFailures"] = int(
                 config.get("generationFailures", 0) or 0
             ) + (len(robots) - generated)
-        config["waveIndex"] = wave_index
-        config["wavesStarted"] = int(config.get("wavesStarted", 0) or 0) + 1
-        config["waveStartedAt"] = now
-        config["waveOrderIds"] = order_ids
-        config["initialWaveQueued"] = True
-        self.manager._event(
-            "info",
-            f"package wave {wave_index} queued: {generated}/{len(robots)} "
-            "orders to map perimeter",
+        if generated and new_wave:
+            wave_started[wave_index] = now
+            config["wavesStarted"] = int(config.get("wavesStarted", 0) or 0) + 1
+        config["waveIndex"] = max(
+            int(config.get("waveIndex", 0) or 0),
+            wave_index,
         )
+        config["waveStartedAt"] = float(wave_started.get(wave_index, now) or now)
+        config["waveOrderIds"] = set(order_ids)
+        config["initialWaveQueued"] = True
+        if generated:
+            self.manager._event(
+                "info",
+                f"package wave {wave_index} coverage queued: "
+                f"{generated}/{len(robots)} orders to map perimeter",
+            )
         return generated
 
     def _next_dynamic_order_payload(self, robot: Any, now: float) -> dict[str, Any] | None:
@@ -1169,6 +1282,17 @@ class OperatorFleetManager:
         assignments: list[tuple[Any, str]] = []
         min_hops, max_hops = self._dynamic_goal_hop_window()
         robot_count = max(1, len(robots))
+        free_peripheral = set(peripheral) - occupied_lms
+        excluded_goal_lms = (
+            occupied_lms
+            if len(free_peripheral) >= robot_count
+            else set()
+        )
+        # A perimeter-only Kiva layout may have fewer than two parking portals
+        # per robot. In that case the wave is a coordinated permutation:
+        # targets may be another wave robot's current portal because that
+        # owner receives its departure in the same atomic batch. Unique goals
+        # and the collision planner still prevent two robots sharing a portal.
         # Half-slot rotation prevents every wave from assigning the same edge
         # cells to the same robot while keeping targets uniformly distributed.
         wave_phase = (max(0, wave_index - 1) * 0.5) % robot_count
@@ -1179,7 +1303,7 @@ class OperatorFleetManager:
             reachable = self._forward_benchmark_goals(
                 origin,
                 used_goals,
-                occupied_lms,
+                excluded_goal_lms,
                 self._dynamic_rng,
                 min_hops=min_hops,
                 max_hops=max_hops,
@@ -1189,7 +1313,7 @@ class OperatorFleetManager:
                 reachable = self._forward_benchmark_goals(
                     origin,
                     used_goals,
-                    occupied_lms,
+                    excluded_goal_lms,
                     self._dynamic_rng,
                     min_hops=2,
                     max_hops=min(300, max(max_hops, len(self.loaded_map.landmarks))),
@@ -1222,7 +1346,10 @@ class OperatorFleetManager:
         names = [
             name
             for name in self._largest_benchmark_component()
-            if name in self.loaded_map.landmarks
+            if (
+                name in self.loaded_map.landmarks
+                and self._benchmark_goal_lm_is_safe(name)
+            )
         ]
         if not names:
             return []
@@ -1399,6 +1526,13 @@ class OperatorFleetManager:
             "scenario": str(config.get("scenario") or "continuous_random_orders"),
             "seed": int(config.get("seed", 42) or 42),
             "horizonSec": float(config.get("horizonSec", 10.0) or 10.0),
+            "horizonRequestedSec": float(
+                config.get(
+                    "horizonRequestedSec",
+                    config.get("horizonSec", 10.0),
+                )
+                or 10.0
+            ),
             "orderIntervalSec": float(config.get("orderIntervalSec", 3.0) or 3.0),
             "queueDepth": int(config.get("queueDepth", 2) or 2),
             "ordersGenerated": generated,
@@ -1478,13 +1612,21 @@ class OperatorFleetManager:
             "waveStartedAt": 0.0,
             "lastWaveDurationSec": 0.0,
             "waveDurationTotalSec": 0.0,
+            "packageWaveOrderIds": {},
+            "packageWaveRobots": {},
+            "packageWaveStartedAt": {},
+            "packageCompletedWaves": set(),
+            "packageRobotRounds": {},
         }
 
     def _benchmark_spawn_lms(self, count: int, seed: int) -> list[str]:
         names = [
             name
             for name in self._largest_benchmark_component()
-            if self._benchmark_spawn_lm_is_safe(name)
+            if (
+                self._benchmark_spawn_lm_is_safe(name)
+                and self._benchmark_wait_lm_is_safe(name)
+            )
         ]
         if len(names) < count:
             raise ValueError(
@@ -1521,6 +1663,34 @@ class OperatorFleetManager:
         if vertex is None or not vertex.controlled_region_ids:
             return ""
         return sorted(vertex.controlled_region_ids)[0]
+
+    def _benchmark_goal_lm_is_safe(self, name: str) -> bool:
+        """Keep benchmark parking destinations out of traffic bottlenecks."""
+        if not self._benchmark_wait_lm_is_safe(name):
+            return False
+        graph = getattr(self.manager, "_controlled_corridor_graph", None)
+        vertex = graph.vertices.get(name) if graph is not None else None
+        if vertex is None:
+            return True
+        # On Kiva maps, no-wait aisle chains terminate at shared junctions.
+        # Parking a completed wave robot on an internal four-way junction
+        # removes a transit vertex and can disconnect every remaining route.
+        # Degree-three perimeter portals are still graph-safe wait points and
+        # leave the inner cross-aisles available to unfinished orders.
+        neighbours = self.manager.planner.graph.get(name, {})
+        return len(neighbours) <= 3
+
+    def _benchmark_wait_lm_is_safe(self, name: str) -> bool:
+        graph = getattr(self.manager, "_controlled_corridor_graph", None)
+        vertex = graph.vertices.get(name) if graph is not None else None
+        if vertex is None:
+            return True
+        # Auto-controlled corridors expose capacity-one stop-line LMs just
+        # before each junction. They are legal holding/spawn points because a
+        # robot there owns the whole corridor mutex; the benchmark's
+        # corridor-safe selector below still places at most one robot in each
+        # such region.
+        return bool(vertex.can_wait)
 
     def _corridor_safe_benchmark_lms(
         self,
@@ -1883,6 +2053,7 @@ class OperatorFleetManager:
                 hops >= min_hops
                 and node not in used_goals
                 and node not in excluded_goals
+                and self._benchmark_goal_lm_is_safe(node)
                 and self._lm_is_separated_from(node, used_goals)
                 and (
                     not self._benchmark_corridor_region(node)

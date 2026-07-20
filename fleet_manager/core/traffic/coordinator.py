@@ -28,6 +28,7 @@ class TrafficCoordinatorMixin:
         }
         handled: set[str] = set()
         cycle_members: set[str] = set()
+        observed_cycle_keys: set[tuple[str, ...]] = set()
         for start_name in sorted(wait_for):
             chain: list[str] = []
             positions: dict[str, int] = {}
@@ -36,6 +37,7 @@ class TrafficCoordinatorMixin:
                 if current in positions:
                     cycle = chain[positions[current]:]
                     cycle_key = tuple(sorted(cycle))
+                    observed_cycle_keys.add(cycle_key)
                     new_episode = cycle_key not in self._active_wait_cycles
                     if new_episode:
                         self._active_wait_cycles[cycle_key] = min(
@@ -67,6 +69,30 @@ class TrafficCoordinatorMixin:
                 current = wait_for[current]
             handled.update(chain)
 
+        # A queued detour or a completed rolling chunk can dissolve a cycle
+        # without advancing one of its old trajectories.  Do not retain that
+        # component's age/cooldown and misclassify a later encounter as the
+        # same deadlock episode.
+        for cycle_key in list(self._active_wait_cycles):
+            if cycle_key in observed_cycle_keys:
+                continue
+            # A granted winner is MOVING for at least one physics frame, so
+            # the wait-for cycle temporarily disappears even when it advances
+            # only a few centimetres and blocks again at the same corridor
+            # mouth. Keep that episode until the lease produces genuine
+            # clearance (handled by _record_traffic_progress) or expires.
+            if any(
+                (
+                    (member := self.robots.get(robot_name)) is not None
+                    and member.traffic_priority_until > now
+                )
+                for robot_name in cycle_key
+            ):
+                continue
+            self._active_wait_cycles.pop(cycle_key, None)
+            self._wait_cycle_last_arbitration.pop(cycle_key, None)
+            self._coupled_replan_failures.pop(cycle_key, None)
+
         timeout = self._traffic_replan_after()
         chain_members: set[str] = set()
         for start_name, start_robot in waiting.items():
@@ -82,8 +108,43 @@ class TrafficCoordinatorMixin:
             while current in waiting and current not in chain:
                 chain.append(current)
                 current = wait_for.get(current, "")
+            if any(name in cycle_members for name in chain):
+                # This is an upstream tail feeding a cycle already handled by
+                # _break_runtime_wait_cycle(). A second acyclic grant on the
+                # stale beginning-of-tick snapshot would immediately override
+                # that cycle winner and repeat on every physics frame.
+                chain_members.update(chain)
+                continue
             terminal = self.robots.get(current)
-            if len(chain) < 2 or terminal is None or not terminal.trajectory:
+            if len(chain) < 2 or terminal is None:
+                continue
+            if not terminal.trajectory:
+                # A→B→C where C is a queued/parked body has no motion lease
+                # that an upstream robot can consume.  Mark the whole tail as
+                # handled so the individual starvation branch below does not
+                # repeatedly command A into B.  Release the immediate follower
+                # once C's departure has demonstrably failed; for a genuinely
+                # parked C, use the same bounded corridor evacuation directly.
+                chain_members.update(chain)
+                immediate = waiting[chain[-1]]
+                if self._robot_departure_pending(terminal):
+                    self._evacuate_for_failed_stationary_departure(
+                        immediate,
+                        terminal,
+                        now,
+                    )
+                else:
+                    stalled_since = (
+                        immediate.traffic_stall_since
+                        or immediate.blocked_since
+                        or now
+                    )
+                    if now - stalled_since >= self._deadlock_retreat_after():
+                        self._start_deadlock_corridor_evacuation(
+                            [terminal, immediate],
+                            terminal,
+                            now,
+                        )
                 continue
             participants = [waiting[name] for name in chain] + [terminal]
             if self._grant_wait_chain_priority(participants, terminal, now):
@@ -94,6 +155,26 @@ class TrafficCoordinatorMixin:
                 continue
             if robot.blocked_since is None or now - robot.blocked_since < timeout:
                 continue
+            blocker_name = robot.wait_for_robot or self._robot_name_from_conflict_reason(
+                robot.last_reason,
+            )
+            blocker = self.robots.get(blocker_name)
+            if blocker is not None and self._robot_departure_pending(blocker):
+                # Do not turn a temporary dependency into a second parked
+                # obstacle. The dispatcher gives this blocker the next
+                # recovery slot. If repeated MAPF attempts could not release
+                # it, however, this is a physical head-on rather than a
+                # temporary wait: evacuate the incoming robot to its previous
+                # graph LM so the commanded departure can actually move.
+                evacuated = self._evacuate_for_failed_stationary_departure(
+                    robot,
+                    blocker,
+                    now,
+                )
+                if evacuated or not self._failed_rolling_boundary_departure(
+                    blocker,
+                ):
+                    continue
             replanned = False
             if self._safe_replan_start_lm(robot):
                 replanned = self._schedule_runtime_replan(
@@ -103,11 +184,21 @@ class TrafficCoordinatorMixin:
                 )
             if replanned:
                 continue
-            blocker_name = robot.wait_for_robot or self._robot_name_from_conflict_reason(
-                robot.last_reason,
-            )
-            blocker = self.robots.get(blocker_name)
             if blocker is not None:
+                stalled_since = (
+                    robot.traffic_stall_since
+                    or robot.blocked_since
+                    or now
+                )
+                if (
+                    now - stalled_since >= self._deadlock_retreat_after()
+                    and self._start_deadlock_corridor_evacuation(
+                        [blocker, robot],
+                        blocker,
+                        now,
+                    )
+                ):
+                    continue
                 self._grant_starvation_priority(robot, blocker, now)
 
         # Admission control is a traffic light, not a permanent reservation.
@@ -158,8 +249,46 @@ class TrafficCoordinatorMixin:
         for cycle_key in list(self._active_wait_cycles):
             if robot.name not in cycle_key:
                 continue
+            peers = [
+                peer
+                for name in cycle_key
+                if name != robot.name
+                and (peer := self.robots.get(name)) is not None
+            ]
+            final_time = (
+                float(robot.trajectory[-1].get("t", 0.0) or 0.0)
+                if robot.trajectory
+                else robot.route_clock
+            )
+            remaining = max(0.0, final_time - robot.route_clock)
+            if (
+                peers
+                and remaining > 0.000001
+                and self._cycle_forward_clearance(
+                    robot,
+                    [robot, *peers],
+                )
+                + self._runtime_motion_step()
+                < remaining
+            ):
+                # A tiny priority-step toward the same stationary body is not
+                # deadlock progress. Preserve the episode age so the entrant
+                # reaches deterministic corridor evacuation instead of
+                # receiving the same grant forever.
+                robot.traffic_stall_since = self._active_wait_cycles[cycle_key]
+                continue
             self._active_wait_cycles.pop(cycle_key, None)
+            self._wait_cycle_last_arbitration.pop(cycle_key, None)
             self._coupled_replan_failures.pop(cycle_key, None)
+            # The geometry of the complete component changed. Give its peers
+            # a fresh bounded arbitration window instead of carrying an old
+            # stall timestamp into a new cycle and arming another retreat on
+            # the very next 10 Hz tick.
+            for peer_name in cycle_key:
+                peer = self.robots.get(peer_name)
+                if peer is not None:
+                    peer.traffic_stall_since = None
+                    peer.blocked_since = None
 
     def _refresh_runtime_priority_lease(self, robot: FleetRobot, now: float) -> None:
         """Make a traffic grant survive until it produces a physics step.
@@ -198,6 +327,28 @@ class TrafficCoordinatorMixin:
         ):
             return False
         lease_until = now + self._deadlock_priority_lease()
+        participants = [winner, blocker]
+        # A→B where B is stopped at a corridor signal is not resolved by
+        # granting A more priority: A still has B's body directly ahead.
+        # Transfer the corridor signal to B (when this pair owns the complete
+        # local conflict) and let B clear the stop line first.
+        if (
+            str(blocker.last_reason or "").startswith(
+                "corridor admission wait at "
+            )
+            and self._transfer_controlled_corridor_lease(
+                blocker,
+                participants,
+                now,
+            )
+        ):
+            winner, blocker = blocker, winner
+        else:
+            self._transfer_controlled_corridor_lease(
+                winner,
+                participants,
+                now,
+            )
         winner.status = "MOVING"
         winner.last_reason = "starvation priority active"
         winner.traffic_priority_until = max(
@@ -240,29 +391,67 @@ class TrafficCoordinatorMixin:
         robots = list({robot.name: robot for robot in participants}.values())
         if len(robots) < 2 or any(not robot.trajectory for robot in robots):
             return False
-        active_grant = next(
-            (
-                robot for robot in robots
-                if robot.traffic_priority_until > now
-                and str(robot.last_reason or "") == "starvation priority active"
-            ),
-            None,
-        )
-        if active_grant is not None:
+
+        if terminal.traffic_priority_until > now:
+            # A gate may have changed the visible WAIT reason since the
+            # previous arbitration, but the unexpired sink lease is still the
+            # same decision. Preserve/reapply it without counting a new grant.
+            self._transfer_controlled_corridor_lease(terminal, robots, now)
             return True
 
-        def key(robot: FleetRobot) -> tuple[float, int, int, float, str]:
-            order = self._active_order_for_robot(robot)
-            return (
-                self._cycle_forward_clearance(robot, robots),
-                int(robot.name == terminal.name),
-                int(order.priority if order is not None else 0),
-                now - (robot.blocked_since or now),
-                robot.name,
-            )
+        if str(terminal.last_reason or "").startswith(
+            ("traffic admission wait at ", "corridor admission wait at ")
+        ):
+            # Admission control already owns this sink. Reissuing a physical
+            # priority lease cannot open the occupied region and used to
+            # count the identical upstream chain again on every physics tick.
+            return True
 
-        winner = max(robots, key=key)
+        # In an acyclic wait chain only the sink can create space. Granting an
+        # upstream robot with a longer geometric suffix merely commands it to
+        # drive into the stationary body ahead (the live A→B→C failure mode).
+        # Preserve an existing lease only when it already belongs to the sink.
+        terminal_stall = terminal.traffic_stall_since or terminal.blocked_since
+        terminal_grant_is_fresh = (
+            terminal_stall is None
+            or now - terminal_stall < self._deadlock_coupled_replan_after()
+        )
+        if terminal.traffic_priority_until > now and terminal_grant_is_fresh:
+            return True
+        terminal.traffic_priority_until = 0.0
+        for robot in robots:
+            if robot.name != terminal.name:
+                robot.traffic_priority_until = 0.0
+
+        # An exhausted rolling trajectory cannot consume a motion lease. Keep
+        # the complete dependency chain pointed at that terminal and make its
+        # continuation the dispatcher's next direct prefetch target.
+        if self._robot_waits_at_rolling_boundary(terminal):
+            self._rolling_prefetch_retry_at.pop(terminal.name, None)
+            terminal.status = "WAITING"
+            terminal.last_reason = "rolling continuation pending"
+            terminal.traffic_priority_until = 0.0
+            self._clear_wait_dependency(terminal)
+            terminal.updated_at = now
+            for robot in robots:
+                if robot.name == terminal.name:
+                    continue
+                robot.status = "WAITING"
+                robot.last_reason = f"yield to {terminal.name}"
+                robot.wait_for_robot = terminal.name
+                robot.wait_resource = self._edge_id_at_trajectory(
+                    robot.trajectory,
+                    robot.route_clock,
+                )
+                robot.wait_release_at = 0.0
+                robot.blocked_since = robot.blocked_since or now
+                robot.traffic_stall_since = robot.traffic_stall_since or now
+                robot.updated_at = now
+            return True
+
+        winner = terminal
         lease_until = now + self._deadlock_priority_lease()
+        self._transfer_controlled_corridor_lease(winner, robots, now)
         winner.status = "MOVING"
         winner.last_reason = "starvation priority active"
         winner.traffic_priority_until = max(winner.traffic_priority_until, lease_until)
@@ -290,6 +479,57 @@ class TrafficCoordinatorMixin:
             f"{len(robots) - 1} robots yield",
         )
         return True
+
+    def _evacuate_for_failed_stationary_departure(
+        self,
+        waiter: FleetRobot,
+        blocker: FleetRobot,
+        now: float,
+    ) -> bool:
+        """Break a head-on where a queued robot cannot leave its LM."""
+        pending = self._active_order_for_robot(blocker)
+        if (
+            pending is None
+            or pending.status not in {"QUEUED", "PLANNING"}
+            or max(
+                int(pending.dispatch_failures or 0),
+                int(self._rolling_prefetch_failures.get(blocker.name, 0) or 0),
+            )
+            < 2
+            or not waiter.trajectory
+            or not waiter.active_order_id
+        ):
+            return False
+        stalled_since = waiter.traffic_stall_since or waiter.blocked_since or now
+        if now - stalled_since < self._deadlock_coupled_replan_after():
+            return False
+        evacuated_name = self._start_deadlock_corridor_evacuation(
+            [blocker, waiter],
+            blocker,
+            now,
+        )
+        if evacuated_name != waiter.name:
+            return False
+        waiter.traffic_priority_until = max(
+            waiter.traffic_priority_until,
+            now + self._deadlock_priority_lease(),
+        )
+        self._event(
+            "warn",
+            f"{waiter.name} evacuating for queued departure {blocker.name}",
+        )
+        return True
+
+    def _failed_rolling_boundary_departure(
+        self,
+        robot: FleetRobot,
+    ) -> bool:
+        """Return whether a stopped rolling handoff has repeatedly failed."""
+        return (
+            self._robot_waits_at_rolling_boundary(robot)
+            and int(self._rolling_prefetch_failures.get(robot.name, 0) or 0)
+            >= 2
+        )
 
     def _break_runtime_wait_cycle(
         self,
@@ -320,7 +560,8 @@ class TrafficCoordinatorMixin:
                 robot.name,
             )
 
-        winner = min(robots, key=priority_key)
+        corridor_owner = self._controlled_corridor_cycle_owner(robots)
+        winner = corridor_owner or min(robots, key=priority_key)
         cycle_key = tuple(sorted(robot.name for robot in robots))
         cycle_started = self._active_wait_cycles.get(
             cycle_key,
@@ -332,13 +573,44 @@ class TrafficCoordinatorMixin:
         cycle_wait = max(0.0, now - cycle_started)
         for robot in robots:
             robot.traffic_stall_since = robot.traffic_stall_since or cycle_started
-        if cycle_wait >= self._deadlock_coupled_replan_after():
+
+        # Once the first lease has demonstrably failed, the lease maintainer
+        # deliberately expires it so CBS/retreat can run.  The same unchanged
+        # wait-for snapshot is still visible at 10 Hz, however; without this
+        # gate it would receive another nominal grant on every frame.  One
+        # arbitration per lease interval is enough to react immediately while
+        # leaving time for the chosen robot or background recovery to move.
+        last_arbitration = self._wait_cycle_last_arbitration.get(cycle_key, 0.0)
+        if (
+            not new_episode
+            and now - last_arbitration
+            < self._deadlock_priority_lease()
+        ):
+            return
+        self._wait_cycle_last_arbitration[cycle_key] = now
+
+        if (
+            corridor_owner is None
+            and cycle_wait >= self._deadlock_coupled_replan_after()
+        ):
             self._start_async_coupled_replan(robots, winner, now)
         # Retreat changes the spatial route and is intentionally the final
         # recovery level. Give dependency ordering and at least one local CBS
         # attempt time to resolve the coupled component first.
         evacuating_name = ""
         if (
+            corridor_owner is not None
+            and cycle_wait >= self._deadlock_wait_timeout()
+        ):
+            # An entrant parked on the mouth of an occupied one-lane region
+            # must clear for the current owner. A priority flip or local CBS
+            # cannot change that physical ordering.
+            evacuating_name = self._start_deadlock_corridor_evacuation(
+                robots,
+                winner,
+                now,
+            )
+        elif (
             cycle_wait >= self._deadlock_retreat_after()
             and self._coupled_replan_failures.get(cycle_key, 0) > 0
         ):
@@ -375,6 +647,11 @@ class TrafficCoordinatorMixin:
             priority_robot.traffic_priority_until,
             lease_until,
         )
+        self._transfer_controlled_corridor_lease(
+            priority_robot,
+            robots,
+            now,
+        )
         if priority_robot.status != "RETREATING":
             priority_robot.status = "MOVING"
             priority_robot.last_reason = "deadlock priority granted"
@@ -407,6 +684,31 @@ class TrafficCoordinatorMixin:
             "warn",
             f"traffic wait cycle resolved: priority granted to {priority_robot.name}",
         )
+
+    def _controlled_corridor_cycle_owner(
+        self,
+        robots: list[FleetRobot],
+    ) -> FleetRobot | None:
+        """Prefer the robot physically inside a corridor over its entrant."""
+        by_name = {robot.name: robot for robot in robots}
+        prefix = "corridor admission wait at "
+        marker = " for "
+        for entrant in robots:
+            reason = str(entrant.last_reason or "")
+            if not reason.startswith(prefix) or marker not in reason:
+                continue
+            region_id = reason.split(marker, 1)[1].split(
+                "; owner ",
+                1,
+            )[0].strip()
+            for owner_name in self._controlled_corridor_occupancy.get(
+                region_id,
+                [],
+            ):
+                owner = by_name.get(owner_name)
+                if owner is not None and owner.name != entrant.name:
+                    return owner
+        return None
 
     def _cycle_forward_clearance(
         self,
@@ -445,7 +747,9 @@ class TrafficCoordinatorMixin:
         winner: FleetRobot,
         now: float,
     ) -> str:
-        candidates: list[tuple[float, int, str, FleetRobot, float, str]] = []
+        candidates: list[
+            tuple[float, int, str, FleetRobot, float, str, bool]
+        ] = []
         for robot in robots:
             if robot.name == winner.name or not robot.trajectory or not robot.active_order_id:
                 continue
@@ -453,7 +757,15 @@ class TrafficCoordinatorMixin:
             if retreat is None:
                 continue
             target_clock, target_lm = retreat
-            if self._deadlock_retreat_target_blocker(robot, target_clock):
+            retreat_is_noop_at_current_lm = (
+                target_lm == robot.current_lm
+                and robot.pose is not None
+                and self._pose_is_at_lm(robot.pose, target_lm)
+            )
+            if (
+                not retreat_is_noop_at_current_lm
+                and self._deadlock_retreat_target_blocker(robot, target_clock)
+            ):
                 # Reversing toward an occupied landmark cannot evacuate the
                 # corridor and creates a permanent RETREATING state. Try a
                 # different member of the cycle; if none is clear, grant the
@@ -462,15 +774,36 @@ class TrafficCoordinatorMixin:
             order = self._active_order_for_robot(robot)
             priority = int(order.priority if order is not None else 0)
             distance = max(0.0, robot.route_clock - target_clock)
-            candidates.append((distance, priority, robot.name, robot, target_clock, target_lm))
+            candidates.append(
+                (
+                    distance,
+                    priority,
+                    robot.name,
+                    robot,
+                    target_clock,
+                    target_lm,
+                    retreat_is_noop_at_current_lm,
+                )
+            )
         if not candidates:
             return ""
 
-        _, _, _, robot, target_clock, target_lm = min(candidates)
+        (
+            _,
+            _,
+            _,
+            robot,
+            target_clock,
+            target_lm,
+            retreat_is_noop_at_current_lm,
+        ) = min(candidates)
         blocked_edges = self._deadlock_detour_edges(robot)
         if not blocked_edges:
             return ""
-        if abs(robot.route_clock - target_clock) <= 0.000001:
+        if (
+            abs(robot.route_clock - target_clock) <= 0.000001
+            or retreat_is_noop_at_current_lm
+        ):
             order = self._active_order_for_robot(robot)
             if order is None:
                 return ""
@@ -480,6 +813,11 @@ class TrafficCoordinatorMixin:
                 robot,
                 now,
                 "deadlock at LM; alternate corridor required",
+                # This is narrower than an ordinary traffic wait inside a
+                # controlled corridor: the selected reverse target is the
+                # robot's present LM/pose, so retaining the same trajectory
+                # can only arm the identical no-op retreat on the next tick.
+                allow_controlled_corridor_replan=retreat_is_noop_at_current_lm,
             ):
                 self.traffic_metrics["cycleReplans"] += 1
                 self._event(
@@ -523,6 +861,7 @@ class TrafficCoordinatorMixin:
         robot: FleetRobot,
     ) -> tuple[float, str] | None:
         candidate: tuple[float, str] | None = None
+        previous_distinct: tuple[float, str] | None = None
         for sample in robot.trajectory:
             sample_time = float(sample.get("t", 0.0) or 0.0)
             if sample_time > robot.route_clock + 0.000001:
@@ -530,7 +869,25 @@ class TrafficCoordinatorMixin:
             lm_name = str(sample.get("lm") or "").strip()
             if lm_name not in self.landmarks:
                 continue
+            if candidate is not None and candidate[1] != lm_name:
+                previous_distinct = candidate
             candidate = (sample_time, lm_name)
+        if candidate is None or not robot.trajectory:
+            return candidate
+        final_sample = robot.trajectory[-1]
+        final_time = float(final_sample.get("t", 0.0) or 0.0)
+        final_lm = str(final_sample.get("lm") or "").strip()
+        if (
+            robot.route_clock >= final_time - 0.000001
+            and final_lm == candidate[1]
+            and previous_distinct is not None
+        ):
+            # At an exhausted chunk the last tagged LM is the robot's current
+            # physical endpoint. Retreating to that same clock is a no-op and
+            # only queues another replan. Use the most recent distinct LM
+            # instead; repeated wait/rotation samples at either endpoint do
+            # not change which graph segment must be reversed.
+            return previous_distinct
         return candidate
 
     def _deadlock_detour_edges(self, robot: FleetRobot) -> list[tuple[str, str]]:
@@ -851,19 +1208,22 @@ class TrafficCoordinatorMixin:
         robot: FleetRobot,
         check_clock: float,
         robot_candidates: list[FleetRobot] | None = None,
+        *,
+        ignore_admission: bool = False,
     ) -> str:
         pose = self._pose_at_trajectory(robot.trajectory, check_clock)
         if pose is None:
             return ""
-        corridor_reason = self._controlled_corridor_admission_reason(
-            robot,
-            check_clock,
-        )
-        if corridor_reason:
-            return corridor_reason
-        zone_reason = self._traffic_zone_admission_reason(robot, check_clock)
-        if zone_reason:
-            return zone_reason
+        if not ignore_admission:
+            corridor_reason = self._controlled_corridor_admission_reason(
+                robot,
+                check_clock,
+            )
+            if corridor_reason:
+                return corridor_reason
+            zone_reason = self._traffic_zone_admission_reason(robot, check_clock)
+            if zone_reason:
+                return zone_reason
         # Use elapsed time from the common beginning-of-tick clock. Earlier
         # robots in the loop may already have advanced their mutable clock;
         # basing the offset on that value makes pair predictions asynchronous.
@@ -1212,6 +1572,10 @@ class TrafficCoordinatorMixin:
             value.startswith("yield to ")
             or value.startswith("occupied by ")
             or value.startswith("keep clearance from ")
+            or (
+                value.startswith("corridor admission wait at ")
+                and bool(self._robot_name_from_conflict_reason(value))
+            )
         )
 
     def _is_deadlock_reason(self, reason: str) -> bool:
@@ -1234,7 +1598,11 @@ class TrafficCoordinatorMixin:
             robot.last_reason,
         )
         blocker = self.robots.get(blocker_name)
-        if blocker is None or not blocker.trajectory:
+        if blocker is None:
+            return False
+        if self._robot_departure_pending(blocker):
+            return True
+        if not blocker.trajectory:
             return False
         if not (
             blocker.status == "MOVING"
@@ -1278,6 +1646,13 @@ class TrafficCoordinatorMixin:
             wait += step
         return False
 
+    def _robot_departure_pending(self, robot: FleetRobot) -> bool:
+        order = self._active_order_for_robot(robot)
+        if order is None or order.status not in {"QUEUED", "PLANNING"}:
+            return False
+        target_lm = self._active_order_target(order)
+        return bool(target_lm and target_lm != self._traffic_lm_for_robot(robot))
+
     def _is_parked_robot_conflict(self, reason: str) -> bool:
         other_name = self._robot_name_from_conflict_reason(reason)
         other = self.robots.get(other_name)
@@ -1290,6 +1665,8 @@ class TrafficCoordinatorMixin:
         for prefix in ("yield to ", "occupied by ", "keep clearance from "):
             if value.startswith(prefix):
                 return value[len(prefix):].strip()
+        if value.startswith("corridor admission wait at ") and "; owner " in value:
+            return value.rsplit("; owner ", 1)[1].strip()
         return ""
 
     def _set_wait_dependency(self, robot: FleetRobot, reason: str, now: float) -> None:

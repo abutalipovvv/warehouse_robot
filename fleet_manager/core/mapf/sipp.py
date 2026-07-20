@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from heapq import heappop, heappush
 from itertools import count
 import math
+from time import monotonic
 from typing import Callable
 
 from .reservations import ReservationTable, ResourceId, SafeInterval
@@ -103,6 +104,7 @@ class SippPlanner:
         *,
         blocked_nodes: set[NodeName] | None = None,
         blocked_edges: set[tuple[NodeName, NodeName]] | None = None,
+        planning_deadline: float | None = None,
     ) -> TimedPath | None:
         blocked_nodes = blocked_nodes or set()
         blocked_edges = blocked_edges or set()
@@ -113,6 +115,18 @@ class SippPlanner:
         start = self._start_state(request, reservations, blocked_nodes)
         if start is None:
             return None
+        route_next = (
+            {
+                source: destination
+                for source, destination in zip(
+                    request.route_nodes,
+                    request.route_nodes[1:],
+                )
+                if source != destination
+            }
+            if request.route_nodes
+            else None
+        )
 
         open_heap: list[tuple[float, int, int, SippState]] = []
         tie_breaker = count()
@@ -131,6 +145,14 @@ class SippPlanner:
         )
 
         while open_heap:
+            if (
+                planning_deadline is not None
+                and monotonic() >= planning_deadline
+            ):
+                self.last_failure = (
+                    f"planning_timeout:{request.robot_name}"
+                )
+                return None
             _, _, _, current = heappop(open_heap)
             if current.time > g_score.get(current.key, 10**18):
                 continue
@@ -152,10 +174,11 @@ class SippPlanner:
             for neighbor, transition_cost in self._neighbors(
                 current,
                 request.robot_name,
-                request.route_nodes,
+                route_next,
                 reservations,
                 blocked_nodes,
                 blocked_edges,
+                planning_deadline,
             ):
                 if closed.get(neighbor.key, 10**18) <= neighbor.time:
                     continue
@@ -184,17 +207,13 @@ class SippPlanner:
         self,
         state: SippState,
         robot_name: str,
-        route_nodes: tuple[NodeName, ...],
+        route_next: dict[NodeName, NodeName] | None,
         reservations: ReservationTable,
         blocked_nodes: set[NodeName],
         blocked_edges: set[tuple[NodeName, NodeName]],
+        planning_deadline: float | None,
     ) -> list[tuple[SippState, int]]:
         neighbors: list[tuple[SippState, int]] = []
-        route_next = {
-            start: goal
-            for start, goal in zip(route_nodes, route_nodes[1:])
-            if start != goal
-        } if route_nodes else None
         for lane in self.graph.neighbors(state.node):
             if route_next is not None and lane.to_lm != route_next.get(state.node):
                 continue
@@ -221,6 +240,7 @@ class SippPlanner:
                     interval,
                     robot_name,
                     reservations,
+                    planning_deadline,
                 )
                 if next_state is None:
                     continue
@@ -270,6 +290,7 @@ class SippPlanner:
         interval: SafeInterval,
         robot_name: str,
         reservations: ReservationTable,
+        planning_deadline: float | None,
     ) -> SippState | None:
         earliest_depart = max(
             state.time + rotate_duration,
@@ -290,6 +311,7 @@ class SippPlanner:
             rotate_duration,
             robot_name,
             reservations,
+            planning_deadline=planning_deadline,
         )
         if depart is None:
             return None
@@ -351,8 +373,16 @@ class SippPlanner:
         rotate_duration: int,
         robot_name: str,
         reservations: ReservationTable,
+        *,
+        planning_deadline: float | None = None,
     ) -> int | None:
         for depart in range(max(0, earliest_depart), max(0, latest_depart) + 1):
+            if (
+                planning_deadline is not None
+                and monotonic() >= planning_deadline
+            ):
+                self.last_failure = f"planning_timeout:{robot_name}"
+                return None
             end_time = depart + duration
             rotate_start = max(0, depart - rotate_duration)
             if rotate_duration and not reservations.resources_are_free(

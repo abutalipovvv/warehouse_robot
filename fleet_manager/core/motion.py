@@ -284,6 +284,20 @@ class FleetMotionRuntimeMixin:
         if target_clock is None or not robot.trajectory:
             self._clear_deadlock_retreat(robot)
             return
+        if (
+            robot.status == "WAITING"
+            and str(robot.last_reason or "").startswith("yield to ")
+            and robot.wait_for_robot
+            and now < robot.wait_release_at
+        ):
+            # A swept-footprint rollback can involve a robot reversing along
+            # its committed path. Retrying that reverse move every physics
+            # tick recreates the exact same near miss and produces visible
+            # jitter. Hold the retreat for one short winner lease so the
+            # granted robot can clear the shared footprint first.
+            robot.last_tick_at = now
+            robot.updated_at = now
+            return
         # Planning can temporarily monopolise the GIL on a dense fleet.  Keep
         # the evacuation lease alive until the graph-safe reverse traversal is
         # actually complete instead of letting it expire in wall-clock time.
@@ -302,7 +316,11 @@ class FleetMotionRuntimeMixin:
         while remaining > 0.000001 and robot.route_clock > target_clock + 0.000001:
             motion_dt = min(self._runtime_motion_step(), remaining)
             proposed_clock = max(target_clock, robot.route_clock - motion_dt)
-            blocked_reason = self._blocked_at_clock(robot, proposed_clock)
+            blocked_reason = self._blocked_at_clock(
+                robot,
+                proposed_clock,
+                ignore_admission=True,
+            )
             if blocked_reason:
                 break
             robot.route_clock = proposed_clock
@@ -372,6 +390,11 @@ class FleetMotionRuntimeMixin:
             "route_final_lm": robot.route_final_lm,
             "route_preview": robot.route_preview,
             "route_preview_dirty": robot.route_preview_dirty,
+            "has_executed_route": robot.has_executed_route,
+            "pending_route": robot.pending_route,
+            "retreat_target_clock": robot.retreat_target_clock,
+            "retreat_target_lm": robot.retreat_target_lm,
+            "retreat_blocked_edges": list(robot.retreat_blocked_edges),
             "traffic_priority_until": robot.traffic_priority_until,
             "wait_for_robot": robot.wait_for_robot,
             "wait_resource": robot.wait_resource,
@@ -391,6 +414,8 @@ class FleetMotionRuntimeMixin:
                     "spatial_route_nodes": list(active_order.spatial_route_nodes),
                     "spatial_route_revision": active_order.spatial_route_revision,
                     "traffic_blocked_since": active_order.traffic_blocked_since,
+                    "traffic_detour_edges": list(active_order.traffic_detour_edges),
+                    "traffic_detour_attempts": active_order.traffic_detour_attempts,
                 }
                 if active_order is not None
                 else None
@@ -421,6 +446,13 @@ class FleetMotionRuntimeMixin:
         robot.route_final_lm = str(snapshot["route_final_lm"])
         robot.route_preview = snapshot["route_preview"]
         robot.route_preview_dirty = bool(snapshot["route_preview_dirty"])
+        robot.has_executed_route = bool(snapshot.get("has_executed_route", False))
+        robot.pending_route = snapshot.get("pending_route")
+        robot.retreat_target_clock = snapshot.get("retreat_target_clock")
+        robot.retreat_target_lm = str(snapshot.get("retreat_target_lm") or "")
+        robot.retreat_blocked_edges = list(
+            snapshot.get("retreat_blocked_edges", [])
+        )
         robot.traffic_priority_until = float(snapshot["traffic_priority_until"])
         robot.wait_for_robot = str(snapshot.get("wait_for_robot") or "")
         robot.wait_resource = str(snapshot.get("wait_resource") or "")
@@ -443,6 +475,12 @@ class FleetMotionRuntimeMixin:
                 order_snapshot.get("spatial_route_revision", 0) or 0
             )
             order.traffic_blocked_since = order_snapshot.get("traffic_blocked_since")
+            order.traffic_detour_edges = list(
+                order_snapshot.get("traffic_detour_edges", [])
+            )
+            order.traffic_detour_attempts = int(
+                order_snapshot.get("traffic_detour_attempts", 0) or 0
+            )
         robot.last_tick_at = now
         robot.trajectory_dirty = True
         robot.updated_at = now
@@ -492,9 +530,126 @@ class FleetMotionRuntimeMixin:
         for robot in involved:
             self._restore_runtime_safety_snapshot(robot, snapshots[robot.name], now)
 
-        def priority_key(robot: FleetRobot) -> tuple[int, str]:
+        # If one body has no executable timeline, a priority lease cannot make
+        # it clear the near collision. Immediately reverse the moving robot to
+        # its previous graph-safe LM and queue a detour; otherwise the same
+        # forward substep is rolled back on every physics tick.
+        for first_name, second_name in unsafe_pairs:
+            first = self.robots[first_name]
+            second = self.robots[second_name]
+            if bool(first.trajectory) == bool(second.trajectory):
+                continue
+            blocker = second if first.trajectory else first
+            mover = first if first.trajectory else second
+            if mover.status == "RETREATING":
+                # The reverse step itself can be boxed in by a second body
+                # (A <- retreating robot -> B). Reissuing the same retreat on
+                # every physics tick cannot change that geometry and creates
+                # a visible rollback storm. Preserve the blocked edge, stop
+                # the unusable timeline once, and let spatial dispatch choose
+                # another exit from the robot's current graph landmark.
+                order = self._active_order_for_robot(mover)
+                blocked_edges = list(mover.retreat_blocked_edges)
+                if order is not None and blocked_edges:
+                    order.traffic_detour_edges = list(
+                        dict.fromkeys(blocked_edges)
+                    )
+                if self._queue_active_order_for_background_replan(
+                    mover,
+                    now,
+                    "deadlock retreat blocked; alternate route required",
+                    allow_controlled_corridor_replan=True,
+                ):
+                    if order is not None and blocked_edges:
+                        order.traffic_detour_attempts += 1
+                    self._clear_deadlock_retreat(mover)
+                    self.traffic_metrics["cycleReplans"] += 1
+                    self.traffic_metrics["runtimeSafetyRollbacks"] += 1
+                    pairs = ", ".join(
+                        f"{first_pair}/{second_pair}"
+                        for first_pair, second_pair in unsafe_pairs
+                    )
+                    self._event(
+                        "error",
+                        f"runtime safety invariant prevented footprint overlap: "
+                        f"{pairs}; blocked retreat for {mover.name} replaced "
+                        "with alternate route",
+                    )
+                    return
+                # A robot can be a few centimetres beyond the last LM when
+                # its reverse sweep is rejected. It is then deliberately not
+                # eligible for graph replanning yet. Hold the restored,
+                # collision-free pose long enough for the stationary
+                # neighbour's queued departure to clear instead of arming the
+                # identical reverse step again on the next 10 Hz frame.
+                lease_until = now + max(
+                    1.0,
+                    self._deadlock_priority_lease(),
+                )
+                mover.status = "WAITING"
+                mover.last_reason = f"yield to {blocker.name}"
+                mover.wait_for_robot = blocker.name
+                mover.wait_resource = "blocked_retreat"
+                mover.wait_release_at = lease_until
+                mover.traffic_priority_until = 0.0
+                mover.last_tick_at = now
+                mover.updated_at = now
+                blocker.traffic_priority_until = max(
+                    blocker.traffic_priority_until,
+                    lease_until,
+                )
+                self._update_active_order_from_robot(mover)
+                self.traffic_metrics["runtimeSafetyRollbacks"] += 1
+                pairs = ", ".join(
+                    f"{first_pair}/{second_pair}"
+                    for first_pair, second_pair in unsafe_pairs
+                )
+                self._event(
+                    "error",
+                    f"runtime safety invariant prevented footprint overlap: "
+                    f"{pairs}; blocked retreat for {mover.name} held for "
+                    f"{blocker.name}",
+                )
+                return
+            evacuated_name = self._start_deadlock_corridor_evacuation(
+                [blocker, mover],
+                blocker,
+                now,
+            )
+            if not evacuated_name:
+                continue
+            evacuated = self.robots.get(evacuated_name)
+            if (
+                evacuated is not None
+                and evacuated.status == "RETREATING"
+            ):
+                evacuated.traffic_priority_until = max(
+                    evacuated.traffic_priority_until,
+                    now + self._deadlock_priority_lease(),
+                )
+            self.traffic_metrics["runtimeSafetyRollbacks"] += 1
+            pairs = ", ".join(
+                f"{first_pair}/{second_pair}"
+                for first_pair, second_pair in unsafe_pairs
+            )
+            self._event(
+                "error",
+                f"runtime safety invariant prevented footprint overlap: {pairs}; "
+                f"rolled back, evacuating {evacuated_name}",
+            )
+            return
+
+        def priority_key(robot: FleetRobot) -> tuple[int, int, str]:
             order = self._active_order_for_robot(robot)
-            return (-int(order.priority if order is not None else 0), robot.name)
+            # A robot already reversing for deadlock evacuation must not win a
+            # new swept-footprint conflict against the forward/static robot
+            # it is trying to clear. Let the non-retreating body leave first;
+            # otherwise the same reverse step is rolled back forever.
+            return (
+                int(robot.retreat_target_clock is not None),
+                -int(order.priority if order is not None else 0),
+                robot.name,
+            )
 
         winner = min(involved, key=priority_key)
         winner.traffic_priority_until = now + self._deadlock_priority_lease()
@@ -509,6 +664,9 @@ class FleetMotionRuntimeMixin:
             robot.last_reason = f"yield to {winner.name}"
             robot.blocked_since = now
             robot.traffic_stall_since = robot.traffic_stall_since or now
+            robot.wait_for_robot = winner.name
+            robot.wait_resource = "runtime_safety"
+            robot.wait_release_at = winner.traffic_priority_until
             self._update_active_order_from_robot(robot)
         self._update_active_order_from_robot(winner)
         self.traffic_metrics["runtimeSafetyRollbacks"] += 1
@@ -621,6 +779,15 @@ class FleetMotionRuntimeMixin:
                 )
         if self._queue_active_order_for_background_replan(robot, now, reason):
             return True
+        if robot.active_order_id and not robot.is_remote():
+            # An active simulated robot inside a controlled corridor retains
+            # its executable trajectory so arbitration can grant an exit or
+            # retreat. Never fall through to synchronous MAPF here: the
+            # runtime thread would repeatedly acquire the sole planner lock,
+            # overwrite the useful corridor wait dependency on failure, and
+            # starve every rolling continuation.
+            robot.last_replan_at = now
+            return False
         # Manual/ad-hoc routes have no order that can be returned to the
         # dispatcher, so retain the synchronous compatibility path for those
         # uncommon requests only.
@@ -631,6 +798,8 @@ class FleetMotionRuntimeMixin:
         robot: FleetRobot,
         now: float,
         reason: str,
+        *,
+        allow_controlled_corridor_replan: bool = False,
     ) -> bool:
         if robot.is_remote() or not robot.active_order_id:
             return False
@@ -640,9 +809,31 @@ class FleetMotionRuntimeMixin:
         start_lm = self._safe_replan_start_lm(robot)
         if not start_lm:
             return False
+        corridor_graph = self._controlled_corridor_graph
+        corridor_vertex = (
+            corridor_graph.vertices.get(start_lm)
+            if corridor_graph is not None
+            else None
+        )
+        if (
+            corridor_vertex is not None
+            and corridor_vertex.controlled_region_ids
+            and not allow_controlled_corridor_replan
+        ):
+            # Clearing an active route here turns a temporary wait into a
+            # permanent stationary obstacle inside a one-lane resource. Keep
+            # the trajectory so cycle arbitration can grant an exit or a
+            # graph-safe retreat before a spatial replan is queued.
+            return False
 
         order.status = "QUEUED"
-        order.error = ""
+        # Do not redispatch the identical geometry on the very next 10 Hz
+        # physics tick. The granted neighbour needs a short interval to clear
+        # its footprint; repeated failures then back off to the existing
+        # bounded 0.5/1/2/4-second retry schedule. A successful route commit
+        # resets dispatch_failures immediately.
+        order.error = f"runtime replan cooldown: {reason}"
+        order.dispatch_failures += 1
         order.updated_at = now
         order.assigned_robot = robot.name
         order.start_lm = start_lm

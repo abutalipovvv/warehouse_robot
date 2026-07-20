@@ -66,17 +66,20 @@ fleet:
   # Prioritized SIPP is the fast path; CBS is only used when priority ordering
   # cannot resolve a coupled conflict/deadlock.
   planner_backend: hybrid
+  # Keep one full second of temporal separation in dense narrow passages.
+  # Consecutive graph edges no longer restart acceleration, so straight motion
+  # is still twice as fast as the previous stop-and-go implementation.
   reservation_time_step_sec: 1
   reservation_horizon_sec: 10
   # Only this graph-safe prefix is committed. The next prefix is prepared
   # before the horizon boundary against fresh robot reservations.
-  rolling_horizon_sec: 10
+  rolling_horizon_sec: 30
   # Optional discrete cap; 0 means the time horizon is authoritative.
   rolling_horizon_steps: 0
-  # Start the next 10 s MAPF window early. This gives the serialized planner
-  # enough deadline slack for 50 robots. Continuations are appended atomically
-  # and are planned before releasing additional queued robots.
-  rolling_prefetch_lead_sec: 8
+  # Start the next MAPF window well before the 30 s boundary. Continuations
+  # are appended atomically, so the normal case never visibly stops while the
+  # serialized planner prepares the next safe graph prefix.
+  rolling_prefetch_lead_sec: 24
   # Simulation advances on the server independently from browser/websocket
   # clients. Physics stays at 10 Hz so dense 50-robot collision checks leave
   # GIL time for manual commands and websocket I/O. The browser renders at its
@@ -116,10 +119,17 @@ fleet:
   # Runtime MAPF is dispatched in the background. Small joint groups coordinate
   # new orders without a fleet-wide CBS timeout.
   dispatch_plan_budget_per_tick: 2
-  dispatch_joint_batch_size: 4
+  # Pairs reach a usable SIPP result much faster than four-agent CBS on dense
+  # maps. The serialized worker can therefore start the first robots
+  # immediately and keep filling the fleet.
+  dispatch_joint_batch_size: 2
   # Continuations already coordinate against committed time reservations.
   # Planning them one at a time avoids a synchronized CBS spike every 10 s.
   dispatch_rolling_batch_size: 1
+  # Boundary recovery starts with cheap rotating pairs. Repeated failures grow
+  # a fast prioritized-SIPP wave to the coupled stopped component; CBS remains
+  # limited to four participants.
+  rolling_prefetch_recovery_batch_size: 2
   # Dynamic benchmark orders target distant, but still directed-reachable,
   # graph landmarks. The final choice is random inside the configured far tail.
   dynamic_order_min_hops: 30
@@ -135,7 +145,10 @@ fleet:
   # Dynamic admission zones work like traffic lights. Robots wait at the last
   # LM outside an overloaded tile; up to three compatible entrants receive a
   # short lease while SIPP remains the exact space-time collision authority.
-  traffic_zone_control_enabled: true
+  # Smart maps already carry explicit controlled corridor resources. A second
+  # coarse 6 m traffic light duplicated those gates and left robots waiting
+  # after corridor admission had already selected a safe owner.
+  traffic_zone_control_enabled: false
   traffic_zone_size_m: 6.0
   traffic_zone_demand_threshold: 6
   traffic_zone_capacity: 3

@@ -3,6 +3,7 @@ from __future__ import annotations
 import math
 from threading import Event
 from time import perf_counter, sleep, time
+from types import SimpleNamespace
 
 import pytest
 
@@ -513,6 +514,108 @@ def test_stalled_cycle_expires_bad_lease_and_prefers_clear_forward_path(
     assert robots["clear"].status == "MOVING"
     assert robots["blocked"].status == "WAITING"
     assert robots["blocked"].last_reason == "yield to clear"
+    first_grants = manager.traffic_metrics["priorityGrants"]
+
+    # The unchanged 10 Hz wait snapshot must not be counted/re-granted on
+    # every frame after the stale lease expires.  The next arbitration is
+    # allowed once the bounded lease interval has elapsed.
+    manager._break_runtime_wait_cycle(
+        ["clear", "blocked"],
+        robots,
+        now + 0.1,
+        new_episode=False,
+    )
+    assert manager.traffic_metrics["priorityGrants"] == first_grants
+
+    manager._break_runtime_wait_cycle(
+        ["clear", "blocked"],
+        robots,
+        now + manager._deadlock_priority_lease() + 0.01,
+        new_episode=False,
+    )
+    assert manager.traffic_metrics["priorityGrants"] == first_grants + 1
+
+
+def test_priority_nudge_does_not_reset_an_uncleared_wait_cycle(
+    monkeypatch,
+) -> None:
+    manager = _manager()
+    now = time()
+    winner = FleetRobot(
+        name="winner",
+        current_lm="A",
+        status="MOVING",
+        pose={"x": 0.1, "y": 0.0, "yaw": 0.0},
+        trajectory=[
+            {"t": 0.0, "x": 0.0, "y": 0.0, "yaw": 0.0, "lm": "A"},
+            {"t": 2.0, "x": 2.0, "y": 0.0, "yaw": 0.0, "lm": "B"},
+        ],
+        route_clock=0.1,
+    )
+    peer = FleetRobot(
+        name="peer",
+        current_lm="B",
+        status="WAITING",
+        pose={"x": 1.0, "y": 0.0, "yaw": math.pi},
+        trajectory=[
+            {"t": 0.0, "x": 1.0, "y": 0.0, "yaw": math.pi, "lm": "B"},
+        ],
+    )
+    manager.robots = {winner.name: winner, peer.name: peer}
+    cycle_key = ("peer", "winner")
+    cycle_started = now - 3.0
+    manager._active_wait_cycles[cycle_key] = cycle_started
+    monkeypatch.setattr(
+        manager,
+        "_cycle_forward_clearance",
+        lambda *_args: 0.2,
+    )
+
+    manager._record_traffic_progress(winner)
+
+    assert manager._active_wait_cycles[cycle_key] == cycle_started
+    assert winner.traffic_stall_since == cycle_started
+
+    monkeypatch.setattr(
+        manager,
+        "_cycle_forward_clearance",
+        lambda *_args: 2.0,
+    )
+    manager._record_traffic_progress(winner)
+
+    assert cycle_key not in manager._active_wait_cycles
+
+
+def test_active_priority_lease_keeps_temporarily_hidden_cycle_episode() -> None:
+    manager = _manager()
+    now = time()
+    winner = FleetRobot(
+        name="winner",
+        current_lm="A",
+        status="MOVING",
+        traffic_priority_until=now + 1.0,
+        trajectory=[
+            {"t": 0.0, "x": 0.0, "y": 0.0, "yaw": 0.0, "lm": "A"},
+            {"t": 2.0, "x": 2.0, "y": 0.0, "yaw": 0.0, "lm": "B"},
+        ],
+    )
+    peer = FleetRobot(
+        name="peer",
+        current_lm="B",
+        status="WAITING",
+        last_reason="yield to winner",
+        wait_for_robot="winner",
+        trajectory=[
+            {"t": 0.0, "x": 2.0, "y": 0.0, "yaw": math.pi, "lm": "B"},
+        ],
+    )
+    manager.robots = {winner.name: winner, peer.name: peer}
+    cycle_key = ("peer", "winner")
+    manager._active_wait_cycles[cycle_key] = now - 2.0
+
+    manager._resolve_runtime_wait_cycles(now)
+
+    assert cycle_key in manager._active_wait_cycles
 
 
 def test_cycle_clearance_inspects_the_complete_committed_crossing() -> None:
@@ -647,6 +750,40 @@ def test_mid_edge_starvation_transfers_priority_instead_of_waiting_forever(
     assert waiting.traffic_priority_until > expired
 
 
+def test_starvation_releases_the_corridor_blocker_before_its_follower(
+    monkeypatch,
+) -> None:
+    manager = _manager()
+    now = time()
+    follower = FleetRobot(
+        name="follower",
+        current_lm="A",
+        status="WAITING",
+        last_reason="occupied by portal",
+        trajectory=[{"t": 0.0, "x": 0.0, "y": 0.0, "yaw": 0.0}],
+    )
+    portal = FleetRobot(
+        name="portal",
+        current_lm="B",
+        status="WAITING",
+        last_reason="corridor admission wait at A for region-1",
+        trajectory=[{"t": 0.0, "x": 1.0, "y": 0.0, "yaw": 0.0}],
+    )
+    manager.robots = {follower.name: follower, portal.name: portal}
+    monkeypatch.setattr(
+        manager,
+        "_transfer_controlled_corridor_lease",
+        lambda candidate, _participants, _now: candidate.name == "portal",
+    )
+
+    assert manager._grant_starvation_priority(follower, portal, now)
+
+    assert portal.status == "MOVING"
+    assert portal.last_reason == "starvation priority active"
+    assert follower.status == "WAITING"
+    assert follower.last_reason == "yield to portal"
+
+
 def test_persistent_wait_chain_gets_one_component_winner(monkeypatch) -> None:
     manager = _manager()
     now = time()
@@ -686,6 +823,385 @@ def test_persistent_wait_chain_gets_one_component_winner(monkeypatch) -> None:
     assert manager.robots["r3"].last_reason == "starvation priority active"
     assert manager.robots["r1"].last_reason == "yield to r3"
     assert manager.robots["r2"].last_reason == "yield to r3"
+
+
+def test_wait_chain_active_terminal_lease_is_not_granted_again() -> None:
+    manager = _manager()
+    now = time()
+    stale_since = now - 10.0
+    terminal = FleetRobot(
+        name="r3",
+        current_lm="A",
+        status="WAITING",
+        last_reason="corridor admission wait at A for region-1",
+        blocked_since=stale_since,
+        traffic_stall_since=stale_since,
+        traffic_priority_until=now + 1.0,
+        trajectory=[
+            {"t": 0.0, "x": 0.0, "y": 0.0, "edgeId": "A->B", "lm": "A"},
+        ],
+    )
+    participants = [
+        FleetRobot(
+            name="r1",
+            current_lm="A",
+            status="WAITING",
+            last_reason="yield to r2",
+            blocked_since=stale_since,
+            traffic_stall_since=stale_since,
+            trajectory=[
+                {"t": 0.0, "x": 0.5, "y": 0.0, "edgeId": "A->B", "lm": "A"},
+            ],
+        ),
+        FleetRobot(
+            name="r2",
+            current_lm="A",
+            status="WAITING",
+            last_reason="yield to r3",
+            blocked_since=stale_since,
+            traffic_stall_since=stale_since,
+            trajectory=[
+                {"t": 0.0, "x": 1.0, "y": 0.0, "edgeId": "A->B", "lm": "A"},
+            ],
+        ),
+        terminal,
+    ]
+    manager.robots = {robot.name: robot for robot in participants}
+    grants_before = manager.traffic_metrics["priorityGrants"]
+
+    assert manager._grant_wait_chain_priority(participants, terminal, now)
+
+    assert terminal.traffic_priority_until > now
+    assert manager.traffic_metrics["priorityGrants"] == grants_before
+
+
+def test_wait_chain_behind_parked_terminal_evacuates_immediate_follower(
+    monkeypatch,
+) -> None:
+    manager = _manager()
+    now = time()
+    manager.robots = {
+        "r1": FleetRobot(
+            name="r1",
+            current_lm="A",
+            status="WAITING",
+            last_reason="occupied by r2",
+            blocked_since=now - 9.0,
+            traffic_stall_since=now - 9.0,
+            active_order_id="o1",
+            trajectory=[{"t": 0.0, "x": 0.0, "y": 0.0, "edgeId": "A->B", "lm": "A"}],
+        ),
+        "r2": FleetRobot(
+            name="r2",
+            current_lm="B",
+            status="WAITING",
+            last_reason="occupied by r3",
+            blocked_since=now - 9.0,
+            traffic_stall_since=now - 9.0,
+            active_order_id="o2",
+            trajectory=[{"t": 0.0, "x": 1.0, "y": 0.0, "edgeId": "B->C", "lm": "B"}],
+        ),
+        "r3": FleetRobot(name="r3", current_lm="C", status="IDLE"),
+    }
+    evacuations: list[tuple[list[str], str]] = []
+    monkeypatch.setattr(
+        manager,
+        "_start_deadlock_corridor_evacuation",
+        lambda robots, winner, _now: (
+            evacuations.append(([robot.name for robot in robots], winner.name))
+            or "r2"
+        ),
+    )
+
+    manager._resolve_runtime_wait_cycles(now)
+
+    assert evacuations == [(["r3", "r2"], "r3")]
+    assert manager.traffic_metrics["priorityGrants"] == 0
+
+
+def test_stalled_individual_dependency_retreats_before_another_priority_grant(
+    monkeypatch,
+) -> None:
+    manager = _manager()
+    now = time()
+    waiter = FleetRobot(
+        name="waiter",
+        current_lm="A",
+        status="WAITING",
+        last_reason="occupied by blocker",
+        blocked_since=now - 9.0,
+        traffic_stall_since=now - 9.0,
+        active_order_id="o1",
+        trajectory=[{"t": 0.0, "x": 0.5, "y": 0.0, "edgeId": "A->B", "lm": "A"}],
+    )
+    blocker = FleetRobot(
+        name="blocker",
+        current_lm="B",
+        status="MOVING",
+        trajectory=[{"t": 0.0, "x": 1.5, "y": 0.0, "edgeId": "B->A", "lm": "B"}],
+    )
+    manager.robots = {waiter.name: waiter, blocker.name: blocker}
+    monkeypatch.setattr(manager, "_safe_replan_start_lm", lambda _robot: "")
+    monkeypatch.setattr(
+        manager,
+        "_start_deadlock_corridor_evacuation",
+        lambda robots, winner, _now: (
+            "waiter"
+            if [robot.name for robot in robots] == ["blocker", "waiter"]
+            and winner.name == "blocker"
+            else ""
+        ),
+    )
+
+    manager._resolve_runtime_wait_cycles(now)
+
+    assert manager.traffic_metrics["priorityGrants"] == 0
+
+
+def test_wait_chain_releases_exhausted_terminal_before_upstream_followers(
+    monkeypatch,
+) -> None:
+    manager = _manager()
+    now = time()
+    terminal_order = FleetOrder(
+        order_id="o3",
+        target_lm="B",
+        vehicle="r3",
+        assigned_robot="r3",
+        status="PLANNING",
+    )
+    manager.orders[terminal_order.order_id] = terminal_order
+    manager.robots = {
+        "r1": FleetRobot(
+            name="r1",
+            current_lm="A",
+            status="WAITING",
+            last_reason="yield to r2",
+            wait_for_robot="r2",
+            blocked_since=now - 10.0,
+            trajectory=[{"t": 0.0, "x": 0.0, "y": 0.0, "edgeId": "A->B", "lm": "A"}],
+        ),
+        "r2": FleetRobot(
+            name="r2",
+            current_lm="A",
+            status="WAITING",
+            last_reason="occupied by r3",
+            wait_for_robot="r3",
+            blocked_since=now - 10.0,
+            trajectory=[{"t": 0.0, "x": 1.0, "y": 0.0, "edgeId": "A->B", "lm": "A"}],
+        ),
+        "r3": FleetRobot(
+            name="r3",
+            current_lm="A",
+            target_lm="A",
+            status="WAITING",
+            active_order_id="o3",
+            last_reason="rolling continuation pending",
+            pose={"x": 0.0, "y": 0.0, "yaw": 0.0},
+            trajectory=[
+                {"t": 0.0, "x": 0.0, "y": 0.0, "edgeId": "A->A", "lm": "A"},
+                {"t": 1.0, "x": 0.0, "y": 0.0, "edgeId": "A->A", "lm": "A"},
+            ],
+            route_clock=1.0,
+            route_chunk_goal_lm="A",
+            route_final_lm="B",
+            has_executed_route=True,
+        ),
+    }
+    monkeypatch.setattr(
+        manager,
+        "_cycle_forward_clearance",
+        lambda *_args: pytest.fail(
+            "acyclic chain priority must follow the terminal dependency"
+        ),
+    )
+
+    manager._resolve_runtime_wait_cycles(now)
+
+    terminal = manager.robots["r3"]
+    assert terminal.status == "WAITING"
+    assert terminal.last_reason == "rolling continuation pending"
+    assert manager.robots["r1"].wait_for_robot == "r3"
+    assert manager.robots["r2"].wait_for_robot == "r3"
+    assert manager._release_blocker_names_for_requests(
+        [{"name": "r3", "startLm": "A", "goalLm": "B"}]
+    ) == {"r1", "r2"}
+    assert [entry[1].name for entry in manager._ready_rolling_prefetch_entries()] == [
+        "r3"
+    ]
+    assert manager.traffic_metrics["priorityGrants"] == 0
+
+    manager._resolve_runtime_wait_cycles(now + 0.1)
+    assert manager.traffic_metrics["priorityGrants"] == 0
+
+
+def test_failed_stationary_departure_evacuates_incoming_head_on_robot() -> None:
+    manager = _manager()
+    now = time()
+    waiter_order = FleetOrder(
+        order_id="wait-order",
+        target_lm="B",
+        vehicle="waiter",
+        assigned_robot="waiter",
+        status="WAITING_TRAFFIC",
+    )
+    blocker_order = FleetOrder(
+        order_id="block-order",
+        target_lm="A",
+        vehicle="blocker",
+        assigned_robot="blocker",
+        status="QUEUED",
+        dispatch_failures=2,
+    )
+    manager.orders = {
+        waiter_order.order_id: waiter_order,
+        blocker_order.order_id: blocker_order,
+    }
+    manager.robots = {
+        "waiter": FleetRobot(
+            name="waiter",
+            current_lm="A",
+            target_lm="B",
+            status="WAITING",
+            active_order_id="wait-order",
+            last_reason="occupied by blocker",
+            wait_for_robot="blocker",
+            blocked_since=now - 10.0,
+            traffic_stall_since=now - 10.0,
+            pose={"x": 1.0, "y": 0.0, "yaw": 0.0},
+            trajectory=[
+                {"t": 0.0, "x": 0.0, "y": 0.0, "edgeId": "A->B", "lm": "A"},
+                {"t": 2.0, "x": 2.0, "y": 0.0, "edgeId": "A->B", "lm": "B"},
+            ],
+            route_clock=1.0,
+        ),
+        "blocker": FleetRobot(
+            name="blocker",
+            current_lm="B",
+            status="IDLE",
+            pose={"x": 2.0, "y": 0.0, "yaw": math.pi},
+        ),
+    }
+
+    manager._resolve_runtime_wait_cycles(now)
+
+    waiter = manager.robots["waiter"]
+    assert waiter.status == "RETREATING"
+    assert waiter.retreat_target_lm == "A"
+    assert waiter.traffic_priority_until > now
+    assert any(
+        "evacuating for queued departure blocker" in event.message
+        for event in manager.events
+    )
+
+
+def test_failed_rolling_boundary_departure_uses_prefetch_failure_counter() -> None:
+    manager = _manager()
+    now = time()
+    waiter_order = FleetOrder(
+        order_id="wait-order",
+        target_lm="B",
+        vehicle="waiter",
+        assigned_robot="waiter",
+        status="WAITING_TRAFFIC",
+    )
+    blocker_order = FleetOrder(
+        order_id="block-order",
+        target_lm="A",
+        vehicle="blocker",
+        assigned_robot="blocker",
+        status="PLANNING",
+        dispatch_failures=0,
+    )
+    manager.orders = {
+        waiter_order.order_id: waiter_order,
+        blocker_order.order_id: blocker_order,
+    }
+    manager.robots = {
+        "waiter": FleetRobot(
+            name="waiter",
+            current_lm="A",
+            target_lm="B",
+            status="WAITING",
+            active_order_id="wait-order",
+            last_reason="occupied by blocker",
+            wait_for_robot="blocker",
+            blocked_since=now - 10.0,
+            traffic_stall_since=now - 10.0,
+            pose={"x": 1.0, "y": 0.0, "yaw": 0.0},
+            trajectory=[
+                {"t": 0.0, "x": 0.0, "y": 0.0, "edgeId": "A->B", "lm": "A"},
+                {"t": 2.0, "x": 2.0, "y": 0.0, "edgeId": "A->B", "lm": "B"},
+            ],
+            route_clock=1.0,
+        ),
+        "blocker": FleetRobot(
+            name="blocker",
+            current_lm="B",
+            target_lm="B",
+            status="WAITING",
+            active_order_id="block-order",
+            last_reason="rolling continuation pending",
+            pose={"x": 2.0, "y": 0.0, "yaw": math.pi},
+            trajectory=[
+                {"t": 0.0, "x": 2.0, "y": 0.0, "edgeId": "B->B", "lm": "B"},
+                {"t": 1.0, "x": 2.0, "y": 0.0, "edgeId": "B->B", "lm": "B"},
+            ],
+            route_clock=1.0,
+            route_chunk_goal_lm="B",
+            route_final_lm="A",
+            has_executed_route=True,
+        ),
+    }
+    manager._rolling_prefetch_failures["blocker"] = 2
+
+    manager._resolve_runtime_wait_cycles(now)
+
+    waiter = manager.robots["waiter"]
+    assert blocker_order.dispatch_failures == 0
+    assert waiter.status == "RETREATING"
+    assert waiter.retreat_target_lm == "A"
+    assert any(
+        "evacuating for queued departure blocker" in event.message
+        for event in manager.events
+    )
+
+
+@pytest.mark.parametrize(
+    "failure",
+    (
+        "cbs_resource_conflict:r1",
+        "edge_resource_constrained:A->B@1",
+    ),
+)
+def test_resource_failure_enters_bounded_traffic_detour(
+    monkeypatch,
+    failure: str,
+) -> None:
+    manager = _manager()
+    clock = [100.0]
+    monkeypatch.setattr(manager, "_now", lambda: clock[0])
+    detours: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        manager,
+        "_queue_alternate_corridor_detour",
+        lambda _order, start, goal: detours.append((start, goal)) or True,
+    )
+    order = FleetOrder(
+        order_id="o1",
+        target_lm="B",
+        vehicle="r1",
+        start_lm="A",
+        spatial_route_nodes=["A", "B"],
+    )
+
+    manager._set_order_error(order, failure)
+    assert order.traffic_blocked_since == pytest.approx(100.0)
+    clock[0] += manager._traffic_replan_after() + 0.1
+    manager._set_order_error(order, failure)
+
+    assert detours == [("A", "B")]
+    assert order.spatial_route_nodes == []
 
 
 def test_admission_wait_times_out_to_spatial_replan(monkeypatch) -> None:
@@ -932,6 +1448,183 @@ def test_deadlock_retreat_never_targets_an_occupied_landmark() -> None:
     assert manager.robots["r2"].last_reason == "yield to r1"
 
 
+def test_previous_trajectory_lm_keeps_mid_edge_retreat_anchor() -> None:
+    manager = _manager()
+    robot = FleetRobot(
+        name="r1",
+        current_lm="A",
+        trajectory=[
+            {"t": 0.0, "edgeId": "A->B", "lm": "A"},
+            {"t": 2.0, "edgeId": "A->B", "lm": "B"},
+        ],
+        route_clock=1.0,
+    )
+
+    assert manager._previous_trajectory_lm(robot) == (0.0, "A")
+
+
+def test_previous_trajectory_lm_skips_duplicate_exhausted_endpoint() -> None:
+    manager = _manager()
+    robot = FleetRobot(
+        name="r1",
+        current_lm="B",
+        trajectory=[
+            {"t": 0.0, "edgeId": "A->A", "lm": "A"},
+            {"t": 0.5, "edgeId": "WAIT@ROTATE:A->B", "lm": "A"},
+            {"t": 2.0, "edgeId": "A->B", "lm": "B"},
+            {"t": 3.0, "edgeId": "B->B", "lm": "B"},
+        ],
+        route_clock=3.0,
+    )
+
+    assert manager._previous_trajectory_lm(robot) == (0.5, "A")
+
+
+def test_exhausted_corridor_trajectory_starts_physical_retreat(
+    monkeypatch,
+) -> None:
+    manager = _manager()
+    now = time()
+    winner = FleetRobot(name="winner", current_lm="A", status="WAITING")
+    retreater = FleetRobot(
+        name="retreater",
+        current_lm="B",
+        target_lm="A",
+        status="WAITING",
+        active_order_id="o1",
+        pose={"x": 2.0, "y": 0.0, "yaw": 0.0},
+        trajectory=[
+            {
+                "t": 0.0,
+                "x": 0.0,
+                "y": 0.0,
+                "yaw": 0.0,
+                "edgeId": "A->B",
+                "lm": "A",
+            },
+            {
+                "t": 2.0,
+                "x": 2.0,
+                "y": 0.0,
+                "yaw": 0.0,
+                "edgeId": "A->B",
+                "lm": "B",
+            },
+        ],
+        route_clock=2.0,
+    )
+    manager.robots = {
+        winner.name: winner,
+        retreater.name: retreater,
+    }
+    manager.orders = {
+        "o1": FleetOrder(
+            order_id="o1",
+            target_lm="A",
+            vehicle=retreater.name,
+            status="EXECUTING",
+        ),
+    }
+    monkeypatch.setattr(
+        manager,
+        "_queue_active_order_for_background_replan",
+        lambda *_args, **_kwargs: pytest.fail(
+            "an exhausted endpoint must reverse before replanning"
+        ),
+    )
+
+    evacuated = manager._start_deadlock_corridor_evacuation(
+        [winner, retreater],
+        winner,
+        now,
+    )
+
+    assert evacuated == retreater.name
+    assert retreater.status == "RETREATING"
+    assert retreater.retreat_target_clock == pytest.approx(0.0)
+    assert retreater.retreat_target_lm == "A"
+
+
+def test_repeated_current_lm_tag_queues_detour_instead_of_noop_retreat() -> None:
+    manager = _manager()
+    now = time()
+    manager._controlled_corridor_graph = SimpleNamespace(
+        vertices={
+            "A": SimpleNamespace(controlled_region_ids=("corridor-A-B",)),
+        },
+    )
+    winner = FleetRobot(name="winner", current_lm="B", status="WAITING")
+    robot = FleetRobot(
+        name="r1",
+        current_lm="A",
+        target_lm="B",
+        status="WAITING",
+        active_order_id="o1",
+        pose={"x": 0.05, "y": 0.0, "yaw": 0.0},
+        trajectory=[
+            {
+                "t": 0.0,
+                "x": 0.0,
+                "y": 0.0,
+                "yaw": 0.0,
+                "edgeId": "A->A",
+                "lm": "A",
+            },
+            {
+                "t": 1.0,
+                "x": 0.0,
+                "y": 0.0,
+                "yaw": 0.0,
+                "edgeId": "WAIT@ROTATE:A->B",
+                "lm": "A",
+            },
+            {
+                "t": 3.0,
+                "x": 2.0,
+                "y": 0.0,
+                "yaw": 0.0,
+                "edgeId": "A->B",
+                "lm": "B",
+            },
+        ],
+        route_clock=1.05,
+    )
+    order = FleetOrder(
+        order_id="o1",
+        target_lm="B",
+        vehicle=robot.name,
+        assigned_robot=robot.name,
+        status="EXECUTING",
+    )
+    manager.robots = {winner.name: winner, robot.name: robot}
+    manager.orders = {order.order_id: order}
+
+    evacuated = manager._start_deadlock_corridor_evacuation(
+        [winner, robot],
+        winner,
+        now,
+    )
+
+    assert evacuated == robot.name
+    assert order.status == "QUEUED"
+    assert order.traffic_detour_attempts == 1
+    assert manager.traffic_metrics["cycleReplans"] == 1
+    assert robot.status == "IDLE"
+    assert robot.active_order_id == ""
+    assert robot.trajectory == []
+    assert robot.retreat_target_clock is None
+    assert (
+        manager._start_deadlock_corridor_evacuation(
+            [winner, robot],
+            winner,
+            now + 0.1,
+        )
+        == ""
+    )
+    assert order.traffic_detour_attempts == 1
+    assert manager.traffic_metrics["cycleReplans"] == 1
+
+
 def test_mid_edge_deadlock_retreats_to_lm_and_queues_same_goal_detour() -> None:
     manager = _manager()
     now = time()
@@ -1001,6 +1694,42 @@ def test_mid_edge_deadlock_retreats_to_lm_and_queues_same_goal_detour() -> None:
     assert manager.traffic_metrics["cycleReplans"] == 1
 
 
+def test_safety_yield_pauses_a_retreat_until_winner_lease_expires(
+    monkeypatch,
+) -> None:
+    manager = _manager()
+    robot = FleetRobot(
+        name="r1",
+        current_lm="A",
+        target_lm="B",
+        status="WAITING",
+        last_reason="yield to r2",
+        wait_for_robot="r2",
+        wait_resource="runtime_safety",
+        wait_release_at=12.0,
+        pose={"x": 0.5, "y": 0.0, "yaw": 0.0},
+        trajectory=[
+            {"t": 0.0, "x": 0.0, "y": 0.0, "yaw": 0.0, "lm": "A"},
+            {"t": 1.0, "x": 1.0, "y": 0.0, "yaw": 0.0, "lm": "B"},
+        ],
+        route_clock=0.5,
+        retreat_target_clock=0.0,
+        retreat_target_lm="A",
+        last_tick_at=10.0,
+    )
+    manager.robots[robot.name] = robot
+    monkeypatch.setattr(
+        manager,
+        "_blocked_at_clock",
+        lambda *_args, **_kwargs: pytest.fail("paused retreat must not move"),
+    )
+
+    manager._advance_deadlock_retreat(robot, 11.0)
+
+    assert robot.route_clock == pytest.approx(0.5)
+    assert robot.last_tick_at == pytest.approx(11.0)
+
+
 def test_continuous_reservation_wait_is_inserted_before_entering_edge(
     monkeypatch,
 ) -> None:
@@ -1034,6 +1763,277 @@ def test_continuous_reservation_wait_is_inserted_before_entering_edge(
     assert wait["y"] == manager.landmarks["A"].y
     assert wait["lm"] == "A"
     assert stats == {"conflicts": 1, "waits": 1, "wait": 1.0, "unresolved": 0}
+
+
+def test_full_horizon_continuous_wait_remains_unresolved(
+    monkeypatch,
+) -> None:
+    manager = _manager()
+    trajectory = [
+        {"t": 0.0, "x": 0.0, "y": 0.0, "yaw": 0.0, "edgeId": "A->B", "lm": "A"},
+        {"t": 1.0, "x": 1.0, "y": 0.0, "yaw": 0.0, "edgeId": "A->B"},
+        {"t": 2.0, "x": 2.0, "y": 0.0, "yaw": 0.0, "edgeId": "A->B", "lm": "B"},
+    ]
+    conflict = {"time": 1.0, "other": "r2", "edge": "A->B"}
+
+    def conflict_until_hidden_by_wait(
+        _robot_name: str,
+        candidate: list[dict[str, object]],
+        **_kwargs: object,
+    ) -> dict[str, object] | None:
+        if any(
+            str(sample.get("edgeId", "")).startswith("WAIT@")
+            for sample in candidate
+        ):
+            return None
+        return conflict
+
+    monkeypatch.setattr(
+        manager,
+        "_first_continuous_corridor_conflict",
+        conflict_until_hidden_by_wait,
+    )
+    monkeypatch.setattr(manager, "_reservation_horizon", lambda: 5.0)
+    monkeypatch.setattr(
+        manager,
+        "_wait_duration_for_conflict",
+        lambda *args, **kwargs: 5.0,
+    )
+
+    scheduled, stats = manager._schedule_trajectory_against_corridors(
+        "r1",
+        trajectory,
+    )
+
+    assert not any(
+        str(sample.get("edgeId", "")).startswith("WAIT@")
+        for sample in scheduled
+    )
+    assert stats == {"conflicts": 1, "waits": 0, "wait": 0.0, "unresolved": 1}
+
+
+def test_batch_conflict_keeps_request_priority_when_peer_already_waits(
+    monkeypatch,
+) -> None:
+    manager = _manager()
+    plans = [
+        {
+            "robot": "priority",
+            "trajectory": [
+                {"t": 0.0, "x": 0.0, "y": 0.0, "yaw": 0.0, "edgeId": "A->B"},
+                {"t": 1.0, "x": 1.0, "y": 0.0, "yaw": 0.0, "edgeId": "A->B"},
+            ],
+        },
+        {
+            "robot": "waiting",
+            "trajectory": [
+                {
+                    "t": 0.0,
+                    "x": 0.0,
+                    "y": 0.0,
+                    "yaw": 0.0,
+                    "edgeId": "WAIT@ROTATE:A",
+                },
+                {
+                    "t": 1.0,
+                    "x": 0.0,
+                    "y": 0.0,
+                    "yaw": 1.0,
+                    "edgeId": "WAIT@ROTATE:A",
+                },
+            ],
+        },
+    ]
+    monkeypatch.setattr(
+        manager.collision,
+        "robot_footprints_conflict",
+        lambda *_args: True,
+    )
+    monkeypatch.setattr(
+        manager.collision,
+        "footprints_overlap",
+        lambda *_args: True,
+    )
+
+    conflict = manager._first_batch_trajectory_conflict(plans)
+
+    assert conflict is not None
+    assert conflict["priorityIndex"] == 0
+    assert conflict["waitIndex"] == 1
+
+
+def test_batch_no_clear_peer_wait_is_rejected_without_mutating_plans(
+    monkeypatch,
+) -> None:
+    manager = _manager()
+    plans = [
+        {
+            "robot": "priority",
+            "trajectory": [
+                {"t": 0.0, "x": 0.0, "y": 0.0, "yaw": 0.0, "edgeId": "A->B"},
+                {"t": 1.0, "x": 1.0, "y": 0.0, "yaw": 0.0, "edgeId": "A->B"},
+            ],
+        },
+        {
+            "robot": "waiting",
+            "trajectory": [
+                {"t": 0.0, "x": 1.0, "y": 0.0, "yaw": 0.0, "edgeId": "B->A"},
+                {"t": 1.0, "x": 0.0, "y": 0.0, "yaw": 0.0, "edgeId": "B->A"},
+            ],
+        },
+    ]
+    conflict = {
+        "time": 0.5,
+        "priorityIndex": 0,
+        "waitIndex": 1,
+        "edge": "B->A",
+    }
+    monkeypatch.setattr(
+        manager,
+        "_first_batch_trajectory_conflict",
+        lambda *_args: conflict,
+    )
+    monkeypatch.setattr(manager, "_reservation_horizon", lambda: 5.0)
+    monkeypatch.setattr(
+        manager,
+        "_wait_duration_for_peer_conflict",
+        lambda *_args: 5.0,
+    )
+
+    stats = manager._schedule_batch_trajectories(plans)
+
+    assert stats == {
+        "conflicts": 0,
+        "waits": 0,
+        "wait": 0.0,
+        "unresolved": 1,
+    }
+    assert all(
+        not str(sample.get("edgeId", "")).startswith("WAIT@")
+        for plan in plans
+        for sample in plan["trajectory"]
+    )
+
+
+def test_batch_same_dependency_stops_after_one_nonprogress_wait(
+    monkeypatch,
+) -> None:
+    manager = _manager()
+    plans = [
+        {
+            "robot": "priority",
+            "trajectory": [
+                {"t": 0.0, "x": 0.0, "y": 0.0, "yaw": 0.0, "edgeId": "A->B"},
+                {"t": 1.0, "x": 1.0, "y": 0.0, "yaw": 0.0, "edgeId": "A->B"},
+            ],
+        },
+        {
+            "robot": "waiting",
+            "trajectory": [
+                {"t": 0.0, "x": 1.0, "y": 0.0, "yaw": 0.0, "edgeId": "B->A"},
+                {"t": 1.0, "x": 0.0, "y": 0.0, "yaw": 0.0, "edgeId": "B->A"},
+            ],
+        },
+    ]
+    conflict = {
+        "time": 0.5,
+        "priorityIndex": 0,
+        "waitIndex": 1,
+        "edge": "B->A",
+    }
+    monkeypatch.setattr(
+        manager,
+        "_first_batch_trajectory_conflict",
+        lambda *_args: conflict,
+    )
+    monkeypatch.setattr(manager, "_reservation_horizon", lambda: 5.0)
+    monkeypatch.setattr(
+        manager,
+        "_wait_duration_for_peer_conflict",
+        lambda *_args: 1.0,
+    )
+
+    stats = manager._schedule_batch_trajectories(plans)
+
+    assert stats == {
+        "conflicts": 1,
+        "waits": 1,
+        "wait": 1.0,
+        "unresolved": 1,
+    }
+    assert not any(
+        str(sample.get("edgeId", "")).startswith("WAIT@")
+        for sample in plans[0]["trajectory"]
+    )
+    assert sum(
+        str(sample.get("edgeId", "")).startswith("WAIT@")
+        for sample in plans[1]["trajectory"]
+    ) == 1
+
+
+def test_batch_total_wait_is_bounded_by_reservation_horizon(
+    monkeypatch,
+) -> None:
+    manager = _manager()
+    plans = [
+        {
+            "robot": "priority",
+            "trajectory": [
+                {"t": 0.0, "x": 0.0, "y": 0.0, "yaw": 0.0, "edgeId": "A->B"},
+                {"t": 1.0, "x": 1.0, "y": 0.0, "yaw": 0.0, "edgeId": "A->B"},
+            ],
+        },
+        {
+            "robot": "waiting",
+            "trajectory": [
+                {"t": 0.0, "x": 1.0, "y": 0.0, "yaw": 0.0, "edgeId": "B->A"},
+                {"t": 1.0, "x": 0.0, "y": 0.0, "yaw": 0.0, "edgeId": "B->A"},
+            ],
+        },
+    ]
+    conflicts = iter(
+        [
+            {
+                "time": 0.25,
+                "priorityIndex": 0,
+                "waitIndex": 1,
+                "edge": "shared:first",
+            },
+            {
+                "time": 0.75,
+                "priorityIndex": 0,
+                "waitIndex": 1,
+                "edge": "shared:second",
+            },
+            {
+                "time": 0.75,
+                "priorityIndex": 0,
+                "waitIndex": 1,
+                "edge": "shared:second",
+            },
+        ]
+    )
+    monkeypatch.setattr(
+        manager,
+        "_first_batch_trajectory_conflict",
+        lambda *_args: next(conflicts),
+    )
+    monkeypatch.setattr(manager, "_reservation_horizon", lambda: 5.0)
+    monkeypatch.setattr(
+        manager,
+        "_wait_duration_for_peer_conflict",
+        lambda *_args: 3.0,
+    )
+
+    stats = manager._schedule_batch_trajectories(plans)
+
+    assert stats == {
+        "conflicts": 1,
+        "waits": 1,
+        "wait": 3.0,
+        "unresolved": 1,
+    }
+    assert float(plans[1]["arrivalTime"]) == pytest.approx(4.0)
 
 
 def test_deadlock_detour_keeps_goal_and_takes_longer_alternate_path() -> None:
@@ -1163,10 +2163,227 @@ def test_runtime_safety_invariant_rolls_back_an_overlapping_tick(monkeypatch) ->
     assert not manager.collision.footprints_overlap(first.pose, second.pose)
     assert manager.traffic_metrics["runtimeSafetyRollbacks"] == 1
     assert {first.status, second.status} == {"MOVING", "WAITING"}
+    loser = first if first.status == "WAITING" else second
+    winner = second if loser is first else first
+    assert loser.wait_for_robot == winner.name
+    assert loser.wait_resource == "runtime_safety"
+    assert loser.wait_release_at == winner.traffic_priority_until
     assert first.active_order_id == "o1"
     assert second.active_order_id == "o2"
     assert manager.orders["o1"].status != "COMPLETED"
     assert manager.orders["o2"].status != "COMPLETED"
+
+
+def test_runtime_safety_immediately_evacuates_from_stationary_blocker(
+    monkeypatch,
+) -> None:
+    manager = _manager()
+    now = time()
+    blocker = FleetRobot(
+        name="blocker",
+        current_lm="A",
+        status="IDLE",
+        pose={"x": 0.0, "y": 0.0, "yaw": 0.0},
+    )
+    mover = FleetRobot(
+        name="mover",
+        current_lm="B",
+        target_lm="A",
+        status="MOVING",
+        active_order_id="mover-order",
+        pose={"x": 1.2, "y": 0.0, "yaw": math.pi},
+        trajectory=[
+            {"t": 0.0, "x": 1.2, "y": 0.0, "yaw": math.pi, "lm": "B"},
+            {"t": 2.0, "x": 0.0, "y": 0.0, "yaw": math.pi, "lm": "A"},
+        ],
+    )
+    manager.robots = {blocker.name: blocker, mover.name: mover}
+    manager.orders["mover-order"] = FleetOrder(
+        order_id="mover-order",
+        target_lm="A",
+        vehicle=mover.name,
+        assigned_robot=mover.name,
+        status="EXECUTING",
+    )
+    snapshots = {
+        name: manager._runtime_safety_snapshot(robot)
+        for name, robot in manager.robots.items()
+    }
+    mover.pose = {"x": 0.2, "y": 0.0, "yaw": math.pi}
+    calls: list[tuple[list[str], str]] = []
+
+    def evacuate(robots, winner, _now):
+        calls.append(([robot.name for robot in robots], winner.name))
+        mover.status = "RETREATING"
+        mover.retreat_target_clock = 0.0
+        return mover.name
+
+    monkeypatch.setattr(
+        manager,
+        "_start_deadlock_corridor_evacuation",
+        evacuate,
+    )
+
+    manager._enforce_runtime_safety_invariant(snapshots, now)
+
+    assert calls == [(["blocker", "mover"], "blocker")]
+    assert mover.status == "RETREATING"
+    assert mover.traffic_priority_until > now
+    assert blocker.traffic_priority_until == 0.0
+    assert manager.traffic_metrics["runtimeSafetyRollbacks"] == 1
+
+
+def test_runtime_safety_replans_a_retreat_blocked_by_another_body(
+    monkeypatch,
+) -> None:
+    manager = _manager()
+    now = time()
+    blocker = FleetRobot(
+        name="blocker",
+        current_lm="A",
+        status="IDLE",
+        pose={"x": 0.0, "y": 0.0, "yaw": 0.0},
+    )
+    mover = FleetRobot(
+        name="mover",
+        current_lm="B",
+        target_lm="A",
+        status="RETREATING",
+        active_order_id="mover-order",
+        pose={"x": 1.2, "y": 0.0, "yaw": math.pi},
+        trajectory=[
+            {"t": 0.0, "x": 1.2, "y": 0.0, "yaw": math.pi, "lm": "B"},
+            {"t": 2.0, "x": 0.0, "y": 0.0, "yaw": math.pi, "lm": "A"},
+        ],
+        retreat_target_clock=0.0,
+        retreat_target_lm="B",
+        retreat_blocked_edges=[("B", "A")],
+    )
+    order = FleetOrder(
+        order_id="mover-order",
+        target_lm="A",
+        vehicle=mover.name,
+        assigned_robot=mover.name,
+        status="EXECUTING",
+    )
+    manager.robots = {blocker.name: blocker, mover.name: mover}
+    manager.orders = {order.order_id: order}
+    snapshots = {
+        name: manager._runtime_safety_snapshot(robot)
+        for name, robot in manager.robots.items()
+    }
+    mover.pose = {"x": 0.2, "y": 0.0, "yaw": math.pi}
+    queued: list[tuple[str, str, bool]] = []
+
+    def queue_replan(robot, _now, reason, **kwargs):
+        queued.append(
+            (
+                robot.name,
+                reason,
+                bool(kwargs.get("allow_controlled_corridor_replan")),
+            )
+        )
+        robot.status = "IDLE"
+        robot.active_order_id = ""
+        robot.trajectory = []
+        return True
+
+    monkeypatch.setattr(
+        manager,
+        "_queue_active_order_for_background_replan",
+        queue_replan,
+    )
+    monkeypatch.setattr(
+        manager,
+        "_start_deadlock_corridor_evacuation",
+        lambda *_args, **_kwargs: pytest.fail(
+            "a failed retreat must not be armed a second time"
+        ),
+    )
+
+    manager._enforce_runtime_safety_invariant(snapshots, now)
+
+    assert queued == [
+        (
+            "mover",
+            "deadlock retreat blocked; alternate route required",
+            True,
+        )
+    ]
+    assert mover.status == "IDLE"
+    assert mover.trajectory == []
+    assert mover.retreat_target_clock is None
+    assert order.traffic_detour_edges == [("B", "A")]
+    assert order.traffic_detour_attempts == 1
+    assert manager.traffic_metrics["runtimeSafetyRollbacks"] == 1
+    assert manager.traffic_metrics["cycleReplans"] == 1
+
+
+def test_runtime_safety_holds_a_mid_edge_retreat_until_blocker_clears(
+    monkeypatch,
+) -> None:
+    manager = _manager()
+    now = time()
+    blocker = FleetRobot(
+        name="blocker",
+        current_lm="A",
+        status="IDLE",
+        pose={"x": 0.0, "y": 0.0, "yaw": 0.0},
+    )
+    mover = FleetRobot(
+        name="mover",
+        current_lm="B",
+        target_lm="A",
+        status="RETREATING",
+        active_order_id="mover-order",
+        pose={"x": 1.2, "y": 0.1, "yaw": math.pi},
+        trajectory=[
+            {"t": 0.0, "x": 1.2, "y": 0.1, "yaw": math.pi, "lm": "B"},
+            {"t": 2.0, "x": 0.0, "y": 0.0, "yaw": math.pi, "lm": "A"},
+        ],
+        retreat_target_clock=0.0,
+        retreat_target_lm="B",
+        retreat_blocked_edges=[("B", "A")],
+    )
+    order = FleetOrder(
+        order_id="mover-order",
+        target_lm="A",
+        vehicle=mover.name,
+        assigned_robot=mover.name,
+        status="EXECUTING",
+    )
+    manager.robots = {blocker.name: blocker, mover.name: mover}
+    manager.orders = {order.order_id: order}
+    snapshots = {
+        name: manager._runtime_safety_snapshot(robot)
+        for name, robot in manager.robots.items()
+    }
+    mover.pose = {"x": 0.2, "y": 0.0, "yaw": math.pi}
+    monkeypatch.setattr(
+        manager,
+        "_queue_active_order_for_background_replan",
+        lambda *_args, **_kwargs: False,
+    )
+    monkeypatch.setattr(
+        manager,
+        "_start_deadlock_corridor_evacuation",
+        lambda *_args, **_kwargs: pytest.fail(
+            "a blocked mid-edge retreat must be held, not armed again"
+        ),
+    )
+
+    manager._enforce_runtime_safety_invariant(snapshots, now)
+
+    assert mover.status == "WAITING"
+    assert mover.pose == snapshots["mover"]["pose"]
+    assert mover.retreat_target_clock == 0.0
+    assert mover.wait_for_robot == "blocker"
+    assert mover.wait_resource == "blocked_retreat"
+    assert mover.wait_release_at >= now + 1.0
+    assert blocker.traffic_priority_until == mover.wait_release_at
+    assert order.traffic_detour_edges == [("B", "A")]
+    assert order.traffic_detour_attempts == 0
+    assert manager.traffic_metrics["runtimeSafetyRollbacks"] == 1
 
 
 def test_runtime_preflight_waits_before_crossing_without_rollback(monkeypatch) -> None:
@@ -1333,10 +2550,16 @@ def test_runtime_safety_invariant_detects_a_between_tick_pass_through() -> None:
             trajectory=[{"x": 1.2, "y": 0.0, "yaw": math.pi, "t": 0.0}],
         ),
     }
+    manager.robots["r1"].retreat_target_clock = 0.0
+    manager.robots["r1"].retreat_target_lm = "A"
     snapshots = {
         name: manager._runtime_safety_snapshot(robot)
         for name, robot in manager.robots.items()
     }
+    # Simulate the retreat completing and clearing its marker before the
+    # swept-footprint invariant rolls the route state back.
+    manager.robots["r1"].retreat_target_clock = None
+    manager.robots["r1"].retreat_target_lm = ""
     manager.robots["r1"].pose = {"x": 1.2, "y": 0.0, "yaw": 0.0}
     manager.robots["r2"].pose = {"x": 0.0, "y": 0.0, "yaw": math.pi}
 
@@ -1344,6 +2567,10 @@ def test_runtime_safety_invariant_detects_a_between_tick_pass_through() -> None:
 
     assert manager.robots["r1"].pose["x"] == 0.0
     assert manager.robots["r2"].pose["x"] == 1.2
+    assert manager.robots["r1"].status == "WAITING"
+    assert manager.robots["r1"].retreat_target_clock == pytest.approx(0.0)
+    assert manager.robots["r1"].retreat_target_lm == "A"
+    assert manager.robots["r2"].status == "MOVING"
     assert manager.traffic_metrics["runtimeSafetyRollbacks"] == 1
 
 
@@ -1524,10 +2751,59 @@ def test_wait_timeout_replan_is_returned_to_background_queue(monkeypatch) -> Non
     manager._resolve_runtime_wait_cycles(now)
 
     assert manager.orders["o1"].status == "QUEUED"
+    assert manager.orders["o1"].error.startswith("runtime replan cooldown:")
+    assert manager.orders["o1"].dispatch_failures == 1
     assert robot.active_order_id == ""
     assert robot.status == "IDLE"
     assert robot.target_lm == ""
     assert robot.last_reason == "route replan queued"
+
+
+def test_active_corridor_order_never_falls_back_to_synchronous_replan(
+    monkeypatch,
+) -> None:
+    manager = _manager()
+    now = time()
+    robot = FleetRobot(
+        name="r1",
+        current_lm="A",
+        target_lm="B",
+        status="WAITING",
+        active_order_id="o1",
+        last_reason="corridor admission wait at A for corridor-A-B",
+        trajectory=[
+            {"t": 0.0, "x": 0.0, "y": 0.0, "yaw": 0.0, "lm": "A"},
+            {"t": 2.0, "x": 2.0, "y": 0.0, "yaw": 0.0, "lm": "B"},
+        ],
+    )
+    manager.robots[robot.name] = robot
+    manager.orders["o1"] = FleetOrder(
+        order_id="o1",
+        target_lm="B",
+        vehicle=robot.name,
+        assigned_robot=robot.name,
+        status="WAITING_TRAFFIC",
+    )
+    monkeypatch.setattr(
+        manager,
+        "_queue_active_order_for_background_replan",
+        lambda *_args, **_kwargs: False,
+    )
+    monkeypatch.setattr(
+        manager,
+        "_maybe_replan_robot",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("synchronous MAPF")
+        ),
+    )
+
+    assert not manager._schedule_runtime_replan(
+        robot,
+        now,
+        robot.last_reason,
+    )
+    assert robot.last_reason.startswith("corridor admission wait")
+    assert robot.last_replan_at == now
 
 
 def test_legacy_idle_deadlock_replan_state_is_released_for_dispatch(
@@ -1616,6 +2892,1025 @@ def test_deadlock_recovery_dispatch_preempts_nonurgent_prefetch(monkeypatch) -> 
     manager._dispatch_orders(async_simulated=True)
 
     assert calls == ["recovery"]
+
+
+def test_failed_urgent_prefetch_yields_planner_slot_to_stationary_recovery(
+    monkeypatch,
+) -> None:
+    manager = _manager()
+    robot = FleetRobot(
+        name="r1",
+        current_lm="A",
+        status="IDLE",
+        pose={"x": 0.0, "y": 0.0, "yaw": 0.0},
+        last_reason="route replan queued",
+    )
+    order = FleetOrder(
+        order_id="o1",
+        target_lm="B",
+        vehicle="r1",
+        assigned_robot="r1",
+        status="QUEUED",
+        traffic_blocked_since=time(),
+    )
+    request = {"name": "r1", "startLm": "A", "goalLm": "B"}
+    recovery_entry = (order, robot, request, "B")
+    prefetch_robot = FleetRobot(name="rolling", current_lm="A")
+    prefetch_entry = (order, prefetch_robot, request, "B", 0.0)
+    manager.robots[robot.name] = robot
+    manager.orders[order.order_id] = order
+    manager._rolling_prefetch_failures[prefetch_robot.name] = 1
+    calls: list[str] = []
+    monkeypatch.setattr(manager, "_finish_async_simulated_dispatch", lambda: 0)
+    monkeypatch.setattr(
+        manager,
+        "_ready_simulated_order_entries",
+        lambda orders: [recovery_entry],
+    )
+    monkeypatch.setattr(
+        manager,
+        "_ready_rolling_prefetch_entries",
+        lambda: [prefetch_entry],
+    )
+    monkeypatch.setattr(
+        manager,
+        "_start_async_simulated_dispatch",
+        lambda entries: calls.append("recovery"),
+    )
+    monkeypatch.setattr(
+        manager,
+        "_start_async_rolling_prefetch",
+        lambda entries: calls.append("prefetch"),
+    )
+
+    manager._dispatch_orders(async_simulated=True)
+
+    assert calls == ["recovery"]
+    calls.clear()
+    manager._last_async_job_kind = "dispatch"
+
+    manager._dispatch_orders(async_simulated=True)
+
+    assert calls == ["prefetch"]
+
+
+def test_second_coupled_replan_yields_planner_slot_to_ready_dispatch(
+    monkeypatch,
+) -> None:
+    manager = _manager()
+    now = time()
+    first = FleetRobot(
+        name="cycle-1",
+        current_lm="A",
+        target_lm="B",
+        status="WAITING",
+        active_order_id="cycle-order-1",
+        pose={"x": 0.0, "y": 0.0, "yaw": 0.0},
+        trajectory=[
+            {"t": 0.0, "x": 0.0, "y": 0.0, "yaw": 0.0, "lm": "A"},
+            {"t": 2.0, "x": 2.0, "y": 0.0, "yaw": 0.0, "lm": "B"},
+        ],
+    )
+    second = FleetRobot(
+        name="cycle-2",
+        current_lm="B",
+        target_lm="A",
+        status="WAITING",
+        active_order_id="cycle-order-2",
+        pose={"x": 2.0, "y": 0.0, "yaw": math.pi},
+        trajectory=[
+            {"t": 0.0, "x": 2.0, "y": 0.0, "yaw": math.pi, "lm": "B"},
+            {"t": 2.0, "x": 0.0, "y": 0.0, "yaw": math.pi, "lm": "A"},
+        ],
+    )
+    queued = FleetRobot(
+        name="queued",
+        current_lm="A",
+        status="ARRIVED",
+        pose={"x": 0.0, "y": 0.0, "yaw": 0.0},
+    )
+    manager.robots = {
+        first.name: first,
+        second.name: second,
+        queued.name: queued,
+    }
+    manager.orders = {
+        "cycle-order-1": FleetOrder(
+            order_id="cycle-order-1",
+            target_lm="B",
+            vehicle=first.name,
+            status="WAITING_TRAFFIC",
+        ),
+        "cycle-order-2": FleetOrder(
+            order_id="cycle-order-2",
+            target_lm="A",
+            vehicle=second.name,
+            status="WAITING_TRAFFIC",
+        ),
+        "queued-order": FleetOrder(
+            order_id="queued-order",
+            target_lm="B",
+            vehicle=queued.name,
+            status="QUEUED",
+        ),
+    }
+    manager.task_manager.replace_storage(manager.orders)
+    manager._last_async_job_kind = "coupled_replan"
+    monkeypatch.setattr(
+        manager,
+        "_plan_valid_requests",
+        lambda *_args, **_kwargs: {
+            "ok": False,
+            "plans": [],
+            "debug": {"reason": "unexpected coupled planner call"},
+        },
+    )
+
+    assert not manager._start_async_coupled_replan(
+        [first, second],
+        first,
+        now,
+    )
+    assert not manager._async_simulated_dispatch_active()
+
+    dispatched: list[list[str]] = []
+    monkeypatch.setattr(manager, "_ready_rolling_prefetch_entries", lambda: [])
+    monkeypatch.setattr(
+        manager,
+        "_start_async_simulated_dispatch",
+        lambda entries: dispatched.append([entry[1].name for entry in entries]),
+    )
+
+    manager._dispatch_orders(async_simulated=True)
+
+    assert dispatched == [["queued"]]
+
+
+def test_coupled_replan_yields_first_turn_to_urgent_rolling_prefetch(
+    monkeypatch,
+) -> None:
+    manager = _manager()
+    first = FleetRobot(name="cycle-1", current_lm="A")
+    second = FleetRobot(name="cycle-2", current_lm="B")
+    prefetch_order = FleetOrder(
+        order_id="rolling-order",
+        target_lm="B",
+        vehicle="rolling",
+        status="PLANNING",
+    )
+    prefetch_robot = FleetRobot(name="rolling", current_lm="A")
+    prefetch = (
+        prefetch_order,
+        prefetch_robot,
+        {"name": "rolling", "startLm": "A", "goalLm": "B"},
+        "B",
+        0.0,
+    )
+    manager._last_async_job_kind = "coupled_replan"
+    monkeypatch.setattr(
+        manager,
+        "_ready_rolling_prefetch_entries",
+        lambda: [prefetch],
+    )
+
+    assert not manager._start_async_coupled_replan(
+        [first, second],
+        first,
+        time(),
+    )
+    assert not manager._async_simulated_dispatch_active()
+
+
+def test_rolling_boundary_holders_are_prefetched_as_one_recovery_batch(
+    monkeypatch,
+) -> None:
+    manager = _manager()
+    manager.params["fleet"]["rolling_prefetch_recovery_batch_size"] = 8
+    for index in range(2):
+        name = f"r{index + 1}"
+        order = FleetOrder(
+            order_id=f"o{index + 1}",
+            target_lm="B",
+            vehicle=name,
+            assigned_robot=name,
+            status="PLANNING",
+        )
+        robot = FleetRobot(
+            name=name,
+            current_lm="A",
+            target_lm="A",
+            status="WAITING",
+            pose={"x": 0.0, "y": 0.0, "yaw": 0.0},
+            trajectory=[
+                {"x": 0.0, "y": 0.0, "yaw": 0.0, "t": 0.0, "lm": "A"},
+                {"x": 0.0, "y": 0.0, "yaw": 0.0, "t": 1.0, "lm": "A"},
+            ],
+            route_clock=1.0,
+            route_chunk_goal_lm="A",
+            route_final_lm="B",
+            active_order_id=order.order_id,
+            has_executed_route=True,
+            last_reason="rolling continuation pending",
+        )
+        manager.orders[order.order_id] = order
+        manager.robots[name] = robot
+
+    entries = manager._ready_rolling_prefetch_entries()
+
+    assert [entry[1].name for entry in entries] == ["r1", "r2"]
+    assert all(entry[-1] == pytest.approx(0.0) for entry in entries)
+
+    planned_names: list[str] = []
+    planned = Event()
+
+    def capture_plan(requests, payload):
+        del payload
+        planned_names.extend(str(request["name"]) for request in requests)
+        planned.set()
+        return {
+            "ok": False,
+            "plans": [],
+            "debug": {"reason": "captured recovery batch"},
+        }
+
+    monkeypatch.setattr(manager, "_plan_valid_requests", capture_plan)
+    manager._start_async_rolling_prefetch(entries)
+
+    assert planned.wait(1.0)
+    assert planned_names == ["r1", "r2"]
+
+
+@pytest.mark.parametrize(
+    ("offset", "expected_goal_selector"),
+    (
+        (0.0, "recovery"),
+        (1.0, "rolling"),
+    ),
+)
+def test_singleton_prefetch_selects_boundary_goal_only_after_chunk_exhaustion(
+    monkeypatch,
+    offset: float,
+    expected_goal_selector: str,
+) -> None:
+    manager = _manager()
+    order = FleetOrder(
+        order_id="o1",
+        target_lm="B",
+        vehicle="r1",
+        assigned_robot="r1",
+        status="PLANNING",
+    )
+    robot = FleetRobot(
+        name="r1",
+        current_lm="A",
+        target_lm="B",
+        status="WAITING",
+        active_order_id=order.order_id,
+        route_chunk_goal_lm="A",
+        route_final_lm="B",
+        route_revision=7,
+    )
+    manager.orders[order.order_id] = order
+    manager.robots[robot.name] = robot
+    entry = (
+        order,
+        robot,
+        {"name": robot.name, "startLm": "A", "goalLm": "B"},
+        "B",
+        offset,
+    )
+    selected: list[str] = []
+    planned = Event()
+
+    def recovery_goal(*_args, **_kwargs):
+        selected.append("recovery")
+        return "B"
+
+    def rolling_goal(*_args, **_kwargs):
+        selected.append("rolling")
+        return "B"
+
+    monkeypatch.setattr(
+        manager,
+        "_rolling_recovery_planning_goal",
+        recovery_goal,
+    )
+    monkeypatch.setattr(manager, "_rolling_planning_goal", rolling_goal)
+    monkeypatch.setattr(
+        manager,
+        "_plan_valid_requests",
+        lambda *_args, **_kwargs: (
+            planned.set()
+            or {
+                "ok": False,
+                "plans": [],
+                "debug": {"reason": "captured singleton prefetch"},
+            }
+        ),
+    )
+
+    manager._start_async_rolling_prefetch(entry)
+
+    assert planned.wait(1.0)
+    assert selected == [expected_goal_selector]
+
+
+def test_failed_rolling_boundary_recovery_expands_and_rotates_the_group() -> None:
+    manager = _manager()
+    manager.params["fleet"]["rolling_prefetch_recovery_batch_size"] = 2
+    for index in range(6):
+        name = f"r{index + 1}"
+        order = FleetOrder(
+            order_id=f"o{index + 1}",
+            target_lm="B",
+            vehicle=name,
+            assigned_robot=name,
+            status="PLANNING",
+        )
+        robot = FleetRobot(
+            name=name,
+            current_lm="A",
+            target_lm="A",
+            status="WAITING",
+            pose={"x": 0.0, "y": 0.0, "yaw": 0.0},
+            trajectory=[
+                {"x": 0.0, "y": 0.0, "yaw": 0.0, "t": 0.0, "lm": "A"},
+                {"x": 0.0, "y": 0.0, "yaw": 0.0, "t": 1.0, "lm": "A"},
+            ],
+            route_clock=1.0,
+            route_chunk_goal_lm="A",
+            route_final_lm="B",
+            active_order_id=order.order_id,
+            has_executed_route=True,
+            last_reason="rolling continuation pending",
+        )
+        manager.orders[order.order_id] = order
+        manager.robots[name] = robot
+
+    assert len(manager._ready_rolling_prefetch_entries()) == 2
+    manager._rolling_prefetch_failures["r1"] = 1
+    second = manager._ready_rolling_prefetch_entries()
+    assert len(second) == 4
+    assert "r1" not in {entry[1].name for entry in second}
+    manager._rolling_prefetch_failures["r1"] = 2
+    assert len(manager._ready_rolling_prefetch_entries()) == 6
+
+
+def test_failed_direct_boundary_release_escalates_to_the_endpoint_batch() -> None:
+    manager = _manager()
+    manager.params["fleet"]["rolling_prefetch_recovery_batch_size"] = 2
+    for index in range(4):
+        name = f"r{index + 1}"
+        order = FleetOrder(
+            order_id=f"o{index + 1}",
+            target_lm="B",
+            vehicle=name,
+            assigned_robot=name,
+            status="PLANNING",
+        )
+        manager.orders[order.order_id] = order
+        manager.robots[name] = FleetRobot(
+            name=name,
+            current_lm="A",
+            target_lm="A",
+            status="WAITING",
+            active_order_id=order.order_id,
+            last_reason="rolling continuation pending",
+            trajectory=[
+                {"t": 0.0, "x": 0.0, "y": 0.0, "edgeId": "A->A", "lm": "A"},
+                {"t": 1.0, "x": 0.0, "y": 0.0, "edgeId": "A->A", "lm": "A"},
+            ],
+            route_clock=1.0,
+            route_chunk_goal_lm="A",
+            route_final_lm="B",
+            has_executed_route=True,
+        )
+    manager.robots["tail"] = FleetRobot(
+        name="tail",
+        current_lm="A",
+        status="WAITING",
+        last_reason="occupied by r1",
+        wait_for_robot="r1",
+        trajectory=[
+            {"t": 0.0, "x": -1.0, "y": 0.0, "edgeId": "A->A", "lm": "A"},
+        ],
+    )
+
+    assert [
+        entry[1].name for entry in manager._ready_rolling_prefetch_entries()
+    ] == ["r1"]
+
+    manager._rolling_prefetch_failures["r1"] = 1
+    recovered = manager._ready_rolling_prefetch_entries()
+
+    assert recovered[0][1].name == "r1"
+    assert {entry[1].name for entry in recovered} == {
+        "r1",
+        "r2",
+        "r3",
+        "r4",
+    }
+
+
+def test_rolling_boundary_recovery_follows_transitive_route_dependencies(
+    monkeypatch,
+) -> None:
+    manager = _manager()
+    manager.params["fleet"]["rolling_prefetch_recovery_batch_size"] = 2
+
+    def entry(
+        name: str,
+        start_lm: str,
+        route_nodes: list[str],
+    ) -> tuple[FleetOrder, FleetRobot, dict[str, object], str, float]:
+        order = FleetOrder(
+            order_id=f"o-{name}",
+            target_lm=route_nodes[-1],
+            vehicle=name,
+            assigned_robot=name,
+            status="PLANNING",
+            spatial_route_nodes=list(route_nodes),
+        )
+        robot = FleetRobot(
+            name=name,
+            current_lm=start_lm,
+            target_lm=start_lm,
+            status="WAITING",
+            active_order_id=order.order_id,
+            route_chunk_goal_lm=start_lm,
+            route_final_lm=route_nodes[-1],
+            last_reason="rolling continuation pending",
+        )
+        request: dict[str, object] = {
+            "name": name,
+            "startLm": start_lm,
+            "goalLm": route_nodes[-1],
+            "routeNodes": list(route_nodes),
+        }
+        return order, robot, request, route_nodes[-1], 0.0
+
+    candidates = [
+        entry("seed", "A", ["A", "B", "X"]),
+        entry("bridge", "B", ["B", "C", "Y"]),
+        entry("linked", "C", ["C", "Z"]),
+        entry("other-1", "D", ["D", "E"]),
+        entry("other-2", "E", ["E", "F"]),
+    ]
+    monkeypatch.setattr(
+        manager,
+        "_rolling_prefetch_candidates",
+        lambda: list(candidates),
+    )
+    monkeypatch.setattr(
+        manager,
+        "_rolling_boundary_release_pressure",
+        lambda: {"seed": 3},
+    )
+    manager._rolling_prefetch_failures["seed"] = 1
+
+    recovered = manager._ready_rolling_prefetch_entries()
+
+    assert recovered[0][1].name == "seed"
+    assert {item[1].name for item in recovered} == {
+        "seed",
+        "bridge",
+        "linked",
+    }
+
+
+def test_failed_rolling_component_does_not_expand_into_independent_routes(
+    monkeypatch,
+) -> None:
+    manager = _manager()
+    manager.params["fleet"]["rolling_prefetch_recovery_batch_size"] = 2
+
+    def entry(
+        name: str,
+        start_lm: str,
+        route_nodes: list[str],
+    ) -> tuple[FleetOrder, FleetRobot, dict[str, object], str, float]:
+        order = FleetOrder(
+            order_id=f"o-{name}",
+            target_lm=route_nodes[-1],
+            vehicle=name,
+            assigned_robot=name,
+            status="PLANNING",
+            spatial_route_nodes=list(route_nodes),
+        )
+        robot = FleetRobot(
+            name=name,
+            current_lm=start_lm,
+            target_lm=start_lm,
+            status="WAITING",
+            active_order_id=order.order_id,
+            route_chunk_goal_lm=start_lm,
+            route_final_lm=route_nodes[-1],
+            last_reason="rolling continuation pending",
+        )
+        request: dict[str, object] = {
+            "name": name,
+            "startLm": start_lm,
+            "goalLm": route_nodes[-1],
+            "routeNodes": list(route_nodes),
+        }
+        return order, robot, request, route_nodes[-1], 0.0
+
+    candidates = [
+        entry("local-1", "A", ["A", "B", "C"]),
+        entry("local-2", "B", ["B", "C"]),
+        entry("other-1", "D", ["D", "E", "F"]),
+        entry("other-2", "E", ["E", "F"]),
+        entry("isolated", "G", ["G", "H"]),
+    ]
+    monkeypatch.setattr(
+        manager,
+        "_rolling_prefetch_candidates",
+        lambda: list(candidates),
+    )
+    monkeypatch.setattr(
+        manager,
+        "_rolling_boundary_release_pressure",
+        lambda: {"local-1": 5},
+    )
+    manager._rolling_prefetch_failures.update({
+        "local-1": 8,
+        "local-2": 8,
+    })
+
+    recovered = manager._ready_rolling_prefetch_entries()
+
+    assert recovered[0][1].name == "local-1"
+    assert {item[1].name for item in recovered} == {
+        "local-1",
+        "local-2",
+    }
+
+
+def test_fresh_independent_rolling_boundaries_are_retried_one_at_a_time(
+    monkeypatch,
+) -> None:
+    manager = _manager()
+
+    def entry(
+        name: str,
+        start_lm: str,
+        goal_lm: str,
+    ) -> tuple[FleetOrder, FleetRobot, dict[str, object], str, float]:
+        order = FleetOrder(
+            order_id=f"o-{name}",
+            target_lm=goal_lm,
+            vehicle=name,
+            assigned_robot=name,
+            status="PLANNING",
+        )
+        robot = FleetRobot(
+            name=name,
+            current_lm=start_lm,
+            target_lm=start_lm,
+            status="WAITING",
+            active_order_id=order.order_id,
+            route_chunk_goal_lm=start_lm,
+            route_final_lm=goal_lm,
+            last_reason="rolling continuation pending",
+        )
+        return (
+            order,
+            robot,
+            {
+                "name": name,
+                "startLm": start_lm,
+                "goalLm": goal_lm,
+                "routeNodes": [start_lm, goal_lm],
+            },
+            goal_lm,
+            0.0,
+        )
+
+    candidates = [
+        entry("r1", "A", "B"),
+        entry("r2", "C", "D"),
+        entry("r3", "E", "F"),
+    ]
+    monkeypatch.setattr(
+        manager,
+        "_rolling_prefetch_candidates",
+        lambda: list(candidates),
+    )
+    monkeypatch.setattr(
+        manager,
+        "_rolling_boundary_release_pressure",
+        lambda: {},
+    )
+
+    assert [
+        item[1].name for item in manager._ready_rolling_prefetch_entries()
+    ] == ["r1"]
+
+    manager._rolling_prefetch_failures["r1"] = 1
+
+    assert [
+        item[1].name for item in manager._ready_rolling_prefetch_entries()
+    ] == ["r2"]
+
+
+def test_rolling_boundary_recovery_never_becomes_a_fleet_wide_batch(
+    monkeypatch,
+) -> None:
+    manager = _manager()
+    candidates = []
+    count = manager.planner.local_cbs_max_robots + 4
+    for index in range(count):
+        name = f"r{index:02d}"
+        start = f"N{index}"
+        route_nodes = [
+            start,
+            *[f"N{next_index}" for next_index in range(index + 1, count)],
+        ]
+        order = FleetOrder(
+            order_id=f"o-{name}",
+            target_lm=route_nodes[-1],
+            vehicle=name,
+            assigned_robot=name,
+            status="PLANNING",
+        )
+        robot = FleetRobot(
+            name=name,
+            current_lm=start,
+            status="WAITING",
+            active_order_id=order.order_id,
+            route_chunk_goal_lm=start,
+            route_final_lm=route_nodes[-1],
+            last_reason="rolling continuation pending",
+        )
+        candidates.append(
+            (
+                order,
+                robot,
+                {
+                    "name": name,
+                    "startLm": start,
+                    "goalLm": route_nodes[-1],
+                    "routeNodes": route_nodes,
+                },
+                route_nodes[-1],
+                0.0,
+            )
+        )
+        manager._rolling_prefetch_failures[name] = 8
+
+    monkeypatch.setattr(
+        manager,
+        "_rolling_prefetch_candidates",
+        lambda: list(candidates),
+    )
+    monkeypatch.setattr(
+        manager,
+        "_rolling_boundary_release_pressure",
+        lambda: {},
+    )
+
+    recovered = manager._ready_rolling_prefetch_entries()
+
+    assert len(recovered) == manager.planner.local_cbs_max_robots
+
+
+def test_full_rolling_collapse_recovers_empty_routes_and_releases_sink() -> None:
+    landmarks = {
+        name: Landmark(name=name, x=float(index), y=0.0)
+        for index, name in enumerate(("A", "B", "C", "P"))
+    }
+    edges = [
+        GraphEdge(
+            from_name=src,
+            to_name=dst,
+            length=1.0,
+            kind="line",
+            edge_type="FeatureLine",
+            world_points=(
+                WorldPoint(landmarks[src].x, landmarks[src].y),
+                WorldPoint(landmarks[dst].x, landmarks[dst].y),
+            ),
+            properties={"direction": 1},
+        )
+        for src, dst in (("A", "B"), ("B", "C"), ("C", "P"))
+    ]
+    manager = FleetManagerSim(landmarks, edges)
+    routes = {
+        "r1": ["A", "B", "C", "P"],
+        "r2": ["B", "C", "P"],
+        "r3": ["C", "P"],
+    }
+    for revision, (name, route_nodes) in enumerate(routes.items(), start=1):
+        start_lm = route_nodes[0]
+        landmark = landmarks[start_lm]
+        order = FleetOrder(
+            order_id=f"o-{name}",
+            target_lm="P",
+            vehicle=name,
+            assigned_robot=name,
+            status="PLANNING",
+            # A failed ordinary continuation may already have invalidated the
+            # cached suffix. Collapse recovery must reconstruct it without
+            # treating every alphabetic seed as an independent sink.
+            spatial_route_nodes=[],
+        )
+        manager.orders[order.order_id] = order
+        manager.robots[name] = FleetRobot(
+            name=name,
+            current_lm=start_lm,
+            target_lm=start_lm,
+            status="WAITING",
+            pose={"x": landmark.x, "y": landmark.y, "yaw": 0.0},
+            trajectory=[
+                {"t": 0.0, "x": landmark.x, "y": landmark.y, "lm": start_lm},
+                {"t": 1.0, "x": landmark.x, "y": landmark.y, "lm": start_lm},
+            ],
+            route_clock=1.0,
+            active_order_id=order.order_id,
+            route_chunk_goal_lm=start_lm,
+            route_final_lm="P",
+            route_revision=revision,
+            has_executed_route=True,
+            last_reason="rolling continuation pending",
+        )
+        manager._rolling_prefetch_failures[name] = 1
+        manager._rolling_prefetch_retry_at[name] = manager._now() + 1000.0
+
+    assert [
+        entry[1].name for entry in manager._ready_rolling_prefetch_entries()
+    ] == ["r3"]
+
+    manager._rolling_prefetch_failures["r3"] = 0
+    assert manager._ready_rolling_prefetch_entries() == []
+    manager._rolling_prefetch_failures["r3"] = 1
+    manager.robots["r3"].status = "MOVING"
+    assert manager._ready_rolling_prefetch_entries() == []
+    manager.robots["r3"].status = "WAITING"
+    manager.robots["r3"].pending_route = {"planned": True}
+    assert manager._ready_rolling_prefetch_entries() == []
+
+
+def test_full_collapse_dependency_uses_shared_corridor_resources() -> None:
+    landmarks = {
+        "A": Landmark(name="A", x=0.0, y=0.0),
+        "X": Landmark(
+            name="X",
+            x=1.0,
+            y=0.0,
+            properties={"controlled_region": "shared-corridor"},
+        ),
+        "G": Landmark(name="G", x=2.0, y=0.0),
+        "B": Landmark(
+            name="B",
+            x=1.0,
+            y=1.0,
+            properties={"controlled_region": "shared-corridor"},
+        ),
+        "P": Landmark(name="P", x=2.0, y=1.0),
+    }
+    edges = [
+        GraphEdge(
+            from_name=src,
+            to_name=dst,
+            length=1.0,
+            kind="line",
+            edge_type="FeatureLine",
+            world_points=(
+                WorldPoint(landmarks[src].x, landmarks[src].y),
+                WorldPoint(landmarks[dst].x, landmarks[dst].y),
+            ),
+            properties={"direction": 1},
+        )
+        for src, dst in (("A", "X"), ("X", "G"), ("B", "P"))
+    ]
+    manager = FleetManagerSim(landmarks, edges)
+    definitions = (
+        ("a-seed", "A", "G", ["A", "X", "G"]),
+        ("z-sink", "B", "P", ["B", "P"]),
+    )
+    for revision, (name, start_lm, final_lm, route_nodes) in enumerate(
+        definitions,
+        start=1,
+    ):
+        landmark = landmarks[start_lm]
+        order = FleetOrder(
+            order_id=f"o-{name}",
+            target_lm=final_lm,
+            vehicle=name,
+            assigned_robot=name,
+            status="PLANNING",
+            spatial_route_nodes=route_nodes,
+        )
+        manager.orders[order.order_id] = order
+        manager.robots[name] = FleetRobot(
+            name=name,
+            current_lm=start_lm,
+            status="WAITING",
+            pose={"x": landmark.x, "y": landmark.y, "yaw": 0.0},
+            trajectory=[
+                {"t": 0.0, "x": landmark.x, "y": landmark.y, "lm": start_lm},
+                {"t": 1.0, "x": landmark.x, "y": landmark.y, "lm": start_lm},
+            ],
+            route_clock=1.0,
+            active_order_id=order.order_id,
+            route_chunk_goal_lm=start_lm,
+            route_final_lm=final_lm,
+            route_revision=revision,
+            has_executed_route=True,
+            last_reason="rolling continuation pending",
+        )
+        manager._rolling_prefetch_failures[name] = 1
+        manager._rolling_prefetch_retry_at[name] = manager._now() + 1000.0
+
+    release = manager._ready_rolling_prefetch_entries()
+
+    # B is not a node on A->X, but B and X occupy the same controlled
+    # resource. Releasing alphabetic a-seed first would leave that token held.
+    assert [entry[1].name for entry in release] == ["z-sink"]
+
+
+def test_cyclic_rolling_collapse_uses_fixed_pocket_and_blacklists_failure(
+    monkeypatch,
+) -> None:
+    landmarks = {
+        "A": Landmark(
+            name="A",
+            x=0.0,
+            y=0.0,
+            properties={"controlled_region": "corridor-a"},
+        ),
+        "B": Landmark(name="B", x=2.0, y=0.0),
+        "P1": Landmark(
+            name="P1",
+            x=0.0,
+            y=2.0,
+            properties={"controlled_region": "corridor-a"},
+        ),
+        "P2": Landmark(name="P2", x=2.0, y=2.0),
+        "P3": Landmark(name="P3", x=-2.0, y=0.0),
+    }
+    edges = [
+        GraphEdge(
+            from_name=src,
+            to_name=dst,
+            length=2.0,
+            kind="line",
+            edge_type="FeatureLine",
+            world_points=(
+                WorldPoint(landmarks[src].x, landmarks[src].y),
+                WorldPoint(landmarks[dst].x, landmarks[dst].y),
+            ),
+            properties={"direction": 1},
+        )
+        for src, dst in (
+            ("A", "B"),
+            ("B", "A"),
+            ("A", "P1"),
+            ("B", "P2"),
+            ("A", "P3"),
+        )
+    ]
+    manager = FleetManagerSim(landmarks, edges)
+    for revision, (name, start_lm, final_lm) in enumerate(
+        (("r1", "A", "B"), ("r2", "B", "A")),
+        start=1,
+    ):
+        landmark = landmarks[start_lm]
+        order = FleetOrder(
+            order_id=f"o-{name}",
+            target_lm=final_lm,
+            vehicle=name,
+            assigned_robot=name,
+            status="PLANNING",
+            spatial_route_nodes=[start_lm, final_lm],
+        )
+        manager.orders[order.order_id] = order
+        manager.robots[name] = FleetRobot(
+            name=name,
+            current_lm=start_lm,
+            target_lm=start_lm,
+            status="WAITING",
+            pose={"x": landmark.x, "y": landmark.y, "yaw": 0.0},
+            trajectory=[
+                {"t": 0.0, "x": landmark.x, "y": landmark.y, "lm": start_lm},
+                {"t": 1.0, "x": landmark.x, "y": landmark.y, "lm": start_lm},
+            ],
+            route_clock=1.0,
+            active_order_id=order.order_id,
+            route_chunk_goal_lm=start_lm,
+            route_final_lm=final_lm,
+            route_revision=revision,
+            has_executed_route=True,
+            last_reason="rolling continuation pending",
+        )
+        manager._rolling_prefetch_failures[name] = 1
+        manager._rolling_prefetch_retry_at[name] = manager._now() + 1000.0
+
+    first = manager._ready_rolling_prefetch_entries()
+    assert len(first) == 1
+    assert first[0][1].name == "r1"
+    assert first[0][2]["vacancyRecovery"] is True
+    # P1 is geometrically free but retains A's controlled-region token, so it
+    # cannot create a vacancy. The fixed escape must leave that resource.
+    assert first[0][2]["goalLm"] == "P3"
+    assert first[0][2]["routeNodes"] == ["A", "P3"]
+    assert first[0][3] == "B"
+
+    captured: dict[str, object] = {}
+    planner_called = Event()
+
+    def fail_fixed_path(requests, payload):
+        captured["requests"] = requests
+        captured["payload"] = payload
+        planner_called.set()
+        return {
+            "ok": False,
+            "plans": [],
+            "debug": {"reason": "no_low_level_path:r1:fixed pocket blocked"},
+        }
+
+    monkeypatch.setattr(manager, "_plan_valid_requests", fail_fixed_path)
+    manager._start_async_rolling_prefetch(first)
+
+    assert planner_called.wait(1.0)
+    deadline = perf_counter() + 1.0
+    while (
+        manager._dispatch_job is not None
+        and not manager._dispatch_job.get("done")
+        and perf_counter() < deadline
+    ):
+        sleep(0.001)
+    assert captured["payload"]["allowCbsFallback"] is False
+    assert captured["requests"][0]["routeNodes"] == ["A", "P3"]
+    assert captured["requests"][0]["vacancyRecovery"] is True
+    assert manager.orders["o-r1"].target_lm == "B"
+
+    signature = manager._rolling_vacancy_recovery_signature
+    manager._finish_async_simulated_dispatch()
+
+    assert (signature, "r1", "P3") in (
+        manager._rolling_vacancy_recovery_blacklist
+    )
+    second = manager._ready_rolling_prefetch_entries()
+    assert second[0][1].name == "r2"
+    assert second[0][2]["goalLm"] == "P2"
+
+    manager.robots["r1"].route_revision += 1
+    third = manager._ready_rolling_prefetch_entries()
+    assert third[0][1].name == "r1"
+    assert third[0][2]["goalLm"] == "P3"
+    assert not manager._rolling_vacancy_recovery_blacklist
+
+
+@pytest.mark.parametrize(
+    "reason",
+    (
+        "cbs_resource_conflict:r2",
+        "no_low_level_path:r2:A->B:stationary_robot_blocks_route",
+        "no_low_level_path:r2:resource_constrained:S015002@6",
+        "no_low_level_path:r2:cannot_wait:S015002@6-8",
+    ),
+)
+def test_named_batch_conflict_does_not_back_off_unaffected_orders(
+    reason: str,
+) -> None:
+    manager = _manager()
+    entries = []
+    for index in range(2):
+        name = f"r{index + 1}"
+        robot = FleetRobot(
+            name=name,
+            current_lm="A",
+            status="IDLE",
+            pose={"x": 0.0, "y": 0.0, "yaw": 0.0},
+        )
+        order = FleetOrder(
+            order_id=f"o{index + 1}",
+            target_lm="B",
+            vehicle=name,
+            assigned_robot=name,
+            status="PLANNING",
+        )
+        manager.robots[name] = robot
+        manager.orders[order.order_id] = order
+        entries.append(
+            (order, robot, {"name": name, "startLm": "A", "goalLm": "B"}, "B")
+        )
+
+    manager._finish_simulated_order_batch(
+        entries,
+        {
+            "ok": False,
+            "plans": [],
+            "debug": {"reason": reason},
+        },
+    )
+
+    assert manager.orders["o1"].status == "QUEUED"
+    assert manager.orders["o1"].error == ""
+    assert manager.orders["o1"].dispatch_failures == 0
+    assert manager.orders["o2"].error == reason
+    assert manager.orders["o2"].dispatch_failures == 1
 
 
 def test_remote_route_payload_contains_absolute_timed_segment_contract() -> None:
@@ -1934,7 +4229,7 @@ def test_spatial_route_stays_committed_across_rolling_chunks() -> None:
     assert order.spatial_route_revision == revision
 
 
-def test_traffic_retry_shortens_only_temporal_chunk_to_next_lm() -> None:
+def test_traffic_retry_keeps_the_full_safe_temporal_chunk() -> None:
     manager = _long_line_manager(edge_count=6)
     manager.params["fleet"]["rolling_horizon_sec"] = 20.0
     order = FleetOrder(
@@ -1946,8 +4241,128 @@ def test_traffic_retry_shortens_only_temporal_chunk_to_next_lm() -> None:
 
     planning_goal = manager._rolling_planning_goal("N0", "N6", order)
 
-    assert planning_goal == "N1"
+    assert planning_goal == "N6"
     assert order.spatial_route_nodes == [f"N{index}" for index in range(7)]
+
+
+def test_non_final_rolling_chunk_holds_before_transit_junction() -> None:
+    landmarks = {
+        "A": Landmark(name="A", x=0.0, y=0.0),
+        "I1": Landmark(name="I1", x=1.0, y=0.0),
+        "I2": Landmark(name="I2", x=2.0, y=0.0),
+        "J": Landmark(
+            name="J",
+            x=3.0,
+            y=0.0,
+            properties={"waitAllowed": True},
+        ),
+        "G": Landmark(name="G", x=4.0, y=0.0),
+        "X": Landmark(name="X", x=3.0, y=1.0),
+    }
+    edges: list[GraphEdge] = []
+    for first, second in (
+        ("A", "I1"),
+        ("I1", "I2"),
+        ("I2", "J"),
+        ("J", "G"),
+        ("J", "X"),
+    ):
+        for src, dst in ((first, second), (second, first)):
+            edges.append(
+                GraphEdge(
+                    from_name=src,
+                    to_name=dst,
+                    length=1.0,
+                    kind="line",
+                    edge_type="FeatureLine",
+                    world_points=(
+                        WorldPoint(landmarks[src].x, landmarks[src].y),
+                        WorldPoint(landmarks[dst].x, landmarks[dst].y),
+                    ),
+                    properties={"direction": 2, "smart": True},
+                )
+            )
+    manager = FleetManagerSim(
+        landmarks,
+        edges,
+        params={
+            "navigation": {
+                "route_speed": 1.0,
+                "route_acceleration": 1.0,
+                "simulate_rotation": False,
+            },
+            "fleet": {
+                "planner_backend": "rolling_sipp",
+                "controlled_corridors_enabled": True,
+                "controlled_corridor_min_edges": 1,
+                "reservation_time_step_sec": 1.0,
+                "rolling_horizon_sec": 3.1,
+                "mapf_min_robot_center_distance_m": 0.8,
+            },
+        },
+    )
+    order = FleetOrder(order_id="o1", target_lm="G", vehicle="r1")
+    traffic_graph = manager.planner._traffic_graph(1.0)
+
+    assert not traffic_graph.vertices["J"].can_wait
+    assert traffic_graph.vertices["I2"].can_wait
+    assert manager._rolling_planning_goal("A", "G", order) == "I2"
+
+    # Reservation waits can make the result trimmer stop earlier than the
+    # graph waypoint selected above. It must apply the same stop-line rule
+    # instead of recreating a chunk that ends inside J.
+    result = {
+        "ok": True,
+        "timeStepSec": 1.0,
+        "debug": {"routeSpeed": 1.0},
+        "plans": [
+            {
+                "robot": "r1",
+                "startLm": "A",
+                "goalLm": "G",
+                "nodes": ["A", "I1", "I2", "J", "G"],
+                "times": [0, 1, 2, 3, 10],
+                "trajectory": [
+                    {
+                        "t": float(index),
+                        "x": landmarks[node].x,
+                        "y": landmarks[node].y,
+                        "yaw": 0.0,
+                        "edgeId": f"{node}->{node}",
+                        "lm": node,
+                    }
+                    for index, node in enumerate(("A", "I1", "I2", "J", "G"))
+                ],
+            }
+        ],
+    }
+
+    trimmed = manager._rolling_result(result, {"r1": "G"})
+
+    assert trimmed["plans"][0]["goalLm"] == "I2"
+    assert trimmed["plans"][0]["nodes"][-1] == "I2"
+
+
+def test_rolling_batch_goal_never_uses_another_robot_start() -> None:
+    manager = _long_line_manager(edge_count=3)
+    order = FleetOrder(
+        order_id="o1",
+        target_lm="N3",
+        vehicle="r1",
+        spatial_route_nodes=["N0", "N1", "N2", "N3"],
+    )
+
+    goal = manager._distinct_rolling_batch_goal(
+        order,
+        "N0",
+        "N3",
+        "N1",
+        reserved_goals=set(),
+        protected_starts={"N0", "N1"},
+        release_robot_names={"r1", "r2"},
+    )
+
+    assert goal == "N2"
 
 
 def test_repeated_rolling_failure_uses_joint_recovery_group_and_cbs() -> None:
@@ -2259,7 +4674,81 @@ def test_stopped_robot_with_queued_assignment_still_blocks_mapf() -> None:
     assert result["debug"]["softBlockedLms"] == ["B"]
 
 
-def test_queued_idle_robots_invalidate_cached_route_and_force_free_detour() -> None:
+def test_fresh_serialized_departures_do_not_become_infinite_reservations() -> None:
+    manager = _manager()
+    manager.robots["moving"] = FleetRobot(
+        name="moving",
+        current_lm="A",
+        status="IDLE",
+        pose={"x": 0.0, "y": 0.0, "yaw": 0.0},
+    )
+    manager.robots["departing"] = FleetRobot(
+        name="departing",
+        current_lm="B",
+        status="IDLE",
+        pose={"x": 2.0, "y": 0.0, "yaw": 0.0},
+    )
+    manager.orders["departing-order"] = FleetOrder(
+        order_id="departing-order",
+        target_lm="A",
+        vehicle="departing",
+        assigned_robot="departing",
+        status="QUEUED",
+        dispatch_failures=1,
+    )
+    request = {
+        "name": "moving",
+        "startLm": "A",
+        "goalLm": "B",
+        "startPose": {"x": 0.0, "y": 0.0, "yaw": 0.0},
+    }
+
+    assert manager._bootstrap_departure_robot_names([request]) == {"departing"}
+    assert manager._stationary_robot_blocked_lms(
+        exclude_robot_names={"moving"},
+    ) == set()
+
+    manager.robots["departing"].has_executed_route = True
+    assert manager._bootstrap_departure_robot_names([request]) == {"departing"}
+    assert manager._stationary_robot_blocked_lms(
+        exclude_robot_names={"moving"},
+    ) == set()
+
+
+def test_exhausted_rolling_holder_is_a_spatial_route_obstacle() -> None:
+    manager = _manager()
+    order = FleetOrder(
+        order_id="holder-order",
+        target_lm="B",
+        vehicle="holder",
+        assigned_robot="holder",
+        status="PLANNING",
+    )
+    holder = FleetRobot(
+        name="holder",
+        current_lm="A",
+        target_lm="A",
+        status="WAITING",
+        active_order_id=order.order_id,
+        last_reason="rolling continuation pending",
+        route_chunk_goal_lm="A",
+        route_final_lm="B",
+        route_clock=1.0,
+        trajectory=[
+            {"t": 0.0, "x": 0.0, "y": 0.0, "yaw": 0.0, "lm": "A"},
+            {"t": 1.0, "x": 0.0, "y": 0.0, "yaw": 0.0, "lm": "A"},
+        ],
+    )
+    manager.orders[order.order_id] = order
+    manager.robots[holder.name] = holder
+
+    assert manager._stationary_robot_blocked_lms() == {"A"}
+    assert manager._stationary_robot_blocked_lms(
+        exclude_robot_names={holder.name},
+    ) == set()
+
+
+def test_queued_idle_departures_do_not_invalidate_a_shared_departure_route() -> None:
     landmarks = {
         "A": Landmark(name="A", x=0.0, y=0.0),
         "B": Landmark(name="B", x=1.0, y=0.0),
@@ -2343,13 +4832,12 @@ def test_queued_idle_robots_invalidate_cached_route_and_force_free_detour() -> N
 
     assert manager._stationary_robot_blocked_lms(
         exclude_robot_names={"moving"},
-    ) == {"B", "C"}
+    ) == set()
 
     route = manager._ensure_order_spatial_route(moving_order, "A", "G")
 
-    assert route == ["A", "D", "E", "F", "G"]
+    assert route == ["A", "B", "C", "G"]
     assert moving_order.spatial_route_nodes == route
-    assert not {"B", "C"}.intersection(route)
 
 
 def test_new_spatial_route_avoids_other_committed_route_demand() -> None:
@@ -2698,11 +5186,41 @@ def test_controlled_corridor_admission_holds_loser_at_boundary() -> None:
         manager.robots["r2"],
         0.1,
     ) == ""
+    loser_reason = manager._controlled_corridor_admission_reason(
+        manager.robots["r1"],
+        0.1,
+    )
+    assert loser_reason.startswith("corridor admission wait at L")
+    manager.robots["r1"].last_reason = loser_reason
+    assert manager._blocked_at_clock(manager.robots["r1"], 0.1).startswith(
+        "corridor admission wait at L"
+    )
+    assert (
+        manager._blocked_at_clock(
+            manager.robots["r1"],
+            0.1,
+            ignore_admission=True,
+        )
+        == ""
+    )
+    manager.robots["r1"].traffic_priority_until = now + 1.0
     assert manager._controlled_corridor_admission_reason(
         manager.robots["r1"],
         0.1,
     ).startswith("corridor admission wait at L")
+    assert manager._transfer_controlled_corridor_lease(
+        manager.robots["r1"],
+        [manager.robots["r1"], manager.robots["r2"]],
+        now,
+    )
+    assert manager._controlled_corridor_admission_reason(
+        manager.robots["r1"],
+        0.1,
+    ) == ""
+    manager.robots["r1"].traffic_priority_until = 0.0
     assert manager._reservation_horizon() > 3.0
+    manager._controlled_corridor_leases[region_id] = ("r2", now + 10.0)
+    manager._controlled_corridor_winners = {"r2": region_id}
 
     # A rotate/wait sample at the portal must not hide the following corridor
     # edge from the runtime gate. This was the live path that fell through to
@@ -2745,12 +5263,527 @@ def test_controlled_corridor_admission_holds_loser_at_boundary() -> None:
         manager.robots["r1"],
         0.1,
     )
+    corridor_wait = manager._controlled_corridor_admission_reason(
+        manager.robots["r1"],
+        0.1,
+    )
+    assert manager._is_robot_conflict(corridor_wait)
+    assert manager._robot_name_from_conflict_reason(corridor_wait) == "r2"
     assert not manager._should_replan_for_blocked_reason(
         f"corridor admission wait at L for {region_id}; owner r2"
     )
     assert manager._reason_requires_spatial_replan(
         f"corridor admission timeout: wait at L for {region_id}"
     )
+
+    # A temporary traffic wait inside the corridor must retain its executable
+    # route. Clearing it would make the robot a permanent stationary corridor
+    # owner and prevent both arbitration and graph-safe retreat.
+    internal = manager.robots["r2"]
+    internal.current_lm = "B"
+    internal.pose = {"x": landmarks["B"].x, "y": 0.0, "yaw": 0.0}
+    internal.route_clock = 1.0
+    assert not manager._queue_active_order_for_background_replan(
+        internal,
+        now + 1.0,
+        "traffic wait timeout: occupied by r1",
+    )
+    assert internal.trajectory
+    assert internal.active_order_id == "o-r2"
+
+
+def test_controlled_corridor_exit_boundary_selects_the_next_corridor() -> None:
+    landmarks = {
+        "A": Landmark(name="A", x=0.0, y=0.0),
+        "J": Landmark(name="J", x=1.0, y=0.0),
+        "B": Landmark(name="B", x=2.0, y=0.0),
+        "X": Landmark(name="X", x=1.0, y=1.0),
+    }
+    edges: list[GraphEdge] = []
+    for first, second in (("A", "J"), ("J", "B"), ("J", "X")):
+        for src, dst in ((first, second), (second, first)):
+            edges.append(
+                GraphEdge(
+                    from_name=src,
+                    to_name=dst,
+                    length=1.0,
+                    kind="line",
+                    edge_type="FeatureLine",
+                    world_points=(
+                        WorldPoint(landmarks[src].x, landmarks[src].y),
+                        WorldPoint(landmarks[dst].x, landmarks[dst].y),
+                    ),
+                    properties={"direction": 2, "smart": True},
+                )
+            )
+    manager = FleetManagerSim(
+        landmarks,
+        edges,
+        params={
+            "navigation": {"route_speed": 1.0, "route_acceleration": 1.0},
+            "fleet": {
+                "controlled_corridors_enabled": "auto",
+                "controlled_corridor_min_edges": 1,
+                "traffic_zone_control_enabled": False,
+            },
+        },
+    )
+    robot = FleetRobot(
+        name="r1",
+        current_lm="A",
+        target_lm="B",
+        status="MOVING",
+        pose={"x": 0.994, "y": 0.0, "yaw": 0.0},
+        route_clock=0.994,
+        trajectory=[
+            {
+                "t": 0.0,
+                "x": 0.0,
+                "y": 0.0,
+                "yaw": 0.0,
+                "edgeId": "A->J",
+                "lm": "A",
+            },
+            {
+                "t": 1.0,
+                "x": 1.0,
+                "y": 0.0,
+                "yaw": 0.0,
+                "edgeId": "A->J",
+                "lm": "J",
+            },
+            {
+                "t": 2.0,
+                "x": 2.0,
+                "y": 0.0,
+                "yaw": 0.0,
+                "edgeId": "J->B",
+                "lm": "B",
+            },
+        ],
+    )
+    manager.robots = {robot.name: robot}
+    graph = manager._controlled_corridor_graph
+    assert graph is not None
+    previous_lane = graph.lane_for("A", "J")
+    next_lane = graph.lane_for("J", "B")
+    assert previous_lane is not None
+    assert next_lane is not None
+    previous_region = previous_lane.controlled_region_ids[0]
+    next_region = next_lane.controlled_region_ids[0]
+    assert previous_region != next_region
+
+    entry = manager._next_controlled_corridor_entry(robot)
+
+    assert entry is not None
+    assert entry["region"] == next_region
+    now = 1_000.0
+    manager._controlled_corridor_leases[next_region] = (
+        robot.name,
+        now + 10.0,
+    )
+    manager._prepare_controlled_corridor_admissions(now)
+    assert manager._controlled_corridor_leases[next_region][0] == robot.name
+    assert manager._controlled_corridor_winners == {robot.name: next_region}
+
+
+def test_controlled_corridor_owner_wins_and_boundary_entrant_queues_detour() -> None:
+    manager = _manager()
+    now = time()
+    owner = FleetRobot(
+        name="owner",
+        current_lm="B",
+        target_lm="A",
+        status="WAITING",
+        active_order_id="owner-order",
+        last_reason="occupied by entrant",
+        wait_for_robot="entrant",
+        blocked_since=now - 2.0,
+        traffic_stall_since=now - 2.0,
+        pose={"x": 2.0, "y": 0.0, "yaw": math.pi},
+        trajectory=[
+            {
+                "t": 0.0,
+                "x": 2.0,
+                "y": 0.0,
+                "yaw": math.pi,
+                "edgeId": "B->A",
+                "lm": "B",
+            },
+            {
+                "t": 2.0,
+                "x": 0.0,
+                "y": 0.0,
+                "yaw": math.pi,
+                "edgeId": "B->A",
+                "lm": "A",
+            },
+        ],
+    )
+    entrant = FleetRobot(
+        name="entrant",
+        current_lm="A",
+        target_lm="B",
+        status="WAITING",
+        active_order_id="entrant-order",
+        last_reason=(
+            "corridor admission wait at A for corridor-A-B; owner owner"
+        ),
+        wait_for_robot="owner",
+        blocked_since=now - 2.0,
+        traffic_stall_since=now - 2.0,
+        pose={"x": 0.0, "y": 0.0, "yaw": 0.0},
+        trajectory=[
+            {
+                "t": 0.0,
+                "x": 0.0,
+                "y": 0.0,
+                "yaw": 0.0,
+                "edgeId": "A->B",
+                "lm": "A",
+            },
+            {
+                "t": 2.0,
+                "x": 2.0,
+                "y": 0.0,
+                "yaw": 0.0,
+                "edgeId": "A->B",
+                "lm": "B",
+            },
+        ],
+    )
+    manager.robots = {owner.name: owner, entrant.name: entrant}
+    manager.orders = {
+        "owner-order": FleetOrder(
+            order_id="owner-order",
+            target_lm="A",
+            vehicle=owner.name,
+            assigned_robot=owner.name,
+            status="EXECUTING",
+        ),
+        "entrant-order": FleetOrder(
+            order_id="entrant-order",
+            target_lm="B",
+            vehicle=entrant.name,
+            assigned_robot=entrant.name,
+            status="EXECUTING",
+            spatial_route_nodes=["A", "B"],
+        ),
+    }
+    manager._controlled_corridor_occupancy = {
+        "corridor-A-B": [owner.name],
+    }
+    cycle_key = tuple(sorted(manager.robots))
+    manager._active_wait_cycles[cycle_key] = (
+        now - manager._deadlock_wait_timeout() - 0.1
+    )
+
+    manager._break_runtime_wait_cycle(
+        [entrant.name, owner.name],
+        manager.robots,
+        now,
+        new_episode=False,
+    )
+
+    assert owner.status == "MOVING"
+    assert owner.last_reason == "deadlock priority granted"
+    assert entrant.status == "IDLE"
+    assert not entrant.trajectory
+    assert not entrant.active_order_id
+    entrant_order = manager.orders["entrant-order"]
+    assert entrant_order.status == "QUEUED"
+    assert entrant_order.traffic_detour_edges == [("A", "B"), ("B", "A")]
+    assert entrant_order.traffic_detour_attempts == 1
+    assert manager.traffic_metrics["cycleReplans"] == 1
+
+
+def test_controlled_corridor_lease_cannot_preempt_physical_owner() -> None:
+    manager = _manager()
+    now = time()
+    owner = FleetRobot(name="owner", current_lm="B")
+    entrant = FleetRobot(
+        name="entrant",
+        current_lm="A",
+        last_reason=(
+            "corridor admission wait at A for corridor-A-B; owner owner"
+        ),
+    )
+    manager._controlled_corridor_occupancy = {
+        "corridor-A-B": [owner.name],
+    }
+    manager._controlled_corridor_leases = {
+        "corridor-A-B": (owner.name, now + 10.0),
+    }
+    manager._controlled_corridor_winners = {
+        owner.name: "corridor-A-B",
+    }
+
+    transferred = manager._transfer_controlled_corridor_lease(
+        entrant,
+        [entrant, owner],
+        now,
+    )
+
+    assert not transferred
+    assert manager._controlled_corridor_leases["corridor-A-B"][0] == owner.name
+    assert manager._controlled_corridor_winners == {
+        owner.name: "corridor-A-B",
+    }
+
+
+def test_stationary_blocker_with_queued_order_is_released_first() -> None:
+    manager = _manager()
+    manager.robots = {
+        "waiter": FleetRobot(
+            name="waiter",
+            current_lm="B",
+            target_lm="A",
+            status="WAITING",
+            active_order_id="wait-order",
+            last_reason="occupied by blocker",
+            wait_for_robot="blocker",
+            pose={"x": 2.0, "y": 0.0, "yaw": math.pi},
+            trajectory=[
+                {"t": 0.0, "x": 2.0, "y": 0.0, "yaw": math.pi, "edgeId": "B->A", "lm": "B"},
+                {"t": 2.0, "x": 0.0, "y": 0.0, "yaw": math.pi, "edgeId": "B->A", "lm": "A"},
+            ],
+        ),
+        "blocker": FleetRobot(
+            name="blocker",
+            current_lm="A",
+            status="IDLE",
+            pose={"x": 0.0, "y": 0.0, "yaw": 0.0},
+        ),
+    }
+    manager.orders = {
+        "wait-order": FleetOrder(
+            order_id="wait-order",
+            target_lm="A",
+            vehicle="waiter",
+            assigned_robot="waiter",
+            status="WAITING_TRAFFIC",
+        ),
+        "release-order": FleetOrder(
+            order_id="release-order",
+            target_lm="B",
+            vehicle="blocker",
+            assigned_robot="blocker",
+            status="QUEUED",
+        ),
+    }
+
+    assert manager._stationary_release_robot_names() == {"blocker"}
+    assert manager._robot_departure_pending(manager.robots["blocker"])
+    assert manager._wait_expected_to_clear(manager.robots["waiter"])
+
+
+def test_stationary_blockers_are_dispatched_as_one_release_wave(
+    monkeypatch,
+) -> None:
+    manager = _manager()
+    entries = []
+    for index in range(2):
+        name = f"blocker-{index}"
+        robot = FleetRobot(
+            name=name,
+            current_lm="A",
+            status="IDLE",
+            pose={"x": 0.0, "y": 0.0, "yaw": 0.0},
+        )
+        order = FleetOrder(
+            order_id=f"release-{index}",
+            target_lm="B",
+            vehicle=name,
+            assigned_robot=name,
+            status="QUEUED",
+            traffic_detour_edges=[("A", "B")],
+            spatial_route_nodes=["A", "B"],
+        )
+        manager.robots[name] = robot
+        manager.orders[order.order_id] = order
+        entries.append(
+            (order, robot, {"name": name, "startLm": "A", "goalLm": "B"}, "B")
+        )
+    captured: list[list[str]] = []
+    monkeypatch.setattr(manager, "_finish_async_simulated_dispatch", lambda: 0)
+    monkeypatch.setattr(
+        manager,
+        "_ready_simulated_order_entries",
+        lambda _orders: list(entries),
+    )
+    monkeypatch.setattr(
+        manager,
+        "_stationary_release_robot_names",
+        lambda: {"blocker-0", "blocker-1"},
+    )
+    monkeypatch.setattr(manager, "_ready_rolling_prefetch_entries", lambda: [])
+    monkeypatch.setattr(
+        manager,
+        "_start_async_simulated_dispatch",
+        lambda group: captured.append([entry[1].name for entry in group]),
+    )
+
+    manager._dispatch_orders(async_simulated=True)
+
+    assert captured == [["blocker-0", "blocker-1"]]
+    assert all(
+        entry[0].traffic_detour_edges == [("A", "B")]
+        for entry in entries
+    )
+    assert all(not entry[0].spatial_route_nodes for entry in entries)
+
+
+def test_stationary_release_keeps_an_explicit_alternate_corridor(
+    monkeypatch,
+) -> None:
+    manager = _manager()
+    robot = FleetRobot(
+        name="entrant",
+        current_lm="A",
+        status="IDLE",
+        pose={"x": 0.0, "y": 0.0, "yaw": 0.0},
+    )
+    detour_edges = [("A", "B"), ("B", "A")]
+    order = FleetOrder(
+        order_id="entrant-order",
+        target_lm="B",
+        vehicle=robot.name,
+        assigned_robot=robot.name,
+        status="QUEUED",
+        traffic_detour_edges=list(detour_edges),
+        spatial_route_nodes=["A", "B"],
+    )
+    entry = (
+        order,
+        robot,
+        {"name": robot.name, "startLm": "A", "goalLm": "B"},
+        "B",
+    )
+    manager.robots = {robot.name: robot}
+    manager.orders = {order.order_id: order}
+    captured: list[list[tuple[str, str]]] = []
+    monkeypatch.setattr(
+        manager,
+        "_ready_simulated_order_entries",
+        lambda _orders: [entry],
+    )
+    monkeypatch.setattr(
+        manager,
+        "_stationary_release_robot_names",
+        lambda: {robot.name},
+    )
+    monkeypatch.setattr(
+        manager,
+        "_dispatch_simulated_order_batch",
+        lambda group: (
+            captured.append(list(group[0][0].traffic_detour_edges)) or 0,
+            {order.order_id},
+        ),
+    )
+
+    manager._dispatch_orders()
+
+    assert captured == [detour_edges]
+    assert order.traffic_detour_edges == detour_edges
+    assert not order.spatial_route_nodes
+
+
+def test_explicit_detour_order_is_not_grouped_under_plain_order_payload(
+    monkeypatch,
+) -> None:
+    manager = _manager()
+    entries = []
+    for name, detour_edges in (
+        ("plain", []),
+        ("detour", [("A", "B"), ("B", "A")]),
+    ):
+        robot = FleetRobot(
+            name=name,
+            current_lm="A",
+            status="IDLE",
+            pose={"x": 0.0, "y": 0.0, "yaw": 0.0},
+        )
+        order = FleetOrder(
+            order_id=f"{name}-order",
+            target_lm="B",
+            vehicle=name,
+            assigned_robot=name,
+            status="QUEUED",
+            traffic_detour_edges=list(detour_edges),
+        )
+        manager.robots[name] = robot
+        manager.orders[order.order_id] = order
+        entries.append(
+            (
+                order,
+                robot,
+                {"name": name, "startLm": "A", "goalLm": "B"},
+                "B",
+            )
+        )
+    captured: list[list[str]] = []
+    monkeypatch.setattr(
+        manager,
+        "_ready_simulated_order_entries",
+        lambda _orders: list(entries),
+    )
+    monkeypatch.setattr(manager, "_stationary_release_robot_names", lambda: set())
+    monkeypatch.setattr(
+        manager,
+        "_dispatch_simulated_order_batch",
+        lambda group: (
+            captured.append([entry[1].name for entry in group]) or 0,
+            {entry[0].order_id for entry in group},
+        ),
+    )
+
+    manager._dispatch_orders()
+
+    assert captured == [["plain"], ["detour"]]
+
+
+def test_mid_edge_wait_cycle_arms_retreat_when_local_cbs_cannot_start() -> None:
+    manager = _manager()
+    now = time()
+    manager.robots = {
+        "r1": FleetRobot(
+            name="r1",
+            current_lm="A",
+            target_lm="B",
+            status="WAITING",
+            active_order_id="o1",
+            pose={"x": 0.0, "y": 0.0, "yaw": 0.0},
+            trajectory=[
+                {"t": 0.0, "x": 0.0, "y": 0.0, "yaw": 0.0, "edgeId": "A->B", "lm": "A"},
+                {"t": 2.0, "x": 2.0, "y": 0.0, "yaw": 0.0, "edgeId": "A->B", "lm": "B"},
+            ],
+        ),
+        "r2": FleetRobot(
+            name="r2",
+            current_lm="B",
+            target_lm="A",
+            status="WAITING",
+            active_order_id="o2",
+            pose={"x": 1.0, "y": 0.0, "yaw": math.pi},
+            trajectory=[
+                {"t": 0.0, "x": 2.0, "y": 0.0, "yaw": math.pi, "edgeId": "B->A", "lm": "B"},
+                {"t": 2.0, "x": 0.0, "y": 0.0, "yaw": math.pi, "edgeId": "B->A", "lm": "A"},
+            ],
+            route_clock=1.0,
+        ),
+    }
+    manager.orders = {
+        "o1": FleetOrder(order_id="o1", target_lm="B", vehicle="r1", status="EXECUTING"),
+        "o2": FleetOrder(order_id="o2", target_lm="A", vehicle="r2", status="EXECUTING"),
+    }
+
+    assert not manager._start_async_coupled_replan(
+        [manager.robots["r1"], manager.robots["r2"]],
+        manager.robots["r1"],
+        now,
+    )
+    assert manager._coupled_replan_failures[("r1", "r2")] == 1
+    assert manager.traffic_metrics["coupledReplansFailed"] == 1
 
 
 def test_dynamic_orders_keep_fifo_within_each_robot_queue() -> None:
@@ -2872,6 +5905,18 @@ def test_simulation_time_scale_is_clamped_to_safe_range() -> None:
 
     assert manager.set_simulation_time_scale(100) == 8.0
     assert manager.set_simulation_time_scale(0) == 1.0
+
+
+def test_rolling_prefetch_deadline_scales_with_simulation_speed() -> None:
+    manager = _manager()
+    manager.params["fleet"].update({
+        "rolling_horizon_sec": 30.0,
+        "rolling_prefetch_lead_sec": 8.0,
+    })
+
+    assert manager._rolling_prefetch_lead() == pytest.approx(8.0)
+    manager.set_simulation_time_scale(4.0)
+    assert manager._rolling_prefetch_lead() == pytest.approx(24.0)
 
 
 def _manager() -> FleetManagerSim:
