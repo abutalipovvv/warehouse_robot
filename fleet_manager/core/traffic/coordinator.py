@@ -6,7 +6,9 @@ import math
 from time import time
 from typing import Any
 
+from fleet_manager.core.constants import TERMINAL_ORDER_STATUSES
 from fleet_manager.core.models import FleetOrder, FleetRobot
+from fleet_manager.core.route_core.models import PlannedRoute
 
 
 class TrafficCoordinatorMixin:
@@ -20,6 +22,7 @@ class TrafficCoordinatorMixin:
                 robot.status == "WAITING"
                 and bool(robot.trajectory)
                 and self._is_robot_conflict(robot.last_reason)
+                and not self._central_corridor_manages_wait(robot)
                 and not (
                     robot.wait_resource == "blocked_retreat"
                     and now < robot.wait_release_at
@@ -93,10 +96,23 @@ class TrafficCoordinatorMixin:
                 for robot_name in cycle_key
             ):
                 continue
+            if self._runtime_replan_holds_wait_cycle_geometry(cycle_key):
+                # A single-robot replacement plan temporarily changes its UI
+                # reason to "replanning route while holding", hiding one edge
+                # of an otherwise unchanged physical wait cycle.  Keep the
+                # episode age/CBS result until that exact transaction or graph
+                # geometry changes; otherwise every failed same-goal attempt
+                # restarts arbitration from zero and can postpone the already
+                # armed graph escape forever.
+                self._resume_hidden_wait_cycle_coupled_replan(
+                    cycle_key,
+                    now,
+                )
+                continue
             self._active_wait_cycles.pop(cycle_key, None)
             self._wait_cycle_last_arbitration.pop(cycle_key, None)
-            self._coupled_replan_last_attempt.pop(cycle_key, None)
-            self._coupled_replan_failures.pop(cycle_key, None)
+            self._wait_cycle_grant_signatures.pop(cycle_key, None)
+            self._clear_coupled_replan_attempts_for_members(cycle_key)
 
         timeout = self._traffic_replan_after()
         chain_members: set[str] = set()
@@ -242,7 +258,22 @@ class TrafficCoordinatorMixin:
                 or now - robot.blocked_since < corridor_timeout
             ):
                 continue
-            if self._safe_replan_start_lm(robot):
+            owner_name = self._robot_name_from_conflict_reason(
+                robot.last_reason
+            )
+            owner = self.robots.get(owner_name)
+            # A normal corridor queue is resolved by the stable passage
+            # grant/FIFO ageing. Replanning every waiter after eight seconds
+            # cleared valid trajectories, reset queue age and eventually
+            # turned the whole fleet into route-less obstacles. Spatial
+            # detour is reserved for a genuinely parked owner with no pending
+            # departure; moving or commanded owners are allowed to clear.
+            if (
+                owner is not None
+                and not self._is_active_traffic(owner)
+                and not self._robot_departure_pending(owner)
+                and self._safe_replan_start_lm(robot)
+            ):
                 self._schedule_runtime_replan(
                     robot,
                     now,
@@ -284,8 +315,9 @@ class TrafficCoordinatorMixin:
                 continue
             self._active_wait_cycles.pop(cycle_key, None)
             self._wait_cycle_last_arbitration.pop(cycle_key, None)
-            self._coupled_replan_last_attempt.pop(cycle_key, None)
-            self._coupled_replan_failures.pop(cycle_key, None)
+            self._wait_cycle_grant_signatures.pop(cycle_key, None)
+            self._clear_coupled_replan_attempts_for_members(cycle_key)
+            self._clear_wait_cycle_recovery_attempts(cycle_key)
             # The geometry of the complete component changed. Give its peers
             # a fresh bounded arbitration window instead of carrying an old
             # stall timestamp into a new cycle and arming another retreat on
@@ -332,13 +364,39 @@ class TrafficCoordinatorMixin:
             or not self._is_active_traffic(blocker)
         ):
             return False
-        lease_until = now + self._deadlock_priority_lease()
         participants = [winner, blocker]
+        downstream_clearer = self._controlled_corridor_downstream_clearer(
+            participants,
+        )
+        if (
+            self._controlled_corridor_scheduler is not None
+            and downstream_clearer is None
+            and (
+                str(winner.last_reason or "").startswith(
+                    "corridor admission wait at "
+                )
+                or str(blocker.last_reason or "").startswith(
+                    "corridor admission wait at "
+                )
+            )
+        ):
+            # A scheduled red light is not starvation. The central calendar
+            # already owns the order and entry time; a generic priority lease
+            # would create a second, contradictory dispatcher.
+            return True
+        lease_until = now + self._deadlock_priority_lease()
+        if downstream_clearer is not None:
+            winner = downstream_clearer
+            blocker = next(
+                robot
+                for robot in participants
+                if robot.name != winner.name
+            )
         # A→B where B is stopped at a corridor signal is not resolved by
         # granting A more priority: A still has B's body directly ahead.
         # Transfer the corridor signal to B (when this pair owns the complete
         # local conflict) and let B clear the stop line first.
-        if (
+        elif (
             str(blocker.last_reason or "").startswith(
                 "corridor admission wait at "
             )
@@ -516,6 +574,26 @@ class TrafficCoordinatorMixin:
         stalled_since = waiter.traffic_stall_since or waiter.blocked_since or now
         if now - stalled_since < self._deadlock_coupled_replan_after():
             return False
+        # ``_start_deadlock_corridor_evacuation`` deliberately reports an
+        # already queued transactional detour as handled.  That keeps the
+        # ordinary starvation branch from competing with the same recovery,
+        # but it is not a *new* evacuation.  At accelerated simulation time
+        # the recovery debounce expires every few wall-clock frames; treating
+        # that idempotent result as new used to refresh the waiter's priority
+        # lease and emit ``evacuating for queued departure`` forever while its
+        # route clock remained at zero.
+        before_replan = self._runtime_replans.get(waiter.name)
+        before_status = waiter.status
+        before_retreat = (
+            waiter.retreat_target_clock,
+            waiter.retreat_target_lm,
+        )
+        pending_waiter_order = self._active_order_for_robot(waiter)
+        before_detour_attempts = int(
+            pending_waiter_order.traffic_detour_attempts
+            if pending_waiter_order is not None
+            else 0
+        )
         evacuated_name = self._start_deadlock_corridor_evacuation(
             [blocker, waiter],
             blocker,
@@ -523,6 +601,27 @@ class TrafficCoordinatorMixin:
         )
         if evacuated_name != waiter.name:
             return False
+        after_replan = self._runtime_replans.get(waiter.name)
+        new_recovery_action = bool(
+            after_replan is not before_replan
+            or (
+                waiter.status == "RETREATING"
+                and (
+                    before_status != "RETREATING"
+                    or before_retreat
+                    != (waiter.retreat_target_clock, waiter.retreat_target_lm)
+                )
+            )
+            or (
+                pending_waiter_order is not None
+                and int(pending_waiter_order.traffic_detour_attempts)
+                > before_detour_attempts
+            )
+        )
+        if not new_recovery_action:
+            # The existing transaction still owns this dependency.  Report it
+            # as handled without renewing right-of-way or duplicating events.
+            return True
         waiter.traffic_priority_until = max(
             waiter.traffic_priority_until,
             now + self._deadlock_priority_lease(),
@@ -543,6 +642,161 @@ class TrafficCoordinatorMixin:
             and int(self._rolling_prefetch_failures.get(robot.name, 0) or 0)
             >= 2
         )
+
+    def _wait_cycle_grant_signature(
+        self,
+        robots: list[FleetRobot],
+    ) -> tuple[tuple[str, str, str, int], ...]:
+        """Describe geometry for which one priority nudge was already tried."""
+        return tuple(
+            sorted(
+                (
+                    robot.name,
+                    self._traffic_lm_for_robot(robot),
+                    str(robot.active_order_id or ""),
+                    int(robot.route_revision),
+                )
+                for robot in robots
+            )
+        )
+
+    def _runtime_replan_holds_wait_cycle_geometry(
+        self,
+        cycle_key: tuple[str, ...],
+    ) -> bool:
+        """Keep a hidden wait episode only while its exact transaction is live."""
+        robots = [
+            robot
+            for name in cycle_key
+            if (robot := self.robots.get(name)) is not None
+        ]
+        if len(robots) != len(cycle_key):
+            return False
+        captured_grant = self._wait_cycle_grant_signatures.get(cycle_key)
+        if (
+            captured_grant is None
+            or captured_grant != self._wait_cycle_grant_signature(robots)
+        ):
+            return False
+
+        cycle_names = set(cycle_key)
+        for robot in robots:
+            state = self._runtime_replans.get(robot.name)
+            if (
+                not isinstance(state, dict)
+                or not self._runtime_replan_state_is_current(
+                    robot,
+                    state,
+                    allowed_stages={
+                        "queued",
+                        "planning",
+                        "retry",
+                        "deadlock_escalated",
+                    },
+                )
+            ):
+                continue
+            blocker_names = {
+                str(name)
+                for name in state.get("blocker_names", ())
+                if str(name)
+            }
+            escalated_blocker = str(
+                state.get("escalated_blocker") or ""
+            ).strip()
+            if escalated_blocker:
+                blocker_names.add(escalated_blocker)
+            dynamic_signature = state.get("dynamic_conflict_signature")
+            if isinstance(dynamic_signature, (list, tuple)) and dynamic_signature:
+                blocker_names.add(str(dynamic_signature[0]))
+            if blocker_names.intersection(cycle_names - {robot.name}):
+                return True
+        return False
+
+    def _resume_hidden_wait_cycle_coupled_replan(
+        self,
+        cycle_key: tuple[str, ...],
+        now: float,
+    ) -> bool:
+        """Run atomic MAPF after a transaction hides one wait-cycle edge.
+
+        The retained trajectory is a rollback/safety snapshot once a corridor
+        evacuation supersedes it. Planning each participant separately still
+        reserves the other snapshots as executable futures, creating a false
+        circular lock. The existing coupled planner removes those futures for
+        the complete request set and commits all replacements atomically.
+        """
+        cycle_started = float(self._active_wait_cycles.get(cycle_key, now))
+        if now - cycle_started < self._deadlock_coupled_replan_after():
+            return False
+        if self._async_simulated_dispatch_active():
+            return False
+        robots = [
+            robot
+            for name in cycle_key
+            if (robot := self.robots.get(name)) is not None
+        ]
+        if len(robots) != len(cycle_key):
+            return False
+
+        promoted_transactions = [
+            state
+            for robot in robots
+            if isinstance(
+                state := self._runtime_replans.get(robot.name),
+                dict,
+            )
+            and bool(state.get("retained_route_superseded"))
+            and self._runtime_replan_state_is_current(
+                robot,
+                state,
+                allowed_stages={
+                    "queued",
+                    "planning",
+                    "retry",
+                    "deadlock_escalated",
+                },
+            )
+        ]
+        if not promoted_transactions:
+            return False
+        newest_transaction = max(
+            float(
+                state.get("promoted_at")
+                or state.get("queued_at")
+                or 0.0
+            )
+            for state in promoted_transactions
+        )
+        previous_attempt = (
+            self._coupled_replan_latest_attempt_for_members(cycle_key)
+        )
+        if (
+            self._coupled_replan_failure_count_for_members(cycle_key) > 0
+            and newest_transaction > previous_attempt + 0.000001
+        ):
+            # A graph-safe evacuation created a genuinely new start snapshot.
+            # Permit exactly one CBS/SIPP attempt for that new transaction;
+            # an unchanged failed transaction remains latched to avoid spin.
+            self._clear_coupled_replan_attempts_for_members(cycle_key)
+
+        corridor_owner = self._controlled_corridor_cycle_owner(robots)
+        downstream_clearer = self._controlled_corridor_downstream_clearer(
+            robots,
+        )
+        winner = downstream_clearer or corridor_owner or min(
+            robots,
+            key=lambda robot: (
+                float(
+                    (
+                        self._runtime_replans.get(robot.name) or {}
+                    ).get("queued_at", now)
+                    or now
+                ),
+                robot.name,
+            ),
+        )
+        return self._start_async_coupled_replan(robots, winner, now)
 
     def _break_runtime_wait_cycle(
         self,
@@ -574,8 +828,44 @@ class TrafficCoordinatorMixin:
             )
 
         corridor_owner = self._controlled_corridor_cycle_owner(robots)
-        winner = corridor_owner or min(robots, key=priority_key)
+        downstream_clearer = self._controlled_corridor_downstream_clearer(
+            robots,
+        )
+        winner = downstream_clearer or corridor_owner or min(
+            robots,
+            key=priority_key,
+        )
+        corridor_handoff_required = False
+        if corridor_owner is not None:
+            for robot in robots:
+                if robot.name == corridor_owner.name:
+                    continue
+                passage = self._controlled_corridor_passages.get(robot.name)
+                if (
+                    isinstance(passage, dict)
+                    and self._controlled_corridor_follower_yields_to(
+                        robot,
+                        corridor_owner,
+                        passage,
+                    )
+                ):
+                    corridor_handoff_required = True
+                    break
         cycle_key = tuple(sorted(robot.name for robot in robots))
+        grant_signature = self._wait_cycle_grant_signature(robots)
+        previous_grant_signature = self._wait_cycle_grant_signatures.get(
+            cycle_key
+        )
+        grant_already_failed = bool(
+            not new_episode
+            and (
+                previous_grant_signature == grant_signature
+                or (
+                    previous_grant_signature is None
+                    and cycle_key in self._wait_cycle_last_arbitration
+                )
+            )
+        )
         cycle_started = self._active_wait_cycles.get(
             cycle_key,
             min(
@@ -613,11 +903,13 @@ class TrafficCoordinatorMixin:
         evacuating_name = ""
         if (
             corridor_owner is not None
-            and cycle_wait >= self._deadlock_wait_timeout()
+            and cycle_wait >= self._deadlock_retreat_after()
         ):
-            # An entrant parked on the mouth of an occupied one-lane region
-            # must clear for the current owner. A priority flip or local CBS
-            # cannot change that physical ordering.
+            # A complete wait cycle proves that the selected passage owner did
+            # not clear. Scheduled WAIT/ROTATE samples can make geometric
+            # forward-clearance appear positive even though the first eventual
+            # motion intersects the losing portal body, so elapsed no-progress
+            # time—not a zero-distance test—is the authoritative trigger.
             evacuating_name = self._start_deadlock_corridor_evacuation(
                 robots,
                 winner,
@@ -625,7 +917,7 @@ class TrafficCoordinatorMixin:
             )
         elif (
             cycle_wait >= self._deadlock_retreat_after()
-            and self._coupled_replan_failures.get(cycle_key, 0) > 0
+            and self._coupled_replan_failure_count_for_members(cycle_key) > 0
         ):
             evacuating_name = self._start_deadlock_corridor_evacuation(
                 robots,
@@ -638,6 +930,21 @@ class TrafficCoordinatorMixin:
         # lease; any later rolling replan is handled by the background queue.
         lease_until = now + self._deadlock_priority_lease()
         evacuating_robot = self.robots.get(evacuating_name) if evacuating_name else None
+        cycle_names = {robot.name for robot in robots}
+        if (
+            evacuating_robot is not None
+            and evacuating_robot.name not in cycle_names
+        ):
+            # The portal itself cannot move until a physical queue outside the
+            # cycle has been opened from its tail.  That tail now owns one
+            # bounded reverse manoeuvre, but it is not the corridor winner and
+            # must never receive/steal the owner's passage lease.  Keep the
+            # original reciprocal pair steadily stopped until the next
+            # arbitration observes real queue progress.
+            for robot in robots:
+                robot.traffic_priority_until = 0.0
+                robot.updated_at = now
+            return
         # An at-LM evacuation queues a background detour immediately, which
         # intentionally clears that robot's trajectory and changes it to IDLE.
         # It must not be changed back to MOVING merely because this resolver is
@@ -651,19 +958,39 @@ class TrafficCoordinatorMixin:
             )
             else winner
         )
+        if grant_already_failed and not (
+            evacuating_robot is not None
+            and evacuating_robot.status == "RETREATING"
+            and bool(evacuating_robot.trajectory)
+        ) and not corridor_handoff_required:
+            # The same winner already consumed a complete lease without a
+            # graph/route change. Keep the component steadily stopped while CBS
+            # or a transactional recovery is pending; another nudge can only
+            # recreate the same centimetre-scale twitch and metric/event spam.
+            for robot in robots:
+                robot.traffic_priority_until = 0.0
+            return
         if not priority_robot.trajectory:
             eligible = [robot for robot in robots if robot.trajectory]
             if not eligible:
                 return
             priority_robot = min(eligible, key=priority_key)
-        priority_robot.traffic_priority_until = max(
-            priority_robot.traffic_priority_until,
-            lease_until,
-        )
-        self._transfer_controlled_corridor_lease(
+        lease_transferred = self._transfer_controlled_corridor_lease(
             priority_robot,
             robots,
             now,
+        )
+        if corridor_handoff_required and not lease_transferred:
+            # Never tell the physical leader to move while the follower still
+            # owns the atomic passage. That would bypass the corridor gate and
+            # retain two contradictory authorities until the next tick.
+            for robot in robots:
+                robot.traffic_priority_until = 0.0
+                robot.updated_at = now
+            return
+        priority_robot.traffic_priority_until = max(
+            priority_robot.traffic_priority_until,
+            lease_until,
         )
         if priority_robot.status != "RETREATING":
             priority_robot.status = "MOVING"
@@ -692,6 +1019,9 @@ class TrafficCoordinatorMixin:
             # This records one arbitration episode. Actual spatial progress
             # closes the episode in _record_traffic_progress().
             self.traffic_metrics["waitCyclesResolved"] += 1
+        self._wait_cycle_grant_signatures[cycle_key] = (
+            self._wait_cycle_grant_signature(robots)
+        )
         self.traffic_metrics["priorityGrants"] += 1
         self._event(
             "warn",
@@ -702,26 +1032,221 @@ class TrafficCoordinatorMixin:
         self,
         robots: list[FleetRobot],
     ) -> FleetRobot | None:
-        """Prefer the robot physically inside a corridor over its entrant."""
+        """Return a physical or central-calendar corridor cycle owner."""
         by_name = {robot.name: robot for robot in robots}
-        prefix = "corridor admission wait at "
-        marker = " for "
-        for entrant in robots:
-            reason = str(entrant.last_reason or "")
-            if not reason.startswith(prefix) or marker not in reason:
-                continue
-            region_id = reason.split(marker, 1)[1].split(
-                "; owner ",
-                1,
-            )[0].strip()
-            for owner_name in self._controlled_corridor_occupancy.get(
-                region_id,
-                [],
+        physically_owned_regions: dict[str, set[str]] = {
+            name: set()
+            for name in by_name
+        }
+        for region_id, owner_names in self._controlled_corridor_occupancy.items():
+            for owner_name in owner_names:
+                if owner_name in physically_owned_regions:
+                    physically_owned_regions[owner_name].add(str(region_id))
+
+        physical_owners: list[FleetRobot] = []
+        for robot in robots:
+            physical_regions = set(
+                self._controlled_regions_for_robot(robot)
+            )
+            physical_regions.update(
+                physically_owned_regions.get(robot.name, set())
+            )
+            if physical_regions:
+                physical_owners.append(robot)
+        if len(physical_owners) == 1:
+            return physical_owners[0]
+        if self._controlled_corridor_scheduler is None:
+            return None
+
+        active_calendar_owners: list[
+            tuple[float, str, FleetRobot]
+        ] = []
+        schedule = self._controlled_corridor_schedule
+        for robot in robots:
+            slot = (
+                schedule.slot_for(robot.name)
+                if schedule is not None
+                else None
+            )
+            if (
+                slot is not None
+                and self._controlled_corridor_has_grant(
+                    robot.name,
+                    slot.regions,
+                )
             ):
-                owner = by_name.get(owner_name)
-                if owner is not None and owner.name != entrant.name:
-                    return owner
+                first_resource_entry = min(
+                    (
+                        slot.entry_time
+                        + window.entry_offset_sec
+                        for window in slot.resource_windows
+                    ),
+                    default=slot.entry_time,
+                )
+                active_calendar_owners.append(
+                    (
+                        first_resource_entry,
+                        slot.robot_id,
+                        robot,
+                    )
+                )
+        if active_calendar_owners:
+            # A same-flow convoy can hold several committed slots. The first
+            # resource entrant remains the physical queue leader.
+            return min(active_calendar_owners)[2]
         return None
+
+    def _controlled_corridor_downstream_clearer(
+        self,
+        robots: list[FleetRobot],
+    ) -> FleetRobot | None:
+        """Return the robot which can open a physical corridor exit.
+
+        A corridor owner normally keeps right of way. The one exception is an
+        external body already occupying its exit pocket: commanding the owner
+        forward only tightens the blockage. If that body has a committed
+        trajectory which moves away from the owner, it receives the short
+        local lease first. This is still one central decision; it does not
+        alter corridor admission or permit a new entrant.
+        """
+        by_name = {robot.name: robot for robot in robots}
+        candidates: list[tuple[float, str, FleetRobot]] = []
+        schedule = self._controlled_corridor_schedule
+        for owner_name, blocker_name in (
+            self._controlled_corridor_blockers.items()
+        ):
+            owner = by_name.get(owner_name)
+            blocker = by_name.get(blocker_name)
+            if (
+                owner is None
+                or blocker is None
+                or owner.pose is None
+                or blocker.pose is None
+                or not blocker.trajectory
+            ):
+                continue
+            physical_regions = set(
+                self._controlled_regions_for_robot(owner)
+            )
+            physical_regions.update(
+                region_id
+                for region_id, owner_names
+                in self._controlled_corridor_occupancy.items()
+                if owner_name in owner_names
+            )
+            if not physical_regions:
+                continue
+            moves_away = False
+            for sample in blocker.trajectory:
+                sample_clock = float(sample.get("t", 0.0) or 0.0)
+                if sample_clock <= blocker.route_clock + 0.000001:
+                    continue
+                candidate_pose = {
+                    "x": float(sample.get("x", 0.0) or 0.0),
+                    "y": float(sample.get("y", 0.0) or 0.0),
+                    "yaw": float(
+                        sample.get(
+                            "yaw",
+                            blocker.pose.get("yaw", 0.0),
+                        )
+                        or 0.0
+                    ),
+                }
+                if self._candidate_moves_away(
+                    blocker.pose,
+                    candidate_pose,
+                    owner.pose,
+                ):
+                    moves_away = True
+                    break
+            if not moves_away:
+                continue
+            slot = (
+                schedule.slot_for(owner_name)
+                if schedule is not None
+                else None
+            )
+            candidates.append(
+                (
+                    float(slot.entry_time if slot is not None else 0.0),
+                    blocker.name,
+                    blocker,
+                )
+            )
+        return min(candidates)[2] if candidates else None
+
+    def _controlled_corridor_follower_yields_to(
+        self,
+        follower: FleetRobot,
+        leader: FleetRobot,
+        passage: dict[str, Any],
+    ) -> bool:
+        """Return whether an external passage owner is behind its dependency."""
+        if follower.name == leader.name or bool(passage.get("entered")):
+            return False
+        regions = {
+            str(region_id)
+            for region_id in passage.get("regions", ())
+            if str(region_id)
+        }
+        if (
+            not regions
+            or self._controlled_regions_for_robot(follower).intersection(
+                regions
+            )
+        ):
+            return False
+        dependency_name = (
+            str(follower.wait_for_robot or "").strip()
+            or self._robot_name_from_conflict_reason(
+                follower.last_reason
+            )
+        )
+        direct_reason = str(follower.last_reason or "").strip().lower()
+        if (
+            dependency_name != leader.name
+            or not direct_reason.startswith(
+                f"occupied by {leader.name.lower()}"
+            )
+        ):
+            return False
+        follower_entry = self._next_controlled_corridor_entry(follower)
+        leader_entry = self._next_controlled_corridor_entry(leader)
+        if not isinstance(follower_entry, dict) or not isinstance(
+            leader_entry,
+            dict,
+        ):
+            return False
+        follower_regions = set(
+            self._controlled_corridor_entry_regions(follower_entry)
+        )
+        leader_regions = set(
+            self._controlled_corridor_entry_regions(leader_entry)
+        )
+        entry_lm = str(follower_entry.get("src") or "")
+        entry = self.landmarks.get(entry_lm)
+        if (
+            entry is None
+            or follower.pose is None
+            or leader.pose is None
+        ):
+            return False
+        follower_distance = math.hypot(
+            float(follower.pose.get("x", 0.0)) - float(entry.x),
+            float(follower.pose.get("y", 0.0)) - float(entry.y),
+        )
+        leader_distance = math.hypot(
+            float(leader.pose.get("x", 0.0)) - float(entry.x),
+            float(leader.pose.get("y", 0.0)) - float(entry.y),
+        )
+        return bool(
+            regions.intersection(follower_regions, leader_regions)
+            and str(follower_entry.get("src") or "")
+            == str(leader_entry.get("src") or "")
+            and str(follower_entry.get("dst") or "")
+            == str(leader_entry.get("dst") or "")
+            and leader_distance + 0.001 < follower_distance
+        )
 
     def _cycle_forward_clearance(
         self,
@@ -754,6 +1279,595 @@ class TrafficCoordinatorMixin:
             clock += step
         return max(0.0, horizon - robot.route_clock)
 
+    def _wait_cycle_recovery_signature(
+        self,
+        action: str,
+        selected: FleetRobot,
+        robots: list[FleetRobot],
+    ) -> tuple[str, str, tuple[tuple[str, str, str, str], ...]]:
+        """Describe the graph-stable state for one spatial recovery action."""
+        members = tuple(
+            sorted(
+                (
+                    robot.name,
+                    self._traffic_lm_for_robot(robot),
+                    str(robot.active_order_id or ""),
+                    str(robot.route_final_lm or robot.target_lm or ""),
+                )
+                for robot in robots
+            )
+        )
+        return str(action), selected.name, members
+
+    def _wait_cycle_recovery_cooldown(self) -> float:
+        fleet = self.params.get("fleet", {})
+        if not isinstance(fleet, dict):
+            fleet = {}
+        try:
+            stationary_retry = float(
+                fleet.get("stationary_recovery_retry_sec", 4.0) or 4.0
+            )
+        except (TypeError, ValueError):
+            stationary_retry = 4.0
+        default = max(
+            self._deadlock_priority_lease(),
+            stationary_retry,
+        )
+        try:
+            configured = float(
+                fleet.get("deadlock_recovery_cooldown_sec", default) or default
+            )
+        except (TypeError, ValueError):
+            configured = default
+        return max(self._deadlock_priority_lease(), min(30.0, configured))
+
+    def _wait_cycle_recovery_ready(
+        self,
+        signature: tuple[
+            str,
+            str,
+            tuple[tuple[str, str, str, str], ...],
+        ],
+        now: float,
+    ) -> bool:
+        """Gate identical recovery attempts across transient wait states."""
+        cooldown = self._wait_cycle_recovery_cooldown()
+        # Order ids are intentionally part of the signature so a new task gets
+        # an independent recovery episode. Bound old signatures nevertheless:
+        # lifelong package benchmarks must not accumulate one key per order.
+        retention = max(60.0, cooldown * 8.0)
+        for old_signature, attempted_at in list(
+            self._wait_cycle_recovery_attempts.items()
+        ):
+            if now - attempted_at >= retention:
+                self._wait_cycle_recovery_attempts.pop(old_signature, None)
+        attempted_at = self._wait_cycle_recovery_attempts.get(signature)
+        return attempted_at is None or now - attempted_at >= cooldown
+
+    def _record_wait_cycle_recovery_attempt(
+        self,
+        signature: tuple[
+            str,
+            str,
+            tuple[tuple[str, str, str, str], ...],
+        ],
+        now: float,
+    ) -> None:
+        self._wait_cycle_recovery_attempts[signature] = now
+
+    def _clear_wait_cycle_recovery_attempts(
+        self,
+        robot_names: tuple[str, ...] | list[str] | set[str],
+    ) -> None:
+        names = set(robot_names)
+        if not names:
+            return
+        for signature in list(self._wait_cycle_recovery_attempts):
+            if any(member[0] in names for member in signature[2]):
+                self._wait_cycle_recovery_attempts.pop(signature, None)
+
+    def _deadlock_portal_queue_limits(self) -> tuple[int, float]:
+        """Return bounded breadth/time for physical portal-queue recovery."""
+        fleet = self.params.get("fleet", {})
+        if not isinstance(fleet, dict):
+            fleet = {}
+        try:
+            configured_max = int(
+                fleet.get(
+                    "deadlock_portal_queue_max_robots",
+                    self.planner.local_cbs_max_robots,
+                )
+                or self.planner.local_cbs_max_robots
+            )
+        except (TypeError, ValueError):
+            configured_max = self.planner.local_cbs_max_robots
+        try:
+            lookahead = float(
+                fleet.get("deadlock_portal_queue_lookahead_sec", 4.0)
+                or 4.0
+            )
+        except (TypeError, ValueError):
+            lookahead = 4.0
+        return (
+            max(
+                2,
+                min(
+                    12,
+                    int(self.planner.local_cbs_max_robots),
+                    configured_max,
+                ),
+            ),
+            max(1.0, min(10.0, lookahead)),
+        )
+
+    def _controlled_corridor_portal_queue_component(
+        self,
+        robots: list[FleetRobot],
+        winner: FleetRobot,
+    ) -> tuple[list[FleetRobot], dict[str, int]]:
+        """Discover only the physical tail feeding a blocked corridor mouth.
+
+        The wait-for cycle contains the entered owner and the body directly at
+        its exit.  Admission losers behind that body commonly all point to the
+        *owner*, so dependency strings alone either miss the tail or pull in
+        every remote queue for a bundled corridor.  Instead follow current
+        bodies along each waiter's short committed forward trajectory.  Each
+        newly discovered waiter must physically run into an already selected
+        external member before it can reach the portal.
+        """
+        component: list[FleetRobot] = []
+        by_name: dict[str, FleetRobot] = {}
+        for robot in robots:
+            if robot.name in by_name:
+                continue
+            by_name[robot.name] = robot
+            component.append(robot)
+        depths = {
+            robot.name: (-1 if robot.name == winner.name else 0)
+            for robot in component
+        }
+        external_names = {
+            robot.name for robot in component if robot.name != winner.name
+        }
+        if not external_names:
+            return component, depths
+
+        max_robots, lookahead = self._deadlock_portal_queue_limits()
+        while len(component) < max_robots:
+            additions: list[tuple[int, str, FleetRobot]] = []
+            for candidate in self._runtime_robots():
+                if (
+                    candidate.name in by_name
+                    or candidate.status != "WAITING"
+                    or not candidate.trajectory
+                    or not candidate.active_order_id
+                    or not self._is_robot_conflict(candidate.last_reason)
+                ):
+                    continue
+                final_clock = float(
+                    candidate.trajectory[-1].get("t", candidate.route_clock)
+                    or candidate.route_clock
+                )
+                check_until = min(
+                    final_clock,
+                    float(candidate.route_clock) + lookahead,
+                )
+                blocker_name = self._trajectory_current_body_blocker(
+                    candidate,
+                    candidate.trajectory,
+                    float(candidate.route_clock),
+                    check_until,
+                )
+                if blocker_name not in external_names:
+                    continue
+                additions.append((
+                    depths.get(blocker_name, 0) + 1,
+                    candidate.name,
+                    candidate,
+                ))
+            if not additions:
+                break
+            added = False
+            for depth, _, candidate in sorted(additions):
+                if candidate.name in by_name or len(component) >= max_robots:
+                    continue
+                by_name[candidate.name] = candidate
+                component.append(candidate)
+                depths[candidate.name] = max(1, int(depth))
+                external_names.add(candidate.name)
+                added = True
+            if not added:
+                break
+        return component, depths
+
+    def _previous_clearance_trajectory_lm(
+        self,
+        robot: FleetRobot,
+        queue_depth: int,
+    ) -> tuple[float, str] | None:
+        """Return an old safe LM far enough to make room for a queue slot."""
+        if not robot.trajectory:
+            return None
+        current_pose = robot.pose or self._pose_at_trajectory(
+            robot.trajectory,
+            robot.route_clock,
+        )
+        if current_pose is None:
+            return None
+        graph = self._controlled_corridor_graph
+        required = self.collision.robot_broadphase_distance() * max(
+            1.0,
+            float(queue_depth) + 0.25,
+        )
+        fallback: tuple[float, str] | None = None
+        seen: set[str] = set()
+        for sample in reversed(robot.trajectory):
+            sample_time = float(sample.get("t", 0.0) or 0.0)
+            if sample_time >= robot.route_clock - 0.000001:
+                continue
+            lm_name = str(sample.get("lm") or "").strip()
+            if lm_name in seen or lm_name not in self.landmarks:
+                continue
+            seen.add(lm_name)
+            if graph is not None:
+                vertex = graph.vertices.get(lm_name)
+                if (
+                    vertex is None
+                    or not vertex.can_wait
+                    or vertex.controlled_region_ids
+                ):
+                    continue
+            landmark = self.landmarks[lm_name]
+            distance = math.hypot(
+                float(landmark.x) - float(current_pose.get("x", 0.0) or 0.0),
+                float(landmark.y) - float(current_pose.get("y", 0.0) or 0.0),
+            )
+            fallback = (sample_time, lm_name)
+            if distance + 0.000001 >= required:
+                return fallback
+        # Short rolling history is common at a fresh chunk boundary.  Moving
+        # to the farthest retained safe LM is still useful, even when it
+        # cannot provide the ideal multi-slot distance in one action.
+        return fallback
+
+    def _graph_escape_route_current_body_blocker(
+        self,
+        robot: FleetRobot,
+        route_nodes: list[str],
+        *,
+        only_robot_names: set[str] | None = None,
+    ) -> str:
+        """Return a present body crossed by a proposed graph escape route.
+
+        A graph edge is not merely a centre-line segment.  Before entering it
+        the rectangular body may have to turn in place, and authored
+        ``backward``/``not_specified`` motion changes the body yaw without
+        changing the direction in which its centre travels.  Auditing only
+        landmark interpolation therefore accepted an escape which SIPP could
+        commit but runtime preflight stopped during its first turn.
+
+        Build the same oriented edge samples as the route planner, select the
+        minimum-turn orientation for unspecified edges, and audit every
+        initial/intermediate rotation as well as translation.  Translation
+        retains the established move-away exception: a robot already inside a
+        soft clearance envelope must still be able to leave it.  A turn keeps
+        the centre fixed, so physical footprint overlap remains authoritative.
+        """
+        nodes = [node for node in route_nodes if node in self.landmarks]
+        if len(nodes) < 2:
+            return ""
+        current_pose = robot.pose or self._pose_at_landmark(nodes[0])
+        if current_pose is None:
+            return ""
+        broadphase = max(0.1, self.collision.robot_broadphase_distance())
+        sample_step = max(0.04, min(0.10, broadphase / 8.0))
+
+        def normalize_yaw(value: float) -> float:
+            return (float(value) + math.pi) % (2.0 * math.pi) - math.pi
+
+        def turn_distance(first: float, second: float) -> float:
+            return abs(normalize_yaw(float(second) - float(first)))
+
+        rotate_enabled = bool(self.planner._rotate_enabled({}))
+
+        # Each unspecified edge permits the body to face either along the
+        # tangent or opposite it while its centre follows the same geometry.
+        # A tiny dynamic programme (at most two states per edge) mirrors the
+        # kinematic planner's minimum accumulated turn choice, including turns
+        # at intermediate LMs.  This is more accurate than greedily selecting
+        # an orientation independently for every segment.
+        edge_variants: list[list[list[dict[str, float]]]] = []
+        for src, dst in zip(nodes, nodes[1:]):
+            edge = self.planner.route_planner.get_edge(src, dst)
+            if edge is None:
+                return "invalid graph escape"
+            raw_samples = self.planner.route_planner.sample_route(
+                PlannedRoute(
+                    nodes=[src, dst],
+                    edges=[edge],
+                    length=float(edge.length),
+                ),
+                sample_distance=sample_step,
+            )
+            if len(raw_samples) < 2:
+                return "invalid graph escape"
+            base = [
+                {
+                    "x": float(sample.get("x", 0.0) or 0.0),
+                    "y": float(sample.get("y", 0.0) or 0.0),
+                    "yaw": normalize_yaw(
+                        float(sample.get("yaw", 0.0) or 0.0)
+                    ),
+                }
+                for sample in raw_samples
+            ]
+            variants = [base]
+            if edge.motion_direction_code() == -1:
+                variants.append([
+                    {
+                        **sample,
+                        "yaw": normalize_yaw(sample["yaw"] + math.pi),
+                    }
+                    for sample in base
+                ])
+            edge_variants.append(variants)
+
+        # State: accumulated rotation, deterministic variant indices, final
+        # yaw, and the selected samples.  Movement cost is identical for both
+        # orientations, so only turn cost distinguishes the alternatives.
+        orientation_states: list[
+            tuple[
+                float,
+                tuple[int, ...],
+                float,
+                list[list[dict[str, float]]],
+            ]
+        ] = [(
+            0.0,
+            (),
+            float(current_pose.get("yaw", 0.0) or 0.0),
+            [],
+        )]
+        for variants in edge_variants:
+            next_states: list[
+                tuple[
+                    float,
+                    tuple[int, ...],
+                    float,
+                    list[list[dict[str, float]]],
+                ]
+            ] = []
+            for variant_index, samples in enumerate(variants):
+                candidates = [
+                    (
+                        cost
+                        + (
+                            turn_distance(previous_yaw, samples[0]["yaw"])
+                            if rotate_enabled
+                            else 0.0
+                        ),
+                        (*indices, variant_index),
+                        samples[-1]["yaw"],
+                        [*selected, samples],
+                    )
+                    for cost, indices, previous_yaw, selected
+                    in orientation_states
+                ]
+                next_states.append(min(candidates, key=lambda item: (item[0], item[1])))
+            orientation_states = next_states
+        _, _, _, selected_edges = min(
+            orientation_states,
+            key=lambda item: (item[0], item[1]),
+        )
+
+        motion_samples: list[tuple[dict[str, float], bool]] = []
+        anchor = {
+            "x": float(current_pose.get("x", 0.0) or 0.0),
+            "y": float(current_pose.get("y", 0.0) or 0.0),
+            "yaw": float(current_pose.get("yaw", 0.0) or 0.0),
+        }
+        rotation_step = math.radians(2.0)
+        for edge_samples in selected_edges:
+            target_yaw = edge_samples[0]["yaw"]
+            yaw_delta = normalize_yaw(target_yaw - anchor["yaw"])
+            if rotate_enabled and abs(yaw_delta) >= math.radians(2.0):
+                steps = max(1, int(math.ceil(abs(yaw_delta) / rotation_step)))
+                for index in range(1, steps + 1):
+                    motion_samples.append((
+                        {
+                            "x": anchor["x"],
+                            "y": anchor["y"],
+                            "yaw": normalize_yaw(
+                                anchor["yaw"] + (yaw_delta * index / steps)
+                            ),
+                        },
+                        True,
+                    ))
+            # The first route sample is the LM anchor.  Runtime starts at the
+            # robot's measured pose (within the graph tolerance), then consumes
+            # the remaining planner samples without teleporting the centre.
+            for sample in edge_samples[1:]:
+                motion_samples.append((sample, False))
+            anchor = dict(edge_samples[-1])
+
+        checks = 0
+        for candidate_pose, is_rotation in motion_samples:
+            checks += 1
+            if checks > 512:
+                return "bounded escape audit"
+            for other in self._runtime_robots():
+                if other.name == robot.name or other.pose is None:
+                    continue
+                if (
+                    only_robot_names is not None
+                    and other.name not in only_robot_names
+                ):
+                    continue
+                if is_rotation:
+                    # Runtime permits a stationary turn inside a neighbour's
+                    # soft clearance envelope, but never a physical body
+                    # overlap.  Match that exact distinction here.
+                    if self.collision.footprints_overlap(
+                        candidate_pose,
+                        other.pose,
+                    ):
+                        return other.name
+                    continue
+                if not self.collision.robot_footprints_conflict(
+                    candidate_pose,
+                    other.pose,
+                ):
+                    continue
+                if self._candidate_moves_away(
+                    current_pose,
+                    candidate_pose,
+                    other.pose,
+                ):
+                    continue
+                return other.name
+        return ""
+
+    def _corridor_clearance_hold_for(
+        self,
+        winner: FleetRobot,
+        winner_regions: set[str],
+    ) -> dict[str, Any] | None:
+        """Capture the local resource an evacuated portal tail must await."""
+        physical_regions = set(self._controlled_regions_for_robot(winner))
+        for region_id, owners in self._controlled_corridor_occupancy.items():
+            if winner.name in owners:
+                physical_regions.add(str(region_id))
+        regions = physical_regions or set(winner_regions)
+        if not regions:
+            return None
+        return {
+            "owner": winner.name,
+            "owner_order_id": str(winner.active_order_id or ""),
+            "regions": tuple(sorted(regions)),
+            "physical_only": bool(physical_regions),
+        }
+
+    def _corridor_clearance_hold_active(
+        self,
+        hold: dict[str, Any],
+        cleared_robot_name: str = "",
+    ) -> bool:
+        """Return whether a captured passage owner still occupies its mouth."""
+        owner_name = str(hold.get("owner") or "")
+        owner = self.robots.get(owner_name)
+        if owner is None:
+            return False
+        owner_order_id = str(hold.get("owner_order_id") or "")
+        if owner_order_id and owner.active_order_id != owner_order_id:
+            return False
+        owner_dependency = (
+            str(owner.wait_for_robot or "").strip()
+            or self._robot_name_from_conflict_reason(owner.last_reason)
+        )
+        if (
+            cleared_robot_name
+            and owner_dependency == cleared_robot_name
+        ):
+            # The selected historical LM was graph-safe, but the owner's
+            # actual exit suffix may continue along the same external aisle.
+            # In that geometry the held robot is still the direct blocker;
+            # keeping it frozen until the owner exits is circular. Release its
+            # transactional replan so SIPP can move it to another branch.
+            return False
+        regions = {
+            str(region_id)
+            for region_id in hold.get("regions", ())
+            if str(region_id)
+        }
+        if not regions:
+            return False
+        physical = set(self._controlled_regions_for_robot(owner))
+        for region_id, owners in self._controlled_corridor_occupancy.items():
+            if owner_name in owners:
+                physical.add(str(region_id))
+        if physical.intersection(regions):
+            return True
+        if bool(hold.get("physical_only")):
+            return False
+        passage = self._controlled_corridor_passages.get(owner_name)
+        if not isinstance(passage, dict):
+            return False
+        passage_regions = {
+            str(region_id)
+            for region_id in passage.get("regions", ())
+            if str(region_id)
+        }
+        return bool(
+            passage_regions.intersection(regions)
+            and (
+                bool(passage.get("entered"))
+                or bool(passage.get("committed"))
+            )
+        )
+
+    def _controlled_corridor_recovery_physical_regions(
+        self,
+        robot: FleetRobot,
+    ) -> set[str]:
+        """Return authored regions which this body physically owns."""
+        regions = set(self._controlled_regions_for_robot(robot))
+        regions.update(
+            str(region_id)
+            for region_id, owners
+            in self._controlled_corridor_occupancy.items()
+            if robot.name in owners
+        )
+        passage = self._controlled_corridor_passages.get(robot.name)
+        if (
+            isinstance(passage, dict)
+            and (
+                bool(passage.get("entered"))
+                or bool(passage.get("past_commit_point"))
+            )
+        ):
+            regions.update(
+                str(region_id)
+                for region_id in passage.get("regions", ())
+                if str(region_id)
+            )
+        return regions
+
+    def _prune_controlled_corridor_recovery_latches(self) -> None:
+        for key in list(self._controlled_corridor_recovery_latches):
+            region_ids, owner_name, order_id, route_revision = key
+            owner = self.robots.get(owner_name)
+            if (
+                owner is None
+                or str(owner.active_order_id or "") != order_id
+                or int(owner.route_revision) != route_revision
+                or not set(region_ids).intersection(
+                    self._controlled_corridor_recovery_physical_regions(
+                        owner
+                    )
+                )
+            ):
+                self._controlled_corridor_recovery_latches.pop(key, None)
+
+    @staticmethod
+    def _controlled_corridor_recovery_latch_key(
+        owner: FleetRobot,
+        region_ids: set[str],
+    ) -> tuple[tuple[str, ...], str, str, int]:
+        return (
+            tuple(sorted(region_ids)),
+            owner.name,
+            str(owner.active_order_id or ""),
+            int(owner.route_revision),
+        )
+
+    def _latch_controlled_corridor_recovery(
+        self,
+        key: tuple[tuple[str, ...], str, str, int] | None,
+        victim_name: str,
+    ) -> None:
+        if key is not None and victim_name:
+            self._controlled_corridor_recovery_latches[key] = victim_name
+
     def _start_deadlock_corridor_evacuation(
         self,
         robots: list[FleetRobot],
@@ -761,28 +1875,312 @@ class TrafficCoordinatorMixin:
         now: float,
     ) -> str:
         candidates: list[
-            tuple[float, int, str, FleetRobot, float, str, bool]
+            tuple[
+                float,
+                int,
+                str,
+                FleetRobot,
+                float,
+                str,
+                bool,
+                list[str],
+                list[tuple[str, str]],
+            ]
         ] = []
+        self._prune_controlled_corridor_recovery_latches()
+        winner_regions = (
+            self._controlled_corridor_recovery_physical_regions(winner)
+        )
+        # A pre-entry committed/tentative slot is calendar authority, not
+        # proof that the body occupies the narrow resource. Only physical
+        # regions create the stable one-recovery-per-owner latch.
+        recovery_latch_key = (
+            self._controlled_corridor_recovery_latch_key(
+                winner,
+                winner_regions,
+            )
+            if winner_regions
+            else None
+        )
+        existing_recovery = (
+            self._controlled_corridor_recovery_latches.get(
+                recovery_latch_key
+            )
+            if recovery_latch_key is not None
+            else ""
+        )
+        if existing_recovery:
+            existing_robot = self.robots.get(existing_recovery)
+            return (
+                existing_recovery
+                if (
+                    existing_robot is not None
+                    and existing_robot.status == "RETREATING"
+                )
+                else ""
+            )
+        portal_queue_depths: dict[str, int] = {
+            robot.name: (-1 if robot.name == winner.name else 0)
+            for robot in robots
+        }
+        # A physical queue can make the direct loser impossible to retreat
+        # even on an ordinary graph aisle.  Previously the bounded tail
+        # discovery only ran when ``winner`` owned an annotated corridor, so
+        # an open-lane head-on A<->B with C->B, D->C behind it kept granting
+        # priority to A/B forever: B's reverse sweep hit C, while C and D were
+        # outside the recovery component.  Discover the same short physical
+        # dependency tail for every wait cycle.  Corridor metadata still adds
+        # the portal-specific staging/ownership rules below; in open space the
+        # depth is used only to select a graph-safe tail retreat/escape.
+        robots, portal_queue_depths = (
+            self._controlled_corridor_portal_queue_component(
+                robots,
+                winner,
+            )
+        )
         for robot in robots:
             if robot.name == winner.name or not robot.trajectory or not robot.active_order_id:
                 continue
             retreat = self._previous_trajectory_lm(robot)
             if retreat is None:
                 continue
+            portal_queue_depth = max(
+                0,
+                int(portal_queue_depths.get(robot.name, 0)),
+            )
+            if portal_queue_depth > 0:
+                clearance_retreat = self._previous_clearance_trajectory_lm(
+                    robot,
+                    portal_queue_depth,
+                )
+                if clearance_retreat is not None:
+                    retreat = clearance_retreat
+            corridor_graph = self._controlled_corridor_graph
+            robot_regions = self._controlled_regions_for_robot(robot)
+            current_vertex = (
+                corridor_graph.vertices.get(self._traffic_lm_for_robot(robot))
+                if corridor_graph is not None
+                else None
+            )
+            upcoming = (
+                self._next_controlled_corridor_entry(robot)
+                if callable(getattr(corridor_graph, "lane_for", None))
+                else None
+            )
+            upcoming_regions = set(
+                self._controlled_corridor_entry_regions(upcoming)
+            )
+            graph_escape_required = False
+            retreats_from_occupied_portal = bool(
+                winner_regions
+                and upcoming_regions.intersection(winner_regions)
+                and not robot_regions
+            )
+            if winner_regions and robot_regions:
+                # Atomic passage ownership makes the body/bodies already in
+                # the resource authoritative. Moving one of them backwards
+                # cannot create room at the external portal and risks
+                # clearing the only executable exit timeline.
+                continue
+            if retreats_from_occupied_portal:
+                # The current passage owner cannot leave while an opposing
+                # admission loser is parked on its external endpoint.  The
+                # ordinary "previous LM" at that point is the portal itself,
+                # which produces either a no-op detour or another collision.
+                # Reuse the admission controller's broadphase-safe staging LM
+                # from the retained trajectory and reverse the outside robot
+                # all the way there.  If that sample no longer exists, leave
+                # both routes intact; never evacuate/clear the internal owner.
+                staging_lm = str(
+                    upcoming.get("holding_lm")
+                    if isinstance(upcoming, dict)
+                    else ""
+                )
+                staging_clock = float(
+                    (
+                        upcoming.get("staging_clock", robot.route_clock)
+                        if isinstance(upcoming, dict)
+                        else robot.route_clock
+                    )
+                    or 0.0
+                )
+                if (
+                    staging_lm not in self.landmarks
+                    or staging_clock >= robot.route_clock - 0.000001
+                ):
+                    # A rolling chunk may begin exactly on the portal. There is
+                    # then no historical staging sample to reverse toward; the
+                    # generic graph escape below finds a real external pocket.
+                    graph_escape_required = True
+                else:
+                    retreat = (staging_clock, staging_lm)
+            if (
+                current_vertex is not None
+                and current_vertex.controlled_region_ids
+            ):
+                # A retreat that ends at another internal/no-wait LM merely
+                # re-arms the original route and produces an endless
+                # forward/backward oscillation. Evacuate only when the
+                # retained trajectory contains a genuinely safe external
+                # holding LM; otherwise keep the passage owner moving and let
+                # atomic admission prevent new entrants.
+                safe_retreat = self._previous_safe_trajectory_lm(robot)
+                if safe_retreat is None:
+                    continue
+                retreat = safe_retreat
             target_clock, target_lm = retreat
             retreat_is_noop_at_current_lm = (
                 target_lm == robot.current_lm
                 and robot.pose is not None
                 and self._pose_is_at_lm(robot.pose, target_lm)
             )
+            robot_dependency = (
+                str(robot.wait_for_robot or "").strip()
+                or self._robot_name_from_conflict_reason(robot.last_reason)
+            )
+            winner_dependency = (
+                str(winner.wait_for_robot or "").strip()
+                or self._robot_name_from_conflict_reason(winner.last_reason)
+            )
+            reciprocal_blocker = bool(
+                robot_dependency == winner.name
+                and winner_dependency == robot.name
+            )
+            reciprocal_external_blocker = bool(
+                winner_regions
+                and not robot_regions
+                and reciprocal_blocker
+            )
+            if retreat_is_noop_at_current_lm and reciprocal_blocker:
+                # A fresh rolling chunk commonly starts with one or more wait
+                # samples on the robot's present LM.  Its "previous" tagged LM
+                # is therefore the same physical point.  This used to trigger
+                # a same-LM global replan forever for an ordinary, unannotated
+                # A<->B head-on: graph escape was enabled only when ``winner``
+                # happened to own a controlled corridor.
+                #
+                # A reciprocal dependency proves that a priority nudge cannot
+                # make either body pass through the other.  Move the loser to
+                # a real graph-safe holding pocket first, regardless of map
+                # annotations.  The selector and installer below still audit
+                # directed edge rules, turns, static geometry and every
+                # current robot footprint before committing the manoeuvre.
+                graph_escape_required = True
+            if retreat_is_noop_at_current_lm and portal_queue_depth > 0:
+                # A fresh rolling chunk may contain no history before this
+                # queue member's current LM.  It still needs a real external
+                # pocket rather than the same-goal no-op transaction.
+                graph_escape_required = True
+            historical_retreat_blocker = ""
+            if not retreat_is_noop_at_current_lm:
+                historical_retreat_blocker = (
+                    self._deadlock_retreat_path_blocker(
+                        robot,
+                        target_clock,
+                    )
+                )
+                if (
+                    historical_retreat_blocker
+                    and retreats_from_occupied_portal
+                ):
+                    # A motion-orientation manoeuvre can carry an admission
+                    # loser through the portal and leave its earlier staging
+                    # LM on the owner's side.  Reversing that history would
+                    # cross the very owner it must release.  Treat this like a
+                    # fresh portal boundary and find a free external branch
+                    # from the robot's current physical LM instead.
+                    graph_escape_required = True
+            graph_escape_route: list[str] = []
+            portal_blocked_edges: list[tuple[str, str]] = []
+            if graph_escape_required:
+                # ``current_lm`` deliberately remains the source LM while a
+                # robot traverses an edge.  At a stop line the physical pose
+                # can already be within centimetres of the following staging
+                # LM, however.  A fresh MAPF escape must use that safe nearest
+                # LM or start-pose validation rejects the transaction and the
+                # two corridor participants wait forever.
+                escape_start_lm = self._safe_replan_start_lm(robot)
+                portal_src = str(
+                    (
+                        upcoming.get("src")
+                        if isinstance(upcoming, dict)
+                        else ""
+                    )
+                    or ""
+                )
+                portal_dst = str(
+                    (
+                        upcoming.get("dst")
+                        if isinstance(upcoming, dict)
+                        else ""
+                    )
+                    or ""
+                )
+                if portal_src in self.landmarks and portal_dst in self.landmarks:
+                    portal_blocked_edges = [
+                        (portal_src, portal_dst),
+                        (portal_dst, portal_src),
+                    ]
+                elif reciprocal_blocker:
+                    # With no corridor entry ahead, forbid the exact suffix
+                    # that currently points this robot into its reciprocal
+                    # blocker. This applies to ordinary graph aisles as well
+                    # as the external side of an annotated portal and leaves
+                    # every other branch available to the pocket selector.
+                    portal_blocked_edges = self._deadlock_detour_edges(robot)
+                if escape_start_lm:
+                    graph_escape_route = self._stationary_clearance_route(
+                        winner,
+                        robot,
+                        extra_blocked_edges=set(portal_blocked_edges),
+                        avoid_controlled_regions=True,
+                        start_lm_override=escape_start_lm,
+                        # In an ordinary head-on, moving one body by a single LM
+                        # is useful only if the other robot can then reach its
+                        # real goal without crossing that new holding pocket.
+                        # Corridor owners use their separately captured passage
+                        # authority; applying this graph-cut proof to them could
+                        # reject the authored external stop line itself.
+                        require_waiter_release=bool(
+                            reciprocal_blocker and not winner_regions
+                        ),
+                    )
+                # A robot stopped midway between graph LMs cannot begin a
+                # fresh MAPF transaction without violating its start-pose
+                # contract.  _stationary_clearance_route() deliberately falls
+                # back to current_lm for ordinary callers, but doing that here
+                # produced a plausible pocket which
+                # _install_graph_escape_retreat() then rejected forever.
+                # Leave graph_escape_route empty and reuse the already
+                # committed trajectory backwards to the previous LM first;
+                # completion of that bounded retreat queues the same-goal
+                # detour from a valid graph anchor.
+                if len(graph_escape_route) >= 2:
+                    target_clock = float(robot.route_clock)
+                    target_lm = str(graph_escape_route[-1])
+                    retreat_is_noop_at_current_lm = True
+                    if self._graph_escape_route_current_body_blocker(
+                        robot,
+                        graph_escape_route,
+                    ):
+                        # This is the production tail-to-portal case: the
+                        # spatial pocket is valid, but reaching it would cross
+                        # a body already queued behind the portal.  Do not
+                        # submit that known-impossible route or fall back to
+                        # the identical goal replan; a later candidate in the
+                        # discovered component is the one that must move.
+                        continue
             if (
-                not retreat_is_noop_at_current_lm
-                and self._deadlock_retreat_target_blocker(robot, target_clock)
+                not graph_escape_route
+                and not retreat_is_noop_at_current_lm
+                and historical_retreat_blocker
             ):
-                # Reversing toward an occupied landmark cannot evacuate the
-                # corridor and creates a permanent RETREATING state. Try a
-                # different member of the cycle; if none is clear, grant the
-                # forward winner the lease and retry on a later tick.
+                # The target LM can be clear while an intermediate LM on a
+                # multi-edge portal escape is occupied.  Arming that reverse
+                # traversal leaves the robot permanently RETREATING halfway
+                # through the path.  Validate the complete current->target
+                # sweep against the fleet's current bodies before committing
+                # the recovery action.
                 continue
             order = self._active_order_for_robot(robot)
             priority = int(order.priority if order is not None else 0)
@@ -796,6 +2194,8 @@ class TrafficCoordinatorMixin:
                     target_clock,
                     target_lm,
                     retreat_is_noop_at_current_lm,
+                    graph_escape_route,
+                    portal_blocked_edges,
                 )
             )
         if not candidates:
@@ -809,10 +2209,88 @@ class TrafficCoordinatorMixin:
             target_clock,
             target_lm,
             retreat_is_noop_at_current_lm,
+            graph_escape_route,
+            portal_blocked_edges,
         ) = min(candidates)
         blocked_edges = self._deadlock_detour_edges(robot)
+        if portal_blocked_edges:
+            blocked_edges = list(
+                dict.fromkeys([*blocked_edges, *portal_blocked_edges])
+            )
+        if graph_escape_route:
+            # When the body has almost reached a staging LM, the edge reported
+            # at ``route_clock`` is still its upstream approach edge.  The
+            # escape correctly uses that edge in reverse to make room for the
+            # corridor owner.  Do not hand MAPF a forced route while also
+            # marking one of its directed segments as forbidden.
+            escape_edges = set(zip(graph_escape_route, graph_escape_route[1:]))
+            blocked_edges = [
+                edge for edge in blocked_edges if edge not in escape_edges
+            ]
         if not blocked_edges:
             return ""
+        recovery_action = (
+            f"detour:{target_lm}"
+            if (
+                abs(robot.route_clock - target_clock) <= 0.000001
+                or retreat_is_noop_at_current_lm
+            )
+            else f"retreat:{target_lm}"
+        )
+        recovery_signature = self._wait_cycle_recovery_signature(
+            recovery_action,
+            robot,
+            robots,
+        )
+        if not self._wait_cycle_recovery_ready(recovery_signature, now):
+            return ""
+        if graph_escape_route:
+            if self._install_graph_escape_retreat(
+                robot,
+                graph_escape_route,
+                blocked_edges,
+                now,
+            ):
+                causal_blocker = (
+                    str(robot.wait_for_robot or "").strip()
+                    or self._robot_name_from_conflict_reason(robot.last_reason)
+                    or winner.name
+                )
+                blocker = self.robots.get(causal_blocker)
+                robot.retreat_blocker_signatures = (
+                    [(
+                        causal_blocker,
+                        self._traffic_lm_for_robot(blocker),
+                        int(blocker.route_revision),
+                    )]
+                    if blocker is not None and causal_blocker != robot.name
+                    else []
+                )
+                robot.retreat_corridor_hold = (
+                    self._corridor_clearance_hold_for(
+                        winner,
+                        winner_regions,
+                    )
+                )
+                self._record_wait_cycle_recovery_attempt(
+                    recovery_signature,
+                    now,
+                )
+                self._latch_controlled_corridor_recovery(
+                    recovery_latch_key,
+                    robot.name,
+                )
+                self._event(
+                    "warn",
+                    f"{robot.name} clearing corridor portal toward {target_lm}",
+                )
+                return robot.name
+            # A valid spatial pocket can still lose a transient planner-lock
+            # race or fail fresh temporal scheduling.  Do not leave the exact
+            # wait cycle inert: below, queue a transactional global detour of
+            # the same active order while preserving the current trajectory
+            # and the internal passage owner's authority.
+            graph_escape_route = []
         if (
             abs(robot.route_clock - target_clock) <= 0.000001
             or retreat_is_noop_at_current_lm
@@ -820,39 +2298,375 @@ class TrafficCoordinatorMixin:
             order = self._active_order_for_robot(robot)
             if order is None:
                 return ""
-            order.traffic_detour_edges = blocked_edges
-            order.traffic_detour_attempts += 1
-            if self._queue_active_order_for_background_replan(
+            parked_tail = self._queue_deadlock_portal_tail_clearance(
+                winner,
                 robot,
+                robots,
+                portal_blocked_edges,
                 now,
-                "deadlock at LM; alternate corridor required",
-                # This is narrower than an ordinary traffic wait inside a
-                # controlled corridor: the selected reverse target is the
-                # robot's present LM/pose, so retaining the same trajectory
-                # can only arm the identical no-op retreat on the next tick.
-                allow_controlled_corridor_replan=retreat_is_noop_at_current_lm,
-            ):
-                self.traffic_metrics["cycleReplans"] += 1
-                self._event(
-                    "warn",
-                    f"{robot.name}@{target_lm} queued for alternate route to the same goal",
+            )
+            if parked_tail:
+                # Do not debounce the admission loser itself. Once the hidden
+                # maintenance order has opened the external arm, the unchanged
+                # pair must be eligible to install its graph escape immediately.
+                self._latch_controlled_corridor_recovery(
+                    recovery_latch_key,
+                    parked_tail,
                 )
+                return parked_tail
+            replan_handled, replan_started = (
+                self._queue_background_replan_recovery_action(
+                    robot,
+                    now,
+                    "deadlock at LM; alternate corridor required",
+                    # This is the last fallback after both historical retreat
+                    # and a graph-safe escape failed. The retained spatial
+                    # suffix is therefore evidence of the deadlock, not a route
+                    # which may be re-armed after a transient planner failure.
+                    supersede_retained_route=True,
+                )
+            )
+            if replan_handled:
+                self._record_wait_cycle_recovery_attempt(
+                    recovery_signature,
+                    now,
+                )
+                self._latch_controlled_corridor_recovery(
+                    recovery_latch_key,
+                    robot.name,
+                )
+                if replan_started:
+                    order.traffic_detour_edges = blocked_edges
+                    order.traffic_detour_attempts += 1
+                    self.traffic_metrics["cycleReplans"] += 1
+                    self._event(
+                        "warn",
+                        f"{robot.name}@{target_lm} queued for alternate route to the same goal",
+                    )
                 return robot.name
             return ""
 
+        self._record_wait_cycle_recovery_attempt(recovery_signature, now)
         robot.pending_route = None
         robot.retreat_target_clock = target_clock
         robot.retreat_target_lm = target_lm
         robot.retreat_blocked_edges = blocked_edges
+        causal_blocker = (
+            str(robot.wait_for_robot or "").strip()
+            or self._robot_name_from_conflict_reason(robot.last_reason)
+            or winner.name
+        )
+        blocker = self.robots.get(causal_blocker)
+        robot.retreat_blocker_signatures = (
+            [(
+                causal_blocker,
+                self._traffic_lm_for_robot(blocker),
+                int(blocker.route_revision),
+            )]
+            if blocker is not None and causal_blocker != robot.name
+            else []
+        )
+        robot.retreat_corridor_hold = self._corridor_clearance_hold_for(
+            winner,
+            winner_regions,
+        )
         robot.status = "RETREATING"
         robot.last_reason = f"deadlock retreat to {target_lm} before detour"
+        robot.blocked_since = None
+        robot.traffic_stall_since = None
+        self._clear_wait_dependency(robot)
         robot.last_tick_at = now
         robot.updated_at = now
         self._event(
             "warn",
             f"{robot.name} evacuating narrow corridor back to {target_lm}",
         )
+        self._latch_controlled_corridor_recovery(
+            recovery_latch_key,
+            robot.name,
+        )
         return robot.name
+
+    def _queue_deadlock_portal_tail_clearance(
+        self,
+        corridor_owner: FleetRobot,
+        admission_loser: FleetRobot,
+        component: list[FleetRobot],
+        portal_blocked_edges: list[tuple[str, str]],
+        now: float,
+    ) -> str:
+        """Move an inactive body which seals a corridor loser's escape arm.
+
+        The ordinary wait graph only contains commanded robots. A completed
+        robot parked two LMs behind an admission loser is therefore absent even
+        when it turns the loser's external aisle into a graph cut. Replanning
+        the loser cannot help: the controlled portal is occupied on one side
+        and the parked body closes the other.
+
+        Prove causality by selecting a normal graph-safe pocket while
+        *prospectively* removing one inactive body. The candidate is accepted
+        only when its current footprint actually intersects that hypothetical
+        escape. Its relocation is then queued through the existing hidden
+        traffic-clearance order, so normal MAPF, motion rules and collision
+        checks still own the physical move.
+        """
+        start_lm = self._safe_replan_start_lm(admission_loser)
+        if (
+            start_lm not in self.landmarks
+            or not portal_blocked_edges
+            or not admission_loser.active_order_id
+        ):
+            return ""
+
+        component_names = {robot.name for robot in component}
+        candidates: list[tuple[float, str, FleetRobot, bool]] = []
+        for candidate in self._runtime_robots():
+            if candidate.name in component_names:
+                continue
+            relocation_state = self._stationary_clearance_relocations.get(
+                candidate.name
+            )
+            relocation_order = (
+                self.orders.get(str(relocation_state.get("order_id") or ""))
+                if isinstance(relocation_state, dict)
+                else None
+            )
+            relocation_active = bool(
+                relocation_order is not None
+                and relocation_order.status not in TERMINAL_ORDER_STATUSES
+            )
+            if not relocation_active and not (
+                self._inactive_stationary_clearance_candidate(
+                    candidate,
+                    exclude_name=admission_loser.name,
+                )
+            ):
+                continue
+            candidate_lm = self._traffic_lm_for_robot(candidate)
+            if candidate_lm not in self.landmarks:
+                continue
+            candidates.append((
+                self._lm_distance(start_lm, candidate_lm),
+                candidate.name,
+                candidate,
+                relocation_active,
+            ))
+
+        # This proof is only a deadlock-path operation, nevertheless keep it
+        # bounded for a very large real fleet. Nearest bodies on the escape arm
+        # are the only plausible cuts and are checked first.
+        for _, _, candidate, relocation_active in sorted(candidates)[:32]:
+            hypothetical_escape = self._stationary_clearance_route(
+                corridor_owner,
+                admission_loser,
+                extra_blocked_edges=set(portal_blocked_edges),
+                avoid_controlled_regions=True,
+                start_lm_override=start_lm,
+                prospectively_vacated_robot_names={candidate.name},
+            )
+            if len(hypothetical_escape) < 2:
+                continue
+            if (
+                self._graph_escape_route_current_body_blocker(
+                    admission_loser,
+                    hypothetical_escape,
+                    only_robot_names={candidate.name},
+                )
+                != candidate.name
+            ):
+                continue
+
+            if not relocation_active and not (
+                self._queue_stationary_clearance_relocation(
+                    admission_loser,
+                    candidate,
+                    cause=(
+                        f"parked body seals the external escape from "
+                        f"{start_lm}"
+                    ),
+                )
+            ):
+                continue
+
+            admission_loser.status = "WAITING"
+            admission_loser.last_reason = (
+                f"waiting for {candidate.name} to clear corridor approach"
+            )
+            admission_loser.blocked_since = (
+                admission_loser.blocked_since or now
+            )
+            admission_loser.traffic_stall_since = (
+                admission_loser.traffic_stall_since or now
+            )
+            admission_loser.wait_for_robot = candidate.name
+            admission_loser.wait_resource = (
+                f"portal-tail:{start_lm}"
+            )
+            admission_loser.wait_release_at = 0.0
+            admission_loser.updated_at = now
+            self._update_active_order_from_robot(admission_loser)
+            if not relocation_active:
+                self._event(
+                    "warn",
+                    f"{candidate.name} clearing parked tail behind "
+                    f"{admission_loser.name} at {start_lm}",
+                )
+            return candidate.name
+        return ""
+
+    def _install_graph_escape_retreat(
+        self,
+        robot: FleetRobot,
+        escape_route: list[str],
+        blocked_edges: list[tuple[str, str]],
+        now: float,
+    ) -> bool:
+        """Install a short reverse-clock escape when history starts at a portal.
+
+        Ordinary retreat reuses an already committed trajectory. A fresh
+        lifelong-order chunk can start on the contested portal itself, however,
+        so there is no earlier sample to return to. Plan a normal graph/motion-
+        rule compliant path from the portal to an external holding pocket, then
+        store its time-reversed representation. The existing retreat runtime can
+        execute it by decreasing ``route_clock`` and, on arrival, transactionally
+        replan the same active order to its original goal.
+        """
+        route_nodes = [
+            str(node)
+            for node in escape_route
+            if str(node) in self.landmarks
+        ]
+        safe_start_lm = self._safe_replan_start_lm(robot)
+        if len(route_nodes) < 2 or route_nodes[0] != safe_start_lm:
+            return False
+        order = self._active_order_for_robot(robot)
+        if order is None or order.status in {"COMPLETED", "CANCELED", "FAILED"}:
+            return False
+
+        request: dict[str, Any] = {
+            "name": robot.name,
+            "startLm": route_nodes[0],
+            "goalLm": route_nodes[-1],
+            "routeNodes": route_nodes,
+        }
+        if robot.pose is not None:
+            request["startPose"] = dict(robot.pose)
+        payload = self._order_plan_payload(order, request) | {
+            "robots": [request],
+            "allowCbsFallback": False,
+            "blocked_edges": [
+                {"from": src, "to": dst}
+                for src, dst in blocked_edges
+            ],
+        }
+
+        # Never stall the physics thread behind an unrelated long CBS job. The
+        # graph-stable cycle is retried on the next arbitration interval when
+        # the shared planner is busy.
+        if not self._planner_lock.acquire(blocking=False):
+            return False
+        try:
+            result = self._plan_valid_requests_unlocked([request], payload)
+            if not result.get("ok") or not result.get("plans"):
+                # The escape selector already excludes controlled regions,
+                # current bodies and static obstacles. Temporal reservations of
+                # the cycle itself may still reject the only outward edge; for
+                # this explicit right-of-way action, generate its kinematics
+                # without those stale future reservations. Runtime swept-
+                # footprint checks remain the final motion authority.
+                result = self.planner.plan({
+                    **payload,
+                    "robots": [request],
+                    "blocked_lms": [],
+                    "reserved_vertex_constraints": [],
+                    "reserved_edge_constraints": [],
+                    "reserved_vertex_intervals": [],
+                    "reserved_edge_intervals": [],
+                })
+        finally:
+            self._planner_lock.release()
+
+        plan = self._plan_for_robot(result, robot.name)
+        if plan is None:
+            return False
+        forward = [
+            dict(sample)
+            for sample in plan.get("trajectory", [])
+            if isinstance(sample, dict)
+        ]
+        if len(forward) < 2:
+            return False
+        duration = float(forward[-1].get("t", 0.0) or 0.0)
+        if duration <= 0.000001:
+            return False
+        if self._trajectory_current_body_blocker(
+            robot,
+            forward,
+            0.0,
+            duration,
+        ):
+            # A spatial pocket is insufficient when the path to that pocket
+            # crosses a robot that is currently stopped on an intermediate
+            # LM.  Runtime collision checks would stop the escape safely, but
+            # without this transaction-level audit it could never finish.
+            return False
+        retreat_trajectory: list[dict[str, Any]] = []
+        for sample in reversed(forward):
+            transformed = dict(sample)
+            transformed["t"] = max(
+                0.0,
+                duration - float(sample.get("t", 0.0) or 0.0),
+            )
+            retreat_trajectory.append(transformed)
+        retreat_trajectory.sort(
+            key=lambda sample: float(sample.get("t", 0.0) or 0.0)
+        )
+
+        # Supersede any failed same-goal transaction at this unchanged portal.
+        self._runtime_replans.pop(robot.name, None)
+        old_passage = self._controlled_corridor_passages.pop(robot.name, None)
+        old_regions = {
+            str(item)
+            for item in (
+                old_passage.get("regions", ())
+                if isinstance(old_passage, dict)
+                else ()
+            )
+            if str(item)
+        }
+        for region_id in old_regions:
+            lease = self._controlled_corridor_leases.get(region_id)
+            if lease and lease[0] == robot.name:
+                self._controlled_corridor_leases.pop(region_id, None)
+        self._controlled_corridor_winners.pop(robot.name, None)
+
+        order.status = "EXECUTING"
+        order.error = ""
+        order.updated_at = now
+        order.assigned_robot = robot.name
+        order.traffic_detour_edges = list(dict.fromkeys(blocked_edges))
+        order.route_nodes = list(route_nodes)
+        robot.trajectory = retreat_trajectory
+        robot.plan_nodes = list(reversed(route_nodes))
+        robot.route_clock = duration
+        robot.route_started_at = now
+        robot.route_revision = self._next_route_revision()
+        robot.pending_route = None
+        robot.retreat_target_clock = 0.0
+        robot.retreat_target_lm = route_nodes[-1]
+        robot.retreat_blocked_edges = list(dict.fromkeys(blocked_edges))
+        robot.status = "RETREATING"
+        robot.last_reason = f"deadlock portal escape to {route_nodes[-1]}"
+        robot.blocked_since = None
+        robot.traffic_stall_since = None
+        robot.last_tick_at = now
+        robot.traffic_priority_until = now + self._deadlock_priority_lease()
+        robot.collision_preflight_due_at = 0.0
+        robot.trajectory_dirty = True
+        robot.route_preview_dirty = True
+        self._clear_wait_dependency(robot)
+        robot.updated_at = now
+        return True
 
     def _deadlock_retreat_target_blocker(
         self,
@@ -866,6 +2680,90 @@ class TrafficCoordinatorMixin:
             if other.name == robot.name or other.pose is None:
                 continue
             if self.collision.robot_footprints_conflict(target_pose, other.pose):
+                return other.name
+        return ""
+
+    def _deadlock_retreat_path_blocker(
+        self,
+        robot: FleetRobot,
+        target_clock: float,
+    ) -> str:
+        """Return the first current body intersecting a reverse retreat path.
+
+        A retreat deliberately reuses an old trajectory in reverse, so its old
+        temporal reservations are no longer authoritative.  Checking only the
+        destination misses a robot parked on an intermediate graph LM (the
+        production failure was a clear target four LMs away with a waiter on
+        the second LM).  This bounded dense sweep is only run while resolving
+        a deadlock, not on ordinary physics ticks.
+        """
+        return self._trajectory_current_body_blocker(
+            robot,
+            robot.trajectory,
+            float(robot.route_clock),
+            float(target_clock),
+        )
+
+    def _trajectory_current_body_blocker(
+        self,
+        robot: FleetRobot,
+        trajectory: list[dict[str, Any]],
+        start_clock: float,
+        target_clock: float,
+    ) -> str:
+        if not trajectory or abs(target_clock - start_clock) <= 0.000001:
+            return ""
+        current_pose = robot.pose or self._pose_at_trajectory(
+            trajectory,
+            start_clock,
+        )
+        if current_pose is None:
+            return "invalid retreat pose"
+
+        span = abs(target_clock - start_clock)
+        # At most 512 checks keeps a pathological long rolling trajectory
+        # bounded while remaining much denser than one robot footprint at
+        # normal fleet speeds.
+        step = max(self._runtime_motion_step(), span / 512.0)
+        direction = 1.0 if target_clock > start_clock else -1.0
+        clocks: list[float] = []
+        clock = start_clock + (direction * step)
+        while (
+            clock < target_clock - 0.000001
+            if direction > 0.0
+            else clock > target_clock + 0.000001
+        ):
+            clocks.append(clock)
+            clock += direction * step
+        clocks.append(target_clock)
+
+        for check_clock in clocks:
+            candidate_pose = self._pose_at_trajectory(
+                trajectory,
+                check_clock,
+            )
+            if candidate_pose is None:
+                continue
+            # Waiting beside another body can begin inside the softer traffic
+            # envelope.  A path monotonically increasing their separation is
+            # an escape, not a collision; all physical-overlap checks still
+            # run during execution.
+            if self._candidate_stays_put(current_pose, candidate_pose):
+                continue
+            for other in self._runtime_robots():
+                if other.name == robot.name or other.pose is None:
+                    continue
+                if not self.collision.robot_footprints_conflict(
+                    candidate_pose,
+                    other.pose,
+                ):
+                    continue
+                if self._candidate_moves_away(
+                    current_pose,
+                    candidate_pose,
+                    other.pose,
+                ):
+                    continue
                 return other.name
         return ""
 
@@ -901,6 +2799,28 @@ class TrafficCoordinatorMixin:
             # instead; repeated wait/rotation samples at either endpoint do
             # not change which graph segment must be reversed.
             return previous_distinct
+        return candidate
+
+    def _previous_safe_trajectory_lm(
+        self,
+        robot: FleetRobot,
+    ) -> tuple[float, str] | None:
+        graph = self._controlled_corridor_graph
+        if graph is None:
+            return self._previous_trajectory_lm(robot)
+        candidate: tuple[float, str] | None = None
+        for sample in robot.trajectory:
+            sample_time = float(sample.get("t", 0.0) or 0.0)
+            if sample_time > robot.route_clock + 0.000001:
+                break
+            lm_name = str(sample.get("lm") or "").strip()
+            vertex = graph.vertices.get(lm_name)
+            if (
+                vertex is not None
+                and bool(getattr(vertex, "can_wait", True))
+                and not getattr(vertex, "controlled_region_ids", ())
+            ):
+                candidate = (sample_time, lm_name)
         return candidate
 
     def _deadlock_detour_edges(self, robot: FleetRobot) -> list[tuple[str, str]]:
@@ -1163,6 +3083,14 @@ class TrafficCoordinatorMixin:
             max(self.collision.sample_time_step(), safe_step),
         )
         end_clock = min(final_time, proposed_clock + lookahead)
+        if self._central_corridor_owner_is_clearing(robot):
+            # Admission already guarantees exclusive/compatible traffic in
+            # the atomic bundle.  Looking several seconds beyond its external
+            # exit used to freeze an owner while its rear footprint was still
+            # inside: a robot parked in the downstream aisle could therefore
+            # hold the whole corridor forever.  Immediate checks below remain
+            # authoritative and stop before any actual footprint overlap.
+            end_clock = proposed_clock
         checks = [proposed_clock]
         clock = proposed_clock + step
         while clock <= end_clock + 0.000001:
@@ -1309,17 +3237,45 @@ class TrafficCoordinatorMixin:
                     other_pose,
                 )
                 has_right_of_way = self._has_right_of_way(robot, other)
-                stationary_loser_conflict = bool(
-                    has_right_of_way
-                    and self._swept_footprints_overlap(
+                # The peer prediction is conditional: that peer can be
+                # stopped by its own collision/admission check later in this
+                # same sequential tick.  The immediate substep therefore may
+                # never consume the peer's *current* physical body, even when
+                # the moving robot has (or lacks) traffic right of way.  This
+                # is the pre-commit counterpart of the global swept-footprint
+                # invariant and prevents a stop-then-rollback storm when a
+                # predicted leader does not actually advance.
+                stationary_endpoint_conflict = self.collision.footprints_overlap(
+                    pose,
+                    other.pose,
+                )
+                stationary_sweep_conflict = self._swept_footprints_overlap(
+                    segment_start_pose,
+                    pose,
+                    other.pose,
+                    other.pose,
+                )
+                existing_overlap_escape = bool(
+                    self.collision.footprints_overlap(
+                        segment_start_pose,
+                        other.pose,
+                    )
+                    and self._candidate_moves_away(
                         segment_start_pose,
                         pose,
                         other.pose,
-                        other.pose,
                     )
                 )
-                if stationary_loser_conflict or (
-                    predicted_sweep_conflict and not has_right_of_way
+                if (
+                    (
+                        stationary_endpoint_conflict
+                        or stationary_sweep_conflict
+                    )
+                    and not existing_overlap_escape
+                ) or (
+                    predicted_sweep_conflict
+                    and not has_right_of_way
+                    and not existing_overlap_escape
                 ):
                     if self._is_active_traffic(other):
                         return f"yield to {other.name}"
@@ -1484,22 +3440,43 @@ class TrafficCoordinatorMixin:
             other.status != "MOVING"
             or prediction_offset <= self._runtime_motion_step() + 0.000001
         )
+        existing_overlap_escape = bool(
+            robot.pose is not None
+            and other.pose is not None
+            and self.collision.footprints_overlap(robot.pose, other.pose)
+            and self._candidate_moves_away(
+                robot.pose,
+                candidate_pose,
+                other.pose,
+            )
+        )
         if (
             other_current_is_authoritative
             and other.pose is not None
             and self.collision.footprints_overlap(candidate_pose, other.pose)
+            and not existing_overlap_escape
         ):
             return f"occupied by {other.name}"
         if self.collision.footprints_overlap(candidate_pose, other_pose):
+            predicted_overlap_escape = bool(
+                existing_overlap_escape
+                and robot.pose is not None
+                and self._candidate_moves_away(
+                    robot.pose,
+                    candidate_pose,
+                    other_pose,
+                )
+            )
             # This is an anticipated collision, not an overlap that already
             # exists. Resolve it before motion using deterministic right of
             # way: the loser waits, while the winner's future prediction is
             # evaluated against the loser's stationary pose on later ticks.
-            if self._has_right_of_way(robot, other):
-                return ""
-            if self._is_active_traffic(other):
-                return f"yield to {other.name}"
-            return f"occupied by {other.name}"
+            if not predicted_overlap_escape:
+                if self._has_right_of_way(robot, other):
+                    return ""
+                if self._is_active_traffic(other):
+                    return f"yield to {other.name}"
+                return f"occupied by {other.name}"
         if robot.pose is not None and self._candidate_stays_put(robot.pose, candidate_pose):
             return ""
         if (
@@ -1733,7 +3710,12 @@ class TrafficCoordinatorMixin:
 
     def _set_wait_dependency(self, robot: FleetRobot, reason: str, now: float) -> None:
         blocker = self._robot_name_from_conflict_reason(reason)
-        if not blocker:
+        if not blocker or blocker == robot.name:
+            # Admission diagnostics can briefly report the robot's own lease
+            # while corridor state is rebuilt at a rolling/turn boundary.
+            # Self-dependencies are never actionable wait-for edges: retaining
+            # one manufactures a one-node deadlock and prevents ordinary
+            # progress/re-evaluation from clearing the stale status.
             self._clear_wait_dependency(robot)
             return
         robot.wait_for_robot = blocker

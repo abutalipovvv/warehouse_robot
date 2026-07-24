@@ -106,6 +106,33 @@ class FleetTaskManager:
             orders.sort(key=lambda order: (order.created_at, order.order_id))
         return pending
 
+    def prune_terminal_history(self, limit: int = 120) -> tuple[str, ...]:
+        """Drop terminal records older than the bounded operator history.
+
+        The task store is also the dispatcher's working set.  Keeping every
+        completed order forever therefore makes otherwise constant-time
+        lifelong operation progressively scan the complete order history.
+        Active orders are never removed; among terminal records the newest
+        ``limit`` entries are retained for the operator/audit view.
+        """
+        maximum = max(0, int(limit))
+        terminal = sorted(
+            (
+                order
+                for order in self.orders.values()
+                if order.status in TERMINAL_ORDER_STATUSES
+            ),
+            key=lambda order: (order.updated_at, order.order_id),
+            reverse=True,
+        )
+        removed: list[str] = []
+        for order in terminal[maximum:]:
+            if self.orders.get(order.order_id) is not order:
+                continue
+            self.orders.pop(order.order_id, None)
+            removed.append(order.order_id)
+        return tuple(removed)
+
     def clear(self) -> None:
         self.orders.clear()
 

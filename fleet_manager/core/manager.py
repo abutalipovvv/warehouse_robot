@@ -25,6 +25,11 @@ from fleet_manager.core.motion import FleetMotionRuntimeMixin
 from fleet_manager.core.tasks.dispatch import FleetTaskDispatchMixin
 from fleet_manager.core.tasks.manager import FleetTaskManager
 from fleet_manager.core.traffic.coordinator import TrafficCoordinatorMixin
+from fleet_manager.core.traffic.corridor_scheduler import (
+    CentralCorridorScheduler,
+    CorridorSchedule,
+    CorridorSchedulerConfig,
+)
 from fleet_manager.core.traffic.planning import TrafficPlanningMixin
 from fleet_manager.core.traffic.routing import TrafficRoutingMixin
 from fleet_manager.runtime.gateways.base import UnavailableRobotGateway
@@ -101,6 +106,12 @@ class FleetManagerCore(
         self._dispatch_job_lock = Lock()
         self._dispatch_job: dict[str, Any] | None = None
         self._last_async_job_kind = ""
+        # Runtime detours are transactional.  An executing robot keeps its
+        # committed timeline while the shared background planner prepares a
+        # replacement from the graph-safe LM at which it is holding.  The
+        # state is separate from ``pending_route`` because that field belongs
+        # to rolling *future* chunks and may be consumed at a chunk boundary.
+        self._runtime_replans: dict[str, dict[str, Any]] = {}
         self._rolling_prefetch_retry_at: dict[str, float] = {}
         # Continuations share one planner worker with new order dispatch.
         # Preserve admission age and the last service turn explicitly so a
@@ -111,11 +122,31 @@ class FleetManagerCore(
         # must not consume the sole planner worker forever. The dispatcher
         # records the exact blocker occupancy and retries only after it changes.
         self._stationary_order_retry_state: dict[str, dict[str, Any]] = {}
+        # A moving committed robot can also make one fresh departure
+        # temporarily impossible.  Keep the exact structured dependency so
+        # that only that requester sleeps until the blocker reaches another
+        # graph state; never let its failure contaminate unrelated orders.
+        self._dispatch_conflict_dependencies: dict[
+            str,
+            dict[str, Any],
+        ] = {}
+        # A terminal robot may be the only physical obstacle left on an
+        # otherwise viable route.  Traffic-clearance moves are normal internal
+        # orders, while this compact index supplies deduplication/cooldown and
+        # lets their hidden order records be pruned after completion.
+        self._stationary_clearance_relocations: dict[str, dict[str, Any]] = {}
         # A continuation normally remains a cheap one/two-robot SIPP request.
         # Failed boundary holders rotate through cheap pair attempts, then the
         # fast SIPP recovery wave grows to include the coupled stopped group.
         # Exponential CBS remains capped to small local groups.
         self._rolling_prefetch_failures: dict[str, int] = {}
+        # Low-level SIPP and the continuous footprint validator know the exact
+        # robot which rejected a rolling continuation.  Preserve that evidence
+        # across the short retry boundary so the next recovery request contains
+        # the real coupled component instead of rediscovering the same
+        # singleton conflict.  Every record carries route revisions and is
+        # discarded as soon as either participant advances.
+        self._rolling_prefetch_blockers: dict[str, dict[str, Any]] = {}
         # A fully stopped rolling cohort is released in dependency order. If
         # its dependency graph is cyclic, one robot is sent to a free waiting
         # pocket. Do not retry a pocket that already failed while every robot
@@ -126,6 +157,22 @@ class FleetManagerCore(
         self._rolling_vacancy_recovery_blacklist: set[
             tuple[tuple[tuple[str, str, int], ...], str, str]
         ] = set()
+        # A queued stationary departure uses the same safe-pocket concept, but
+        # it is a different liveness episode from an exhausted rolling cohort.
+        # Keep its failed pockets independent so alternating recovery classes
+        # cannot erase one another's bounded retry history.
+        self._commanded_sink_vacancy_signatures: dict[
+            str,
+            tuple[tuple[str, str, int], ...],
+        ] = {}
+        self._commanded_sink_vacancy_blacklist: set[
+            tuple[
+                str,
+                tuple[tuple[str, str, int], ...],
+                str,
+                str,
+            ]
+        ] = set()
         self._coupled_replan_last_attempt: dict[tuple[str, ...], float] = {}
         self._coupled_replan_failures: dict[tuple[str, ...], int] = {}
         self._active_wait_cycles: dict[tuple[str, ...], float] = {}
@@ -134,6 +181,35 @@ class FleetManagerCore(
         # component so a stalled lease can escalate without being re-granted
         # and logged on every physics frame.
         self._wait_cycle_last_arbitration: dict[tuple[str, ...], float] = {}
+        # One right-of-way nudge is useful only once for an unchanged physical
+        # cycle.  If its lease expires without graph progress, issuing the same
+        # winner again merely makes the robots twitch and inflates metrics.
+        # Route revisions are part of the signature, so a real replan gets one
+        # fresh arbitration attempt while an unchanged snapshot proceeds to
+        # CBS/corridor evacuation instead.
+        self._wait_cycle_grant_signatures: dict[
+            tuple[str, ...],
+            tuple[tuple[str, str, str, int], ...],
+        ] = {}
+        # A cycle can briefly disappear while a transactional detour is being
+        # planned, then reappear at the exact same graph landmarks when the
+        # retained route is retried.  ``_active_wait_cycles`` deliberately
+        # follows the live wait-for graph and therefore cannot debounce that
+        # cross-state transition.  Keep a short-lived spatial recovery
+        # signature separately so the unchanged component cannot enqueue the
+        # same retreat/detour (and inflate its metrics) on every physics tick.
+        self._wait_cycle_recovery_attempts: dict[
+            tuple[str, str, tuple[tuple[str, str, str, str], ...]],
+            float,
+        ] = {}
+        # A changing portal tail must not create a new evacuation transaction
+        # every few seconds for the same physical corridor owner.  The key is
+        # stable across transient wait-graph membership changes and remains
+        # latched until that owner physically clears or changes task/route.
+        self._controlled_corridor_recovery_latches: dict[
+            tuple[tuple[str, ...], str, str, int],
+            str,
+        ] = {}
         # Populated only while a physics tick is advancing. All pairwise
         # predictions must use the same clocks from the start of that tick;
         # otherwise iteration order makes an already-updated peer appear one
@@ -146,11 +222,68 @@ class FleetManagerCore(
             if controlled_graph.controlled_region_ids()
             else None
         )
-        self._controlled_corridor_wait_since: dict[tuple[str, str], float] = {}
+        self._controlled_corridor_region_bounds = (
+            self._build_controlled_corridor_region_bounds(
+                controlled_graph
+            )
+            if self._controlled_corridor_graph is not None
+            else {}
+        )
+        scheduler_regions = (
+            controlled_graph.controlled_region_ids()
+            if self._controlled_corridor_graph is not None
+            else ()
+        )
+        self._controlled_corridor_scheduler = (
+            CentralCorridorScheduler(
+                scheduler_regions,
+                config=self._controlled_corridor_scheduler_config(),
+            )
+            if scheduler_regions
+            else None
+        )
+        self._controlled_corridor_schedule: CorridorSchedule | None = None
+        self._controlled_corridor_wait_since: dict[
+            tuple[str, str, int, str],
+            float,
+        ] = {}
         self._controlled_corridor_leases: dict[str, tuple[str, float]] = {}
+        # One admission covers the complete no-wait passage between two safe
+        # holding LMs. A passage can contain several authored rectangle zones;
+        # acquiring them independently recreates hold-and-wait deadlocks at
+        # zone-to-zone edges.
+        self._controlled_corridor_passages: dict[str, dict[str, Any]] = {}
+        # A rolling continuation exists before its trajectory is committed.
+        # Register its first authored-corridor passage here so the central
+        # calendar can issue a slot before SIPP chooses temporal waits.
+        self._controlled_corridor_prefetch_intents: dict[
+            str,
+            dict[str, Any],
+        ] = {}
+        # Runtime admission checks ask for the same next authored passage
+        # several times during one physics slice. Keep only the latest result
+        # for each live robot; any trajectory, clock, pose or lookahead change
+        # invalidates it immediately.
+        self._controlled_corridor_entry_cache: dict[
+            str,
+            tuple[
+                list[dict[str, Any]],
+                tuple[Any, ...],
+                dict[str, Any] | None,
+            ],
+        ] = {}
+        # Approach-only corridor chunks form a deterministic queue on distinct
+        # graph-safe LMs. A reservation lives only for the current route
+        # revision, so a completed/replaced chunk releases its queue cell
+        # without an accumulating history.
+        self._controlled_corridor_approach_holds: dict[
+            str,
+            dict[str, Any],
+        ] = {}
         self._controlled_corridor_winners: dict[str, str] = {}
         self._controlled_corridor_occupancy: dict[str, list[str]] = {}
         self._controlled_corridor_queues: dict[str, list[str]] = {}
+        self._controlled_corridor_blockers: dict[str, str] = {}
         self._controlled_corridor_tick_now = 0.0
         self._traffic_zone_by_lm = self._build_traffic_zone_index()
         self._traffic_zone_wait_since: dict[tuple[str, str], float] = {}
@@ -176,6 +309,47 @@ class FleetManagerCore(
             "zoneAdmissionWaits": 0,
             "zoneAdmissionsGranted": 0,
         }
+        # Structured evidence for the most recent exceptional safety
+        # transaction.  Event messages are intentionally bounded and can be
+        # displaced quickly by planner traffic, while this single record is
+        # constant-space and survives until the benchmark is reset.
+        self._last_runtime_safety_rollback: dict[str, Any] | None = None
+
+    def _build_controlled_corridor_region_bounds(
+        self,
+        graph: Any,
+    ) -> dict[str, tuple[float, float, float, float]]:
+        """Approximate authored rectangle bounds from annotated vertices."""
+        fleet = self.params.get("fleet", {})
+        if not isinstance(fleet, dict):
+            fleet = {}
+        try:
+            configured = fleet.get(
+                "controlled_corridor_footprint_zone_padding_m",
+                0.2,
+            )
+            padding = max(
+                0.0,
+                float(0.2 if configured is None else configured),
+            )
+        except (TypeError, ValueError):
+            padding = 0.2
+        points: dict[str, list[tuple[float, float]]] = {}
+        for vertex in graph.vertices.values():
+            for region_id in vertex.controlled_region_ids:
+                points.setdefault(str(region_id), []).append(
+                    (float(vertex.x), float(vertex.y))
+                )
+        return {
+            region_id: (
+                min(point[0] for point in region_points) - padding,
+                min(point[1] for point in region_points) - padding,
+                max(point[0] for point in region_points) + padding,
+                max(point[1] for point in region_points) + padding,
+            )
+            for region_id, region_points in points.items()
+            if region_points
+        }
 
     def _next_route_revision(self) -> int:
         """Allocate a revision shared by simulation and gRPC routes."""
@@ -183,9 +357,16 @@ class FleetManagerCore(
         self._route_revision_seq = max(self._route_revision_seq + 1, now_ms)
         return self._route_revision_seq
 
-    def _cancel_remote_route(self, robot: FleetRobot, reason: str) -> None:
-        """No-op transport hook overridden by the gRPC runtime."""
+    def _cancel_remote_route(self, robot: FleetRobot, reason: str) -> bool:
+        """Cancel a transport route and report whether it is safe to retire.
+
+        Simulation has no independent transport state, so cancellation is
+        acknowledged immediately.  Remote runtimes override this hook and
+        must return ``False`` while the physical robot may still be executing
+        the route.
+        """
         del robot, reason
+        return True
 
     def _stop_remote_robot(self, robot: FleetRobot) -> None:
         """No-op transport hook overridden by the gRPC runtime."""
@@ -199,11 +380,19 @@ class FleetManagerCore(
         self.active_robot_modes = clean_modes or None
 
     def reset_traffic_flow_state(self) -> None:
+        if self._controlled_corridor_scheduler is not None:
+            self._controlled_corridor_scheduler.reset()
+        self._controlled_corridor_schedule = None
         self._controlled_corridor_wait_since.clear()
         self._controlled_corridor_leases.clear()
+        self._controlled_corridor_passages.clear()
+        self._controlled_corridor_prefetch_intents.clear()
+        self._controlled_corridor_entry_cache.clear()
+        self._controlled_corridor_approach_holds.clear()
         self._controlled_corridor_winners.clear()
         self._controlled_corridor_occupancy.clear()
         self._controlled_corridor_queues.clear()
+        self._controlled_corridor_blockers.clear()
         self._controlled_corridor_tick_now = 0.0
         self._traffic_zone_wait_since.clear()
         self._traffic_zone_leases.clear()
@@ -215,6 +404,107 @@ class FleetManagerCore(
         self._traffic_zone_queues.clear()
         self._traffic_zone_tick_now = 0.0
 
+    def _controlled_corridor_scheduler_config(
+        self,
+    ) -> CorridorSchedulerConfig:
+        fleet = self.params.get("fleet", {})
+        if not isinstance(fleet, dict):
+            fleet = {}
+
+        def value(name: str, default: float) -> float:
+            try:
+                configured = fleet.get(name, default)
+                return max(
+                    0.0,
+                    float(default if configured is None else configured),
+                )
+            except (TypeError, ValueError):
+                return default
+
+        max_direction_batch = max(
+            1,
+            int(
+                value(
+                    "controlled_corridor_max_direction_batch",
+                    3.0,
+                )
+            ),
+        )
+        max_adaptive_direction_batch = max(
+            max_direction_batch,
+            int(
+                value(
+                    "controlled_corridor_max_adaptive_direction_batch",
+                    12.0,
+                )
+            ),
+        )
+        return CorridorSchedulerConfig(
+            horizon_sec=max(
+                1.0,
+                value("controlled_corridor_schedule_horizon_sec", 120.0),
+            ),
+            commit_horizon_sec=value(
+                "controlled_corridor_commit_horizon_sec",
+                2.0,
+            ),
+            headway_sec=max(
+                0.05,
+                value(
+                    "controlled_corridor_slot_headway_sec",
+                    1.0,
+                ),
+            ),
+            direction_change_sec=value(
+                "controlled_corridor_direction_change_sec",
+                0.9,
+            ),
+            starvation_sec=max(
+                1.0,
+                value("controlled_corridor_starvation_sec", 8.0),
+            ),
+            direction_switch_cost_sec=value(
+                "controlled_corridor_direction_switch_cost_sec",
+                1.5,
+            ),
+            priority_cost_sec=value(
+                "controlled_corridor_priority_cost_sec",
+                0.05,
+            ),
+            wait_age_cost_sec=value(
+                "controlled_corridor_wait_age_cost_sec",
+                0.03,
+            ),
+            tentative_change_penalty_sec=value(
+                "controlled_corridor_schedule_hysteresis_sec",
+                2.0,
+            ),
+            occupancy_recheck_sec=max(
+                0.1,
+                value("controlled_corridor_occupancy_recheck_sec", 0.1),
+            ),
+            starvation_age_quantum_sec=max(
+                0.1,
+                value(
+                    "controlled_corridor_starvation_age_quantum_sec",
+                    2.0,
+                ),
+            ),
+            max_direction_batch=max_direction_batch,
+            max_adaptive_direction_batch=max_adaptive_direction_batch,
+            phase_amortization_sec=max(
+                0.05,
+                value(
+                    "controlled_corridor_phase_amortization_sec",
+                    4.0,
+                ),
+            ),
+            max_phase_extension_sec=value(
+                "controlled_corridor_max_phase_extension_sec",
+                30.0,
+            ),
+        )
+
     def _clear_rolling_prefetch_state(self, robot_name: str) -> None:
         """Forget continuation backoff once a robot receives a fresh route."""
         name = str(robot_name or "").strip()
@@ -222,11 +512,48 @@ class FleetManagerCore(
             return
         self._rolling_prefetch_retry_at.pop(name, None)
         self._rolling_prefetch_failures.pop(name, None)
+        self._rolling_prefetch_blockers.pop(name, None)
+        self._controlled_corridor_prefetch_intents.pop(name, None)
+        for requester_name, evidence in list(
+            self._rolling_prefetch_blockers.items()
+        ):
+            blockers = evidence.get("blockers")
+            if not isinstance(blockers, dict) or name not in blockers:
+                continue
+            blockers.pop(name, None)
+            if not blockers:
+                self._rolling_prefetch_blockers.pop(requester_name, None)
         self._rolling_prefetch_eligible_since.pop(name, None)
         self._rolling_prefetch_last_attempt_at.pop(name, None)
         robot = self.robots.get(name)
         if robot is not None:
             robot.rolling_boundary_since = None
+
+    def _terminal_order_history_limit(self) -> int:
+        fleet = self.params.get("fleet", {})
+        if not isinstance(fleet, dict):
+            fleet = {}
+        try:
+            configured = int(
+                fleet.get("terminal_order_history_limit", 120) or 120
+            )
+        except (TypeError, ValueError):
+            configured = 120
+        return max(0, min(5000, configured))
+
+    def _prune_terminal_order_history(self) -> tuple[str, ...]:
+        """Bound completed task storage before admitting more lifelong work.
+
+        Pruning on order admission is deliberate: benchmark accounting pumps
+        and external clients have already observed the previous completions,
+        while a just-completed fleet wave is not modified mid-snapshot.
+        """
+        removed = self.task_manager.prune_terminal_history(
+            self._terminal_order_history_limit(),
+        )
+        for order_id in removed:
+            self._stationary_order_retry_state.pop(order_id, None)
+        return removed
 
     def clear_robot_ephemeral_state(self, robot_name: str) -> None:
         """Remove name-keyed arbitration state for a removed/respawned robot."""
@@ -234,6 +561,8 @@ class FleetManagerCore(
         if not name:
             return
         self._clear_rolling_prefetch_state(name)
+        self._runtime_replans.pop(name, None)
+        self._stationary_clearance_relocations.pop(name, None)
         self._runtime_tick_route_clocks.pop(name, None)
         for order_id in list(self._stationary_order_retry_state):
             order = self.orders.get(order_id)
@@ -252,10 +581,26 @@ class FleetManagerCore(
                 for item in self._rolling_vacancy_recovery_blacklist
                 if item[1] != name
             }
+        removed_vacancy_sinks = {
+            sink_name
+            for sink_name, signature
+            in self._commanded_sink_vacancy_signatures.items()
+            if sink_name == name
+            or any(item[0] == name for item in signature)
+        }
+        for sink_name in removed_vacancy_sinks:
+            self._commanded_sink_vacancy_signatures.pop(sink_name, None)
+        self._commanded_sink_vacancy_blacklist = {
+            item
+            for item in self._commanded_sink_vacancy_blacklist
+            if item[0] not in removed_vacancy_sinks
+            and item[2] != name
+        }
 
         for state in (
             self._active_wait_cycles,
             self._wait_cycle_last_arbitration,
+            self._wait_cycle_grant_signatures,
             self._coupled_replan_last_attempt,
             self._coupled_replan_failures,
         ):
@@ -263,13 +608,27 @@ class FleetManagerCore(
                 if name in cycle_key:
                     state.pop(cycle_key, None)
 
+        for signature in list(self._wait_cycle_recovery_attempts):
+            members = signature[2] if len(signature) > 2 else ()
+            if any(member and member[0] == name for member in members):
+                self._wait_cycle_recovery_attempts.pop(signature, None)
+        for key, victim_name in list(
+            self._controlled_corridor_recovery_latches.items()
+        ):
+            if key[1] == name or victim_name == name:
+                self._controlled_corridor_recovery_latches.pop(key, None)
+
         for key in list(self._controlled_corridor_wait_since):
-            if len(key) > 1 and key[1] == name:
+            if key and key[-1] == name:
                 self._controlled_corridor_wait_since.pop(key, None)
         for key in list(self._traffic_zone_wait_since):
             if len(key) > 1 and key[1] == name:
                 self._traffic_zone_wait_since.pop(key, None)
         self._controlled_corridor_winners.pop(name, None)
+        self._controlled_corridor_passages.pop(name, None)
+        self._controlled_corridor_prefetch_intents.pop(name, None)
+        self._controlled_corridor_entry_cache.pop(name, None)
+        self._controlled_corridor_approach_holds.pop(name, None)
         self._traffic_zone_winners.pop(name, None)
         for region_id, lease in list(self._controlled_corridor_leases.items()):
             if isinstance(lease, tuple) and lease and lease[0] == name:
@@ -313,19 +672,28 @@ class FleetManagerCore(
                             order.updated_at = self._now()
                 self._dispatch_job["discard"] = True
         self._last_async_job_kind = ""
+        self._runtime_replans.clear()
         self._rolling_prefetch_retry_at.clear()
         self._rolling_prefetch_failures.clear()
+        self._rolling_prefetch_blockers.clear()
         self._rolling_prefetch_eligible_since.clear()
         self._rolling_prefetch_last_attempt_at.clear()
         for robot in self.robots.values():
             robot.rolling_boundary_since = None
         self._stationary_order_retry_state.clear()
+        self._dispatch_conflict_dependencies.clear()
+        self._stationary_clearance_relocations.clear()
         self._rolling_vacancy_recovery_signature = ()
         self._rolling_vacancy_recovery_blacklist.clear()
+        self._commanded_sink_vacancy_signatures.clear()
+        self._commanded_sink_vacancy_blacklist.clear()
         self._coupled_replan_last_attempt.clear()
         self._coupled_replan_failures.clear()
         self._active_wait_cycles.clear()
         self._wait_cycle_last_arbitration.clear()
+        self._wait_cycle_grant_signatures.clear()
+        self._wait_cycle_recovery_attempts.clear()
+        self._controlled_corridor_recovery_latches.clear()
         self._runtime_tick_route_clocks.clear()
         self.reset_traffic_flow_state()
 
@@ -436,6 +804,9 @@ class FleetManagerCore(
                     "obstacleAreas": self.obstacle_areas,
                     "orders": self._orders_list(),
                     "traffic": dict(self.traffic_metrics),
+                    "lastRuntimeSafetyRollback": (
+                        self._last_runtime_safety_rollback
+                    ),
                     "trafficFlow": self._traffic_flow_payload(),
                 }
             )
@@ -530,6 +901,8 @@ class FleetManagerCore(
         ]
 
     def _order_enabled(self, order: FleetOrder) -> bool:
+        if order.internal_kind:
+            return False
         if self.active_robot_modes is None:
             return True
         robot_name = order.assigned_robot or order.vehicle
@@ -645,11 +1018,17 @@ class FleetManagerCore(
             if existing is not None and existing.status not in TERMINAL_ORDER_STATUSES:
                 raise ValueError(f"active order already exists: {order.order_id}")
 
+        self._prune_terminal_order_history()
         if replace_active:
             for vehicle in sorted({order.vehicle for order in orders if order.vehicle}):
                 self._replace_orders_for_robot(vehicle, "replaced by operator")
 
         for order in orders:
+            # Reusing an external order id is valid once its previous record
+            # is terminal.  Its old stationary-blocker quarantine is not: it
+            # describes another task and could otherwise suppress the fresh
+            # order indefinitely while the same parked bodies remain nearby.
+            self._stationary_order_retry_state.pop(order.order_id, None)
             self.orders[order.order_id] = order
             self._event(
                 "info",
@@ -1416,6 +1795,7 @@ class FleetManagerCore(
 
     def _stop_robot(self, robot: FleetRobot, cancel_active_order: bool = True) -> None:
         self._stop_remote_robot(robot)
+        self._runtime_replans.pop(robot.name, None)
         if cancel_active_order and robot.active_order_id:
             order = self.orders.get(robot.active_order_id)
             if order is not None and order.status not in TERMINAL_ORDER_STATUSES:
@@ -1622,6 +2002,7 @@ class FleetManagerCore(
 
     def _clear_remote_route_metadata(self, robot: FleetRobot) -> None:
         self._clear_rolling_prefetch_state(robot.name)
+        self._runtime_replans.pop(robot.name, None)
         robot.route_revision = 0
         robot.route_chunk_index = 0
         robot.route_chunk_goal_lm = ""
@@ -1640,6 +2021,7 @@ class FleetManagerCore(
     ) -> None:
         # A successful full dispatch/replan starts a new continuation episode.
         # Failure/backoff from an older route must not poison this route later.
+        self._runtime_replans.pop(robot.name, None)
         self._clear_rolling_prefetch_state(robot.name)
         previous_final = robot.route_final_lm
         previous_chunk = robot.route_chunk_goal_lm

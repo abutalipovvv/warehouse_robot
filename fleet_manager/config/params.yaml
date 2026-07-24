@@ -126,27 +126,36 @@ fleet:
   # Repeatedly impossible dense-traffic requests back off instead of pinning
   # one Python core and starving the simulation clock.
   order_dispatch_retry_max_sec: 4
-  # Two identical no-detour results around unchanged parked bodies are
-  # conclusive. Keep the route-less owner as a physical obstacle and retry
-  # only after blocker occupancy changes (or an explicit operator dispatch).
+  # Two identical no-detour results around an unchanged parked body are
+  # conclusive. The core first asks a truly inactive blocker to move to a
+  # graph-safe low-demand pocket; if no such move exists, the failed departure
+  # sleeps until occupancy changes. Mutually commanded departures use the
+  # bounded recovery cadence below.
   stationary_retry_quarantine_failures: 2
+  parked_clearance_relocation_enabled: true
+  parked_clearance_relocation_failures: 2
+  # Search stays local and the completed hidden maintenance order is removed
+  # from task history. Cooldown prevents a terminal robot oscillating between
+  # pockets when several queues touch the same junction.
+  parked_clearance_relocation_max_hops: 8
+  parked_clearance_waiter_escape_attempts: 3
+  parked_clearance_relocation_cooldown_sec: 12.0
+  parked_clearance_relocation_timeout_sec: 120.0
   # Runtime MAPF is dispatched in the background. Small joint groups coordinate
   # new orders without a fleet-wide CBS timeout.
   dispatch_plan_budget_per_tick: 2
   # Pairs reach a usable SIPP result much faster than four-agent CBS on dense
   # maps. The serialized worker can therefore start the first robots
   # immediately and keep filling the fleet.
-  dispatch_joint_batch_size: 2
+  # A fresh order starts as a cheap one-robot SIPP request.  Only requests
+  # which actually fail against the same stationary component are promoted to
+  # a bounded joint CBS batch.  Starting every package wave with arbitrary
+  # pairs made one difficult robot hold an unrelated peer in a 5 s timeout.
+  dispatch_joint_batch_size: 1
   # Continuations already coordinate against committed time reservations.
   # Planning them one at a time keeps different prediction offsets isolated
   # and avoids unsafe sibling routes that do not reserve one another.
   dispatch_rolling_batch_size: 1
-  # Explicit narrow corridors on a dense map need enough committed motion for
-  # the serialized continuation worker to service the complete fleet before
-  # all robots reach their chunk endpoints together. Open maps and smaller
-  # fleets retain the horizon selected in the benchmark UI.
-  dense_controlled_corridor_robot_threshold: 32
-  dense_controlled_corridor_horizon_sec: 30
   # Boundary recovery starts with cheap rotating pairs. Repeated failures grow
   # a fast prioritized-SIPP wave to the coupled stopped component; CBS remains
   # limited to four participants.
@@ -201,6 +210,18 @@ fleet:
   deadlock_coupled_replan_after_sec: 1.5
   deadlock_coupled_replan_interval_sec: 1.5
   deadlock_retreat_after_sec: 4.5
+  # Debounce the same graph-stable retreat/detour across transient planner
+  # states. A real LM/order change starts a distinct recovery episode.
+  deadlock_recovery_cooldown_sec: 4.0
+  # Invalidating a retained route turns that robot into a stationary safety
+  # reservation until its replacement commits.  Keep this emergency queue
+  # bounded so many simultaneous encounters cannot freeze the whole fleet.
+  max_superseded_runtime_replans: 2
+  # A portal exit can be blocked by a short queue outside the authored
+  # corridor. Unwind only the local physical chain, one tail at a time; never
+  # turn this bounded recovery into a whole-fleet retreat.
+  deadlock_portal_queue_max_robots: 8
+  deadlock_portal_queue_lookahead_sec: 4.0
   remote_route_chunk_lms: 5
   remote_poll_interval_sec: 0.25
   remote_timeout_sec: 0.8
@@ -218,13 +239,40 @@ fleet:
   # only the regions explicitly drawn by an operator.
   controlled_corridor_auto_detect: false
   controlled_corridor_min_edges: 1
-  # Select one deterministic entrant before it reaches the boundary. The
-  # runtime gate keeps this grant stable, and a parked owner triggers a spatial
-  # detour instead of leaving the queue blocked forever.
-  controlled_corridor_entry_lookahead_sec: 10
-  controlled_corridor_admission_lease_sec: 12
+  # The central scheduler sees every authored corridor request in this rolling
+  # window. Only the short physical commit horizon is immutable; a distant
+  # tentative slot never blocks a nearer robot that can clear first.
+  controlled_corridor_schedule_horizon_sec: 120
+  controlled_corridor_commit_horizon_sec: 2
+  # Same-direction convoys may overlap a long authored corridor. One second
+  # keeps a complete footprint separation at the 1.37 m/s benchmark limit.
+  controlled_corridor_slot_headway_sec: 1.0
+  controlled_corridor_direction_change_sec: 0.9
+  controlled_corridor_direction_switch_cost_sec: 1.5
+  controlled_corridor_schedule_hysteresis_sec: 2.0
+  controlled_corridor_occupancy_recheck_sec: 0.1
+  controlled_corridor_priority_cost_sec: 0.05
+  controlled_corridor_wait_age_cost_sec: 0.03
   controlled_corridor_starvation_sec: 8
-  controlled_corridor_replan_after_sec: 8
+  controlled_corridor_starvation_age_quantum_sec: 2
+  # Three robots remain the normal short-passage phase. For a long atomic
+  # no-wait passage the scheduler may build a larger same-flow convoy: changing
+  # direction must flush the complete conflicting resource window, while each
+  # follower adds only the one-second headway. The age budget below bounds the
+  # extra delay seen by an already-starved opposing queue.
+  controlled_corridor_max_direction_batch: 3
+  controlled_corridor_max_adaptive_direction_batch: 12
+  controlled_corridor_phase_amortization_sec: 4
+  # A full 12-robot convoy costs only 11 s of headway, while reversing a long
+  # no-wait aisle can require tens of seconds to drain. Keep that phase stable
+  # instead of repeatedly paying the complete direction-change clearance.
+  controlled_corridor_max_phase_extension_sec: 30
+  # Prefer a nearby external holding pocket over a direct edge that joins two
+  # no-wait corridor zones. It remains a soft A* cost for maps with no detour.
+  controlled_corridor_direct_transition_penalty_m: 4.0
+  # An unchanged stationary dependency is retried as a bounded movable group;
+  # quarantine throttles CPU but must never become a permanent scheduling ban.
+  stationary_recovery_retry_sec: 4.0
   # CBS is a local coupled-component solver, never a 50-robot global fallback.
   local_cbs_max_robots: 8
   # Long-running random-order benchmarks eventually exercise many LM pairs

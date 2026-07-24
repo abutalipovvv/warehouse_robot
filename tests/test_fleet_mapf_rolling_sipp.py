@@ -11,6 +11,7 @@ from fleet_manager.core.mapf.reservations import (
     ResourceId,
 )
 from fleet_manager.core.mapf.rolling_sipp import RollingSippPlanner
+from fleet_manager.core.mapf.sipp import SippPlanner, SippRobotRequest
 from fleet_manager.core.mapf.traffic_graph import TrafficGraph
 from fleet_manager.core.route_core.models import GraphEdge, Landmark, WorldPoint
 
@@ -177,6 +178,40 @@ def test_controlled_corridor_can_cover_single_edge_between_junctions() -> None:
     assert graph.controlled_region_ids() == ("A<=>B",)
     assert graph.lane_for("A", "B").controlled_region_ids == ("A<=>B",)
     assert graph.lane_for("B", "A").controlled_region_ids == ("A<=>B",)
+
+
+def test_corridor_horizon_spans_non_waitable_transfer_junction() -> None:
+    landmarks = {
+        "A": Landmark(name="A", x=0.0, y=0.0),
+        "J": Landmark(name="J", x=1.0, y=0.0),
+        "B": Landmark(name="B", x=2.0, y=0.0),
+        "X": Landmark(name="X", x=1.0, y=1.0),
+    }
+    edges = [
+        _edge(landmarks, src, dst)
+        for first, second in (("A", "J"), ("J", "B"), ("J", "X"))
+        for src, dst in ((first, second), (second, first))
+    ]
+    for edge in edges:
+        edge.properties["smart"] = True
+    planner = FleetMapfPlanner(
+        landmarks,
+        edges,
+        params={
+            "fleet": {
+                "controlled_corridors_enabled": "auto",
+                "controlled_corridor_min_edges": 1,
+            }
+        },
+    )
+
+    graph = planner._traffic_graph(1.0)
+    assert not graph.vertices["J"].can_wait
+    single_edge_ticks = planner._edge_tick_cost("A", "J", 1.0, 1.0)
+    assert planner.controlled_corridor_max_ticks(
+        speed=1.0,
+        acceleration=1.0,
+    ) >= single_edge_ticks * 2
 
 
 def test_explicit_editor_corridor_properties_work_without_auto_detection() -> None:
@@ -736,6 +771,44 @@ def test_rolling_sipp_backend_waits_for_reserved_edge_interval() -> None:
     assert plan["times"] == [0, 1, 2, 3, 4, 5]
 
 
+def test_hybrid_failure_preserves_external_reservation_owner() -> None:
+    params = _rolling_params()
+    params["fleet"]["planner_backend"] = "hybrid"
+    planner = FleetMapfPlanner(
+        _landmarks("A", "B"),
+        _line_edges(("A", "B")),
+        params=params,
+    )
+
+    result = planner.plan(
+        {
+            "robots": [{"name": "waiter", "startLm": "A", "goalLm": "B"}],
+            "reserved_vertex_intervals": [
+                {
+                    "node": "B",
+                    "start": 0.0,
+                    "end": 20.0,
+                    "robot": "resource-owner",
+                },
+            ],
+            "allowCbsFallback": True,
+        }
+    )
+
+    assert not result["ok"]
+    assert result["debug"]["reservationBlockerRobots"] == [
+        "resource-owner"
+    ]
+    assert result["debug"]["reservationBlockers"] == [
+        {
+            "robot": "resource-owner",
+            "resource": "vertex:B",
+        }
+    ]
+    assert "rolling_sipp:" in result["debug"]["reservedFallbackReason"]
+    assert "cbs:" in result["debug"]["reservedFallbackReason"]
+
+
 def test_rolling_sipp_does_not_wait_on_non_waitable_lm() -> None:
     landmarks = _landmarks("A", "B")
     landmarks["A"] = Landmark(name="A", x=0.0, y=0.0, properties={"can_wait": False})
@@ -750,6 +823,399 @@ def test_rolling_sipp_does_not_wait_on_non_waitable_lm() -> None:
             "robots": [{"name": "r1", "startLm": "A", "goalLm": "B"}],
             "reserved_vertex_intervals": [
                 {"node": "B", "start": 0.0, "end": 2.0, "robot": "other"},
+            ],
+        }
+    )
+
+    assert not result["ok"]
+    assert "cannot_wait:A" in result["debug"]["reason"]
+
+
+def test_rolling_sipp_moves_downstream_wait_to_safe_corridor_staging() -> None:
+    landmarks = {
+        name: Landmark(
+            name=name,
+            x=float(index * 3),
+            y=0.0,
+            properties={"can_wait": name in {"A", "D"}},
+        )
+        for index, name in enumerate(("A", "B", "C", "D"))
+    }
+    params = _rolling_params()
+    params["fleet"]["cbs_low_level_max_time"] = 40
+    planner = FleetMapfPlanner(
+        landmarks,
+        [
+            _edge(landmarks, start, goal, length=3.0)
+            for start, goal in (
+                ("A", "B"),
+                ("B", "C"),
+                ("C", "D"),
+            )
+        ],
+        params=params,
+    )
+
+    result = planner.plan(
+        {
+            "robots": [
+                {
+                    "name": "r1",
+                    "startLm": "A",
+                    "goalLm": "D",
+                    "routeNodes": ["A", "B", "C", "D"],
+                }
+            ],
+            "reserved_edge_intervals": [
+                {
+                    "from": "C",
+                    "to": "D",
+                    "start": 0.0,
+                    "end": 8.0,
+                    "robot": "other",
+                },
+            ],
+        }
+    )
+
+    assert result["ok"]
+    assert "staging_wait_repairs=" in result["debug"]["reason"]
+    plan = result["plans"][0]
+    assert plan["nodes"][:4] == ["A", "A", "A", "A"]
+    assert "B" in plan["nodes"]
+    assert plan["nodes"][-1] == "D"
+    assert all(
+        not (
+            node in {"B", "C"}
+            and action == "wait"
+        )
+        for node, action in zip(plan["nodes"], plan["actions"])
+    )
+
+
+def test_rolling_sipp_honours_central_corridor_start_not_before() -> None:
+    planner = FleetMapfPlanner(
+        _landmarks("A", "B"),
+        _line_edges(("A", "B")),
+        params=_rolling_params(),
+    )
+
+    result = planner.plan(
+        {
+            "robots": [
+                {
+                    "name": "r1",
+                    "startLm": "A",
+                    "goalLm": "B",
+                    "startNotBeforeSec": 3.0,
+                }
+            ],
+            "allowCbsFallback": True,
+        }
+    )
+
+    assert result["ok"]
+    assert not result["debug"]["cbsFallbackAllowed"]
+    plan = result["plans"][0]
+    assert plan["nodes"][:4] == ["A", "A", "A", "A"]
+    assert plan["actions"][:4] == ["start", "wait", "wait", "wait"]
+    assert plan["times"][-1] >= 4
+
+
+def test_rolling_sipp_waits_at_corridor_staging_not_route_start() -> None:
+    planner = FleetMapfPlanner(
+        _landmarks("A", "B", "C"),
+        _line_edges(("A", "B"), ("B", "C")),
+        params=_rolling_params(),
+    )
+
+    result = planner.plan(
+        {
+            "robots": [
+                {
+                    "name": "r1",
+                    "startLm": "A",
+                    "goalLm": "C",
+                    "routeNodes": ["A", "B", "C"],
+                    "departureNotBefore": [
+                        {"node": "B", "timeSec": 5.0},
+                    ],
+                }
+            ],
+            "allowCbsFallback": True,
+        }
+    )
+
+    assert result["ok"]
+    assert not result["debug"]["cbsFallbackAllowed"]
+    plan = result["plans"][0]
+    assert plan["nodes"][0] == "A"
+    assert plan["nodes"][1] == "B"
+    assert plan["times"][1] == 1
+    assert plan["nodes"][1:6] == ["B", "B", "B", "B", "B"]
+    assert plan["actions"][2:6] == ["wait", "wait", "wait", "wait"]
+    assert plan["nodes"][-1] == "C"
+    assert plan["times"][-1] >= 6
+
+
+def test_central_authority_pipelines_same_direction_corridor_convoy() -> None:
+    landmarks = {
+        name: Landmark(name=name, x=x, y=y)
+        for name, x, y in (
+            ("L2", -2.0, 0.0),
+            ("L1", -1.0, 0.0),
+            ("A", 0.0, 0.0),
+            ("B", 1.0, 0.0),
+            ("C", 2.0, 0.0),
+            ("D", 3.0, 0.0),
+            ("G1", 4.0, 1.0),
+            ("G2", 4.0, -1.0),
+        )
+    }
+    region = "corridor:convoy"
+    edges = [
+        _edge(landmarks, src, dst)
+        for src, dst in (
+            ("L2", "L1"),
+            ("L1", "A"),
+            ("A", "B"),
+            ("B", "C"),
+            ("C", "D"),
+            ("D", "G1"),
+            ("D", "G2"),
+        )
+    ]
+    for edge in edges:
+        if (edge.from_name, edge.to_name) in {
+            ("A", "B"),
+            ("B", "C"),
+            ("C", "D"),
+        }:
+            edge.properties["controlled_region"] = region
+    params = _rolling_params()
+    params["fleet"]["cbs_low_level_max_time"] = 24
+    planner = FleetMapfPlanner(landmarks, edges, params=params)
+    requests = [
+        {
+            "name": "leader",
+            "startLm": "L1",
+            "goalLm": "G1",
+            "routeNodes": ["L1", "A", "B", "C", "D", "G1"],
+            "departureNotBefore": [{"node": "A", "timeSec": 1.0}],
+            "authorizedControlledRegions": [region],
+        },
+        {
+            "name": "follower",
+            "startLm": "L2",
+            "goalLm": "G2",
+            "routeNodes": [
+                "L2",
+                "L1",
+                "A",
+                "B",
+                "C",
+                "D",
+                "G2",
+            ],
+            "departureNotBefore": [{"node": "A", "timeSec": 3.0}],
+            "authorizedControlledRegions": [region],
+        },
+    ]
+
+    result = planner.plan({"rotate": False, "robots": requests})
+
+    assert result["ok"], result["debug"]
+    plans = {plan["robot"]: plan for plan in result["plans"]}
+
+    def transition_time(plan: dict[str, object], src: str, dst: str) -> int:
+        nodes = plan["nodes"]
+        times = plan["times"]
+        return next(
+            int(times[index - 1])
+            for index in range(1, len(nodes))
+            if nodes[index - 1] == src and nodes[index] == dst
+        )
+
+    leader_exit = transition_time(plans["leader"], "D", "G1")
+    follower_entry = transition_time(plans["follower"], "A", "B")
+    assert follower_entry < leader_exit
+    # The whole-region mutex is bypassed, but ordinary graph resources still
+    # keep the follower at least one complete edge behind the leader.
+    assert follower_entry >= transition_time(plans["leader"], "A", "B") + 1
+
+
+def test_central_authority_is_scoped_to_exact_controlled_region_ids() -> None:
+    landmarks = _landmarks("A", "B", "C")
+    first_region = "corridor:first"
+    second_region = "corridor:second"
+    first = _edge(landmarks, "A", "B")
+    first.properties["controlled_region"] = first_region
+    second = _edge(landmarks, "B", "C")
+    second.properties["controlled_region"] = second_region
+    graph = TrafficGraph.from_route_core(
+        landmarks,
+        [first, second],
+        default_speed_mps=1.0,
+    )
+    reservations = ReservationTable()
+    reservations.reserve(
+        ReservationInterval(
+            ResourceId("controlled_region", first_region),
+            "same-convoy",
+            0,
+            10,
+        )
+    )
+    reservations.reserve(
+        ReservationInterval(
+            ResourceId("controlled_region", second_region),
+            "other-phase",
+            0,
+            5,
+        )
+    )
+    planner = SippPlanner(graph, low_level_max_time=12)
+
+    path = planner.plan(
+        SippRobotRequest(
+            "robot",
+            "A",
+            "C",
+            route_nodes=("A", "B", "C"),
+            authorized_controlled_regions=(first_region,),
+        ),
+        reservations,
+    )
+
+    assert path is not None
+    assert path.nodes[0:2] == ["A", "B"]
+    assert path.times[1] == 1
+    assert path.nodes[-1] == "C"
+    assert path.times[-1] >= 6
+
+
+def test_authorized_region_is_not_reported_as_the_exact_blocker() -> None:
+    landmarks = _landmarks("A", "B")
+    region = "corridor:convoy"
+    edge = _edge(landmarks, "A", "B")
+    edge.properties["controlled_region"] = region
+    graph = TrafficGraph.from_route_core(
+        landmarks,
+        [edge],
+        default_speed_mps=1.0,
+    )
+    planner = RollingSippPlanner(graph, low_level_max_time=12)
+    reservations = ReservationTable()
+    reservations.reserve(
+        ReservationInterval(
+            ResourceId("controlled_region", region),
+            "compatible-convoy",
+            0,
+            2,
+        )
+    )
+    reservations.reserve(
+        ReservationInterval(
+            ResourceId("lane", "A->B"),
+            "actual-lane-blocker",
+            0,
+            2,
+        )
+    )
+
+    owners = planner._blocking_plan_owners(
+        "reserved_edge:A->B@0-1",
+        reservations,
+        authorized_controlled_regions=(region,),
+    )
+
+    assert owners == {"actual-lane-blocker"}
+
+
+def test_corridor_authority_requires_a_matching_route_and_departure_gate() -> None:
+    landmarks = _landmarks("A", "B")
+    region = "corridor:only"
+    edge = _edge(landmarks, "A", "B")
+    edge.properties["controlled_region"] = region
+    planner = FleetMapfPlanner(
+        landmarks,
+        [edge],
+        params=_rolling_params(),
+    )
+
+    with pytest.raises(ValueError, match="requires departureNotBefore"):
+        planner.plan(
+            {
+                "robots": [
+                    {
+                        "name": "robot",
+                        "startLm": "A",
+                        "goalLm": "B",
+                        "routeNodes": ["A", "B"],
+                        "authorizedControlledRegions": [region],
+                    }
+                ]
+            }
+        )
+    with pytest.raises(ValueError, match="outside routeNodes"):
+        planner.plan(
+            {
+                "robots": [
+                    {
+                        "name": "robot",
+                        "startLm": "A",
+                        "goalLm": "B",
+                        "routeNodes": ["A", "B"],
+                        "departureNotBefore": [
+                            {"node": "A", "timeSec": 1.0},
+                        ],
+                        "authorizedControlledRegions": [
+                            "corridor:not-on-route",
+                        ],
+                    }
+                ]
+            }
+        )
+
+
+def test_unspecified_motion_cannot_hide_wait_as_rotation_on_corridor_lm() -> None:
+    landmarks = _landmarks("A", "B")
+    landmarks["A"] = Landmark(
+        name="A",
+        x=0.0,
+        y=0.0,
+        properties={"can_wait": False},
+    )
+    planner = FleetMapfPlanner(
+        landmarks,
+        [_edge(landmarks, "A", "B", direction=2)],
+        params=_rolling_params(),
+    )
+
+    result = planner.plan(
+        {
+            "robots": [
+                {
+                    "name": "r1",
+                    "startLm": "A",
+                    "goalLm": "B",
+                    "startPose": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "yaw": 0.0,
+                    },
+                }
+            ],
+            "rotate": True,
+            "turnSpeed": 0.9,
+            "allowCbsFallback": True,
+            "reserved_vertex_intervals": [
+                {
+                    "node": "B",
+                    "start": 0.0,
+                    "end": 4.0,
+                    "robot": "other",
+                },
             ],
         }
     )
@@ -882,7 +1348,7 @@ def test_rotation_is_an_explicit_reserved_action_with_real_start_yaw() -> None:
     params["fleet"]["stretch_motion_to_reservation_ticks"] = True
     planner = FleetMapfPlanner(
         landmarks,
-        [_edge(landmarks, "A", "B")],
+        [_edge(landmarks, "A", "B", direction=0)],
         params=params,
     )
 
@@ -915,6 +1381,51 @@ def test_rotation_is_an_explicit_reserved_action_with_real_start_yaw() -> None:
     assert rotate_sample["t"] == pytest.approx(4.0)
     assert rotate_sample["x"] == pytest.approx(0.0)
     assert rotate_sample["y"] == pytest.approx(0.0)
+
+
+def test_unspecified_motion_keeps_yaw_and_drives_backward_without_rotation() -> None:
+    landmarks = {
+        "A": Landmark(name="A", x=0.0, y=0.0),
+        "B": Landmark(name="B", x=1.0, y=0.0),
+    }
+    params = _rolling_params()
+    params["fleet"]["stretch_motion_to_reservation_ticks"] = True
+    planner = FleetMapfPlanner(
+        landmarks,
+        [_edge(landmarks, "A", "B", direction=2)],
+        params=params,
+    )
+
+    result = planner.plan(
+        {
+            "robots": [
+                {
+                    "name": "r1",
+                    "startLm": "A",
+                    "goalLm": "B",
+                    "startPose": {"x": 0.0, "y": 0.0, "yaw": math.pi},
+                }
+            ],
+            "rotate": True,
+            "turnSpeed": 0.9,
+            "stretchMotionToReservationTicks": True,
+        }
+    )
+
+    plan = result["plans"][0]
+    assert "rotate" not in plan["actions"]
+    assert not any(
+        str(sample.get("edgeId", "")).startswith("WAIT@ROTATE")
+        for sample in plan["trajectory"]
+    )
+    moving = [
+        sample
+        for sample in plan["trajectory"]
+        if sample.get("edgeId") == "A->B"
+    ]
+    assert moving
+    assert all(sample["yaw"] == pytest.approx(math.pi) for sample in moving)
+    assert all(sample["motionDirection"] == "backward" for sample in moving)
 
 
 def test_rotation_duration_uses_short_wrap_across_pi_boundary() -> None:
@@ -966,6 +1477,7 @@ def _edge(
     goal: str,
     *,
     length: float = 1.0,
+    direction: int = 2,
 ) -> GraphEdge:
     return GraphEdge(
         from_name=start,
@@ -977,5 +1489,5 @@ def _edge(
             WorldPoint(landmarks[start].x, landmarks[start].y),
             WorldPoint(landmarks[goal].x, landmarks[goal].y),
         ),
-        properties={"direction": 2},
+        properties={"direction": direction},
     )

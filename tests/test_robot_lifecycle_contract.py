@@ -184,6 +184,17 @@ def test_operator_map_context_and_edge_controls_are_explicit() -> None:
     assert '() => this.applyFleetEditorEdgeFields()' in app_js
 
 
+def test_map_context_switch_aborts_stale_load_and_bounds_retry() -> None:
+    app_js = _operator_app_source()
+
+    assert "mapContextRequestIsCurrent(context)" in app_js
+    assert "fetchMapContextWithRetry" in app_js
+    assert "this.mapContextAbortController?.abort();" in app_js
+    assert "context.requestId === this.mapContextActiveRequestId" in app_js
+    assert "Map context request timed out after" in app_js
+    assert "this.getJson(url, { signal: controller.signal })" in app_js
+
+
 def test_map_editor_raster_history_is_atomic_and_has_consistent_shortcuts() -> None:
     app_js = _operator_app_source()
     editor_js = (OPERATOR_STATIC_ROOT / "map-editor.js").read_text(encoding="utf-8")
@@ -231,6 +242,7 @@ def test_operator_workspace_navigation_and_fleet_sidebar_contract() -> None:
     assert "this.syncRobotCardSelection();" in card_selection
     assert "this.workspaceLoadingMinimumMs = 800;" in app_js
     assert "this.workspaceLoadingMinimumMs - (performance.now() - workspaceLoadingStartedAt)" in app_js
+    assert "await this.navigateHomePage({ force: selectionChanged });" in app_js
     assert 'this.fleetActiveTab === "fleet"' in app_js
     assert "returningFromMapEditor" in app_js
     assert "if (this.fleetMapEditorActive) {\n      return [];" in app_js

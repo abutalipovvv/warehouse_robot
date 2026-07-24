@@ -1997,8 +1997,8 @@ export const withActions = (Base) => class OperatorAppActions extends Base {
     this.probeResult.textContent = text;
   }
 
-  async getJson(url) {
-    return httpClient.get(url);
+  async getJson(url, options = {}) {
+    return httpClient.get(url, options);
   }
 
   async postJson(url, payload) {

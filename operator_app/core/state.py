@@ -81,6 +81,8 @@ class OperatorAppState:
         self._fleet_runtime_stop.set()
         if self._fleet_runtime_thread.is_alive():
             self._fleet_runtime_thread.join(timeout=1.0)
+        self.fleet_manager.close()
+        self.fleet_manager_sim.close()
 
     def _simulation_runtime_loop(self) -> None:
         next_tick_at = monotonic()

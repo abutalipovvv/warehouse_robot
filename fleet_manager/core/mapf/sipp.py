@@ -21,6 +21,9 @@ class SippRobotRequest:
     goal_lm: NodeName
     start_yaw: float = 0.0
     route_nodes: tuple[NodeName, ...] = ()
+    initial_departure_not_before: int = 0
+    node_departure_not_before: tuple[tuple[NodeName, int], ...] = ()
+    authorized_controlled_regions: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -81,6 +84,9 @@ class SippPlanner:
         heuristic_fn: Callable[[NodeName, NodeName], float] | None = None,
         move_cost_fn: Callable[[NodeName, NodeName], int] | None = None,
         heading_fn: Callable[[NodeName, NodeName], float] | None = None,
+        heading_options_fn: (
+            Callable[[NodeName, NodeName], tuple[float, ...]] | None
+        ) = None,
         turn_cost_fn: Callable[[float, float], int] | None = None,
         low_level_max_time: int = 160,
         wait_cost: int = 6,
@@ -89,13 +95,22 @@ class SippPlanner:
         self.heuristic_fn = heuristic_fn or (lambda _node, _goal: 0.0)
         self.move_cost_fn = move_cost_fn or (lambda _src, _dst: 1)
         self.heading_fn = heading_fn or (lambda _src, _dst: 0.0)
+        self.heading_options_fn = heading_options_fn
         self.turn_cost_fn = turn_cost_fn or (lambda _from_yaw, _to_yaw: 0)
         self.low_level_max_time = max(1, int(low_level_max_time))
         self.wait_cost = max(1, int(wait_cost))
         self.expanded_nodes = 0
         self.last_failure = ""
         self.blocking_robot_names: set[str] = set()
+        self.blocking_resources_by_robot: dict[
+            str,
+            set[ResourceId],
+        ] = {}
         self._safe_interval_cache: dict[tuple[NodeName, str], tuple[SafeInterval, ...]] = {}
+        self._request_start_lm = ""
+        self._initial_departure_not_before = 0
+        self._node_departure_not_before: dict[NodeName, int] = {}
+        self._authorized_controlled_regions: frozenset[str] = frozenset()
 
     def plan(
         self,
@@ -111,7 +126,23 @@ class SippPlanner:
         self.expanded_nodes = 0
         self.last_failure = ""
         self.blocking_robot_names = set()
+        self.blocking_resources_by_robot = {}
         self._safe_interval_cache = {}
+        self._request_start_lm = request.start_lm
+        self._initial_departure_not_before = max(
+            0,
+            int(request.initial_departure_not_before),
+        )
+        self._node_departure_not_before = {
+            str(node): max(0, int(time_tick))
+            for node, time_tick in request.node_departure_not_before
+            if str(node)
+        }
+        self._authorized_controlled_regions = frozenset(
+            str(region_id)
+            for region_id in request.authorized_controlled_regions
+            if str(region_id)
+        )
         start = self._start_state(request, reservations, blocked_nodes)
         if start is None:
             return None
@@ -220,36 +251,85 @@ class SippPlanner:
             if (lane.from_lm, lane.to_lm) in blocked_edges:
                 continue
             move_duration = self._transition_duration(lane)
-            lane_yaw = self._normalize_yaw(self.heading_fn(lane.from_lm, lane.to_lm))
-            rotate_duration = max(0, int(self.turn_cost_fn(state.yaw, lane_yaw)))
             if lane.to_lm in blocked_nodes:
                 self.last_failure = f"blocked_lm:{lane.to_lm}"
                 continue
-            target_intervals = self._safe_intervals_for_node(
-                lane.to_lm,
-                robot_name,
-                reservations,
+            heading_options = (
+                self.heading_options_fn(lane.from_lm, lane.to_lm)
+                if self.heading_options_fn is not None
+                else (self.heading_fn(lane.from_lm, lane.to_lm),)
             )
-            for interval in target_intervals:
-                next_state = self._successor_for_interval(
-                    state,
-                    lane,
-                    move_duration,
-                    rotate_duration,
-                    lane_yaw,
-                    interval,
+            lane_yaws = tuple(dict.fromkeys(
+                self._normalize_yaw(value)
+                for value in heading_options
+            ))
+            vertex = self.graph.vertices.get(state.node)
+            if (
+                vertex is not None
+                and not vertex.can_wait
+                and len(lane_yaws) > 1
+            ):
+                # An unspecified-motion edge offers the geometric heading and
+                # its reverse. On a normal LM either is a valid driving
+                # choice. On a no-wait corridor LM, however, choosing an
+                # unnecessary 180-degree option can encode four seconds of
+                # hidden waiting as ROTATE while a downstream lane is busy.
+                # Keep only the least-turn orientation so waiting is forced
+                # back to the external holding LM.
+                lane_yaws = (
+                    min(
+                        lane_yaws,
+                        key=lambda value: (
+                            max(
+                                0,
+                                int(
+                                    self.turn_cost_fn(
+                                        state.yaw,
+                                        value,
+                                    )
+                                ),
+                            ),
+                            value,
+                        ),
+                    ),
+                )
+            for lane_yaw in lane_yaws:
+                rotate_duration = max(
+                    0,
+                    int(self.turn_cost_fn(state.yaw, lane_yaw)),
+                )
+                target_intervals = self._safe_intervals_for_node(
+                    lane.to_lm,
                     robot_name,
                     reservations,
-                    planning_deadline,
                 )
-                if next_state is None:
-                    continue
-                wait_ticks = max(
-                    0,
-                    next_state.time - move_duration - rotate_duration - state.time,
-                )
-                transition_cost = move_duration + rotate_duration + (wait_ticks * self.wait_cost)
-                neighbors.append((next_state, transition_cost))
+                for interval in target_intervals:
+                    next_state = self._successor_for_interval(
+                        state,
+                        lane,
+                        move_duration,
+                        rotate_duration,
+                        lane_yaw,
+                        interval,
+                        robot_name,
+                        reservations,
+                        planning_deadline,
+                    )
+                    if next_state is None:
+                        continue
+                    wait_ticks = max(
+                        0,
+                        next_state.time
+                        - move_duration
+                        - rotate_duration
+                        - state.time,
+                    )
+                    transition_cost = (
+                        move_duration
+                        + rotate_duration
+                        + (wait_ticks * self.wait_cost)
+                    )
+                    neighbors.append((next_state, transition_cost))
         return neighbors
 
     def _start_state(
@@ -295,6 +375,15 @@ class SippPlanner:
         earliest_depart = max(
             state.time + rotate_duration,
             interval.start - move_duration,
+        )
+        if state.node == self._request_start_lm and state.time == 0:
+            earliest_depart = max(
+                earliest_depart,
+                self._initial_departure_not_before,
+            )
+        earliest_depart = max(
+            earliest_depart,
+            self._node_departure_not_before.get(state.node, 0),
         )
         # Safe intervals are half-open.  The path representation reserves the
         # source vertex for [depart, depart + 1), so departing exactly at
@@ -347,15 +436,18 @@ class SippPlanner:
         cached = self._safe_interval_cache.get(cache_key)
         if cached is not None:
             return cached
+        resources = self._request_resources(
+            self.graph.vertex_resources(node)
+        )
         intervals = reservations.safe_intervals_for_resources(
-            self.graph.vertex_resources(node),
+            resources,
             0,
             self.low_level_max_time + 1,
             ignore_robot_name=robot_name,
         )
         if intervals != (SafeInterval(0, self.low_level_max_time + 1),):
             self._record_blocking_owners(
-                self.graph.vertex_resources(node),
+                resources,
                 0,
                 self.low_level_max_time + 1,
                 robot_name,
@@ -386,28 +478,35 @@ class SippPlanner:
             end_time = depart + duration
             rotate_start = max(0, depart - rotate_duration)
             if rotate_duration and not reservations.resources_are_free(
-                self.graph.rotation_resources(lane.from_lm),
+                self._request_resources(
+                    self.graph.rotation_resources(lane.from_lm)
+                ),
                 rotate_start,
                 depart,
                 ignore_robot_name=robot_name,
             ):
                 self._record_blocking_owners(
-                    self.graph.rotation_resources(lane.from_lm),
+                    self._request_resources(
+                        self.graph.rotation_resources(lane.from_lm)
+                    ),
                     rotate_start,
                     depart,
                     robot_name,
                     reservations,
                 )
                 continue
+            lane_resources = self._request_resources(
+                self.graph.lane_resources(lane)
+            )
             if reservations.resources_are_free(
-                self.graph.lane_resources(lane),
+                lane_resources,
                 depart,
                 end_time,
                 ignore_robot_name=robot_name,
             ):
                 return depart
             self._record_blocking_owners(
-                self.graph.lane_resources(lane),
+                lane_resources,
                 depart,
                 end_time,
                 robot_name,
@@ -418,6 +517,21 @@ class SippPlanner:
             f"@{earliest_depart}-{latest_depart + duration}"
         )
         return None
+
+    def _request_resources(
+        self,
+        resources: tuple[ResourceId, ...],
+    ) -> tuple[ResourceId, ...]:
+        if not self._authorized_controlled_regions:
+            return resources
+        return tuple(
+            resource
+            for resource in resources
+            if not (
+                resource.kind == "controlled_region"
+                and resource.name in self._authorized_controlled_regions
+            )
+        )
 
     def _record_blocking_owners(
         self,
@@ -443,6 +557,10 @@ class SippPlanner:
             ):
                 if interval.robot_name and interval.robot_name != robot_name:
                     self.blocking_robot_names.add(interval.robot_name)
+                    self.blocking_resources_by_robot.setdefault(
+                        interval.robot_name,
+                        set(),
+                    ).add(resource)
 
     def _transition_duration(self, lane: TrafficLane) -> int:
         return max(1, int(self.move_cost_fn(lane.from_lm, lane.to_lm)))

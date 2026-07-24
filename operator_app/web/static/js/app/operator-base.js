@@ -18,6 +18,11 @@ export class OperatorAppBase {
     this.workspaceTransitionRobotId = "";
     this.workspaceTransitionUntil = 0;
     this.mapContentLoadingRobotId = "";
+    this.mapContextRequestSequence = 0;
+    this.mapContextActiveRequestId = 0;
+    this.mapContextAbortController = null;
+    this.mapContextRequestTimeoutMs = 8000;
+    this.mapContextRequestMaxAttempts = 2;
     this.selectedFleetRobotName = preferences.getString("selectedFleetRobotName");
     this.fleetSelectionCleared = false;
     this.lastProbe = null;
@@ -1108,6 +1113,7 @@ export class OperatorAppBase {
     const nextId = String(robotId || "");
     const changed = nextId !== this.selectedRobotId;
     if (changed) {
+      this.cancelMapContextRequest?.();
       this.selectedRobotId = nextId;
       this.selectionGeneration += 1;
       this.statusRequestPending = false;

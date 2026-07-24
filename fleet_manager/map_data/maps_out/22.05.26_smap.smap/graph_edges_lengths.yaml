@@ -1207,7 +1207,7 @@
   kind: curve
   type: DegenerateBezier
   properties:
-    direction: 2
+    direction: -1
     movestyle: 0
 - from: LM281
   to: LM292
@@ -1215,7 +1215,7 @@
   kind: curve
   type: DegenerateBezier
   properties:
-    direction: 2
+    direction: -1
     movestyle: 0
 - from: LM293
   to: LM282
@@ -1223,7 +1223,7 @@
   kind: curve
   type: DegenerateBezier
   properties:
-    direction: 2
+    direction: -1
     movestyle: 0
 - from: LM282
   to: LM293
@@ -1231,7 +1231,7 @@
   kind: curve
   type: DegenerateBezier
   properties:
-    direction: 2
+    direction: -1
     movestyle: 0
 - from: LM280
   to: LM322
@@ -1257,7 +1257,7 @@
   kind: curve
   type: DegenerateBezier
   properties:
-    direction: 2
+    direction: -1
     movestyle: 0
 - from: LM322
   to: LM323
@@ -1265,5 +1265,5 @@
   kind: curve
   type: DegenerateBezier
   properties:
-    direction: 2
+    direction: -1
     movestyle: 0

@@ -37,6 +37,10 @@ def _manager() -> FleetManagerSim:
             "fleet": {
                 "order_dispatch_retry_sec": 0.5,
                 "order_dispatch_retry_max_sec": 4.0,
+                # These tests exercise the quarantine fallback explicitly.
+                # The normal runtime first tries an internal traffic-clearance
+                # move, covered by test_fleet_web_runtime.
+                "parked_clearance_relocation_enabled": False,
             },
         },
     )
@@ -117,7 +121,7 @@ def _fail_same_stationary_departure_twice(
     assert order.dispatch_failures == 2
 
 
-def test_stationary_failure_quarantine_waits_for_occupancy_change(
+def test_unrelated_parked_blocker_stays_quarantined_until_occupancy_changes(
     monkeypatch: Any,
 ) -> None:
     manager = _manager()
@@ -128,8 +132,8 @@ def test_stationary_failure_quarantine_waits_for_occupancy_change(
     _fail_same_stationary_departure_twice(manager, order, clock)
     assert planner_calls[0] == 2
 
-    # Advancing far beyond the ordinary four-second retry cap must not spend
-    # the only planner slot on the exact same impossible departure again.
+    # Replanning cannot move an unrelated parked physical body. Keep the
+    # failed order asleep even after the ordinary recovery cooldown.
     clock[0] += 30.0
     manager._dispatch_orders()
     assert planner_calls[0] == 2
@@ -143,6 +147,77 @@ def test_stationary_failure_quarantine_waits_for_occupancy_change(
     clock[0] += 0.1
     manager._dispatch_orders()
     assert planner_calls[0] == 3
+
+
+def test_mutually_commanded_stationary_departures_retry_at_bounded_cadence(
+    monkeypatch: Any,
+) -> None:
+    manager = _manager()
+    order, _, blocker, clock, planner_calls = _install_blocked_departure(
+        manager,
+        monkeypatch,
+    )
+    manager.orders["blocker-departure"] = FleetOrder(
+        order_id="blocker-departure",
+        target_lm="D",
+        vehicle=blocker.name,
+        assigned_robot=blocker.name,
+        status="QUEUED",
+        created_at=0.0,
+        updated_at=0.0,
+    )
+    _fail_same_stationary_departure_twice(manager, order, clock)
+
+    clock[0] += 30.0
+    manager._dispatch_orders()
+
+    assert planner_calls[0] >= 3
+    assert order.dispatch_failures >= 3
+
+
+def test_continuous_turn_envelope_block_exports_stationary_identity(
+    monkeypatch: Any,
+) -> None:
+    manager = _manager()
+    manager.robots["parked"] = FleetRobot(
+        name="parked",
+        current_lm="B",
+        status="ARRIVED",
+        pose={"x": 2.0, "y": 0.0, "yaw": 0.0},
+    )
+    conflict = {"time": 0.5, "other": "parked", "edge": "A->B"}
+    monkeypatch.setattr(
+        manager,
+        "_first_continuous_corridor_conflict",
+        lambda *_args, **_kwargs: conflict,
+    )
+    monkeypatch.setattr(manager, "_reservation_horizon", lambda: 5.0)
+    monkeypatch.setattr(
+        manager,
+        "_wait_duration_for_conflict",
+        lambda *_args, **_kwargs: 5.0,
+    )
+    result = manager._apply_continuous_reservation_waits({
+        "ok": True,
+        "debug": {"reason": "success"},
+        "plans": [{
+            "robot": "moving",
+            "trajectory": [
+                {"t": 0.0, "x": 0.0, "y": 0.0, "yaw": 0.0, "edgeId": "A->B"},
+                {"t": 1.0, "x": 2.0, "y": 0.0, "yaw": 0.0, "edgeId": "A->B"},
+            ],
+        }],
+    })
+
+    assert not result["ok"]
+    assert result["plans"] == []
+    debug = result["debug"]
+    assert debug["continuousConflictRobot"] == "parked"
+    assert debug["continuousConflictEdge"] == "A->B"
+    assert debug["stationaryTurnEnvelopeBlock"]
+    assert debug["stationaryBlockerRobots"] == ["parked"]
+    assert debug["softBlockedLms"] == ["B"]
+    assert "stationary_robot_blocks_route" in debug["deadlockReason"]
 
 
 def test_quarantined_departure_remains_a_stationary_route_obstacle(

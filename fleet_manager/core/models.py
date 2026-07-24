@@ -49,6 +49,18 @@ class FleetRobot:
     retreat_target_clock: float | None = None
     retreat_target_lm: str = ""
     retreat_blocked_edges: list[tuple[str, str]] = field(default_factory=list)
+    # Preserve the physical dependency which caused a reverse evacuation.
+    # ``wait_for_robot`` is intentionally cleared while the robot retreats,
+    # but the subsequent same-goal replan still needs the exact parked body
+    # that made the old approach unusable.
+    retreat_blocker_signatures: list[tuple[str, str, int]] = field(
+        default_factory=list
+    )
+    # A robot moved out of a controlled-corridor portal must not immediately
+    # replan back into the queue while the authoritative passage owner is
+    # still crossing that portal.  The hold is transferred to the
+    # transactional replan state when the reverse motion completes.
+    retreat_corridor_hold: dict[str, Any] | None = None
     traffic_priority_until: float = 0.0
     wait_for_robot: str = ""
     wait_resource: str = ""
@@ -154,6 +166,10 @@ class FleetOrder:
     spatial_route_nodes: list[str] = field(default_factory=list)
     spatial_route_revision: int = 0
     traffic_blocked_since: float | None = None
+    # Core-only maintenance moves (for example clearing a traffic lane) use
+    # the ordinary task/MAPF lifecycle but are intentionally absent from the
+    # operator order feed and benchmark counters.
+    internal_kind: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         targets = self.targets or ([self.target_lm] if self.target_lm else [])

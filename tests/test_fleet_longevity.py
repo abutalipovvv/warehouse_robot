@@ -398,6 +398,134 @@ def test_planner_lifelong_caches_evict_oldest_entries() -> None:
     assert generic_cache == {7: "7", 8: "updated", 9: "9"}
 
 
+def test_task_store_prunes_old_terminal_history_without_touching_active_orders() -> None:
+    orders = {
+        f"terminal-{index}": FleetOrder(
+            order_id=f"terminal-{index}",
+            target_lm="N1",
+            status="COMPLETED",
+            updated_at=float(index),
+        )
+        for index in range(6)
+    }
+    active = FleetOrder(
+        order_id="active",
+        target_lm="N1",
+        status="EXECUTING",
+        updated_at=-1.0,
+    )
+    orders[active.order_id] = active
+    task_manager = FleetTaskManager(orders)
+
+    removed = task_manager.prune_terminal_history(2)
+
+    assert set(removed) == {
+        "terminal-0",
+        "terminal-1",
+        "terminal-2",
+        "terminal-3",
+    }
+    assert set(task_manager.orders) == {
+        "active",
+        "terminal-4",
+        "terminal-5",
+    }
+
+
+def test_new_order_prunes_history_and_cannot_inherit_reused_id_quarantine() -> None:
+    manager = _line_manager(
+        2,
+        fleet={"terminal_order_history_limit": 2},
+    )
+    for index in range(4):
+        order_id = f"old-{index}"
+        manager.orders[order_id] = FleetOrder(
+            order_id=order_id,
+            target_lm="N1",
+            status="COMPLETED",
+            updated_at=float(index),
+        )
+        manager._stationary_order_retry_state[order_id] = {
+            "failure_count": 99,
+            "blocked_lms": ("N1",),
+            "signature": (),
+        }
+
+    manager.set_order(
+        {"id": "old-3", "targetLm": "N2"},
+        dispatch=False,
+    )
+
+    assert set(manager.orders) == {"old-2", "old-3"}
+    assert manager.orders["old-3"].status == "QUEUED"
+    assert "old-3" not in manager._stationary_order_retry_state
+    assert all(
+        order_id in manager.orders
+        for order_id in manager._stationary_order_retry_state
+    )
+
+
+def test_external_prefetch_blocker_escalates_every_affected_member() -> None:
+    manager = _line_manager(3)
+    entries = []
+    revisions: dict[str, int] = {}
+    for index, name in enumerate(("robot-1", "robot-2"), start=1):
+        order = FleetOrder(
+            order_id=f"order-{index}",
+            target_lm="N3",
+            vehicle=name,
+            assigned_robot=name,
+            status="PLANNING",
+        )
+        robot = FleetRobot(
+            name=name,
+            current_lm="N0",
+            target_lm="N1",
+            status="MOVING",
+            pose=_pose(0),
+            trajectory=_segment("N0", "N1"),
+            active_order_id=order.order_id,
+            route_revision=index,
+            route_chunk_goal_lm="N1",
+            route_final_lm="N3",
+        )
+        manager.orders[order.order_id] = order
+        manager.robots[name] = robot
+        entries.append(
+            (
+                order,
+                robot,
+                {"name": name, "startLm": "N1", "goalLm": "N2"},
+                "N3",
+                0.0,
+            )
+        )
+        revisions[name] = index
+    manager.robots["external-blocker"] = FleetRobot(
+        name="external-blocker",
+        current_lm="N2",
+        pose=_pose(2),
+    )
+
+    manager._finish_async_rolling_prefetch({
+        "kind": "prefetch_batch",
+        "entries": entries,
+        "route_revisions": revisions,
+        "result": {
+            "ok": False,
+            "plans": [],
+            "debug": {
+                "reason": "no_low_level_path:external-blocker",
+            },
+        },
+    })
+
+    assert manager._rolling_prefetch_failures == {
+        "robot-1": 1,
+        "robot-2": 1,
+    }
+
+
 def _line_manager(
     edge_count: int,
     *,

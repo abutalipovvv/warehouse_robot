@@ -21,6 +21,9 @@ class RollingSippPlanner:
         heuristic_fn: Callable[[NodeName, NodeName], float] | None = None,
         move_cost_fn: Callable[[NodeName, NodeName], int] | None = None,
         heading_fn: Callable[[NodeName, NodeName], float] | None = None,
+        heading_options_fn: (
+            Callable[[NodeName, NodeName], tuple[float, ...]] | None
+        ) = None,
         turn_cost_fn: Callable[[float, float], int] | None = None,
         low_level_max_time: int = 160,
         wait_cost: int = 6,
@@ -30,6 +33,7 @@ class RollingSippPlanner:
         self.heuristic_fn = heuristic_fn
         self.move_cost_fn = move_cost_fn
         self.heading_fn = heading_fn
+        self.heading_options_fn = heading_options_fn
         self.turn_cost_fn = turn_cost_fn
         self.low_level_max_time = max(1, int(low_level_max_time))
         self.wait_cost = max(1, int(wait_cost))
@@ -62,7 +66,13 @@ class RollingSippPlanner:
             if plan is None:
                 return f"missing_plan:{request.robot_name}"
             path = self._timed_path(plan)
-            if not self._path_is_free(reservations, path):
+            if not self._path_is_free(
+                reservations,
+                path,
+                authorized_controlled_regions=(
+                    request.authorized_controlled_regions
+                ),
+            ):
                 return f"resource_conflict:{request.robot_name}"
             self._reserve_path(reservations, path)
         return ""
@@ -113,12 +123,14 @@ class RollingSippPlanner:
             heuristic_fn=self.heuristic_fn,
             move_cost_fn=self.move_cost_fn,
             heading_fn=self.heading_fn,
+            heading_options_fn=self.heading_options_fn,
             turn_cost_fn=self.turn_cost_fn,
             low_level_max_time=self.low_level_max_time,
             wait_cost=self.wait_cost,
         )
         expanded_nodes = 0
         priority_repairs = 0
+        staging_wait_repairs = 0
         ordered_requests = list(robot_requests)
         seen_orders = {tuple(request.robot_name for request in ordered_requests)}
         max_priority_repairs = max(2, min(32, len(robot_requests) * 2))
@@ -148,20 +160,69 @@ class RollingSippPlanner:
                     debug.expanded_nodes = expanded_nodes
                     debug.high_level_nodes = len(seen_orders)
                     return PlannerResult(plans={}, debug=debug)
-                path = sipp.plan(
-                    SippRobotRequest(
-                        robot_name=request.robot_name,
-                        start_lm=request.start_lm,
-                        goal_lm=request.goal_lm,
-                        start_yaw=request.start_yaw,
-                        route_nodes=request.route_nodes,
-                    ),
-                    reservations,
-                    blocked_nodes=blocked_set,
-                    blocked_edges=blocked_edge_set,
-                    planning_deadline=planning_deadline,
+                initial_departure_not_before = max(
+                    0,
+                    int(request.start_not_before_tick),
                 )
-                expanded_nodes += sipp.expanded_nodes
+                staging_repair_attempts = 0
+                while True:
+                    path = sipp.plan(
+                        SippRobotRequest(
+                            robot_name=request.robot_name,
+                            start_lm=request.start_lm,
+                            goal_lm=request.goal_lm,
+                            start_yaw=request.start_yaw,
+                            route_nodes=request.route_nodes,
+                            initial_departure_not_before=(
+                                initial_departure_not_before
+                            ),
+                            node_departure_not_before=(
+                                request.node_departure_not_before
+                            ),
+                            authorized_controlled_regions=(
+                                request.authorized_controlled_regions
+                            ),
+                        ),
+                        reservations,
+                        blocked_nodes=blocked_set,
+                        blocked_edges=blocked_edge_set,
+                        planning_deadline=planning_deadline,
+                    )
+                    expanded_nodes += sipp.expanded_nodes
+                    if path is not None:
+                        break
+                    wait_match = re.search(
+                        r"cannot_wait:[^@]+@(\d+)-(\d+)",
+                        sipp.last_failure,
+                    )
+                    start_vertex = self.graph.vertices.get(
+                        request.start_lm
+                    )
+                    if (
+                        wait_match is None
+                        or start_vertex is None
+                        or not start_vertex.can_wait
+                        or staging_repair_attempts >= 16
+                    ):
+                        break
+                    wait_start = int(wait_match.group(1))
+                    wait_end = int(wait_match.group(2))
+                    next_departure = (
+                        initial_departure_not_before
+                        + max(1, wait_end - wait_start)
+                    )
+                    if next_departure >= self.low_level_max_time:
+                        break
+                    # A fixed route can discover a downstream reservation only
+                    # after entering a no-wait chain.  Standard earliest-arrival
+                    # dominance then discards the later arrival which would
+                    # have passed through without stopping.  Re-run the same
+                    # temporal search with that delay at the last known-safe
+                    # start LM; path reconstruction emits an ordinary WAIT
+                    # there, never an illegal pause inside the corridor.
+                    initial_departure_not_before = next_departure
+                    staging_repair_attempts += 1
+                    staging_wait_repairs += 1
                 if path is None:
                     failure = sipp.last_failure or f"rolling_sipp:no_path:{request.robot_name}"
                     if failure.startswith("planning_timeout:"):
@@ -170,11 +231,17 @@ class RollingSippPlanner:
                         debug.expanded_nodes = expanded_nodes
                         debug.high_level_nodes = len(seen_orders)
                         return PlannerResult(plans={}, debug=debug)
-                    blockers = self._blocking_plan_owners(
+                    exact_blockers = self._blocking_plan_owners(
                         failure,
                         reservations,
-                        planned_names=set(plans),
+                        authorized_controlled_regions=(
+                            request.authorized_controlled_regions
+                        ),
                     )
+                    all_blockers = (
+                        exact_blockers or set(sipp.blocking_robot_names)
+                    ) - {request.robot_name}
+                    blockers = all_blockers & set(plans)
                     if not blockers:
                         blockers = sipp.blocking_robot_names & set(plans)
                     next_order = self._promote_before_blockers(
@@ -203,6 +270,13 @@ class RollingSippPlanner:
                             f"no_low_level_path:{request.robot_name}:"
                             f"{failure}"
                         )
+                    debug.blocking_robots = tuple(sorted(all_blockers))
+                    debug.blocking_reservations = (
+                        self._blocking_reservation_pairs(
+                            all_blockers,
+                            sipp,
+                        )
+                    )
                     debug.conflicts_resolved = priority_repairs
                     debug.expanded_nodes = expanded_nodes
                     debug.high_level_nodes = len(seen_orders)
@@ -225,7 +299,14 @@ class RollingSippPlanner:
         debug.reason = "rolling_sipp:success"
         if priority_repairs:
             debug.reason = f"{debug.reason}:priority_repairs={priority_repairs}"
-        debug.conflicts_resolved = priority_repairs
+        if staging_wait_repairs:
+            debug.reason = (
+                f"{debug.reason}:staging_wait_repairs="
+                f"{staging_wait_repairs}"
+            )
+        debug.conflicts_resolved = (
+            priority_repairs + staging_wait_repairs
+        )
         debug.expanded_nodes = expanded_nodes
         debug.high_level_nodes = len(seen_orders)
         return PlannerResult(plans=plans, debug=debug)
@@ -261,13 +342,35 @@ class RollingSippPlanner:
             ),
         )
 
-    def _path_is_free(self, reservations: ReservationTable, path: TimedPath) -> bool:
+    def _path_is_free(
+        self,
+        reservations: ReservationTable,
+        path: TimedPath,
+        *,
+        authorized_controlled_regions: tuple[str, ...] = (),
+    ) -> bool:
         states = list(path.states)
         if not states:
             return False
+        authorized_regions = frozenset(authorized_controlled_regions)
+
+        def usable(
+            resources: tuple[ResourceId, ...],
+        ) -> tuple[ResourceId, ...]:
+            if not authorized_regions:
+                return resources
+            return tuple(
+                resource
+                for resource in resources
+                if not (
+                    resource.kind == "controlled_region"
+                    and resource.name in authorized_regions
+                )
+            )
+
         for state in states:
             if not reservations.resources_are_free(
-                self.graph.vertex_resources(state.node),
+                usable(self.graph.vertex_resources(state.node)),
                 state.time,
                 state.time + 1,
                 ignore_robot_name=path.robot_name,
@@ -276,15 +379,15 @@ class RollingSippPlanner:
         for start, end in zip(states, states[1:]):
             if start.node == end.node:
                 resources = (
-                    self.graph.rotation_resources(start.node)
+                    usable(self.graph.rotation_resources(start.node))
                     if end.action == "rotate"
-                    else self.graph.vertex_resources(start.node)
+                    else usable(self.graph.vertex_resources(start.node))
                 )
                 interval_end = end.time + 1
             else:
                 lane = self.graph.lane_for(start.node, end.node)
                 resources = (
-                    self.graph.lane_resources(lane)
+                    usable(self.graph.lane_resources(lane))
                     if lane is not None
                     else (ResourceId("lane", f"{start.node}->{end.node}"),)
                 )
@@ -298,7 +401,7 @@ class RollingSippPlanner:
                 return False
         final = states[-1]
         return reservations.resources_are_free(
-            self.graph.vertex_resources(final.node),
+            usable(self.graph.vertex_resources(final.node)),
             final.time,
             self.low_level_max_time + 1,
             ignore_robot_name=path.robot_name,
@@ -309,7 +412,7 @@ class RollingSippPlanner:
         failure: str,
         reservations: ReservationTable,
         *,
-        planned_names: set[str],
+        authorized_controlled_regions: tuple[str, ...] = (),
     ) -> set[str]:
         resources: tuple[ResourceId, ...] = ()
         start = 0
@@ -332,13 +435,93 @@ class RollingSippPlanner:
                 resources = self.graph.vertex_resources(vertex_match.group(1))
                 start = int(vertex_match.group(2))
                 end = start + 1
+            else:
+                resource_vertex_match = re.search(
+                    r"^(?:resource_constrained|wait_resource_constrained|"
+                    r"rotation_resource_constrained):([^@]+)"
+                    r"@(\d+)(?:-(\d+))?",
+                    failure,
+                )
+                if resource_vertex_match:
+                    node = resource_vertex_match.group(1)
+                    start = int(resource_vertex_match.group(2))
+                    end = max(
+                        start + 1,
+                        int(resource_vertex_match.group(3) or start) + 1,
+                    )
+                    resources = (
+                        self.graph.rotation_resources(node)
+                        if failure.startswith(
+                            "rotation_resource_constrained:"
+                        )
+                        else self.graph.vertex_resources(node)
+                    )
+                else:
+                    resource_edge_match = re.search(
+                        r"edge_resource_constrained:([^@]+)->([^@]+)"
+                        r"@(\d+)-(\d+)",
+                        failure,
+                    )
+                    if resource_edge_match:
+                        src, dst = (
+                            resource_edge_match.group(1),
+                            resource_edge_match.group(2),
+                        )
+                        lane = self.graph.lane_for(src, dst)
+                        resources = (
+                            self.graph.lane_resources(lane)
+                            if lane is not None
+                            else (ResourceId("lane", f"{src}->{dst}"),)
+                        )
+                        start = int(resource_edge_match.group(3))
+                        end = max(
+                            start + 1,
+                            int(resource_edge_match.group(4)) + 1,
+                        )
 
+        authorized_regions = frozenset(authorized_controlled_regions)
         owners: set[str] = set()
         for resource in resources:
+            if (
+                resource.kind == "controlled_region"
+                and resource.name in authorized_regions
+            ):
+                continue
             for interval in reservations.conflicts(resource, start, end):
-                if interval.robot_name in planned_names:
+                if interval.robot_name:
                     owners.add(interval.robot_name)
         return owners
+
+    def _blocking_reservation_pairs(
+        self,
+        owners: set[str],
+        sipp: SippPlanner,
+    ) -> tuple[tuple[str, str], ...]:
+        """Keep each external owner attached to one exact blocked resource."""
+        kind_priority = {
+            "vertex": 0,
+            "lane": 1,
+            "controlled_region": 2,
+            "lane_group": 3,
+            "mutex_zone": 4,
+            "clearance": 5,
+            "rotation_clearance": 6,
+        }
+        pairs: list[tuple[str, str]] = []
+        for owner in sorted(owners):
+            resources = sipp.blocking_resources_by_robot.get(owner, set())
+            if not resources:
+                continue
+            resource = min(
+                resources,
+                key=lambda item: (
+                    kind_priority.get(item.kind, 99),
+                    item.kind,
+                    item.name,
+                ),
+            )
+            pairs.append((owner, str(resource)))
+        return tuple(pairs)
 
     def _promote_before_blockers(
         self,

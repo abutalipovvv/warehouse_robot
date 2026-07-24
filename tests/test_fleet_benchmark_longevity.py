@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import math
+
 from fleet_manager.core.models import FleetOrder, FleetRobot
 from fleet_manager.core.route_core.models import GraphEdge, Landmark, WorldPoint
 from fleet_manager.runtime.simulation.manager import FleetManagerSim
@@ -151,6 +153,109 @@ def test_completed_package_wave_metadata_is_pruned_idempotently() -> None:
 
     assert service._finish_terminal_package_waves(30.0) == 0
     assert service._dynamic_benchmark["wavesCompleted"] == 1
+
+
+def test_package_waves_wait_for_full_fleet_barrier_before_next_wave() -> None:
+    service = _operator_service(robots=2)
+    result = service.benchmark_payload(
+        {
+            "action": "package_orders",
+            "count": 2,
+            "seed": 42,
+            "reset": False,
+        }
+    )
+
+    assert result["benchmark"]["generatedNow"] == 2
+    first_wave_ids = set(
+        service._dynamic_benchmark["packageWaveOrderIds"][1]
+    )
+    assert len(first_wave_ids) == 2
+    assert service._dynamic_benchmark["wavesStarted"] == 1
+
+    now = float(service._dynamic_benchmark["startedAt"])
+    first_order_id = sorted(first_wave_ids)[0]
+    service.manager.orders[first_order_id].status = "COMPLETED"
+
+    # An early finisher remains at the wave barrier. It must not receive a
+    # second order while another member of the same full-fleet wave is active.
+    assert service._pump_dynamic_benchmark(now + 1.0) == 0
+    assert service._dynamic_benchmark["wavesStarted"] == 1
+    assert set(service._dynamic_benchmark["packageWaveOrderIds"][1]) == first_wave_ids
+    assert {
+        order.order_id
+        for order in service.manager.orders.values()
+        if order.status not in {"COMPLETED", "FAILED", "CANCELED"}
+    } == first_wave_ids - {first_order_id}
+
+    remaining_order_id = next(iter(first_wave_ids - {first_order_id}))
+    service.manager.orders[remaining_order_id].status = "COMPLETED"
+
+    # Once every member is terminal, one complete next wave is generated in
+    # the same pump; no per-robot 1/1 waves overlap the completed barrier.
+    assert service._pump_dynamic_benchmark(now + 2.0) == 2
+    assert service._dynamic_benchmark["wavesCompleted"] == 1
+    assert service._dynamic_benchmark["wavesStarted"] == 2
+    assert set(service._dynamic_benchmark["packageWaveOrderIds"]) == {2}
+    assert len(service._dynamic_benchmark["packageWaveOrderIds"][2]) == 2
+    assert len(service._dynamic_benchmark["packageWaveRobots"][2]) == 2
+
+
+def test_package_wave_targets_clear_all_current_fleet_footprints(monkeypatch) -> None:
+    service = _operator_service(robots=2)
+    robots = sorted(service._benchmark_sim_robots(), key=lambda item: item.name)
+    occupied_names = ("B0101", "B0102")
+    for robot, landmark_name in zip(robots, occupied_names, strict=True):
+        landmark = service.loaded_map.landmarks[landmark_name]
+        robot.current_lm = landmark_name
+        robot.pose = {"x": landmark.x, "y": landmark.y, "yaw": 0.0}
+
+    # Put the other cohort member's occupied portal at the preferred perimeter
+    # rank.  The old coordinated-permutation policy selected B0102 for the
+    # robot starting at B0101.  B0103 is also unsafe: it is one 1.2 m grid step
+    # from the still occupied B0102 and does not leave rotation clearance.
+    perimeter = ["B0102", "B0103", "B0104", "B0105", "B0106", "B0101"]
+    monkeypatch.setattr(
+        service,
+        "_benchmark_peripheral_lms",
+        lambda _robot_count: list(perimeter),
+    )
+
+    def reachable(
+        start_lm,
+        used_goals,
+        excluded_goals,
+        _rng,
+        **_kwargs,
+    ):
+        return [
+            name
+            for name in perimeter
+            if (
+                name != start_lm
+                and name not in used_goals
+                and name not in excluded_goals
+                and service._lm_is_separated_from(name, used_goals)
+            )
+        ]
+
+    monkeypatch.setattr(service, "_forward_benchmark_goals", reachable)
+
+    assignments = service._package_wave_assignments(robots, wave_index=1)
+
+    assert len(assignments) == len(robots)
+    assert len({target for _, target in assignments}) == len(robots)
+    occupied = set(occupied_names)
+    minimum = max(
+        service._benchmark_min_separation(),
+        service.manager.collision.robot_broadphase_distance(),
+    )
+    for _, target_name in assignments:
+        assert target_name not in occupied
+        target = service.loaded_map.landmarks[target_name]
+        for occupied_name in occupied:
+            start = service.loaded_map.landmarks[occupied_name]
+            assert math.hypot(target.x - start.x, target.y - start.y) >= minimum
 
 
 def test_legacy_string_completed_wave_marker_is_not_counted_twice() -> None:

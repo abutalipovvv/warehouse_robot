@@ -53,7 +53,41 @@ class FleetMotionRuntimeMixin:
                 )
                 robot.updated_at = now
             self._refresh_runtime_priority_lease(robot, now)
+            if self._settle_degenerate_simulated_route(robot, now):
+                continue
             route_clock_before = robot.route_clock
+            if self._runtime_replan_holds_robot(robot):
+                # The replacement is being prepared by the shared planner,
+                # but the currently committed trajectory remains the safety
+                # contract.  Hold it at this graph LM instead of exposing an
+                # IDLE/empty-route frame to collision checks or the browser.
+                state = self._runtime_replans.get(robot.name, {})
+                reason = str(state.get("reason") or "traffic changed")
+                stage = str(state.get("stage") or "")
+                robot.status = "WAITING"
+                if stage == "deadlock_escalated":
+                    blocker_name = str(
+                        state.get("escalated_blocker") or ""
+                    ).strip()
+                    if blocker_name:
+                        robot.wait_for_robot = blocker_name
+                        robot.wait_resource = str(
+                            state.get("escalated_resource") or ""
+                        )
+                        robot.wait_release_at = 0.0
+                        robot.last_reason = f"occupied by {blocker_name}"
+                    else:
+                        robot.last_reason = (
+                            "deadlock replan awaiting safe evacuation"
+                        )
+                else:
+                    robot.last_reason = (
+                        f"replanning route while holding: {reason}"
+                    )
+                robot.last_tick_at = now
+                robot.updated_at = now
+                self._update_active_order_from_robot(robot)
+                continue
             if robot.retreat_target_clock is not None:
                 self._advance_deadlock_retreat(robot, now)
                 self._update_active_order_from_robot(robot)
@@ -215,6 +249,7 @@ class FleetMotionRuntimeMixin:
                 robot.updated_at = now
                 if (
                     self._should_replan_for_blocked_reason(blocked_reason)
+                    and not self._central_corridor_manages_wait(robot)
                     and not self._wait_expected_to_clear(robot)
                     and robot.traffic_stall_since is not None
                     and now - robot.traffic_stall_since
@@ -248,6 +283,7 @@ class FleetMotionRuntimeMixin:
                 robot.blocked_since = None
                 self._clear_wait_dependency(robot)
                 if moved_during_tick or robot.route_clock > route_clock_before + 0.000001:
+                    self._discard_runtime_replan_after_progress(robot)
                     self._record_traffic_progress(robot)
                     # Motion samples can arrive alongside slower HTTP/control
                     # responses. Give every committed pose a monotonic version
@@ -264,25 +300,182 @@ class FleetMotionRuntimeMixin:
                 if rolling_chunk:
                     robot.last_tick_at = now
                     continue
-                self._complete_active_order(robot, now)
-                robot.target_lm = ""
-                robot.status = "ARRIVED"
-                robot.trajectory = []
-                robot.plan_nodes = []
-                robot.trajectory_dirty = True
-                robot.route_started_at = None
-                robot.route_clock = 0.0
-                robot.last_tick_at = None
-                robot.blocked_since = None
-                robot.last_reason = "arrived"
-                robot.route_note = ""
-                robot.updated_at = now
-                self._clear_remote_route_metadata(robot)
-                self._event("info", f"{robot.name} arrived at {robot.current_lm}")
+                self._finish_simulated_route_at_target(robot, now)
         self._enforce_runtime_safety_invariant(safety_snapshots, now)
         self._runtime_tick_route_clocks = {}
         self._resolve_runtime_wait_cycles(now)
         self._dispatch_orders(async_simulated=True)
+
+    def _settle_degenerate_simulated_route(
+        self,
+        robot: FleetRobot,
+        now: float,
+    ) -> bool:
+        """Resolve committed routes which have no executable time interval.
+
+        A one-node SIPP result is a valid representation of "already here",
+        but it is not motion.  Treating every non-empty trajectory as MOVING
+        left the order EXECUTING forever because the ordinary completion path
+        only ran for a positive final timestamp.  The stuck robot then kept a
+        false traffic reservation and blocked otherwise healthy followers.
+
+        Return ``True`` when this tick has been fully handled.  A prefetched
+        positive-duration continuation returns ``False`` so normal motion may
+        consume it immediately in the same physics tick.
+        """
+        if not robot.trajectory:
+            return False
+
+        handoffs = 0
+        while robot.trajectory:
+            final_time = float(robot.trajectory[-1].get("t", 0.0) or 0.0)
+            if final_time > 0.000001:
+                return False
+
+            endpoint_lm = self._safe_degenerate_endpoint_lm(robot)
+            if endpoint_lm:
+                robot.current_lm = endpoint_lm
+                endpoint_pose = self._pose_from_sample(robot.trajectory[-1])
+                # A zero-time route may confirm the graph position, but it
+                # cannot physically perform an instantaneous rotation.  Keep
+                # the already committed heading; an actual turn must have a
+                # positive-duration trajectory of its own.
+                if robot.pose is not None:
+                    endpoint_pose["yaw"] = float(
+                        robot.pose.get("yaw", 0.0) or 0.0
+                    )
+                robot.pose = endpoint_pose
+
+            order = (
+                self.orders.get(robot.active_order_id)
+                if robot.active_order_id
+                else None
+            )
+            if order is not None and order.status in TERMINAL_ORDER_STATUSES:
+                order = None
+            final_target = (
+                self._active_order_target(order)
+                if order is not None
+                else str(robot.route_final_lm or robot.target_lm or "").strip()
+            )
+            if final_target and self._degenerate_route_reached_lm(
+                robot,
+                final_target,
+                endpoint_lm,
+            ):
+                robot.current_lm = final_target
+                self._finish_simulated_route_at_target(robot, now)
+                return True
+
+            chunk_target = str(
+                robot.route_chunk_goal_lm or robot.target_lm or ""
+            ).strip()
+            if (
+                order is not None
+                and chunk_target
+                and self._degenerate_route_reached_lm(
+                    robot,
+                    chunk_target,
+                    endpoint_lm,
+                )
+            ):
+                robot.current_lm = chunk_target
+                if handoffs < 4 and self._activate_rolling_prefetch(robot, now):
+                    handoffs += 1
+                    continue
+                if self._complete_simulated_route_chunk(robot, now):
+                    robot.last_tick_at = now
+                    return True
+
+            reason = "degenerate route does not reach active target"
+            previous_status = robot.status
+            previous_reason = robot.last_reason
+            replanning = self._queue_active_order_for_background_replan(
+                robot,
+                now,
+                reason,
+            )
+            if not replanning:
+                robot.status = "WAITING" if order is not None else "BLOCKED"
+                robot.last_reason = f"holding for replan: {reason}"
+                robot.last_tick_at = now
+                robot.blocked_since = robot.blocked_since or now
+                robot.traffic_priority_until = 0.0
+                self._clear_wait_dependency(robot)
+                robot.updated_at = now
+                self._update_active_order_from_robot(robot)
+            if previous_status == "MOVING" or previous_reason != robot.last_reason:
+                self._event(
+                    "warn",
+                    f"{robot.name} rejected zero-duration motion: {reason}",
+                )
+            return True
+        return False
+
+    def _safe_degenerate_endpoint_lm(self, robot: FleetRobot) -> str:
+        """Return a zero-duration endpoint only when it is physically local.
+
+        Multiple different poses at the same timestamp are an invalid instant
+        teleport, not an arrival.  A single sample (the normal already-there
+        result), or co-located duplicate samples, can safely identify the LM.
+        """
+        if not robot.trajectory:
+            return ""
+        endpoint = robot.trajectory[-1]
+        endpoint_lm = str(endpoint.get("lm") or "").strip()
+        if endpoint_lm not in self.landmarks:
+            return ""
+        endpoint_pose = self._pose_from_sample(endpoint)
+        tolerance = self._runtime_replan_lm_tolerance()
+        if robot.pose is not None and math.hypot(
+            endpoint_pose["x"] - float(robot.pose.get("x", 0.0) or 0.0),
+            endpoint_pose["y"] - float(robot.pose.get("y", 0.0) or 0.0),
+        ) > tolerance:
+            return ""
+        for sample in robot.trajectory:
+            sample_pose = self._pose_from_sample(sample)
+            if math.hypot(
+                endpoint_pose["x"] - sample_pose["x"],
+                endpoint_pose["y"] - sample_pose["y"],
+            ) > tolerance:
+                return ""
+        return endpoint_lm
+
+    def _degenerate_route_reached_lm(
+        self,
+        robot: FleetRobot,
+        target_lm: str,
+        endpoint_lm: str,
+    ) -> bool:
+        if target_lm not in self.landmarks:
+            return False
+        if robot.current_lm == target_lm or endpoint_lm == target_lm:
+            return True
+        return bool(robot.pose and self._pose_is_at_lm(robot.pose, target_lm))
+
+    def _finish_simulated_route_at_target(
+        self,
+        robot: FleetRobot,
+        now: float,
+    ) -> None:
+        self._complete_active_order(robot, now)
+        robot.target_lm = ""
+        robot.status = "ARRIVED"
+        robot.trajectory = []
+        robot.plan_nodes = []
+        robot.trajectory_dirty = True
+        robot.route_started_at = None
+        robot.route_clock = 0.0
+        robot.last_tick_at = None
+        robot.blocked_since = None
+        robot.traffic_stall_since = None
+        robot.traffic_priority_until = 0.0
+        robot.last_reason = "arrived"
+        robot.route_note = ""
+        robot.updated_at = now
+        self._clear_wait_dependency(robot)
+        self._clear_remote_route_metadata(robot)
+        self._event("info", f"{robot.name} arrived at {robot.current_lm}")
 
     def _advance_deadlock_retreat(self, robot: FleetRobot, now: float) -> None:
         target_clock = robot.retreat_target_clock
@@ -318,6 +511,7 @@ class FleetMotionRuntimeMixin:
         robot.last_tick_at = now
         remaining = dt
         blocked_reason = ""
+        retreat_clock_before = float(robot.route_clock)
         while remaining > 0.000001 and robot.route_clock > target_clock + 0.000001:
             motion_dt = min(self._runtime_motion_step(), remaining)
             proposed_clock = max(target_clock, robot.route_clock - motion_dt)
@@ -331,6 +525,13 @@ class FleetMotionRuntimeMixin:
             robot.route_clock = proposed_clock
             remaining -= motion_dt
 
+        if robot.route_clock < retreat_clock_before - 0.000001:
+            # A blocker encountered later on the reverse path is a new stall,
+            # not a continuation of the wait cycle which armed the retreat.
+            robot.blocked_since = None
+            robot.traffic_stall_since = None
+            self._clear_wait_dependency(robot)
+
         pose = self._pose_at_trajectory(robot.trajectory, robot.route_clock)
         if pose is not None:
             robot.pose = pose
@@ -339,6 +540,19 @@ class FleetMotionRuntimeMixin:
         if blocked_reason:
             robot.status = "RETREATING"
             robot.last_reason = f"deadlock retreat waiting: {blocked_reason}"
+            self._set_wait_dependency(robot, blocked_reason, now)
+            robot.blocked_since = robot.blocked_since or now
+            robot.traffic_stall_since = robot.traffic_stall_since or now
+            if (
+                now - robot.blocked_since
+                >= self._deadlock_retreat_block_timeout()
+                and self._recover_blocked_deadlock_retreat(
+                    robot,
+                    blocked_reason,
+                    now,
+                )
+            ):
+                return
             return
         if robot.route_clock > target_clock + 0.000001:
             robot.status = "RETREATING"
@@ -347,6 +561,25 @@ class FleetMotionRuntimeMixin:
 
         target_lm = robot.retreat_target_lm
         blocked_edges = list(robot.retreat_blocked_edges)
+        corridor_hold = (
+            dict(robot.retreat_corridor_hold)
+            if isinstance(robot.retreat_corridor_hold, dict)
+            else None
+        )
+        causal_blocker_signatures = tuple(
+            (
+                str(signature[0]),
+                str(signature[1]),
+                int(signature[2]),
+            )
+            for signature in robot.retreat_blocker_signatures
+            if (
+                isinstance(signature, (list, tuple))
+                and len(signature) == 3
+                and str(signature[0]) in self.robots
+                and str(signature[0]) != robot.name
+            )
+        )
         if target_lm in self.landmarks:
             robot.current_lm = target_lm
             landmark_pose = self._pose_at_landmark(target_lm)
@@ -369,24 +602,294 @@ class FleetMotionRuntimeMixin:
         if order is not None:
             order.traffic_detour_edges = list(dict.fromkeys(blocked_edges))
             order.traffic_detour_attempts += 1
-        if self._queue_active_order_for_background_replan(
-            robot,
-            now,
-            "deadlock corridor evacuated; alternate route required",
-        ):
-            self.traffic_metrics["cycleReplans"] += 1
-            self._event(
-                "warn",
-                f"{robot.name} retreated to {target_lm}; detour to the same goal queued",
+        replan_handled, replan_started = (
+            self._queue_background_replan_recovery_action(
+                robot,
+                now,
+                "deadlock corridor evacuated; alternate route required",
             )
+        )
+        if causal_blocker_signatures:
+            replan_state = self._runtime_replans.get(robot.name)
+            if isinstance(replan_state, dict):
+                # Planner diagnostics may contain every stationary body used
+                # by congestion A*.  This dependency is different: it is the
+                # robot that actually stopped the retained route and caused
+                # the completed evacuation, so recovery must address it first.
+                replan_state["causal_blocker_signatures"] = (
+                    causal_blocker_signatures
+                )
+                replan_state["blocker_names"] = tuple(
+                    signature[0]
+                    for signature in causal_blocker_signatures
+                )
+                retry_state = (
+                    self._stationary_order_retry_state.get(order.order_id)
+                    if order is not None
+                    else None
+                )
+                staged_signatures = (
+                    tuple(retry_state.get("waiter_escape_in_flight", ()))
+                    if isinstance(retry_state, dict)
+                    else ()
+                )
+                staged_target = (
+                    str(retry_state.get("waiter_escape_target_lm") or "")
+                    if isinstance(retry_state, dict)
+                    else ""
+                )
+                if (
+                    staged_signatures == causal_blocker_signatures
+                    and staged_target == target_lm
+                ):
+                    # This retreat was not merely corridor arbitration: the
+                    # active waiter moved because its body made the parked
+                    # blocker's own clearance path impossible. Now that the
+                    # pocket has physically been reached, start that second
+                    # transaction immediately and hold the original order
+                    # until it completes.
+                    for blocker_name, blocker_lm, blocker_revision in (
+                        causal_blocker_signatures
+                    ):
+                        blocker = self.robots.get(blocker_name)
+                        if (
+                            not self._inactive_stationary_clearance_candidate(
+                                blocker,
+                                exclude_name=robot.name,
+                            )
+                            or self._traffic_lm_for_robot(blocker)
+                            != blocker_lm
+                            or int(blocker.route_revision)
+                            != blocker_revision
+                        ):
+                            continue
+                        if self._queue_stationary_clearance_relocation(
+                            robot,
+                            blocker,
+                            cause=(
+                                f"staged waiter escape completed at "
+                                f"{target_lm}"
+                            ),
+                        ):
+                            replan_state["clearance_blocker_names"] = (
+                                blocker_name,
+                            )
+                            replan_state["stage"] = "queued"
+                            break
+                    retry_state.pop("waiter_escape_in_flight", None)
+                    retry_state.pop("waiter_escape_target_lm", None)
+        if corridor_hold:
+            replan_state = self._runtime_replans.get(robot.name)
+            if isinstance(replan_state, dict):
+                # Keep the cleared pocket occupied until the owner has
+                # physically left the local corridor resource.  Planning the
+                # original goal sooner can send the tail straight back into
+                # the queue which it has just opened.
+                replan_state["corridor_clearance_hold"] = corridor_hold
+        if replan_handled:
+            if replan_started:
+                self.traffic_metrics["cycleReplans"] += 1
+                self._event(
+                    "warn",
+                    f"{robot.name} retreated to {target_lm}; detour to the same goal queued",
+                )
             return
         robot.status = "WAITING"
         robot.last_reason = "deadlock retreat complete; detour queue pending"
+
+    def _deadlock_retreat_block_timeout(self) -> float:
+        """Maximum stable wait before replacing an unusable retreat."""
+        return max(
+            1.0,
+            self._deadlock_wait_timeout(),
+            self._deadlock_priority_lease(),
+        )
+
+    def _recover_blocked_deadlock_retreat(
+        self,
+        robot: FleetRobot,
+        blocked_reason: str,
+        now: float,
+    ) -> bool:
+        """Replace a reverse path blocked after it was committed.
+
+        Other robots can enter an old trajectory after the initial deadlock
+        decision.  A reverse traversal must therefore have a bounded runtime
+        failure mode as well as pre-commit validation.  At a graph LM we first
+        try a short escape to a legal waiting pocket, then transactionally
+        replan the same active order.  If neither operation is safe (for
+        example the body is still mid-edge), abort only the retreat marker and
+        let the unchanged forward trajectory pass through normal collision
+        preflight on the next tick.
+        """
+        blocker_name = (
+            str(robot.wait_for_robot or "").strip()
+            or self._robot_name_from_conflict_reason(blocked_reason)
+        )
+        blocker = self.robots.get(blocker_name)
+        start_lm = self._safe_replan_start_lm(robot)
+        reverse_edges = self._blocked_retreat_segment_edges(robot)
+        old_blocked_edges = list(robot.retreat_blocked_edges)
+        escape_blocked_edges = list(
+            dict.fromkeys([*old_blocked_edges, *reverse_edges])
+        )
+
+        if start_lm and blocker is not None:
+            blocker_lm = self._traffic_lm_for_robot(blocker)
+            blocker_edges = (
+                self._blocked_edges_for_lms({blocker_lm})
+                if blocker_lm in self.landmarks
+                else set()
+            )
+            escape_route = self._stationary_clearance_route(
+                blocker,
+                robot,
+                forbidden_lms={blocker_lm},
+                extra_blocked_edges=blocker_edges,
+                avoid_controlled_regions=True,
+                start_lm_override=start_lm,
+            )
+            if (
+                len(escape_route) >= 2
+                and escape_route[0] == start_lm
+                and self._install_graph_escape_retreat(
+                    robot,
+                    escape_route,
+                    escape_blocked_edges,
+                    now,
+                )
+            ):
+                current_blocker = self.robots.get(blocker_name)
+                robot.retreat_blocker_signatures = (
+                    [(
+                        blocker_name,
+                        self._traffic_lm_for_robot(current_blocker),
+                        int(current_blocker.route_revision),
+                    )]
+                    if current_blocker is not None
+                    and blocker_name != robot.name
+                    else []
+                )
+                self._release_mutual_retreat_wait(
+                    robot,
+                    blocker_name,
+                    now,
+                )
+                self._event(
+                    "warn",
+                    f"{robot.name} blocked retreat replaced with graph escape "
+                    f"to {escape_route[-1]}",
+                )
+                return True
+
+        order = self._active_order_for_robot(robot)
+        if order is not None and reverse_edges:
+            # The original detour edge led to this retreat.  When the retreat
+            # itself is now blocked, retaining both edge bans can disconnect a
+            # degree-two aisle completely.  Prefer the newly observed reverse
+            # blockage so a transactional replan may use the forward exit.
+            order.traffic_detour_edges = list(reverse_edges)
+
+        if start_lm:
+            replan_handled, replan_started = (
+                self._queue_background_replan_recovery_action(
+                    robot,
+                    now,
+                    "deadlock retreat blocked; alternate route required",
+                )
+            )
+            if replan_handled:
+                self._clear_deadlock_retreat(robot)
+                self._release_mutual_retreat_wait(
+                    robot,
+                    blocker_name,
+                    now,
+                )
+                if replan_started:
+                    if order is not None:
+                        order.traffic_detour_attempts += 1
+                    self.traffic_metrics["cycleReplans"] += 1
+                self._event(
+                    "warn",
+                    f"{robot.name} blocked retreat replaced with same-goal replan",
+                )
+                return True
+
+        # Replanning at a mid-edge/no-wait pose would discard the only safe
+        # motion contract.  Keep that trajectory and merely abandon reverse
+        # execution.  No pose changes here; the ordinary forward preflight is
+        # still the collision authority on the next physics tick.
+        self._clear_deadlock_retreat(robot)
+        robot.status = "WAITING"
+        robot.last_reason = "blocked retreat aborted; collision preflight pending"
+        robot.blocked_since = None
+        robot.traffic_stall_since = None
+        robot.traffic_priority_until = 0.0
+        robot.collision_preflight_due_at = 0.0
+        robot.last_tick_at = now
+        self._clear_wait_dependency(robot)
+        robot.updated_at = now
+        self._release_mutual_retreat_wait(robot, blocker_name, now)
+        self._event(
+            "warn",
+            f"{robot.name} blocked retreat aborted; committed route retained",
+        )
+        return True
+
+    def _blocked_retreat_segment_edges(
+        self,
+        robot: FleetRobot,
+    ) -> list[tuple[str, str]]:
+        target_clock = (
+            float(robot.retreat_target_clock)
+            if robot.retreat_target_clock is not None
+            else float(robot.route_clock)
+        )
+        check_clock = max(
+            target_clock,
+            float(robot.route_clock) - self._runtime_motion_step(),
+        )
+        edge = self._parse_edge_id(
+            self._edge_id_at_trajectory(robot.trajectory, check_clock)
+        )
+        if edge is None:
+            return []
+        source, destination = edge
+        return list(dict.fromkeys([
+            (source, destination),
+            (destination, source),
+        ]))
+
+    def _release_mutual_retreat_wait(
+        self,
+        robot: FleetRobot,
+        blocker_name: str,
+        now: float,
+    ) -> None:
+        """Invalidate the peer half of an obsolete mutual-yield decision."""
+        blocker = self.robots.get(blocker_name)
+        if blocker is None:
+            return
+        blocker_dependency = (
+            str(blocker.wait_for_robot or "").strip()
+            or self._robot_name_from_conflict_reason(blocker.last_reason)
+        )
+        if blocker_dependency != robot.name:
+            return
+        blocker.status = "WAITING"
+        blocker.last_reason = "retreat dependency changed; collision preflight pending"
+        blocker.blocked_since = None
+        blocker.traffic_stall_since = None
+        blocker.collision_preflight_due_at = 0.0
+        self._clear_wait_dependency(blocker)
+        blocker.updated_at = now
 
     def _clear_deadlock_retreat(self, robot: FleetRobot) -> None:
         robot.retreat_target_clock = None
         robot.retreat_target_lm = ""
         robot.retreat_blocked_edges = []
+        robot.retreat_blocker_signatures = []
+        robot.retreat_corridor_hold = None
 
     def _runtime_safety_snapshot(self, robot: FleetRobot) -> dict[str, Any]:
         active_order = self.orders.get(robot.active_order_id) if robot.active_order_id else None
@@ -414,6 +917,14 @@ class FleetMotionRuntimeMixin:
             "retreat_target_clock": robot.retreat_target_clock,
             "retreat_target_lm": robot.retreat_target_lm,
             "retreat_blocked_edges": list(robot.retreat_blocked_edges),
+            "retreat_blocker_signatures": list(
+                robot.retreat_blocker_signatures
+            ),
+            "retreat_corridor_hold": (
+                dict(robot.retreat_corridor_hold)
+                if isinstance(robot.retreat_corridor_hold, dict)
+                else None
+            ),
             "traffic_priority_until": robot.traffic_priority_until,
             "wait_for_robot": robot.wait_for_robot,
             "wait_resource": robot.wait_resource,
@@ -472,6 +983,15 @@ class FleetMotionRuntimeMixin:
         robot.retreat_blocked_edges = list(
             snapshot.get("retreat_blocked_edges", [])
         )
+        robot.retreat_blocker_signatures = list(
+            snapshot.get("retreat_blocker_signatures", [])
+        )
+        raw_corridor_hold = snapshot.get("retreat_corridor_hold")
+        robot.retreat_corridor_hold = (
+            dict(raw_corridor_hold)
+            if isinstance(raw_corridor_hold, dict)
+            else None
+        )
         robot.traffic_priority_until = float(snapshot["traffic_priority_until"])
         robot.wait_for_robot = str(snapshot.get("wait_for_robot") or "")
         robot.wait_resource = str(snapshot.get("wait_resource") or "")
@@ -504,6 +1024,57 @@ class FleetMotionRuntimeMixin:
         robot.trajectory_dirty = True
         robot.updated_at = now
 
+    def _runtime_safety_telemetry_context(
+        self,
+        robot: FleetRobot,
+        snapshot: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Return compact route evidence for one rollback endpoint."""
+        source = snapshot if snapshot is not None else {}
+        pose = source.get("pose") if snapshot is not None else robot.pose
+        trajectory = (
+            source.get("trajectory")
+            if snapshot is not None
+            else robot.trajectory
+        )
+        if not isinstance(trajectory, list):
+            trajectory = []
+        try:
+            route_clock = float(
+                source.get("route_clock", robot.route_clock)
+                if snapshot is not None
+                else robot.route_clock
+            )
+        except (TypeError, ValueError):
+            route_clock = 0.0
+        try:
+            route_revision = int(
+                source.get("route_revision", robot.route_revision)
+                if snapshot is not None
+                else robot.route_revision
+            )
+        except (TypeError, ValueError):
+            route_revision = 0
+        return {
+            "pose": dict(pose) if isinstance(pose, dict) else None,
+            "currentLm": str(
+                source.get("current_lm", robot.current_lm)
+                if snapshot is not None
+                else robot.current_lm
+            ),
+            "status": str(
+                source.get("status", robot.status)
+                if snapshot is not None
+                else robot.status
+            ),
+            "routeClock": route_clock,
+            "routeRevision": route_revision,
+            "edgeId": self._edge_id_at_trajectory(
+                trajectory,
+                route_clock,
+            ),
+        }
+
     def _enforce_runtime_safety_invariant(
         self,
         snapshots: dict[str, dict[str, Any]],
@@ -515,19 +1086,22 @@ class FleetMotionRuntimeMixin:
         ]
         unsafe_names: set[str] = set()
         unsafe_pairs: list[tuple[str, str]] = []
+        unsafe_pair_details: list[dict[str, Any]] = []
         for index, robot in enumerate(robots):
             for other in robots[index + 1:]:
                 previous_robot_pose = snapshots[robot.name].get("pose")
                 previous_other_pose = snapshots[other.name].get("pose")
-                if (
-                    not self.collision.footprints_overlap(robot.pose, other.pose)
-                    and not self._swept_footprints_overlap(
-                        previous_robot_pose,
-                        robot.pose,
-                        previous_other_pose,
-                        other.pose,
-                    )
-                ):
+                endpoint_overlap = self.collision.footprints_overlap(
+                    robot.pose,
+                    other.pose,
+                )
+                swept_overlap = self._swept_footprints_overlap(
+                    previous_robot_pose,
+                    robot.pose,
+                    previous_other_pose,
+                    other.pose,
+                )
+                if not endpoint_overlap and not swept_overlap:
                     continue
                 if (
                     previous_robot_pose is not None
@@ -542,6 +1116,30 @@ class FleetMotionRuntimeMixin:
                     continue
                 unsafe_names.update((robot.name, other.name))
                 unsafe_pairs.append((robot.name, other.name))
+                unsafe_pair_details.append({
+                    "robots": [robot.name, other.name],
+                    "kind": (
+                        "both"
+                        if endpoint_overlap and swept_overlap
+                        else "endpoint"
+                        if endpoint_overlap
+                        else "swept"
+                    ),
+                    "before": {
+                        robot.name: self._runtime_safety_telemetry_context(
+                            robot,
+                            snapshots[robot.name],
+                        ),
+                        other.name: self._runtime_safety_telemetry_context(
+                            other,
+                            snapshots[other.name],
+                        ),
+                    },
+                    "proposed": {
+                        robot.name: self._runtime_safety_telemetry_context(robot),
+                        other.name: self._runtime_safety_telemetry_context(other),
+                    },
+                })
         if not unsafe_names:
             return
 
@@ -553,7 +1151,17 @@ class FleetMotionRuntimeMixin:
         # disconnected pairs crossed their safety envelopes in the same
         # physics frame.  Every component is resolved below; counting the
         # frame once preserves the metric's historical meaning.
-        self.traffic_metrics["runtimeSafetyRollbacks"] += 1
+        rollback_sequence = (
+            int(self.traffic_metrics["runtimeSafetyRollbacks"]) + 1
+        )
+        self.traffic_metrics["runtimeSafetyRollbacks"] = rollback_sequence
+        self._last_runtime_safety_rollback = {
+            "sequence": rollback_sequence,
+            "stamp": time(),
+            "simulationStamp": float(now),
+            "pairCount": len(unsafe_pair_details),
+            "pairs": unsafe_pair_details,
+        }
         remaining_pairs = list(unsafe_pairs)
 
         def pair_text(pairs: list[tuple[str, str]]) -> str:
@@ -595,22 +1203,26 @@ class FleetMotionRuntimeMixin:
                         for unsafe_pair in remaining_pairs
                         if mover.name in unsafe_pair
                     ]
-                    if self._queue_active_order_for_background_replan(
-                        mover,
-                        now,
-                        "deadlock retreat blocked; alternate route required",
-                        allow_controlled_corridor_replan=True,
-                    ):
-                        if order is not None and blocked_edges:
-                            order.traffic_detour_attempts += 1
-                        self._clear_deadlock_retreat(mover)
-                        self.traffic_metrics["cycleReplans"] += 1
-                        self._event(
-                            "error",
-                            "runtime safety invariant prevented footprint overlap: "
-                            f"{pair_text(related_pairs)}; blocked retreat for "
-                            f"{mover.name} replaced with alternate route",
+                    replan_handled, replan_started = (
+                        self._queue_background_replan_recovery_action(
+                            mover,
+                            now,
+                            "deadlock retreat blocked; alternate route required",
                         )
+                    )
+                    if replan_handled:
+                        if order is not None and blocked_edges:
+                            if replan_started:
+                                order.traffic_detour_attempts += 1
+                        self._clear_deadlock_retreat(mover)
+                        if replan_started:
+                            self.traffic_metrics["cycleReplans"] += 1
+                            self._event(
+                                "error",
+                                "runtime safety invariant prevented footprint overlap: "
+                                f"{pair_text(related_pairs)}; blocked retreat for "
+                                f"{mover.name} replaced with alternate route",
+                            )
                     else:
                         # A robot can be a few centimetres beyond the last LM
                         # when its reverse sweep is rejected. It is then
@@ -835,10 +1447,28 @@ class FleetMotionRuntimeMixin:
         return max(0.02, min(0.05, self._continuous_collision_step() / 2.0))
 
     def _schedule_runtime_replan(self, robot: FleetRobot, now: float, reason: str) -> bool:
+        active_order = self._active_order_for_robot(robot)
+        if (
+            active_order is not None
+            and active_order.internal_kind == "traffic_clearance"
+        ):
+            # A clearance route is selected as a short, graph-safe evacuation
+            # on the external side of the causal corridor.  Replacing it with
+            # congestion A* after a traffic timeout can send the parked body
+            # through the owner's still-valid corridor lease and recreate the
+            # exact dependency this maintenance task exists to remove.  Keep
+            # the explicit route and let ordinary temporal admission wait;
+            # the bounded clearance lifecycle may cancel/requeue it later.
+            robot.last_replan_at = now
+            # This branch is observed on every physics tick after the normal
+            # blocked-replan deadline.  Keep the first observation as the
+            # lifecycle age; resetting it here makes a permanently blocked
+            # clearance look freshly stalled forever.
+            robot.traffic_stall_since = robot.traffic_stall_since or now
+            return False
         if self._reason_requires_spatial_replan(reason):
-            order = self._active_order_for_robot(robot)
             start_lm = self._safe_replan_start_lm(robot)
-            if order is not None and start_lm:
+            if active_order is not None and start_lm:
                 avoid_lm = ""
                 if self._is_parked_robot_conflict(reason):
                     blocker = self.robots.get(
@@ -847,9 +1477,9 @@ class FleetMotionRuntimeMixin:
                     if blocker is not None:
                         avoid_lm = self._traffic_lm_for_robot(blocker)
                 self._queue_alternate_corridor_detour(
-                    order,
+                    active_order,
                     start_lm,
-                    self._active_order_target(order),
+                    self._active_order_target(active_order),
                     avoid_lm=avoid_lm,
                 )
         if self._queue_active_order_for_background_replan(robot, now, reason):
@@ -874,12 +1504,17 @@ class FleetMotionRuntimeMixin:
         now: float,
         reason: str,
         *,
-        allow_controlled_corridor_replan: bool = False,
+        supersede_retained_route: bool = False,
     ) -> bool:
         if robot.is_remote() or not robot.active_order_id:
             return False
         order = self.orders.get(robot.active_order_id)
         if order is None or order.status in TERMINAL_ORDER_STATUSES:
+            return False
+        if order.internal_kind == "traffic_clearance":
+            # See _schedule_runtime_replan(): this order's explicit spatial
+            # route is the recovery invariant, not a cache which a generic
+            # runtime transaction may invalidate.
             return False
         start_lm = self._safe_replan_start_lm(robot)
         if not start_lm:
@@ -893,55 +1528,384 @@ class FleetMotionRuntimeMixin:
         if (
             corridor_vertex is not None
             and corridor_vertex.controlled_region_ids
-            and not allow_controlled_corridor_replan
         ):
-            # Clearing an active route here turns a temporary wait into a
-            # permanent stationary obstacle inside a one-lane resource. Keep
-            # the trajectory so cycle arbitration can grant an exit or a
-            # graph-safe retreat before a spatial replan is queued.
+            # Never clear the only executable timeline while the physical
+            # body is inside a capacity-one passage. Emergency callers used
+            # to bypass this guard, leaving an IDLE/QUEUED robot permanently
+            # parked on a no-wait LM. Recovery must first reach an external
+            # safe holding LM, then it may enqueue the spatial detour.
             return False
 
-        order.status = "QUEUED"
-        # Do not redispatch the identical geometry on the very next 10 Hz
-        # physics tick. The granted neighbour needs a short interval to clear
-        # its footprint; repeated failures then back off to the existing
-        # bounded 0.5/1/2/4-second retry schedule. A successful route commit
-        # resets dispatch_failures immediately.
-        order.error = f"runtime replan cooldown: {reason}"
-        order.dispatch_failures += 1
+        retained_route_superseded = bool(
+            supersede_retained_route
+            or self._replan_supersedes_retained_route(reason)
+        )
+        requires_spatial_replan = bool(
+            supersede_retained_route
+            or self._reason_requires_spatial_replan(reason)
+        )
+        existing = self._runtime_replans.get(robot.name)
+        if isinstance(existing, dict):
+            same_transaction = bool(
+                str(existing.get("order_id") or "") == order.order_id
+                and int(existing.get("route_revision", -1))
+                == int(robot.route_revision)
+                and str(existing.get("start_lm") or "") == start_lm
+                and abs(
+                    float(existing.get("route_clock", 0.0) or 0.0)
+                    - float(robot.route_clock)
+                ) <= 0.000001
+            )
+            if same_transaction:
+                # Repeated 10 Hz wait-cycle observations refer to the same
+                # transaction.  Do not duplicate planner work or failure age.
+                # A later corridor evacuation is a monotonic safety upgrade,
+                # however: its retained suffix has just been proven unsafe.
+                # Invalidate any in-flight ordinary attempt and retry from the
+                # same pose without ever allowing that suffix to move again.
+                if (
+                    retained_route_superseded
+                    and not bool(
+                        existing.get("retained_route_superseded")
+                    )
+                ):
+                    if not self._superseded_runtime_replan_slot_available(
+                        robot.name
+                    ):
+                        return False
+                    existing["retained_route_superseded"] = True
+                    existing["reason"] = str(
+                        reason
+                        or "deadlock corridor evacuated; "
+                        "alternate route required"
+                    )
+                    existing["generation"] = (
+                        int(existing.get("generation", 0) or 0) + 1
+                    )
+                    existing["stage"] = "queued"
+                    existing["retry_at"] = float(now)
+                    existing["promoted_at"] = float(now)
+                    if requires_spatial_replan:
+                        order.spatial_route_nodes = []
+                        order.traffic_blocked_since = now
+                    order.status = "PLANNING"
+                    order.error = (
+                        f"runtime replan pending: {existing['reason']}"
+                    )
+                    order.updated_at = now
+                    robot.status = "WAITING"
+                    robot.last_reason = (
+                        "replanning route while holding: "
+                        f"{existing['reason']}"
+                    )
+                    robot.last_tick_at = now
+                    robot.updated_at = now
+                return True
+            self._runtime_replans.pop(robot.name, None)
+
+        if (
+            retained_route_superseded
+            and not self._superseded_runtime_replan_slot_available(robot.name)
+        ):
+            return False
+
+        captured_blocker = (
+            str(robot.wait_for_robot or "").strip()
+            or self._robot_name_from_conflict_reason(reason)
+        )
+        blocker_names = (
+            (captured_blocker,)
+            if captured_blocker in self.robots and captured_blocker != robot.name
+            else ()
+        )
+        causal_blocker_signatures = tuple(
+            (
+                name,
+                self._traffic_lm_for_robot(self.robots[name]),
+                int(self.robots[name].route_revision),
+            )
+            for name in blocker_names
+        )
+        wait_dependency_signature = (
+            (
+                captured_blocker,
+                str(
+                    robot.wait_resource
+                    or self._edge_id_at_trajectory(
+                        robot.trajectory,
+                        robot.route_clock,
+                    )
+                    or "traffic",
+                ),
+                self._traffic_lm_for_robot(
+                    self.robots[captured_blocker]
+                ),
+                int(self.robots[captured_blocker].route_revision),
+                str(
+                    self.robots[captured_blocker].active_order_id
+                    or ""
+                ),
+            )
+            if blocker_names
+            else ()
+        )
+        generation = int(existing.get("generation", 0) or 0) + 1 if isinstance(existing, dict) else 1
+        self._runtime_replans[robot.name] = {
+            "order_id": order.order_id,
+            "start_lm": start_lm,
+            "route_revision": int(robot.route_revision),
+            "route_clock": float(robot.route_clock),
+            "reason": str(reason or "runtime traffic changed"),
+            # Preserve the dependency before _clear_wait_dependency() below.
+            # A later spatial-planner error may only say "no low level path"
+            # even though runtime arbitration knew the exact parked owner.
+            "blocker_names": blocker_names,
+            "causal_blocker_signatures": causal_blocker_signatures,
+            "wait_dependency_signature": wait_dependency_signature,
+            "queued_at": float(now),
+            "retry_at": float(now),
+            "failures": 0,
+            "generation": generation,
+            "stage": "queued",
+            # A normal transactional replan may keep executing its old route
+            # after a failed attempt: another moving robot can simply leave the
+            # temporal conflict. A completed corridor evacuation is different.
+            # Its retained suffix is the route which just recreated the
+            # deadlock, so it must remain a pose/reservation safety snapshot,
+            # never an admission candidate or a motion fallback.
+            "retained_route_superseded": retained_route_superseded,
+        }
+
+        # This is a planning state of the *same active order*, not a return to
+        # the ordinary order queue.  The old implementation cleared the active
+        # assignment and trajectory here, creating a stationary body that the
+        # next planner treated as an unrelated hard obstacle.
+        order.status = "PLANNING"
+        order.error = f"runtime replan pending: {reason}"
         order.updated_at = now
         order.assigned_robot = robot.name
         order.start_lm = start_lm
         order.route_nodes = list(robot.plan_nodes)
-        if self._reason_requires_spatial_replan(reason):
+        if requires_spatial_replan:
             order.spatial_route_nodes = []
             order.traffic_blocked_since = now
         robot.current_lm = start_lm
-        robot.active_order_id = ""
-        robot.target_lm = ""
-        robot.status = "IDLE"
-        robot.trajectory = []
-        robot.plan_nodes = []
-        robot.trajectory_dirty = True
-        robot.route_started_at = None
-        robot.route_clock = 0.0
+        robot.status = "WAITING"
         robot.last_tick_at = now
-        robot.blocked_since = None
+        robot.blocked_since = robot.blocked_since or now
         robot.traffic_stall_since = None
         robot.traffic_priority_until = 0.0
         robot.last_replan_at = now
-        # The detailed cause remains in the event/order history. At runtime
-        # this is no longer an active deadlock, so do not leave a stale
-        # "deadlock resolving" state above an IDLE robot.
-        robot.last_reason = "route replan queued"
-        robot.route_note = ""
-        robot.pending_route = None
-        robot.route_preview = []
-        robot.route_preview_dirty = True
+        robot.last_reason = f"replanning route while holding: {reason}"
         self._clear_wait_dependency(robot)
         robot.updated_at = now
-        self._event("warn", f"{robot.name} background replan queued: {reason}")
+        self._event(
+            "warn",
+            f"{robot.name} transactional background replan queued: {reason}",
+        )
         return True
+
+    def _superseded_runtime_replan_limit(self) -> int:
+        """Bound routes which are invalidated before a replacement exists.
+
+        A superseded transaction deliberately turns its retained trajectory
+        into a stationary safety snapshot.  Admitting an unbounded number of
+        those transactions behind the single atomic commit stream creates a
+        positive feedback loop: every queued snapshot is another full-horizon
+        obstacle for the next planner request.  Keep a tiny bounded recovery
+        window; ordinary transactional replans continue to execute their
+        retained routes and are not counted here.
+        """
+
+        fleet = self.params.get("fleet", {})
+        if not isinstance(fleet, dict):
+            fleet = {}
+        try:
+            configured = int(
+                fleet.get("max_superseded_runtime_replans", 2) or 2
+            )
+        except (TypeError, ValueError):
+            configured = 2
+        return max(1, min(8, configured))
+
+    def _superseded_runtime_replan_slot_available(
+        self,
+        robot_name: str,
+    ) -> bool:
+        """Return whether another unsafe-route replacement may be admitted."""
+
+        active = 0
+        for owner_name, state in self._runtime_replans.items():
+            if owner_name == robot_name or not isinstance(state, dict):
+                continue
+            if not bool(state.get("retained_route_superseded")):
+                continue
+            owner = self.robots.get(owner_name)
+            if owner is None:
+                continue
+            validator = getattr(
+                self,
+                "_runtime_replan_state_is_current",
+                None,
+            )
+            if callable(validator) and not validator(
+                owner,
+                state,
+                allowed_stages={
+                    "queued",
+                    "planning",
+                    "retry",
+                    "deadlock_escalated",
+                },
+            ):
+                continue
+            active += 1
+            if active >= self._superseded_runtime_replan_limit():
+                return False
+        return True
+
+    def _replan_supersedes_retained_route(self, reason: str) -> bool:
+        """Return whether retrying the old spatial suffix is knowingly unsafe."""
+        value = str(reason or "").strip().lower()
+        return bool(
+            "corridor evacuated" in value
+            and "alternate route required" in value
+        )
+
+    def _queue_background_replan_recovery_action(
+        self,
+        robot: FleetRobot,
+        now: float,
+        reason: str,
+        *,
+        supersede_retained_route: bool = False,
+    ) -> tuple[bool, bool]:
+        """Return ``(handled, started)`` for a deadlock replan request.
+
+        The ordinary queue method is intentionally idempotent: it returns
+        ``True`` both when it creates a transaction and when the identical
+        transaction is already queued/planning/retrying.  Deadlock call sites
+        need the distinction because only the former is a new recovery action
+        that may increment ``cycleReplans`` or detour-attempt counters.
+
+        The no-state fallback preserves lightweight tests/adapters which
+        replace the queue method with a successful stub.
+        """
+        before = self._runtime_replans.get(robot.name)
+        before_generation = (
+            int(before.get("generation", 0) or 0)
+            if isinstance(before, dict)
+            else -1
+        )
+        handled = self._queue_active_order_for_background_replan(
+            robot,
+            now,
+            reason,
+            supersede_retained_route=supersede_retained_route,
+        )
+        if not handled:
+            return False, False
+        after = self._runtime_replans.get(robot.name)
+        after_generation = (
+            int(after.get("generation", 0) or 0)
+            if isinstance(after, dict)
+            else -1
+        )
+        started = bool(
+            before is not after
+            or before_generation != after_generation
+            or (before is None and after is None)
+        )
+        return True, started
+
+    def _runtime_replan_holds_robot(self, robot: FleetRobot) -> bool:
+        state = self._runtime_replans.get(robot.name)
+        if not isinstance(state, dict):
+            return False
+        order = self.orders.get(str(state.get("order_id") or ""))
+        if (
+            order is None
+            or order.status in TERMINAL_ORDER_STATUSES
+            or robot.active_order_id != order.order_id
+            or int(state.get("route_revision", -1)) != int(robot.route_revision)
+            or abs(
+                float(state.get("route_clock", 0.0) or 0.0)
+                - float(robot.route_clock)
+            ) > 0.000001
+            or self._safe_replan_start_lm(robot)
+            != str(state.get("start_lm") or "")
+        ):
+            self._runtime_replans.pop(robot.name, None)
+            return False
+        corridor_hold = state.get("corridor_clearance_hold")
+        if isinstance(corridor_hold, dict):
+            if self._corridor_clearance_hold_active(
+                corridor_hold,
+                robot.name,
+            ):
+                # A failed planner attempt normally lets the old route retry.
+                # A portal evacuation is different: retrying that route would
+                # immediately refill the pocket. Hold retry state as well as
+                # queued/planning state until the owner clears or explicitly
+                # depends on this robot moving farther away.
+                return True
+            state.pop("corridor_clearance_hold", None)
+        stage = str(state.get("stage") or "")
+        if stage == "deadlock_escalated":
+            # The old suffix is a collision/reservation snapshot only.
+            # Ordinary priority grants must not start it; the existing
+            # wait-graph may release this hold only by installing an explicit
+            # reverse retreat/graph escape (which changes route identity).
+            return not (
+                robot.status == "RETREATING"
+                and robot.retreat_target_clock is not None
+            )
+        if bool(state.get("retained_route_superseded")):
+            # Unlike an ordinary transient temporal failure, progress along
+            # this route would immediately invalidate the transaction and
+            # reacquire the corridor which recovery deliberately evacuated.
+            # Hold through retry backoff until an alternate path commits.
+            return stage in {"queued", "planning", "retry"}
+        if state.get("clearance_blocker_names"):
+            # This robot was intentionally moved/held to open the only route
+            # for a stationary blocker.  Retrying its old suffix before that
+            # maintenance move completes would close the pocket again.
+            return stage in {"queued", "planning", "retry"}
+        # Merely entering the planner queue is not a motion command.  There is
+        # one shared worker today, so freezing every queued transaction turns
+        # a short planner backlog into a fleet-wide stop.  Until this specific
+        # request reaches the worker, keep checking the committed trajectory:
+        # a transient blocker may clear without any spatial replan at all.
+        # The planning stage still holds the exact snapshot required for an
+        # atomic result commit.
+        return stage == "planning"
+
+    def _discard_runtime_replan_after_progress(self, robot: FleetRobot) -> None:
+        state = self._runtime_replans.get(robot.name)
+        if not isinstance(state, dict):
+            return
+        stage = str(state.get("stage") or "")
+        if (
+            stage not in {"queued", "retry"}
+            or bool(state.get("retained_route_superseded"))
+            or bool(state.get("clearance_blocker_names"))
+        ):
+            return
+        if abs(
+            float(state.get("route_clock", 0.0) or 0.0)
+            - float(robot.route_clock)
+        ) <= 0.000001:
+            return
+        self._runtime_replans.pop(robot.name, None)
+        order = self.orders.get(robot.active_order_id)
+        if order is not None and order.status not in TERMINAL_ORDER_STATUSES:
+            order.status = "EXECUTING"
+            order.error = ""
+            order.updated_at = self._now()
+        self._event(
+            "info",
+            f"{robot.name} retained route cleared before replan retry",
+        )
 
     def _reason_requires_spatial_replan(self, reason: str) -> bool:
         value = str(reason or "").lower()

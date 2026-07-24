@@ -39,9 +39,13 @@ class TrafficPlanningMixin:
         hard_blocked_lms = self._hard_blocked_lms(payload)
         blocked_edges = self._hard_blocked_edges(payload) | self._dynamic_blocked_edges()
         held_blockers = self._release_blocker_names_for_requests(valid_requests)
+        superseded_holders = (
+            self._superseded_runtime_replan_holder_names(valid_requests)
+        )
+        held_snapshot_owners = held_blockers | superseded_holders
         release_owners = self._bootstrap_departure_robot_names(valid_requests)
         reservation_ignored_owners = (
-            held_blockers
+            held_snapshot_owners
             | release_owners
         )
         release_start_lms = {
@@ -62,7 +66,7 @@ class TrafficPlanningMixin:
         )
         reserved_vertex_intervals.extend(
             self._held_blocker_vertex_intervals(
-                held_blockers,
+                held_snapshot_owners,
                 prediction_offset=reservation_offset,
             )
         )
@@ -115,6 +119,7 @@ class TrafficPlanningMixin:
                 result = self._apply_continuous_reservation_waits(
                     result,
                     ignore_robot_names=release_owners,
+                    stationary_robot_names=held_snapshot_owners,
                     prediction_offset=reservation_offset,
                 )
                 self._event(
@@ -126,16 +131,87 @@ class TrafficPlanningMixin:
             failed_reason = result.get("debug", {}).get("reason", "unknown")
             if bool(payload.get("strictStationaryRobotAvoidance", True)):
                 debug = result.setdefault("debug", {})
-                debug["reason"] = (
-                    f"{failed_reason}:stationary_robot_blocks_route"
-                )
                 debug["softBlockedLms"] = sorted(soft_blocked_lms)
-                debug["stationaryRobotWait"] = True
-                self._event(
-                    "warn",
-                    "planner found no route around stationary robot(s); "
-                    "order remains queued",
+                debug["softBlockDetourFailure"] = failed_reason
+
+                # A soft-block detour can fail on an unrelated temporal SIPP
+                # resource. Merely having parked robots elsewhere on the map
+                # is not evidence that one of them caused that failure. Run a
+                # no-soft diagnostic under the same exact reservations. A
+                # successful, continuously validated result is safe to use;
+                # a failure is classified as stationary only when its named
+                # resource is one of the occupied LMs (or continuous
+                # validation supplies an explicit blocker identity).
+                diagnostic = self.planner.plan(
+                    {
+                        **planner_payload,
+                        "blocked_lms": sorted(hard_blocked_lms),
+                    }
                 )
+                blocker_names: list[str] = []
+                if diagnostic.get("ok"):
+                    diagnostic_debug = diagnostic.setdefault("debug", {})
+                    diagnostic_debug["reason"] = (
+                        f"{diagnostic_debug.get('reason', 'success')}:"
+                        "diagnostic_soft_fallback"
+                    )
+                    diagnostic_debug["softBlockedLms"] = sorted(
+                        soft_blocked_lms
+                    )
+                    diagnostic_soft_lms = {
+                        str(node)
+                        for plan in diagnostic.get("plans", [])
+                        if isinstance(plan, dict)
+                        for node in plan.get("nodes", [])
+                        if str(node) in soft_blocked_lms
+                    }
+                    blocker_names = self._stationary_blockers_named_by_failure(
+                        " ".join(sorted(diagnostic_soft_lms)),
+                        soft_blocked_lms,
+                        request_names={
+                            str(request.get("name") or "")
+                            for request in valid_requests
+                        },
+                    )
+                    if not blocker_names:
+                        diagnostic = self._apply_continuous_reservation_waits(
+                            diagnostic,
+                            ignore_robot_names=release_owners,
+                            stationary_robot_names=held_snapshot_owners,
+                            prediction_offset=reservation_offset,
+                        )
+                        if diagnostic.get("ok") or diagnostic.get("debug", {}).get(
+                            "stationaryBlockerRobots"
+                        ):
+                            return diagnostic
+                diagnostic_reason = str(
+                    diagnostic.get("debug", {}).get("reason", "")
+                    if isinstance(diagnostic, dict)
+                    else ""
+                )
+                if not blocker_names:
+                    blocker_names = self._stationary_blockers_named_by_failure(
+                        diagnostic_reason,
+                        soft_blocked_lms,
+                        request_names={
+                            str(request.get("name") or "")
+                            for request in valid_requests
+                        },
+                    )
+                if blocker_names:
+                    debug["reason"] = (
+                        f"{failed_reason}:stationary_robot_blocks_route"
+                    )
+                    debug["stationaryRobotWait"] = True
+                    debug["stationaryBlockerRobots"] = blocker_names
+                    self._event(
+                        "warn",
+                        "planner found no route around proven stationary "
+                        "robot(s); order remains queued",
+                    )
+                else:
+                    debug["reason"] = failed_reason
+                    debug["temporalResourceFailure"] = True
                 return result
             result = self.planner.plan(
                 {
@@ -151,6 +227,7 @@ class TrafficPlanningMixin:
                 result = self._apply_continuous_reservation_waits(
                     result,
                     ignore_robot_names=release_owners,
+                    stationary_robot_names=held_snapshot_owners,
                     prediction_offset=reservation_offset,
                 )
                 self._event(
@@ -169,9 +246,49 @@ class TrafficPlanningMixin:
             result = self._apply_continuous_reservation_waits(
                 result,
                 ignore_robot_names=release_owners,
+                stationary_robot_names=held_snapshot_owners,
                 prediction_offset=reservation_offset,
             )
         return result
+
+    def _superseded_runtime_replan_holder_names(
+        self,
+        requests: list[dict[str, Any]],
+    ) -> set[str]:
+        """Return held robots whose old futures are no longer executable.
+
+        A post-evacuation transaction retains its previous trajectory only as
+        an atomic rollback/collision snapshot. Advertising that suffix to
+        another planner as future motion creates false capacity and circular
+        reservations. Keep the current body for the full horizon instead.
+        """
+        request_names = {
+            str(request.get("name") or "")
+            for request in requests
+            if str(request.get("name") or "")
+        }
+        holders: set[str] = set()
+        for robot in self._runtime_robots():
+            if robot.name in request_names or robot.status != "WAITING":
+                continue
+            state = self._runtime_replans.get(robot.name)
+            if (
+                not isinstance(state, dict)
+                or not bool(state.get("retained_route_superseded"))
+                or not self._runtime_replan_state_is_current(
+                    robot,
+                    state,
+                    allowed_stages={
+                        "queued",
+                        "planning",
+                        "retry",
+                        "deadlock_escalated",
+                    },
+                )
+            ):
+                continue
+            holders.add(robot.name)
+        return holders
 
     def _held_blocker_vertex_intervals(
         self,
@@ -335,6 +452,7 @@ class TrafficPlanningMixin:
         self,
         result: dict[str, Any],
         ignore_robot_names: set[str] | None = None,
+        stationary_robot_names: set[str] | None = None,
         prediction_offset: float = 0.0,
     ) -> dict[str, Any]:
         plans = result.get("plans", [])
@@ -345,6 +463,7 @@ class TrafficPlanningMixin:
         total_conflicts = 0
         wait_count = 0
         unresolved_count = 0
+        unresolved_conflicts: list[dict[str, Any]] = []
         planned_names = {
             str(plan.get("robot", ""))
             for plan in plans
@@ -365,7 +484,9 @@ class TrafficPlanningMixin:
                 robot_name,
                 trajectory,
                 ignore_robot_names=ignored_names,
+                stationary_robot_names=stationary_robot_names,
                 prediction_offset=prediction_offset,
+                unresolved_conflicts=unresolved_conflicts,
             )
             if stats["conflicts"] > 0:
                 plan["trajectory"] = trajectory
@@ -375,7 +496,10 @@ class TrafficPlanningMixin:
                 wait_count += stats["waits"]
             unresolved_count += int(stats.get("unresolved", 0) or 0)
 
-        batch_trajectory_stats = self._schedule_batch_trajectories(plans)
+        batch_trajectory_stats = self._schedule_batch_trajectories(
+            plans,
+            unresolved_conflicts=unresolved_conflicts,
+        )
         total_wait += batch_trajectory_stats["wait"]
         total_conflicts += batch_trajectory_stats["conflicts"]
         wait_count += batch_trajectory_stats["waits"]
@@ -387,6 +511,17 @@ class TrafficPlanningMixin:
             debug["continuousWaits"] = int(debug.get("continuousWaits", 0) or 0) + wait_count
             debug["continuousWaitSec"] = round(float(debug.get("continuousWaitSec", 0.0) or 0.0) + total_wait, 3)
             debug["continuousUnresolved"] = int(debug.get("continuousUnresolved", 0) or 0) + unresolved_count
+            if unresolved_conflicts:
+                debug["continuousUnresolvedConflicts"] = [
+                    dict(conflict) for conflict in unresolved_conflicts
+                ]
+                first_conflict = unresolved_conflicts[0]
+                debug["continuousConflictRobot"] = str(
+                    first_conflict.get("other") or ""
+                )
+                debug["continuousConflictEdge"] = str(
+                    first_conflict.get("edge") or "unknown"
+                )
             if batch_trajectory_stats["conflicts"] > 0:
                 debug["batchContinuousConflicts"] = int(debug.get("batchContinuousConflicts", 0) or 0) + batch_trajectory_stats["conflicts"]
                 debug["batchContinuousWaits"] = int(debug.get("batchContinuousWaits", 0) or 0) + batch_trajectory_stats["waits"]
@@ -395,9 +530,49 @@ class TrafficPlanningMixin:
             if unresolved_count > 0:
                 debug["reason"] = f"{debug.get('reason', 'success')}:continuous_conflict_unresolved"
                 debug["deadlock"] = True
-                debug["deadlockReason"] = (
-                    "continuous reservation conflict could not be resolved; robots will hold position"
-                )
+                stationary_conflicts: list[dict[str, Any]] = []
+                for conflict in unresolved_conflicts:
+                    blocker = self.robots.get(str(conflict.get("other") or ""))
+                    if (
+                        blocker is None
+                        or blocker.trajectory
+                        or blocker.status not in {"IDLE", "ARRIVED", "BLOCKED"}
+                        or self._robot_departure_pending(blocker)
+                    ):
+                        continue
+                    lm_name = self._nearest_lm_for_robot(blocker)
+                    if lm_name not in self.landmarks:
+                        continue
+                    stationary_conflicts.append({**conflict, "lm": lm_name})
+
+                if stationary_conflicts:
+                    blocker_lms = sorted({
+                        str(conflict["lm"]) for conflict in stationary_conflicts
+                    })
+                    blocker_names = sorted({
+                        str(conflict["other"]) for conflict in stationary_conflicts
+                    })
+                    debug["stationaryRobotWait"] = True
+                    debug["stationaryTurnEnvelopeBlock"] = True
+                    debug["stationaryBlockerRobots"] = blocker_names
+                    debug["softBlockedLms"] = sorted(
+                        set(debug.get("softBlockedLms", [])) | set(blocker_lms)
+                    )
+                    first = stationary_conflicts[0]
+                    debug["reason"] = (
+                        f"{debug['reason']}:stationary_robot_blocks_route"
+                    )
+                    debug["deadlockReason"] = (
+                        "stationary turn-envelope block: "
+                        f"{first.get('robot') or 'planned robot'} by "
+                        f"{first.get('other')} at {first.get('lm')} on "
+                        f"{first.get('edge') or 'unknown'}; "
+                        "stationary_robot_blocks_route"
+                    )
+                else:
+                    debug["deadlockReason"] = (
+                        "continuous reservation conflict could not be resolved; robots will hold position"
+                    )
                 debug["rejectedPlanCount"] = len(plans)
                 result["ok"] = False
                 result["plans"] = []
@@ -408,7 +583,9 @@ class TrafficPlanningMixin:
         robot_name: str,
         trajectory: list[dict[str, Any]],
         ignore_robot_names: set[str] | None = None,
+        stationary_robot_names: set[str] | None = None,
         prediction_offset: float = 0.0,
+        unresolved_conflicts: list[dict[str, Any]] | None = None,
     ) -> tuple[list[dict[str, Any]], dict[str, float | int]]:
         conflicts = 0
         waits = 0
@@ -420,6 +597,7 @@ class TrafficPlanningMixin:
                 robot_name,
                 trajectory,
                 ignore_robot_names=ignored,
+                stationary_robot_names=stationary_robot_names,
                 prediction_offset=prediction_offset,
             )
             if conflict is None:
@@ -433,6 +611,7 @@ class TrafficPlanningMixin:
                 trajectory,
                 float(conflict["time"]),
                 str(conflict["other"]),
+                stationary_robot_names=stationary_robot_names,
                 prediction_offset=prediction_offset,
             )
             if wait_duration >= self._reservation_horizon() - 0.000001:
@@ -470,9 +649,18 @@ class TrafficPlanningMixin:
             robot_name,
             trajectory,
             ignore_robot_names=ignored,
+            stationary_robot_names=stationary_robot_names,
             prediction_offset=prediction_offset,
         )
         if remaining_conflict is not None:
+            if unresolved_conflicts is not None:
+                unresolved_conflicts.append({
+                    "source": "committed",
+                    "robot": robot_name,
+                    "other": str(remaining_conflict.get("other") or ""),
+                    "edge": str(remaining_conflict.get("edge") or "unknown"),
+                    "time": float(remaining_conflict.get("time", 0.0) or 0.0),
+                })
             self._event(
                 "error",
                 (
@@ -488,6 +676,8 @@ class TrafficPlanningMixin:
     def _schedule_batch_trajectories(
         self,
         plans: list[Any],
+        *,
+        unresolved_conflicts: list[dict[str, Any]] | None = None,
     ) -> dict[str, float | int]:
         scheduled = [
             plan for plan in plans
@@ -591,6 +781,16 @@ class TrafficPlanningMixin:
             )
         remaining_conflict = self._first_batch_trajectory_conflict(scheduled)
         if remaining_conflict is not None:
+            if unresolved_conflicts is not None:
+                priority_index = int(remaining_conflict["priorityIndex"])
+                wait_index = int(remaining_conflict["waitIndex"])
+                unresolved_conflicts.append({
+                    "source": "batch",
+                    "robot": str(scheduled[wait_index].get("robot") or ""),
+                    "other": str(scheduled[priority_index].get("robot") or ""),
+                    "edge": str(remaining_conflict.get("edge") or "unknown"),
+                    "time": float(remaining_conflict.get("time", 0.0) or 0.0),
+                })
             self._event(
                 "error",
                 (
@@ -756,9 +956,11 @@ class TrafficPlanningMixin:
         robot_name: str,
         trajectory: list[dict[str, Any]],
         ignore_robot_names: set[str] | None = None,
+        stationary_robot_names: set[str] | None = None,
         prediction_offset: float = 0.0,
     ) -> dict[str, Any] | None:
         ignored = ignore_robot_names or set()
+        stationary = stationary_robot_names or set()
         corridor_robots = [
             robot
             for robot in self._runtime_robots()
@@ -773,12 +975,20 @@ class TrafficPlanningMixin:
         horizon = min(final_time, self._reservation_horizon())
         initial_clearance_release: dict[str, float] = {}
         for other in corridor_robots:
-            release = self._initial_clearance_release_time(
-                lambda elapsed: self._pose_at_trajectory(trajectory, elapsed),
-                lambda elapsed, peer=other: self._predicted_robot_pose(
+            def peer_pose_at(
+                elapsed: float,
+                peer: FleetRobot = other,
+            ) -> dict[str, float] | None:
+                if peer.name in stationary:
+                    return dict(peer.pose) if peer.pose is not None else None
+                return self._predicted_robot_pose(
                     peer,
                     prediction_offset + elapsed,
-                ),
+                )
+
+            release = self._initial_clearance_release_time(
+                lambda elapsed: self._pose_at_trajectory(trajectory, elapsed),
+                peer_pose_at,
                 horizon,
             )
             if release is not None:
@@ -790,7 +1000,14 @@ class TrafficPlanningMixin:
                 t += step
                 continue
             for other in corridor_robots:
-                other_pose = self._predicted_robot_pose(other, prediction_offset + t)
+                other_pose = (
+                    dict(other.pose)
+                    if other.name in stationary and other.pose is not None
+                    else self._predicted_robot_pose(
+                        other,
+                        prediction_offset + t,
+                    )
+                )
                 if other_pose is None:
                     continue
                 if self.collision.robot_footprints_conflict(pose, other_pose):
@@ -885,6 +1102,7 @@ class TrafficPlanningMixin:
         trajectory: list[dict[str, Any]],
         conflict_time: float,
         other_name: str,
+        stationary_robot_names: set[str] | None = None,
         prediction_offset: float = 0.0,
     ) -> float:
         conflict_pose = self._pose_at_trajectory(trajectory, conflict_time)
@@ -895,11 +1113,16 @@ class TrafficPlanningMixin:
         step = self._continuous_collision_step()
         safety = self._reservation_safety_time()
         max_wait = max(2.0, self._reservation_horizon())
+        stationary = stationary_robot_names or set()
         wait = 0.0
         while wait <= max_wait + 0.000001:
-            other_pose = self._predicted_robot_pose(
-                other,
-                prediction_offset + conflict_time + wait,
+            other_pose = (
+                dict(other.pose)
+                if other.name in stationary and other.pose is not None
+                else self._predicted_robot_pose(
+                    other,
+                    prediction_offset + conflict_time + wait,
+                )
             )
             if other_pose is None or not self.collision.robot_footprints_conflict(conflict_pose, other_pose):
                 return max(safety, wait + safety)
@@ -1526,6 +1749,44 @@ class TrafficPlanningMixin:
             exclude_robot_names=request_names,
         ) - protected_lms
 
+    def _stationary_blockers_named_by_failure(
+        self,
+        reason: str,
+        candidate_lms: set[str],
+        *,
+        request_names: set[str],
+    ) -> list[str]:
+        """Resolve a failed resource to an actual inactive robot body.
+
+        Planner failure strings name the constrained LM (for example
+        ``resource_constrained:S003013@7``), but do not always include the
+        owner robot. Only an LM that is both named in that diagnostic and in
+        the soft stationary occupancy set is causal enough to relocate.
+        """
+        text = str(reason or "")
+        mentioned_lms = {
+            lm_name
+            for lm_name in candidate_lms
+            if lm_name and lm_name in text
+        }
+        if not mentioned_lms:
+            return []
+        blockers: list[str] = []
+        for robot in self._runtime_robots():
+            if robot.name in request_names or robot.trajectory:
+                continue
+            if (
+                robot.status in {"IDLE", "ARRIVED"}
+                and self._robot_departure_pending(robot)
+            ):
+                # A commanded chain sink must receive its own departure plan,
+                # never be mistaken for warehouse storage and relocated by a
+                # different order's recovery.
+                continue
+            if self._nearest_lm_for_robot(robot) in mentioned_lms:
+                blockers.append(robot.name)
+        return sorted(blockers)
+
     def _release_blocker_names_for_requests(self, requests: list[dict[str, Any]]) -> set[str]:
         request_names = {
             str(request.get("name", "")).strip()
@@ -1535,21 +1796,92 @@ class TrafficPlanningMixin:
         if not request_names:
             return set()
 
+        # Dependencies point from an upstream waiter to the robot whose
+        # departure will release it.  The old one-hop lookup correctly held
+        # A for a request that moved B, but kept A's upstream waiters' *future*
+        # suffixes reserved.  In A->B->C->terminal those stale reservations
+        # can occupy the terminal's only exit even though every upstream body
+        # is physically stopped.  Walk the complete wait-for closure: keep
+        # each current body as a full-horizon vertex reservation (the caller
+        # does that via ``_held_blocker_vertex_intervals``), while omitting all
+        # of their unexecutable future edge/vertex reservations.
         release_owners: set[str] = set()
-        for robot in self._runtime_robots():
-            if robot.name in request_names or robot.status != "WAITING":
-                continue
-            if robot.wait_for_robot in request_names:
-                release_owners.add(robot.name)
-                continue
-            reason = str(robot.last_reason or "")
-            for request_name in request_names:
-                if reason.endswith(request_name) and (
-                    reason.startswith("yield to ")
+        dependency_frontier = set(request_names)
+
+        # Rolling SIPP can identify an external future reservation before the
+        # runtime wait graph has observed the reciprocal hold. If that owner
+        # is already WAITING, its advertised suffix is not executable: using
+        # it again can reserve the requester's current LM and create the
+        # artificial cycle "A cannot leave because B plans to arrive at A;
+        # B cannot move because it is yielding to A". Preserve B's physical
+        # body at its current LM, but omit that stale future on the next
+        # attempt. Moving owners keep their timelines unchanged and remain
+        # ordinary temporal reservations.
+        for requester_name in sorted(request_names):
+            for blocker_name in self._valid_rolling_prefetch_blockers(
+                requester_name
+            ):
+                blocker = self.robots.get(blocker_name)
+                if (
+                    blocker is None
+                    or blocker.status != "WAITING"
+                    or not blocker.trajectory
+                ):
+                    continue
+                release_owners.add(blocker.name)
+                dependency_frontier.add(blocker.name)
+
+        changed = True
+        while changed:
+            changed = False
+            for robot in self._runtime_robots():
+                if (
+                    robot.name in request_names
+                    or robot.name in release_owners
+                    or robot.status != "WAITING"
+                ):
+                    continue
+                dependencies: set[str] = set()
+                if robot.wait_for_robot:
+                    dependencies.add(str(robot.wait_for_robot))
+
+                replan_state = self._runtime_replans.get(robot.name)
+                if isinstance(replan_state, dict):
+                    order = self.orders.get(
+                        str(replan_state.get("order_id") or "")
+                    )
+                    valid_transaction = bool(
+                        order is not None
+                        and robot.active_order_id == order.order_id
+                        and int(replan_state.get("route_revision", -1))
+                        == int(robot.route_revision)
+                        and abs(
+                            float(replan_state.get("route_clock", 0.0) or 0.0)
+                            - float(robot.route_clock)
+                        ) <= 0.000001
+                        and str(replan_state.get("start_lm") or "")
+                        == self._safe_replan_start_lm(robot)
+                    )
+                    if valid_transaction:
+                        dependencies.update(
+                            str(name)
+                            for name in replan_state.get("blocker_names", ())
+                            if str(name)
+                        )
+
+                reason = str(robot.last_reason or "")
+                reason_blocker = self._robot_name_from_conflict_reason(reason)
+                if reason_blocker and (
+                    self._is_robot_conflict(reason)
                     or reason.startswith("keep clearance from ")
                 ):
-                    release_owners.add(robot.name)
-                    break
+                    dependencies.add(reason_blocker)
+
+                if not dependencies.intersection(dependency_frontier):
+                    continue
+                release_owners.add(robot.name)
+                dependency_frontier.add(robot.name)
+                changed = True
         return release_owners
 
     def _nearest_lm_for_robot(self, robot: FleetRobot) -> str:

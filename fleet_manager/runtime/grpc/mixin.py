@@ -479,9 +479,9 @@ class GrpcRobotRuntimeMixin:
             length += edge_length
         return length
 
-    def _cancel_remote_route(self, robot: FleetRobot, reason: str) -> None:
+    def _cancel_remote_route(self, robot: FleetRobot, reason: str) -> bool:
         if not robot.is_remote() or not robot.base_url:
-            return
+            return True
         try:
             self._ensure_remote_control(robot, "cancel route")
             self.remote_adapter.cancel_route(robot.base_url, owner_id=FLEET_CONTROL_OWNER_ID)
@@ -491,7 +491,9 @@ class GrpcRobotRuntimeMixin:
             robot.remote_online = self._is_remote_control_conflict(exc)
             robot.remote_error = str(exc)
             self._event("warn", f"{robot.name} remote cancel failed: {exc}")
+            return False
         robot.last_reason = reason
+        return True
 
     def _stop_remote_robot(self, robot: FleetRobot) -> None:
         if not robot.is_remote() or not robot.base_url:

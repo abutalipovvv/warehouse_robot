@@ -2656,7 +2656,7 @@ primitives:
     start_name: LM292
     end_name: LM281
   properties:
-    direction: 2
+    direction: -1
     movestyle: 0
   length_m: 1.586
 - kind: curve
@@ -2677,7 +2677,7 @@ primitives:
     start_name: LM281
     end_name: LM292
   properties:
-    direction: 2
+    direction: -1
     movestyle: 0
   length_m: 1.586
 - kind: curve
@@ -2698,7 +2698,7 @@ primitives:
     start_name: LM293
     end_name: LM282
   properties:
-    direction: 2
+    direction: -1
     movestyle: 0
   length_m: 1.586032
 - kind: curve
@@ -2719,7 +2719,7 @@ primitives:
     start_name: LM282
     end_name: LM293
   properties:
-    direction: 2
+    direction: -1
     movestyle: 0
   length_m: 1.586032
 - kind: curve
@@ -2784,7 +2784,7 @@ primitives:
     start_name: LM323
     end_name: LM322
   properties:
-    direction: 2
+    direction: -1
     movestyle: 0
   length_m: 1.586
 - kind: curve
@@ -2805,6 +2805,6 @@ primitives:
     start_name: LM322
     end_name: LM323
   properties:
-    direction: 2
+    direction: -1
     movestyle: 0
   length_m: 1.586

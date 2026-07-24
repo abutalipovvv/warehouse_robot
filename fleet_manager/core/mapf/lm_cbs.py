@@ -141,6 +141,9 @@ class LmRobotRequest:
     goal_lm: NodeName
     start_yaw: float = 0.0
     route_nodes: tuple[NodeName, ...] = ()
+    start_not_before_tick: int = 0
+    node_departure_not_before: tuple[tuple[NodeName, int], ...] = ()
+    authorized_controlled_regions: tuple[str, ...] = ()
 
 
 @dataclass
@@ -160,6 +163,14 @@ class PlannerDebug:
     conflicts_resolved: int = 0
     high_level_nodes: int = 0
     expanded_nodes: int = 0
+    # Exact owners of external reservations that prevented a low-level path.
+    # Rolling SIPP discovers these while building safe intervals; retaining
+    # them lets runtime arbitration reconstruct a real wait-for dependency.
+    blocking_robots: tuple[str, ...] = ()
+    # Owner/resource pairs must travel together through hybrid fallback.
+    # Keeping only the owner while using an unrelated final CBS reason can
+    # manufacture a false dependency in the runtime wait graph.
+    blocking_reservations: tuple[tuple[str, str], ...] = ()
 
 
 @dataclass
@@ -225,6 +236,9 @@ class LmCBSEnvironment:
         heuristic_fn: Callable[[NodeName, NodeName], float] | None = None,
         move_cost_fn: Callable[[NodeName, NodeName], int] | None = None,
         heading_fn: Callable[[NodeName, NodeName], float] | None = None,
+        heading_options_fn: (
+            Callable[[NodeName, NodeName], tuple[float, ...]] | None
+        ) = None,
         turn_cost_fn: Callable[[float, float], int] | None = None,
         vertex_resources_fn: Callable[[NodeName], tuple[object, ...]] | None = None,
         rotation_resources_fn: Callable[[NodeName], tuple[object, ...]] | None = None,
@@ -245,6 +259,7 @@ class LmCBSEnvironment:
         self.heuristic_fn = heuristic_fn or (lambda _node, _goal: 0.0)
         self.move_cost_fn = move_cost_fn or (lambda _src, _dst: 1)
         self.heading_fn = heading_fn or (lambda _src, _dst: 0.0)
+        self.heading_options_fn = heading_options_fn
         self.turn_cost_fn = turn_cost_fn or (lambda _from_yaw, _to_yaw: 0)
         self.vertex_resources_fn = vertex_resources_fn
         self.rotation_resources_fn = rotation_resources_fn or vertex_resources_fn
@@ -501,18 +516,54 @@ class LmCBSEnvironment:
                     continue
                 next_state = State(state.time + 1, node, state.yaw)
             else:
-                target_yaw = self._normalize_yaw(self.heading_fn(state.node, node))
-                next_state = State(
-                    state.time + self.transition_duration(
-                        state.node,
-                        node,
-                        from_yaw=state.yaw,
-                        to_yaw=target_yaw,
-                    ),
-                    node,
-                    target_yaw,
+                heading_options = (
+                    self.heading_options_fn(state.node, node)
+                    if self.heading_options_fn is not None
+                    else (self.heading_fn(state.node, node),)
                 )
-            if self.state_valid(next_state) and self.transition_valid(state, next_state):
+                lane_yaws = tuple(dict.fromkeys(
+                    self._normalize_yaw(item)
+                    for item in heading_options
+                ))
+                if not self.can_wait_fn(state.node) and len(lane_yaws) > 1:
+                    lane_yaws = (
+                        min(
+                            lane_yaws,
+                            key=lambda value: (
+                                max(
+                                    0,
+                                    int(
+                                        self.turn_cost_fn(
+                                            state.yaw,
+                                            value,
+                                        )
+                                    ),
+                                ),
+                                value,
+                            ),
+                        ),
+                    )
+                for value in lane_yaws:
+                    next_state = State(
+                        state.time + self.transition_duration(
+                            state.node,
+                            node,
+                            from_yaw=state.yaw,
+                            to_yaw=value,
+                        ),
+                        node,
+                        value,
+                    )
+                    if self.state_valid(next_state) and self.transition_valid(
+                        state,
+                        next_state,
+                    ):
+                        neighbors.append(next_state)
+                continue
+            if self.state_valid(next_state) and self.transition_valid(
+                state,
+                next_state,
+            ):
                 neighbors.append(next_state)
         return neighbors
 
@@ -1120,6 +1171,9 @@ class LmCBSPlanner:
         heuristic_fn: Callable[[NodeName, NodeName], float] | None = None,
         move_cost_fn: Callable[[NodeName, NodeName], int] | None = None,
         heading_fn: Callable[[NodeName, NodeName], float] | None = None,
+        heading_options_fn: (
+            Callable[[NodeName, NodeName], tuple[float, ...]] | None
+        ) = None,
         turn_cost_fn: Callable[[float, float], int] | None = None,
         vertex_resources_fn: Callable[[NodeName], tuple[object, ...]] | None = None,
         rotation_resources_fn: Callable[[NodeName], tuple[object, ...]] | None = None,
@@ -1134,6 +1188,7 @@ class LmCBSPlanner:
         self.heuristic_fn = heuristic_fn
         self.move_cost_fn = move_cost_fn
         self.heading_fn = heading_fn
+        self.heading_options_fn = heading_options_fn
         self.turn_cost_fn = turn_cost_fn
         self.vertex_resources_fn = vertex_resources_fn
         self.rotation_resources_fn = rotation_resources_fn or vertex_resources_fn
@@ -1258,6 +1313,7 @@ class LmCBSPlanner:
             heuristic_fn=self.heuristic_fn,
             move_cost_fn=move_cost_fn or self.move_cost_fn,
             heading_fn=self.heading_fn,
+            heading_options_fn=self.heading_options_fn,
             turn_cost_fn=self.turn_cost_fn,
             vertex_resources_fn=self.vertex_resources_fn,
             rotation_resources_fn=self.rotation_resources_fn,

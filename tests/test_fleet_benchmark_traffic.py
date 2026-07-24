@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from time import monotonic, sleep
 
-import fleet_manager.web_simulator.manager as runtime_module
-import operator_app.services.fleet_manager as service_module
+import fleet_manager.core.manager as runtime_module
+import operator_app.core.fleet_manager as service_module
 
-from operator_app.services.fleet_manager import (
+from operator_app.core.fleet_manager import (
     DEFAULT_FLEET_MAP_DIR,
     FLEET_MANAGER_SIM_ID,
     OperatorFleetManager,
@@ -15,7 +15,7 @@ from operator_app.services.fleet_manager import (
 def test_plan_action_starts_continuous_random_orders_for_every_robot(monkeypatch) -> None:
     service = OperatorFleetManager(
         DEFAULT_FLEET_MAP_DIR,
-        DEFAULT_FLEET_MAP_DIR.parents[2] / "params.yaml",
+        DEFAULT_FLEET_MAP_DIR.parents[2] / "config" / "params.yaml",
         manager_id=FLEET_MANAGER_SIM_ID,
         mode="simulation",
     )
@@ -89,7 +89,7 @@ def test_plan_action_starts_continuous_random_orders_for_every_robot(monkeypatch
 def test_simulated_order_replans_after_rolling_horizon_without_completing() -> None:
     service = OperatorFleetManager(
         DEFAULT_FLEET_MAP_DIR,
-        DEFAULT_FLEET_MAP_DIR.parents[2] / "params.yaml",
+        DEFAULT_FLEET_MAP_DIR.parents[2] / "config" / "params.yaml",
         manager_id=FLEET_MANAGER_SIM_ID,
         mode="simulation",
     )
@@ -142,7 +142,7 @@ def test_dynamic_runtime_keeps_robots_collision_free_and_wait_graph_acyclic(
     monkeypatch.setattr(service_module, "time", lambda: clock[0])
     service = OperatorFleetManager(
         DEFAULT_FLEET_MAP_DIR,
-        DEFAULT_FLEET_MAP_DIR.parents[2] / "params.yaml",
+        DEFAULT_FLEET_MAP_DIR.parents[2] / "config" / "params.yaml",
         manager_id=FLEET_MANAGER_SIM_ID,
         mode="simulation",
     )

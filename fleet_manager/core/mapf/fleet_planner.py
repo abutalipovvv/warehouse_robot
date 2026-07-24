@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import heapq
 import math
 from typing import Any
 
@@ -187,6 +188,108 @@ class FleetMapfPlanner:
                 start_lm=start_lm,
                 goal_lm=goal_lm,
             )
+            try:
+                start_not_before_sec = max(
+                    0.0,
+                    float(item.get("startNotBeforeSec", 0.0) or 0.0),
+                )
+            except (TypeError, ValueError):
+                start_not_before_sec = 0.0
+            start_not_before_tick = int(
+                math.ceil(
+                    start_not_before_sec
+                    / max(0.001, self.time_step_sec)
+                    - 1e-9
+                )
+            )
+            node_departure_not_before: list[tuple[str, int]] = []
+            raw_node_gates = item.get("departureNotBefore", ())
+            if isinstance(raw_node_gates, dict):
+                raw_node_gates = [
+                    {"node": node, "timeSec": value}
+                    for node, value in raw_node_gates.items()
+                ]
+            if isinstance(raw_node_gates, (list, tuple)):
+                for raw_gate in raw_node_gates:
+                    if not isinstance(raw_gate, dict):
+                        continue
+                    node = str(
+                        raw_gate.get("node")
+                        or raw_gate.get("lm")
+                        or ""
+                    ).strip()
+                    if not node:
+                        continue
+                    if route_nodes and node not in route_nodes:
+                        raise ValueError(
+                            f"robots[{index}] departure gate node {node!r} "
+                            "is outside routeNodes"
+                        )
+                    try:
+                        time_sec = max(
+                            0.0,
+                            float(
+                                raw_gate.get("timeSec")
+                                or raw_gate.get("notBeforeSec")
+                                or 0.0
+                            ),
+                        )
+                    except (TypeError, ValueError):
+                        time_sec = 0.0
+                    node_departure_not_before.append(
+                        (
+                            node,
+                            int(
+                                math.ceil(
+                                    time_sec
+                                    / max(0.001, self.time_step_sec)
+                                    - 1e-9
+                                )
+                            ),
+                        )
+                    )
+            raw_authorized_regions = item.get(
+                "authorizedControlledRegions",
+                item.get("authorized_controlled_regions", ()),
+            )
+            if raw_authorized_regions is None:
+                raw_authorized_regions = ()
+            if not isinstance(raw_authorized_regions, (list, tuple, set)):
+                raise ValueError(
+                    f"robots[{index}] authorizedControlledRegions must be a list"
+                )
+            authorized_controlled_regions = tuple(dict.fromkeys(
+                str(region_id).strip()
+                for region_id in raw_authorized_regions
+                if str(region_id).strip()
+            ))
+            if authorized_controlled_regions:
+                if not node_departure_not_before:
+                    raise ValueError(
+                        f"robots[{index}] corridor authority requires "
+                        "departureNotBefore"
+                    )
+                if not route_nodes:
+                    raise ValueError(
+                        f"robots[{index}] corridor authority requires routeNodes"
+                    )
+                traffic_graph = self._traffic_graph(speed)
+                route_regions = {
+                    region_id
+                    for src, dst in zip(route_nodes, route_nodes[1:])
+                    for lane in (traffic_graph.lane_for(src, dst),)
+                    if lane is not None
+                    for region_id in lane.controlled_region_ids
+                }
+                unauthorized = (
+                    set(authorized_controlled_regions) - route_regions
+                )
+                if unauthorized:
+                    raise ValueError(
+                        f"robots[{index}] corridor authority contains region(s) "
+                        "outside routeNodes: "
+                        + ", ".join(sorted(unauthorized))
+                    )
             requests.append(
                 LmRobotRequest(
                     name,
@@ -194,6 +297,9 @@ class FleetMapfPlanner:
                     goal_lm,
                     start_yaw,
                     route_nodes,
+                    start_not_before_tick,
+                    tuple(node_departure_not_before),
+                    authorized_controlled_regions,
                 )
             )
 
@@ -207,6 +313,15 @@ class FleetMapfPlanner:
             if reserved_detour_enabled
             else blocked_edges
         )
+        if any(
+            request.start_not_before_tick > 0
+            or bool(request.node_departure_not_before)
+            for request in requests
+        ):
+            # CBS currently models every agent at t=0. A corridor slot's
+            # delayed start is therefore a Rolling-SIPP-only temporal
+            # contract; silently falling back to CBS would erase it.
+            allow_cbs_fallback = False
 
         result, used_blocked_edges, used_reserved_detour, fallback_reason = self._run_selected_backend(
             requests,
@@ -295,6 +410,17 @@ class FleetMapfPlanner:
                 "rotateEnabled": rotate_enabled,
                 "turnSpeed": turn_speed,
                 "deadlock": deadlock,
+                "reservationBlockerRobots": list(
+                    result.debug.blocking_robots
+                ),
+                "reservationBlockers": [
+                    {
+                        "robot": robot_name,
+                        "resource": resource,
+                    }
+                    for robot_name, resource
+                    in result.debug.blocking_reservations
+                ],
                 "controlledCorridors": len(traffic_graph.controlled_region_ids()),
                 "controlledCorridorsMode": self.controlled_corridors_mode,
                 "controlledCorridorAutoDetect": (
@@ -404,6 +530,10 @@ class FleetMapfPlanner:
             if not allow_cbs_fallback:
                 return result, detour_blocked_edges, False, ""
             rolling_reason = result.debug.reason
+            rolling_blockers = tuple(result.debug.blocking_robots)
+            rolling_reservations = tuple(
+                result.debug.blocking_reservations
+            )
             if any(
                 marker in str(rolling_reason or "")
                 for marker in ("priority_cycle", "priority_repair_limit")
@@ -425,11 +555,31 @@ class FleetMapfPlanner:
                 rotate_enabled=rotate_enabled,
                 turn_speed=turn_speed,
             )
+            cbs_reason = str(cbs_result.debug.reason or "")
             if cbs_result.plans:
                 cbs_result.debug.reason = f"{cbs_result.debug.reason}:hybrid_cbs_fallback"
-            fallback_reason = f"rolling_sipp:{rolling_reason}"
+            elif rolling_blockers and not cbs_result.debug.blocking_robots:
+                # CBS sees the same external reservation resources, but its
+                # low-level constraints do not retain owner strings. Preserve
+                # the complete owner/resource pair discovered by the preceding
+                # SIPP pass. Keeping CBS's unrelated final resource together
+                # with SIPP's owner would manufacture a false wait dependency.
+                cbs_result.debug.blocking_robots = rolling_blockers
+                cbs_result.debug.reason = rolling_reason
+            if (
+                rolling_reservations
+                and not cbs_result.debug.blocking_reservations
+            ):
+                cbs_result.debug.blocking_reservations = (
+                    rolling_reservations
+                )
+            fallback_reason = (
+                f"rolling_sipp:{rolling_reason};cbs:{cbs_reason}"
+            )
             if cbs_fallback:
-                fallback_reason = f"{fallback_reason};cbs:{cbs_fallback}"
+                fallback_reason = (
+                    f"{fallback_reason};cbs_reserved_detour:{cbs_fallback}"
+                )
             return cbs_result, used_edges, used_detour, fallback_reason
 
         return self._run_cbs_with_reserved_detour(
@@ -542,6 +692,7 @@ class FleetMapfPlanner:
             heuristic_fn=self._heuristic_ticks,
             move_cost_fn=lambda src, dst: self._edge_tick_cost(src, dst, speed, acceleration),
             heading_fn=self._edge_heading,
+            heading_options_fn=self._edge_heading_options,
             turn_cost_fn=(
                 lambda from_yaw, to_yaw: self._rotation_tick_cost(
                     from_yaw,
@@ -605,6 +756,7 @@ class FleetMapfPlanner:
                 heuristic_fn=self._heuristic_ticks,
                 move_cost_fn=lambda src, dst: self._edge_tick_cost(src, dst, speed, acceleration),
                 heading_fn=self._edge_heading,
+                heading_options_fn=self._edge_heading_options,
                 turn_cost_fn=(
                     lambda from_yaw, to_yaw: self._rotation_tick_cost(
                         from_yaw,
@@ -655,6 +807,7 @@ class FleetMapfPlanner:
             heuristic_fn=self._heuristic_ticks,
             move_cost_fn=lambda src, dst: self._edge_tick_cost(src, dst, speed, acceleration),
             heading_fn=self._edge_heading,
+            heading_options_fn=self._edge_heading_options,
             turn_cost_fn=(
                 lambda from_yaw, to_yaw: self._rotation_tick_cost(
                     from_yaw,
@@ -795,6 +948,60 @@ class FleetMapfPlanner:
             (sum(groups.values()) for groups in region_groups.values()),
             default=0,
         )
+        # Authored rectangles can form one continuous no-wait passage through
+        # direct zone-to-zone edges.  The runtime admission controller grants
+        # that whole safe-LM-to-safe-LM bundle atomically, so the low-level
+        # horizon must be long enough to reach an external holding point, not
+        # merely the end of one rectangle.
+        controlled_endpoints = {
+            endpoint
+            for lane in graph.lanes.values()
+            if lane.controlled_region_ids
+            for endpoint in (lane.from_lm, lane.to_lm)
+        }
+        internal = {
+            vertex.id
+            for vertex in graph.vertices.values()
+            if vertex.id in controlled_endpoints and not vertex.can_wait
+        }
+        boundary = {
+            endpoint
+            for lane in graph.lanes.values()
+            if lane.controlled_region_ids
+            for endpoint, other in (
+                (lane.from_lm, lane.to_lm),
+                (lane.to_lm, lane.from_lm),
+            )
+            if endpoint not in internal and other in internal
+        }
+        passage_maximum = 0
+        for start in boundary:
+            distances: dict[str, int] = {start: 0}
+            pending: list[tuple[int, str]] = [(0, start)]
+            while pending:
+                distance, node = heapq.heappop(pending)
+                if distance != distances.get(node):
+                    continue
+                if node != start and node not in internal:
+                    passage_maximum = max(passage_maximum, distance)
+                    continue
+                for lane in graph.neighbors(node):
+                    if not lane.controlled_region_ids:
+                        continue
+                    target = lane.to_lm
+                    if target not in internal and target not in boundary:
+                        continue
+                    next_distance = distance + self._edge_tick_cost(
+                        lane.from_lm,
+                        lane.to_lm,
+                        route_speed,
+                        route_acceleration,
+                    )
+                    if next_distance >= distances.get(target, 1 << 60):
+                        continue
+                    distances[target] = next_distance
+                    heapq.heappush(pending, (next_distance, target))
+        maximum = max(maximum, passage_maximum)
         self._bounded_cache_store(
             self._controlled_corridor_ticks_cache,
             cache_key,
@@ -1373,7 +1580,20 @@ class FleetMapfPlanner:
             samples = self.route_planner.sample_route(route)
             segment = self._annotate_sample_distances(samples)
             segment_length = max(segment[-1]["s"] if segment else 0.0, 1e-6)
-            segment_yaw = float(segment[1]["yaw"] if len(segment) > 1 else segment[0]["yaw"])
+            segment_yaw = float(
+                segment[1]["yaw"] if len(segment) > 1 else segment[0]["yaw"]
+            )
+            edge = self.edge_by_key.get((from_lm, to_lm))
+            reverse_unspecified = bool(
+                has_kinematic_timing
+                and edge is not None
+                and edge.motion_direction_code() == -1
+                and abs(
+                    abs(self._normalize_angle(planned_yaw - segment_yaw))
+                    - math.pi
+                )
+                <= 0.000001
+            )
             continuous_duration = (
                 segment_length / max(0.02, speed)
                 if has_kinematic_timing
@@ -1419,7 +1639,10 @@ class FleetMapfPlanner:
 
             for sample in segment[1:]:
                 t = current_time + (float(sample["s"]) / segment_length) * duration
-                last_yaw = float(sample["yaw"])
+                last_yaw = self._normalize_angle(
+                    float(sample["yaw"])
+                    + (math.pi if reverse_unspecified else 0.0)
+                )
                 trajectory.append(
                     {
                         "t": t,
@@ -1427,7 +1650,16 @@ class FleetMapfPlanner:
                         "y": float(sample["y"]),
                         "yaw": last_yaw,
                         "edgeId": str(sample["edgeId"]),
-                        "motionDirection": str(sample.get("motionDirection", "not_specified")),
+                        "motionDirection": (
+                            "backward"
+                            if reverse_unspecified
+                            else str(
+                                sample.get(
+                                    "motionDirection",
+                                    "not_specified",
+                                )
+                            )
+                        ),
                     }
                 )
             current_time += duration
@@ -1500,6 +1732,27 @@ class FleetMapfPlanner:
         if edge is not None and edge.motion_direction_code() == 1:
             heading += math.pi
         return self._normalize_angle(heading)
+
+    def _edge_heading_options(
+        self,
+        from_lm: str,
+        to_lm: str,
+    ) -> tuple[float, ...]:
+        """Return every body orientation allowed by an authored edge.
+
+        ``forward`` and ``backward`` are strict motion rules.  An unspecified
+        edge deliberately permits either orientation, so SIPP/CBS may keep the
+        current yaw and translate backwards instead of reserving an unsafe or
+        unnecessary in-place turn.
+        """
+        heading = self._edge_heading(from_lm, to_lm)
+        edge = self.edge_by_key.get((from_lm, to_lm))
+        if edge is None or edge.motion_direction_code() != -1:
+            return (heading,)
+        return (
+            heading,
+            self._normalize_angle(heading + math.pi),
+        )
 
     def _normalize_angle(self, value: float) -> float:
         while value > math.pi:

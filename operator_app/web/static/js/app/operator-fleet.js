@@ -135,20 +135,21 @@ export const withFleetUi = (Base) => class OperatorAppFleetUi extends Base {
   async refreshRobotMapState(options = {}) {
     const robot = this.selectedRobot();
     if (!robot) {
+      this.cancelMapContextRequest();
       this.robotMapState = this.emptyMapState();
       this.operatorMapPayload = null;
       this.operatorMapSignature = "";
       return;
     }
-    const context = this.selectionContext(robot);
+    const context = this.beginMapContextRequest(robot);
     if (this.isFleetManager(robot)) {
       try {
         const base = this.fleetApiBase(robot);
-        const [robotActive, localActive] = await Promise.all([
-          this.getJson(`${base}/maps/active`),
-          this.getJson(`${base}/maps/local/active`),
-        ]);
-        if (!this.selectionIsCurrent(context)) {
+        const [robotActive, localActive] = await this.fetchMapContextWithRetry(
+          [`${base}/maps/active`, `${base}/maps/local/active`],
+          context,
+        );
+        if (!this.mapContextRequestIsCurrent(context)) {
           return;
         }
         const nextSignature = String(localActive.signature || "").trim();
@@ -177,7 +178,7 @@ export const withFleetUi = (Base) => class OperatorAppFleetUi extends Base {
           ),
         };
       } catch (error) {
-        if (!this.selectionIsCurrent(context)) {
+        if (!this.mapContextRequestIsCurrent(context)) {
           return;
         }
         this.robotMapState = this.emptyMapState();
@@ -192,18 +193,15 @@ export const withFleetUi = (Base) => class OperatorAppFleetUi extends Base {
       return;
     }
     try {
-      const [robotActiveResult, localActiveResult] = await Promise.allSettled([
-        this.getJson(`/api/robots/${encodeURIComponent(robot.id)}/maps/active`),
-        this.getJson(`/api/robots/${encodeURIComponent(robot.id)}/maps/local/active`),
-      ]);
-      if (localActiveResult.status !== "fulfilled") {
-        throw localActiveResult.reason;
-      }
-      const localActive = localActiveResult.value;
-      const robotActive = robotActiveResult.status === "fulfilled"
-        ? robotActiveResult.value
-        : {};
-      if (!this.selectionIsCurrent(context)) {
+      const [robotActive, localActive] = await this.fetchMapContextWithRetry(
+        [
+          `/api/robots/${encodeURIComponent(robot.id)}/maps/active`,
+          `/api/robots/${encodeURIComponent(robot.id)}/maps/local/active`,
+        ],
+        context,
+        { robotActiveOptional: true },
+      );
+      if (!this.mapContextRequestIsCurrent(context)) {
         return;
       }
       const nextSignature = String(localActive.signature || "").trim();
@@ -232,7 +230,7 @@ export const withFleetUi = (Base) => class OperatorAppFleetUi extends Base {
         ),
       };
     } catch (error) {
-      if (!this.selectionIsCurrent(context)) {
+      if (!this.mapContextRequestIsCurrent(context)) {
         return;
       }
       this.robotMapState = this.emptyMapState();
@@ -246,9 +244,82 @@ export const withFleetUi = (Base) => class OperatorAppFleetUi extends Base {
     }
   }
 
+  beginMapContextRequest(robot = this.selectedRobot()) {
+    this.mapContextAbortController?.abort();
+    const context = {
+      ...this.selectionContext(robot),
+      requestId: ++this.mapContextRequestSequence,
+    };
+    this.mapContextActiveRequestId = context.requestId;
+    if (!this.activeOperatorMapPayload()?.map) {
+      this.mapContentLoadingRobotId = context.robotId;
+    }
+    return context;
+  }
+
+  cancelMapContextRequest() {
+    this.mapContextAbortController?.abort();
+    this.mapContextAbortController = null;
+    this.mapContextActiveRequestId = ++this.mapContextRequestSequence;
+  }
+
+  mapContextRequestIsCurrent(context) {
+    return Boolean(
+      this.selectionIsCurrent(context)
+      && context.requestId === this.mapContextActiveRequestId
+    );
+  }
+
+  async fetchMapContextWithRetry(urls, context, options = {}) {
+    let lastError = null;
+    for (let attempt = 0; attempt < this.mapContextRequestMaxAttempts; attempt += 1) {
+      if (!this.mapContextRequestIsCurrent(context)) {
+        throw new Error("Map context request was superseded.");
+      }
+      const controller = new AbortController();
+      this.mapContextAbortController = controller;
+      let timedOut = false;
+      const timeout = window.setTimeout(() => {
+        timedOut = true;
+        controller.abort();
+      }, this.mapContextRequestTimeoutMs);
+      try {
+        if (options.robotActiveOptional) {
+          const [robotActiveResult, localActiveResult] = await Promise.allSettled([
+            this.getJson(urls[0], { signal: controller.signal }),
+            this.getJson(urls[1], { signal: controller.signal }),
+          ]);
+          if (localActiveResult.status !== "fulfilled") {
+            throw localActiveResult.reason;
+          }
+          return [
+            robotActiveResult.status === "fulfilled" ? robotActiveResult.value : {},
+            localActiveResult.value,
+          ];
+        }
+        return await Promise.all(
+          urls.map((url) => this.getJson(url, { signal: controller.signal })),
+        );
+      } catch (error) {
+        lastError = timedOut
+          ? new Error(`Map context request timed out after ${this.mapContextRequestTimeoutMs} ms.`)
+          : error;
+        if (!this.mapContextRequestIsCurrent(context)) {
+          throw lastError;
+        }
+      } finally {
+        window.clearTimeout(timeout);
+        if (this.mapContextAbortController === controller) {
+          this.mapContextAbortController = null;
+        }
+      }
+    }
+    throw lastError || new Error("Map context request failed.");
+  }
+
   finishMapContextLoad(context) {
     if (
-      this.selectionIsCurrent(context)
+      this.mapContextRequestIsCurrent(context)
       && this.mapContentLoadingRobotId === context.robotId
     ) {
       this.mapContentLoadingRobotId = "";
@@ -579,7 +650,11 @@ export const withFleetUi = (Base) => class OperatorAppFleetUi extends Base {
         this.renderSelectedRobot();
         if (enterWorkspace && options.openWorkspace) {
           try {
-            await this.navigateHomePage();
+            // A workspace switch clears the previous map/scene before this
+            // call.  When both managers use /robot, navigateHomePage() would
+            // otherwise treat the click as a no-op and leave the new manager
+            // without a Babylon scene until a full browser reload.
+            await this.navigateHomePage({ force: selectionChanged });
           } finally {
             const loadingRemainingMs = Math.max(
               0,

@@ -54,6 +54,11 @@ class OperatorFleetManager:
         self._scene3d_cache: dict[str, Any] | None = None
         self._load_context(self.map_dir)
 
+    def close(self) -> None:
+        close = getattr(getattr(self, "manager", None), "close", None)
+        if callable(close):
+            close()
+
     def sidebar_payload(self, include_runtime: bool = True) -> dict[str, Any]:
         robots = []
         if include_runtime:
@@ -648,6 +653,7 @@ class OperatorFleetManager:
         self.manager.reset_planning_runtime_state()
         for key in getattr(self.manager, "traffic_metrics", {}):
             self.manager.traffic_metrics[key] = 0
+        self.manager._last_runtime_safety_rollback = None
         self._reset_dynamic_benchmark()
 
     def _benchmark_sim_robots(self) -> list[Any]:
@@ -784,6 +790,7 @@ class OperatorFleetManager:
         self.manager.reset_planning_runtime_state()
         for key in getattr(self.manager, "traffic_metrics", {}):
             self.manager.traffic_metrics[key] = 0
+        self.manager._last_runtime_safety_rollback = None
 
         now = self._runtime_now()
         self._dynamic_rng = random.Random(seed)
@@ -873,70 +880,17 @@ class OperatorFleetManager:
         *,
         robot_count: int | None = None,
     ) -> float:
-        """Keep a benchmark window schedulable through explicit corridors.
+        """Return the operator's committed planning window.
 
-        The topology floor protects one corridor transfer.  A dense fleet also
-        needs enough committed time for the serialized planner to prepare all
-        future windows before their endpoints synchronize.  This second floor
-        is deliberately limited to maps that actually contain authored
-        controlled corridors; open maps keep the operator's requested value.
+        Corridor scheduling lookahead and MAPF commitment are independent
+        horizons. ``_rolling_planning_goal`` already extends a boundary that
+        lands inside a no-wait passage to its next external safe LM, while the
+        low-level budget separately includes the longest corridor. The old
+        sum turned a requested 10 seconds into 66.7 seconds (120 at 4x).
         """
-        requested = max(1.0, min(120.0, float(requested)))
-        corridor_ticks = self.manager.planner.controlled_corridor_max_ticks()
-        if corridor_ticks <= 0:
-            return requested
-        corridor_sec = (
-            corridor_ticks
-            * self.manager._reservation_time_step()
-        )
-        topology_minimum = (
-            corridor_sec
-            + self.manager._controlled_corridor_entry_lookahead()
-            + (2.0 * self.manager._reservation_safety_time())
-        )
-        # Starting a benchmark writes the effective value back to
-        # ``rolling_horizon_sec``.  Reusing that mutable value here made the
-        # horizon sticky: after one 30 s run, a later 10 s request still ran at
-        # 30 s and paid the larger SIPP search cost forever.  The API request
-        # is authoritative; only the map's current corridor safety floor may
-        # raise it.
-        fleet = self.manager.params.get("fleet", {})
-        if not isinstance(fleet, dict):
-            fleet = {}
-        try:
-            dense_threshold = max(
-                2,
-                int(
-                    fleet.get(
-                        "dense_controlled_corridor_robot_threshold",
-                        32,
-                    )
-                    or 32
-                ),
-            )
-        except (TypeError, ValueError):
-            dense_threshold = 32
-        try:
-            dense_minimum = max(
-                topology_minimum,
-                float(
-                    fleet.get(
-                        "dense_controlled_corridor_horizon_sec",
-                        30.0,
-                    )
-                    or 30.0
-                ),
-            )
-        except (TypeError, ValueError):
-            dense_minimum = max(topology_minimum, 30.0)
-        active_robot_count = (
-            len(self._benchmark_sim_robots())
-            if robot_count is None
-            else max(0, int(robot_count))
-        )
-        if active_robot_count >= dense_threshold:
-            topology_minimum = max(topology_minimum, dense_minimum)
-        return min(120.0, max(requested, topology_minimum))
+
+        _ = robot_count  # Kept for API compatibility with benchmark callers.
+        return max(1.0, min(120.0, float(requested)))
 
     def _stop_dynamic_benchmark_payload(self) -> dict[str, Any]:
         if self._dynamic_benchmark.get("active"):
@@ -1102,21 +1056,66 @@ class OperatorFleetManager:
 
     def _top_up_package_orders(self, now: float) -> int:
         config = self._dynamic_benchmark
-        robots = [
-            robot
-            for robot in self._benchmark_sim_robots()
-            if self._dynamic_order_depth(robot.name) == 0
-        ]
+        robots = self._benchmark_sim_robots()
         if not robots:
             return 0
-        robot_rounds = config.setdefault("packageRobotRounds", {})
-        by_wave: dict[int, list[Any]] = {}
-        for robot in robots:
-            wave_index = int(robot_rounds.get(robot.name, 0) or 0) + 1
-            by_wave.setdefault(wave_index, []).append(robot)
-        return sum(
-            self._generate_package_orders_for_wave(group, wave_index, now)
-            for wave_index, group in sorted(by_wave.items())
+        wave_orders = config.setdefault("packageWaveOrderIds", {})
+        wave_robots = config.setdefault("packageWaveRobots", {})
+
+        # Package mode is a barrier workload: exactly one order is issued to
+        # every fleet robot, early finishers stay at the perimeter, and only
+        # after the complete wave terminates is the next full wave generated.
+        # The former per-robot top-up created overlapping 1/1 "waves" and sent
+        # early finishers back through aisles that the previous wave was still
+        # clearing, which steadily amplified stationary departure conflicts.
+        active_indices = sorted(
+            {
+                int(raw_index)
+                for raw_index, order_ids in wave_orders.items()
+                if any(
+                    order_id in self.manager.orders
+                    and self.manager.orders[order_id].status
+                    not in {"COMPLETED", "FAILED", "CANCELED"}
+                    for order_id in set(order_ids)
+                )
+                or len(set(order_ids)) < len(robots)
+            }
+        )
+        if active_indices:
+            wave_index = active_indices[0]
+            present = set(
+                wave_robots.get(
+                    wave_index,
+                    wave_robots.get(str(wave_index), set()),
+                )
+            )
+            missing = [
+                robot
+                for robot in robots
+                if robot.name not in present
+                and self._dynamic_order_depth(robot.name) == 0
+            ]
+            if not missing:
+                return 0
+            return self._generate_package_orders_for_wave(
+                missing,
+                wave_index,
+                now,
+            )
+
+        # Do not overlap an untracked/manual outstanding command with a new
+        # benchmark barrier. This also makes recovery from a partially loaded
+        # workspace deterministic.
+        if any(self._dynamic_order_depth(robot.name) > 0 for robot in robots):
+            return 0
+        wave_index = max(
+            int(config.get("waveIndex", 0) or 0),
+            int(config.get("wavesStarted", 0) or 0),
+        ) + 1
+        return self._generate_package_orders_for_wave(
+            robots,
+            wave_index,
+            now,
         )
 
     def _generate_package_order_wave(self, now: float) -> int:
@@ -1356,30 +1355,16 @@ class OperatorFleetManager:
         assignments: list[tuple[Any, str]] = []
         min_hops, max_hops = self._dynamic_goal_hop_window()
         robot_count = max(1, len(robots))
-        departure_names = {
-            str(robot.name)
-            for robot in robots
-        }
-        coordinated_departure_lms = {
-            str(robot.current_lm)
-            for robot in self._benchmark_sim_robots()
-            if (
-                str(robot.name) in departure_names
-                and str(robot.current_lm) in self.loaded_map.landmarks
-            )
-        }
-        # A target occupied by a robot outside this exact departure cohort
-        # cannot become free as a consequence of the generated batch. Never
-        # drop all occupied-LM exclusions merely because the perimeter is
-        # full: that creates an impossible order behind a parked robot and a
-        # permanent plan/replan loop. Cohort members may still exchange their
-        # current portals as one coordinated permutation.
-        excluded_goal_lms = occupied_lms - coordinated_departure_lms
-        # A perimeter-only Kiva layout may have fewer than two parking portals
-        # per robot. In that case the wave is a coordinated permutation:
-        # targets may be another wave robot's current portal because that
-        # owner receives its departure in the same atomic batch. Unique goals
-        # and the collision planner still prevent two robots sharing a portal.
+        # A full-fleet wave coordinates *when* robots depart, but it cannot
+        # make two adjacent physical footprints disappear atomically.  In the
+        # previous permutation model one robot could complete at another
+        # member's start portal while that member was still waiting to rotate
+        # and depart.  The completed robot then became a permanent obstacle
+        # and the waiting member could never execute its first WAIT/ROTATE.
+        # Every current fleet LM is therefore a hard destination exclusion,
+        # including the starts of this departure cohort.  A robot's own origin
+        # remains traversable to the graph search, but is never a wave target.
+        excluded_goal_lms = set(occupied_lms)
         # Half-slot rotation prevents every wave from assigning the same edge
         # cells to the same robot while keeping targets uniformly distributed.
         wave_phase = (max(0, wave_index - 1) * 0.5) % robot_count
@@ -1395,7 +1380,17 @@ class OperatorFleetManager:
                 min_hops=min_hops,
                 max_hops=max_hops,
             )
-            candidates = [name for name in reachable if name in perimeter_rank]
+            candidates = [
+                name
+                for name in reachable
+                if (
+                    name in perimeter_rank
+                    and self._package_goal_is_clear_of_occupied_lms(
+                        name,
+                        occupied_lms,
+                    )
+                )
+            ]
             if not candidates:
                 reachable = self._forward_benchmark_goals(
                     origin,
@@ -1405,7 +1400,17 @@ class OperatorFleetManager:
                     min_hops=2,
                     max_hops=min(300, max(max_hops, len(self.loaded_map.landmarks))),
                 )
-                candidates = [name for name in reachable if name in perimeter_rank]
+                candidates = [
+                    name
+                    for name in reachable
+                    if (
+                        name in perimeter_rank
+                        and self._package_goal_is_clear_of_occupied_lms(
+                            name,
+                            occupied_lms,
+                        )
+                    )
+                ]
             if not candidates:
                 continue
 
@@ -1428,6 +1433,39 @@ class OperatorFleetManager:
             assignments.append((robot, target_lm))
             used_goals.add(target_lm)
         return assignments
+
+    def _package_goal_is_clear_of_occupied_lms(
+        self,
+        candidate: str,
+        occupied_lms: set[str],
+    ) -> bool:
+        """Keep a package destination clear of the fleet's start footprints.
+
+        ``robot_footprints_conflict`` checks the configured footprint in one
+        orientation.  Package destinations also execute a terminal rotation,
+        so use the circumscribed broad-phase diameter as the minimum centre
+        distance as well.  This guarantees that a robot parked at the target
+        cannot touch or overlap a neighbour that has not departed yet.
+        """
+        if candidate in occupied_lms or candidate not in self.loaded_map.landmarks:
+            return False
+        if not self._lm_is_separated_from(candidate, occupied_lms):
+            return False
+        landmark = self.loaded_map.landmarks[candidate]
+        minimum = max(
+            self._benchmark_min_separation(),
+            self.manager.collision.robot_broadphase_distance(),
+        )
+        for occupied_name in occupied_lms:
+            occupied = self.loaded_map.landmarks.get(occupied_name)
+            if occupied is None:
+                continue
+            if math.hypot(
+                landmark.x - occupied.x,
+                landmark.y - occupied.y,
+            ) + 0.000001 < minimum:
+                return False
+        return True
 
     def _benchmark_peripheral_lms(self, robot_count: int) -> list[str]:
         names = [
@@ -2288,7 +2326,8 @@ class OperatorFleetManager:
             if self.mode == "robots"
             else FleetManagerSim
         )
-        self.manager = manager_class(
+        previous_manager = getattr(self, "manager", None)
+        manager = manager_class(
             loaded_map.landmarks,
             loaded_map.edges,
             params=params,
@@ -2296,6 +2335,10 @@ class OperatorFleetManager:
             map_metadata=loaded_map.map_metadata,
             remote_adapter=self.remote_adapter,
         )
+        self.manager = manager
+        previous_close = getattr(previous_manager, "close", None)
+        if callable(previous_close):
+            previous_close()
         self._reset_dynamic_benchmark()
         self._sync_manager_mode()
 
