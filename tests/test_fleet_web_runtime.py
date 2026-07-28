@@ -122,6 +122,86 @@ def test_manual_pose_update_can_skip_full_fleet_snapshot(monkeypatch) -> None:
     assert result["robot"]["pose"]["x"] == pytest.approx(0.03)
 
 
+def test_runtime_checks_complete_edge_before_leaving_safe_lm(
+    monkeypatch,
+) -> None:
+    clock = [1_000.0]
+    monkeypatch.setattr(runtime_module, "time", lambda: clock[0])
+    landmarks = {
+        "A": Landmark(name="A", x=0.0, y=0.0),
+        "B": Landmark(name="B", x=5.0, y=0.0),
+    }
+    edge = GraphEdge(
+        from_name="A",
+        to_name="B",
+        length=5.0,
+        kind="line",
+        edge_type="FeatureLine",
+        world_points=(WorldPoint(0.0, 0.0), WorldPoint(5.0, 0.0)),
+        properties={"direction": 0},
+    )
+    manager = FleetManagerSim(
+        landmarks,
+        [edge],
+        params={
+            "navigation": {
+                "route_speed": 1.0,
+                "route_acceleration": 1.0,
+                "collision_margin": 0.04,
+            },
+            "fleet": {
+                "runtime_collision_lookahead_sec": 1.0,
+                "runtime_collision_preflight_interval_sec": 0.2,
+            },
+        },
+    )
+    mover = FleetRobot(
+        name="mover",
+        current_lm="A",
+        target_lm="B",
+        status="MOVING",
+        pose={"x": 0.0, "y": 0.0, "yaw": 0.0},
+        trajectory=[
+            {
+                "t": 0.0,
+                "x": 0.0,
+                "y": 0.0,
+                "yaw": 0.0,
+                "edgeId": "A->B",
+                "lm": "A",
+            },
+            {
+                "t": 5.0,
+                "x": 5.0,
+                "y": 0.0,
+                "yaw": 0.0,
+                "edgeId": "A->B",
+                "lm": "B",
+            },
+        ],
+        route_started_at=clock[0],
+        last_tick_at=clock[0],
+    )
+    blocker = FleetRobot(
+        name="blocker",
+        current_lm="B",
+        status="ARRIVED",
+        pose={"x": 5.0, "y": 0.0, "yaw": 0.0},
+    )
+    manager.robots = {mover.name: mover, blocker.name: blocker}
+
+    # The blocker is five seconds away, well outside the configured one
+    # second lookahead.  The graph-segment guard must still see it before the
+    # mover leaves A, instead of stopping the mover midway a few ticks later.
+    clock[0] += 0.1
+    manager.advance_runtime()
+
+    assert mover.status == "WAITING"
+    assert mover.route_clock == pytest.approx(0.0)
+    assert mover.pose == {"x": 0.0, "y": 0.0, "yaw": 0.0}
+    assert "blocker" in mover.last_reason
+
+
 def test_current_lm_advances_only_after_a_tagged_graph_landmark() -> None:
     manager = _manager()
     robot = FleetRobot(
@@ -370,7 +450,9 @@ def test_runtime_wait_cycle_grants_one_robot_deterministic_priority() -> None:
     assert manager._has_right_of_way(manager.robots["r1"], manager.robots["r2"])
     assert manager.traffic_metrics == {
         "waitCyclesDetected": 1,
-        "waitCyclesResolved": 1,
+        # A priority lease is an arbitration attempt. Resolution is recorded
+        # only after the winner actually changes the component geometry.
+        "waitCyclesResolved": 0,
         "cycleReplans": 0,
         "coupledReplansStarted": 0,
         "coupledReplansSucceeded": 0,
@@ -643,6 +725,9 @@ def test_priority_nudge_does_not_reset_an_uncleared_wait_cycle(
     cycle_key = ("peer", "winner")
     cycle_started = now - 3.0
     manager._active_wait_cycles[cycle_key] = cycle_started
+    manager._wait_cycle_grant_signatures[cycle_key] = (
+        manager._wait_cycle_grant_signature([winner, peer])
+    )
     monkeypatch.setattr(
         manager,
         "_cycle_forward_clearance",
@@ -653,6 +738,7 @@ def test_priority_nudge_does_not_reset_an_uncleared_wait_cycle(
 
     assert manager._active_wait_cycles[cycle_key] == cycle_started
     assert winner.traffic_stall_since == cycle_started
+    assert manager.traffic_metrics["waitCyclesResolved"] == 0
 
     monkeypatch.setattr(
         manager,
@@ -662,6 +748,7 @@ def test_priority_nudge_does_not_reset_an_uncleared_wait_cycle(
     manager._record_traffic_progress(winner)
 
     assert cycle_key not in manager._active_wait_cycles
+    assert manager.traffic_metrics["waitCyclesResolved"] == 1
 
 
 def test_active_priority_lease_keeps_temporarily_hidden_cycle_episode() -> None:
@@ -2431,6 +2518,139 @@ def test_previous_trajectory_lm_skips_duplicate_exhausted_endpoint() -> None:
     )
 
     assert manager._previous_trajectory_lm(robot) == (0.5, "A")
+
+
+def test_previous_trajectory_lm_skips_current_lm_during_planned_wait() -> None:
+    manager = _clearance_manager()
+    robot = FleetRobot(
+        name="r1",
+        current_lm="B",
+        pose={"x": 0.0, "y": 0.0, "yaw": 0.0},
+        trajectory=[
+            {
+                "t": 0.0,
+                "x": -2.0,
+                "y": 0.0,
+                "edgeId": "A->A",
+                "lm": "A",
+            },
+            {
+                "t": 2.0,
+                "x": 0.0,
+                "y": 0.0,
+                "edgeId": "A->B",
+                "lm": "B",
+            },
+            {
+                "t": 3.0,
+                "x": 0.0,
+                "y": 0.0,
+                "edgeId": "B->B",
+                "lm": "B",
+            },
+            {
+                "t": 5.0,
+                "x": 2.0,
+                "y": 0.0,
+                "edgeId": "B->C",
+                "lm": "C",
+            },
+        ],
+        route_clock=2.5,
+    )
+
+    assert manager._previous_trajectory_lm(robot) == (0.0, "A")
+    assert manager._deadlock_detour_edges(robot) == [
+        ("B", "C"),
+        ("C", "B"),
+    ]
+
+
+def test_previous_trajectory_lm_uses_older_external_stop_before_corridor() -> None:
+    region = "corridor:test"
+    landmarks = {
+        "X": Landmark(
+            name="X",
+            x=0.0,
+            y=0.0,
+            properties={"can_wait": True},
+        ),
+        "I": Landmark(
+            name="I",
+            x=1.0,
+            y=0.0,
+            properties={
+                "can_wait": False,
+                "controlled_region": region,
+            },
+        ),
+        "E": Landmark(
+            name="E",
+            x=3.0,
+            y=0.0,
+            properties={"can_wait": True},
+        ),
+    }
+    edges = [
+        GraphEdge(
+            from_name=source,
+            to_name=target,
+            length=abs(landmarks[target].x - landmarks[source].x),
+            kind="line",
+            edge_type="FeatureLine",
+            world_points=(
+                landmarks[source].to_point(),
+                landmarks[target].to_point(),
+            ),
+            properties={
+                "direction": 2,
+                "controlled_region": region,
+            },
+        )
+        for source, target in (("X", "I"), ("I", "E"))
+    ]
+    manager = FleetManagerSim(landmarks, edges)
+    # E and X are external waiting LMs, while I is an internal no-wait LM.
+    # The body has reached E and is waiting there for a future edge.  Recovery
+    # must not return E again and must not stop at I; it reverses to X.
+    robot = FleetRobot(
+        name="r1",
+        current_lm="E",
+        pose={"x": 3.0, "y": 0.0, "yaw": 0.0},
+        trajectory=[
+            {
+                "t": 0.0,
+                "x": 0.0,
+                "y": 0.0,
+                "edgeId": "X->X",
+                "lm": "X",
+            },
+            {
+                "t": 1.0,
+                "x": 1.0,
+                "y": 0.0,
+                "edgeId": "X->I",
+                "lm": "I",
+            },
+            {
+                "t": 2.0,
+                "x": 3.0,
+                "y": 0.0,
+                "edgeId": "I->E",
+                "lm": "E",
+            },
+            {
+                "t": 3.0,
+                "x": 3.0,
+                "y": 0.0,
+                "edgeId": "E->E",
+                "lm": "E",
+            },
+        ],
+        route_clock=2.5,
+    )
+
+    assert manager._previous_trajectory_lm(robot) == (0.0, "X")
 
 
 def test_exhausted_corridor_trajectory_starts_physical_retreat(
@@ -4220,6 +4440,62 @@ def test_completed_rolling_chunk_keeps_active_order_while_prefetch_is_pending(
     assert robot.trajectory
     assert order.status == "PLANNING"
     assert order.error == "rolling continuation pending"
+
+
+def test_completed_chunk_repairs_stale_goal_from_physical_endpoint() -> None:
+    manager = _long_line_manager(edge_count=3)
+    now = manager.simulation_time()
+    order = FleetOrder(
+        order_id="o1",
+        target_lm="N3",
+        vehicle="r1",
+        assigned_robot="r1",
+        status="EXECUTING",
+    )
+    robot = FleetRobot(
+        name="r1",
+        current_lm="N0",
+        # Reproduces a legacy rolling trim which advertised the following LM
+        # although its executable trajectory stopped at N1.
+        target_lm="N2",
+        status="MOVING",
+        pose={"x": 1.2, "y": 0.0, "yaw": 0.0},
+        trajectory=[
+            {
+                "x": 0.0,
+                "y": 0.0,
+                "yaw": 0.0,
+                "t": 0.0,
+                "lm": "N0",
+            },
+            {
+                "x": 1.2,
+                "y": 0.0,
+                "yaw": 0.0,
+                "t": 1.0,
+                "lm": "N1",
+            },
+        ],
+        plan_nodes=["N0", "N1"],
+        route_clock=1.0,
+        active_order_id=order.order_id,
+        route_chunk_goal_lm="N2",
+        route_final_lm="N3",
+        route_revision=7,
+    )
+    manager.orders[order.order_id] = order
+    manager.robots[robot.name] = robot
+
+    manager._settle_completed_trajectory_endpoint(robot, now)
+
+    assert robot.current_lm == "N1"
+    assert robot.target_lm == "N1"
+    assert robot.route_chunk_goal_lm == "N1"
+    assert robot.route_final_lm == "N3"
+    assert robot.route_revision != 7
+    assert manager._complete_simulated_route_chunk(robot, now)
+    assert robot.status == "WAITING"
+    assert robot.last_reason == "rolling continuation pending"
 
 
 def test_zero_duration_route_at_active_target_completes_instead_of_false_moving(
@@ -10352,6 +10628,129 @@ def test_physical_corridor_owner_retreats_mid_edge_committed_entrant_to_anchor()
     assert entrant.retreat_blocked_edges
     assert owner.trajectory is owner_route
     assert owner.retreat_target_clock is None
+
+
+def test_illegal_opposing_physical_owners_evict_one_to_external_lm() -> None:
+    """A corrupted capacity-one corridor must have a deterministic escape."""
+    region = "corridor:shared-physical"
+    landmarks = {
+        name: Landmark(
+            name=name,
+            x=x,
+            y=0.0,
+            properties=(
+                {"can_wait": False, "controlled_region": region}
+                if name in {"I1", "I2"}
+                else {"can_wait": True}
+            ),
+        )
+        for name, x in (
+            ("A", 0.0),
+            ("I1", 2.0),
+            ("I2", 4.0),
+            ("B", 6.0),
+        )
+    }
+    edges = [
+        GraphEdge(
+            from_name=src,
+            to_name=dst,
+            length=abs(landmarks[dst].x - landmarks[src].x),
+            kind="line",
+            edge_type="FeatureLine",
+            world_points=(
+                landmarks[src].to_point(),
+                landmarks[dst].to_point(),
+            ),
+            properties={
+                "direction": 2,
+                **(
+                    {"controlled_region": region}
+                    if {src, dst} & {"I1", "I2"}
+                    else {}
+                ),
+            },
+        )
+        for first, second in (("A", "I1"), ("I1", "I2"), ("I2", "B"))
+        for src, dst in ((first, second), (second, first))
+    ]
+    manager = FleetManagerSim(
+        landmarks,
+        edges,
+        params={
+            "fleet": {
+                "controlled_corridors_enabled": True,
+                "controlled_corridor_auto_detect": False,
+                "traffic_zone_control_enabled": False,
+            }
+        },
+    )
+
+    def route(nodes: list[str]) -> list[dict[str, object]]:
+        return [
+            {
+                "t": float(index),
+                "x": landmarks[node].x,
+                "y": 0.0,
+                "yaw": 0.0 if nodes[0] == "A" else math.pi,
+                "edgeId": (
+                    f"{node}->{node}"
+                    if index == 0
+                    else f"{nodes[index - 1]}->{node}"
+                ),
+                "lm": node,
+            }
+            for index, node in enumerate(nodes)
+        ]
+
+    winner = FleetRobot(
+        name="winner",
+        current_lm="I1",
+        target_lm="B",
+        active_order_id="winner-order",
+        status="WAITING",
+        pose={"x": 2.0, "y": 0.0, "yaw": 0.0},
+        route_clock=1.0,
+        trajectory=route(["A", "I1", "I2", "B"]),
+        last_reason="occupied by loser",
+        wait_for_robot="loser",
+    )
+    loser = FleetRobot(
+        name="loser",
+        current_lm="I2",
+        target_lm="A",
+        active_order_id="loser-order",
+        status="WAITING",
+        pose={"x": 4.0, "y": 0.0, "yaw": math.pi},
+        route_clock=1.0,
+        trajectory=route(["B", "I2", "I1", "A"]),
+        last_reason="occupied by winner",
+        wait_for_robot="winner",
+    )
+    manager.robots = {winner.name: winner, loser.name: loser}
+    manager._controlled_corridor_occupancy = {
+        region: [winner.name, loser.name],
+    }
+    for robot in manager.robots.values():
+        manager.orders[robot.active_order_id] = FleetOrder(
+            order_id=robot.active_order_id,
+            target_lm=robot.target_lm,
+            vehicle=robot.name,
+            assigned_robot=robot.name,
+            status="EXECUTING",
+        )
+
+    evacuated = manager._start_deadlock_corridor_evacuation(
+        [winner, loser],
+        winner,
+        1_000.0,
+    )
+
+    assert evacuated == loser.name
+    assert loser.status == "RETREATING"
+    assert loser.retreat_target_lm == "B"
+    assert winner.status == "WAITING"
+    assert winner.retreat_target_clock is None
 
 
 def test_entered_corridor_owner_clears_reciprocal_external_goal_blocker() -> None:

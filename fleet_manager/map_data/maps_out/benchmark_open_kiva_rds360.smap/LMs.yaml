@@ -1,0 +1,2883 @@
+mapName: benchmark_open_kiva_rds360
+coordinateFrame: map_top_left
+LMs:
+- name: B0101
+  x: 1.0
+  y: 1.0
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0102
+  x: 2.2
+  y: 1.0
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0103
+  x: 3.4
+  y: 1.0
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0104
+  x: 4.6
+  y: 1.0
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0105
+  x: 5.8
+  y: 1.0
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0106
+  x: 7.0
+  y: 1.0
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0107
+  x: 8.2
+  y: 1.0
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0108
+  x: 9.4
+  y: 1.0
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0109
+  x: 10.6
+  y: 1.0
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0110
+  x: 11.8
+  y: 1.0
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0111
+  x: 13.0
+  y: 1.0
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0112
+  x: 14.2
+  y: 1.0
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0113
+  x: 15.4
+  y: 1.0
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0114
+  x: 16.6
+  y: 1.0
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0115
+  x: 17.8
+  y: 1.0
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0116
+  x: 19.0
+  y: 1.0
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0117
+  x: 20.2
+  y: 1.0
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0118
+  x: 21.4
+  y: 1.0
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0119
+  x: 22.6
+  y: 1.0
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0120
+  x: 23.8
+  y: 1.0
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0121
+  x: 25.0
+  y: 1.0
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0122
+  x: 26.2
+  y: 1.0
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0123
+  x: 27.4
+  y: 1.0
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0124
+  x: 28.6
+  y: 1.0
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0125
+  x: 29.8
+  y: 1.0
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0126
+  x: 31.0
+  y: 1.0
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0127
+  x: 32.2
+  y: 1.0
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0128
+  x: 33.4
+  y: 1.0
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0129
+  x: 34.6
+  y: 1.0
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0130
+  x: 35.8
+  y: 1.0
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0131
+  x: 37.0
+  y: 1.0
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0132
+  x: 38.2
+  y: 1.0
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0133
+  x: 39.4
+  y: 1.0
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0134
+  x: 40.6
+  y: 1.0
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0135
+  x: 41.8
+  y: 1.0
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0136
+  x: 43.0
+  y: 1.0
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0201
+  x: 1.0
+  y: 2.2
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0202
+  x: 2.2
+  y: 2.2
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0203
+  x: 3.4
+  y: 2.2
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0204
+  x: 4.6
+  y: 2.2
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0205
+  x: 5.8
+  y: 2.2
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0206
+  x: 7.0
+  y: 2.2
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0207
+  x: 8.2
+  y: 2.2
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0208
+  x: 9.4
+  y: 2.2
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0209
+  x: 10.6
+  y: 2.2
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0210
+  x: 11.8
+  y: 2.2
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0211
+  x: 13.0
+  y: 2.2
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0212
+  x: 14.2
+  y: 2.2
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0213
+  x: 15.4
+  y: 2.2
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0214
+  x: 16.6
+  y: 2.2
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0215
+  x: 17.8
+  y: 2.2
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0216
+  x: 19.0
+  y: 2.2
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0217
+  x: 20.2
+  y: 2.2
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0218
+  x: 21.4
+  y: 2.2
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0219
+  x: 22.6
+  y: 2.2
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0220
+  x: 23.8
+  y: 2.2
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0221
+  x: 25.0
+  y: 2.2
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0222
+  x: 26.2
+  y: 2.2
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0223
+  x: 27.4
+  y: 2.2
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0224
+  x: 28.6
+  y: 2.2
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0225
+  x: 29.8
+  y: 2.2
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0226
+  x: 31.0
+  y: 2.2
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0227
+  x: 32.2
+  y: 2.2
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0228
+  x: 33.4
+  y: 2.2
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0229
+  x: 34.6
+  y: 2.2
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0230
+  x: 35.8
+  y: 2.2
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0231
+  x: 37.0
+  y: 2.2
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0232
+  x: 38.2
+  y: 2.2
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0233
+  x: 39.4
+  y: 2.2
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0234
+  x: 40.6
+  y: 2.2
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0235
+  x: 41.8
+  y: 2.2
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0236
+  x: 43.0
+  y: 2.2
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0301
+  x: 1.0
+  y: 3.4
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0302
+  x: 2.2
+  y: 3.4
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0303
+  x: 3.4
+  y: 3.4
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0304
+  x: 4.6
+  y: 3.4
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0305
+  x: 5.8
+  y: 3.4
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0306
+  x: 7.0
+  y: 3.4
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0307
+  x: 8.2
+  y: 3.4
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0308
+  x: 9.4
+  y: 3.4
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0309
+  x: 10.6
+  y: 3.4
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0310
+  x: 11.8
+  y: 3.4
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0311
+  x: 13.0
+  y: 3.4
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0312
+  x: 14.2
+  y: 3.4
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0313
+  x: 15.4
+  y: 3.4
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0314
+  x: 16.6
+  y: 3.4
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0315
+  x: 17.8
+  y: 3.4
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0316
+  x: 19.0
+  y: 3.4
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0317
+  x: 20.2
+  y: 3.4
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0318
+  x: 21.4
+  y: 3.4
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0319
+  x: 22.6
+  y: 3.4
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0320
+  x: 23.8
+  y: 3.4
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0321
+  x: 25.0
+  y: 3.4
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0322
+  x: 26.2
+  y: 3.4
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0323
+  x: 27.4
+  y: 3.4
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0324
+  x: 28.6
+  y: 3.4
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0325
+  x: 29.8
+  y: 3.4
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0326
+  x: 31.0
+  y: 3.4
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0327
+  x: 32.2
+  y: 3.4
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0328
+  x: 33.4
+  y: 3.4
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0329
+  x: 34.6
+  y: 3.4
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0330
+  x: 35.8
+  y: 3.4
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0331
+  x: 37.0
+  y: 3.4
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0332
+  x: 38.2
+  y: 3.4
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0333
+  x: 39.4
+  y: 3.4
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0334
+  x: 40.6
+  y: 3.4
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0335
+  x: 41.8
+  y: 3.4
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0336
+  x: 43.0
+  y: 3.4
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0401
+  x: 1.0
+  y: 4.6
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0402
+  x: 2.2
+  y: 4.6
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0403
+  x: 3.4
+  y: 4.6
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0404
+  x: 4.6
+  y: 4.6
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0405
+  x: 5.8
+  y: 4.6
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0406
+  x: 7.0
+  y: 4.6
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0407
+  x: 8.2
+  y: 4.6
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0408
+  x: 9.4
+  y: 4.6
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0409
+  x: 10.6
+  y: 4.6
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0410
+  x: 11.8
+  y: 4.6
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0411
+  x: 13.0
+  y: 4.6
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0412
+  x: 14.2
+  y: 4.6
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0413
+  x: 15.4
+  y: 4.6
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0414
+  x: 16.6
+  y: 4.6
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0415
+  x: 17.8
+  y: 4.6
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0416
+  x: 19.0
+  y: 4.6
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0417
+  x: 20.2
+  y: 4.6
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0418
+  x: 21.4
+  y: 4.6
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0419
+  x: 22.6
+  y: 4.6
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0420
+  x: 23.8
+  y: 4.6
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0421
+  x: 25.0
+  y: 4.6
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0422
+  x: 26.2
+  y: 4.6
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0423
+  x: 27.4
+  y: 4.6
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0424
+  x: 28.6
+  y: 4.6
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0425
+  x: 29.8
+  y: 4.6
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0426
+  x: 31.0
+  y: 4.6
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0427
+  x: 32.2
+  y: 4.6
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0428
+  x: 33.4
+  y: 4.6
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0429
+  x: 34.6
+  y: 4.6
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0430
+  x: 35.8
+  y: 4.6
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0431
+  x: 37.0
+  y: 4.6
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0432
+  x: 38.2
+  y: 4.6
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0433
+  x: 39.4
+  y: 4.6
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0434
+  x: 40.6
+  y: 4.6
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0435
+  x: 41.8
+  y: 4.6
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0436
+  x: 43.0
+  y: 4.6
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0501
+  x: 1.0
+  y: 5.8
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0502
+  x: 2.2
+  y: 5.8
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0503
+  x: 3.4
+  y: 5.8
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0504
+  x: 4.6
+  y: 5.8
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0505
+  x: 5.8
+  y: 5.8
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0506
+  x: 7.0
+  y: 5.8
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0507
+  x: 8.2
+  y: 5.8
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0508
+  x: 9.4
+  y: 5.8
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0509
+  x: 10.6
+  y: 5.8
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0510
+  x: 11.8
+  y: 5.8
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0511
+  x: 13.0
+  y: 5.8
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0512
+  x: 14.2
+  y: 5.8
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0513
+  x: 15.4
+  y: 5.8
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0514
+  x: 16.6
+  y: 5.8
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0515
+  x: 17.8
+  y: 5.8
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0516
+  x: 19.0
+  y: 5.8
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0517
+  x: 20.2
+  y: 5.8
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0518
+  x: 21.4
+  y: 5.8
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0519
+  x: 22.6
+  y: 5.8
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0520
+  x: 23.8
+  y: 5.8
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0521
+  x: 25.0
+  y: 5.8
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0522
+  x: 26.2
+  y: 5.8
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0523
+  x: 27.4
+  y: 5.8
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0524
+  x: 28.6
+  y: 5.8
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0525
+  x: 29.8
+  y: 5.8
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0526
+  x: 31.0
+  y: 5.8
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0527
+  x: 32.2
+  y: 5.8
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0528
+  x: 33.4
+  y: 5.8
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0529
+  x: 34.6
+  y: 5.8
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0530
+  x: 35.8
+  y: 5.8
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0531
+  x: 37.0
+  y: 5.8
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0532
+  x: 38.2
+  y: 5.8
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0533
+  x: 39.4
+  y: 5.8
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0534
+  x: 40.6
+  y: 5.8
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0535
+  x: 41.8
+  y: 5.8
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0536
+  x: 43.0
+  y: 5.8
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0601
+  x: 1.0
+  y: 7.0
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0602
+  x: 2.2
+  y: 7.0
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0603
+  x: 3.4
+  y: 7.0
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0604
+  x: 4.6
+  y: 7.0
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0605
+  x: 5.8
+  y: 7.0
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0606
+  x: 7.0
+  y: 7.0
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0607
+  x: 8.2
+  y: 7.0
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0608
+  x: 9.4
+  y: 7.0
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0609
+  x: 10.6
+  y: 7.0
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0610
+  x: 11.8
+  y: 7.0
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0611
+  x: 13.0
+  y: 7.0
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0612
+  x: 14.2
+  y: 7.0
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0613
+  x: 15.4
+  y: 7.0
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0614
+  x: 16.6
+  y: 7.0
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0615
+  x: 17.8
+  y: 7.0
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0616
+  x: 19.0
+  y: 7.0
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0617
+  x: 20.2
+  y: 7.0
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0618
+  x: 21.4
+  y: 7.0
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0619
+  x: 22.6
+  y: 7.0
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0620
+  x: 23.8
+  y: 7.0
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0621
+  x: 25.0
+  y: 7.0
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0622
+  x: 26.2
+  y: 7.0
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0623
+  x: 27.4
+  y: 7.0
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0624
+  x: 28.6
+  y: 7.0
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0625
+  x: 29.8
+  y: 7.0
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0626
+  x: 31.0
+  y: 7.0
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0627
+  x: 32.2
+  y: 7.0
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0628
+  x: 33.4
+  y: 7.0
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0629
+  x: 34.6
+  y: 7.0
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0630
+  x: 35.8
+  y: 7.0
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0631
+  x: 37.0
+  y: 7.0
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0632
+  x: 38.2
+  y: 7.0
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0633
+  x: 39.4
+  y: 7.0
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0634
+  x: 40.6
+  y: 7.0
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0635
+  x: 41.8
+  y: 7.0
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0636
+  x: 43.0
+  y: 7.0
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0701
+  x: 1.0
+  y: 8.2
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0702
+  x: 2.2
+  y: 8.2
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0703
+  x: 3.4
+  y: 8.2
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0704
+  x: 4.6
+  y: 8.2
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0705
+  x: 5.8
+  y: 8.2
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0706
+  x: 7.0
+  y: 8.2
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0707
+  x: 8.2
+  y: 8.2
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0708
+  x: 9.4
+  y: 8.2
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0709
+  x: 10.6
+  y: 8.2
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0710
+  x: 11.8
+  y: 8.2
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0711
+  x: 13.0
+  y: 8.2
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0712
+  x: 14.2
+  y: 8.2
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0713
+  x: 15.4
+  y: 8.2
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0714
+  x: 16.6
+  y: 8.2
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0715
+  x: 17.8
+  y: 8.2
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0716
+  x: 19.0
+  y: 8.2
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0717
+  x: 20.2
+  y: 8.2
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0718
+  x: 21.4
+  y: 8.2
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0719
+  x: 22.6
+  y: 8.2
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0720
+  x: 23.8
+  y: 8.2
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0721
+  x: 25.0
+  y: 8.2
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0722
+  x: 26.2
+  y: 8.2
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0723
+  x: 27.4
+  y: 8.2
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0724
+  x: 28.6
+  y: 8.2
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0725
+  x: 29.8
+  y: 8.2
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0726
+  x: 31.0
+  y: 8.2
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0727
+  x: 32.2
+  y: 8.2
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0728
+  x: 33.4
+  y: 8.2
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0729
+  x: 34.6
+  y: 8.2
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0730
+  x: 35.8
+  y: 8.2
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0731
+  x: 37.0
+  y: 8.2
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0732
+  x: 38.2
+  y: 8.2
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0733
+  x: 39.4
+  y: 8.2
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0734
+  x: 40.6
+  y: 8.2
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0735
+  x: 41.8
+  y: 8.2
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0736
+  x: 43.0
+  y: 8.2
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0801
+  x: 1.0
+  y: 9.4
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0802
+  x: 2.2
+  y: 9.4
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0803
+  x: 3.4
+  y: 9.4
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0804
+  x: 4.6
+  y: 9.4
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0805
+  x: 5.8
+  y: 9.4
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0806
+  x: 7.0
+  y: 9.4
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0807
+  x: 8.2
+  y: 9.4
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0808
+  x: 9.4
+  y: 9.4
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0809
+  x: 10.6
+  y: 9.4
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0810
+  x: 11.8
+  y: 9.4
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0811
+  x: 13.0
+  y: 9.4
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0812
+  x: 14.2
+  y: 9.4
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0813
+  x: 15.4
+  y: 9.4
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0814
+  x: 16.6
+  y: 9.4
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0815
+  x: 17.8
+  y: 9.4
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0816
+  x: 19.0
+  y: 9.4
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0817
+  x: 20.2
+  y: 9.4
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0818
+  x: 21.4
+  y: 9.4
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0819
+  x: 22.6
+  y: 9.4
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0820
+  x: 23.8
+  y: 9.4
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0821
+  x: 25.0
+  y: 9.4
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0822
+  x: 26.2
+  y: 9.4
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0823
+  x: 27.4
+  y: 9.4
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0824
+  x: 28.6
+  y: 9.4
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0825
+  x: 29.8
+  y: 9.4
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0826
+  x: 31.0
+  y: 9.4
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0827
+  x: 32.2
+  y: 9.4
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0828
+  x: 33.4
+  y: 9.4
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0829
+  x: 34.6
+  y: 9.4
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0830
+  x: 35.8
+  y: 9.4
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0831
+  x: 37.0
+  y: 9.4
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0832
+  x: 38.2
+  y: 9.4
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0833
+  x: 39.4
+  y: 9.4
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0834
+  x: 40.6
+  y: 9.4
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0835
+  x: 41.8
+  y: 9.4
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0836
+  x: 43.0
+  y: 9.4
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0901
+  x: 1.0
+  y: 10.6
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0902
+  x: 2.2
+  y: 10.6
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0903
+  x: 3.4
+  y: 10.6
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0904
+  x: 4.6
+  y: 10.6
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0905
+  x: 5.8
+  y: 10.6
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0906
+  x: 7.0
+  y: 10.6
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0907
+  x: 8.2
+  y: 10.6
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0908
+  x: 9.4
+  y: 10.6
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0909
+  x: 10.6
+  y: 10.6
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0910
+  x: 11.8
+  y: 10.6
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0911
+  x: 13.0
+  y: 10.6
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0912
+  x: 14.2
+  y: 10.6
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0913
+  x: 15.4
+  y: 10.6
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0914
+  x: 16.6
+  y: 10.6
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0915
+  x: 17.8
+  y: 10.6
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0916
+  x: 19.0
+  y: 10.6
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0917
+  x: 20.2
+  y: 10.6
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0918
+  x: 21.4
+  y: 10.6
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0919
+  x: 22.6
+  y: 10.6
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0920
+  x: 23.8
+  y: 10.6
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0921
+  x: 25.0
+  y: 10.6
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0922
+  x: 26.2
+  y: 10.6
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0923
+  x: 27.4
+  y: 10.6
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0924
+  x: 28.6
+  y: 10.6
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0925
+  x: 29.8
+  y: 10.6
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0926
+  x: 31.0
+  y: 10.6
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0927
+  x: 32.2
+  y: 10.6
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0928
+  x: 33.4
+  y: 10.6
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0929
+  x: 34.6
+  y: 10.6
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0930
+  x: 35.8
+  y: 10.6
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0931
+  x: 37.0
+  y: 10.6
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0932
+  x: 38.2
+  y: 10.6
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0933
+  x: 39.4
+  y: 10.6
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0934
+  x: 40.6
+  y: 10.6
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0935
+  x: 41.8
+  y: 10.6
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B0936
+  x: 43.0
+  y: 10.6
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B1001
+  x: 1.0
+  y: 11.8
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B1002
+  x: 2.2
+  y: 11.8
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B1003
+  x: 3.4
+  y: 11.8
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B1004
+  x: 4.6
+  y: 11.8
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B1005
+  x: 5.8
+  y: 11.8
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B1006
+  x: 7.0
+  y: 11.8
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B1007
+  x: 8.2
+  y: 11.8
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B1008
+  x: 9.4
+  y: 11.8
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B1009
+  x: 10.6
+  y: 11.8
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B1010
+  x: 11.8
+  y: 11.8
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B1011
+  x: 13.0
+  y: 11.8
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B1012
+  x: 14.2
+  y: 11.8
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B1013
+  x: 15.4
+  y: 11.8
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B1014
+  x: 16.6
+  y: 11.8
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B1015
+  x: 17.8
+  y: 11.8
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B1016
+  x: 19.0
+  y: 11.8
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B1017
+  x: 20.2
+  y: 11.8
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B1018
+  x: 21.4
+  y: 11.8
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B1019
+  x: 22.6
+  y: 11.8
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B1020
+  x: 23.8
+  y: 11.8
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B1021
+  x: 25.0
+  y: 11.8
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B1022
+  x: 26.2
+  y: 11.8
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B1023
+  x: 27.4
+  y: 11.8
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B1024
+  x: 28.6
+  y: 11.8
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B1025
+  x: 29.8
+  y: 11.8
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B1026
+  x: 31.0
+  y: 11.8
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B1027
+  x: 32.2
+  y: 11.8
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B1028
+  x: 33.4
+  y: 11.8
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B1029
+  x: 34.6
+  y: 11.8
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B1030
+  x: 35.8
+  y: 11.8
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B1031
+  x: 37.0
+  y: 11.8
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B1032
+  x: 38.2
+  y: 11.8
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B1033
+  x: 39.4
+  y: 11.8
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B1034
+  x: 40.6
+  y: 11.8
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B1035
+  x: 41.8
+  y: 11.8
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true
+- name: B1036
+  x: 43.0
+  y: 11.8
+  ignoreDir: null
+  properties:
+    spin: false
+    benchmark: true
+    waitAllowed: true

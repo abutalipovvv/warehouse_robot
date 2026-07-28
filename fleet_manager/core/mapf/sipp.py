@@ -24,6 +24,7 @@ class SippRobotRequest:
     initial_departure_not_before: int = 0
     node_departure_not_before: tuple[tuple[NodeName, int], ...] = ()
     authorized_controlled_regions: tuple[str, ...] = ()
+    no_wait_nodes: tuple[NodeName, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -111,6 +112,7 @@ class SippPlanner:
         self._initial_departure_not_before = 0
         self._node_departure_not_before: dict[NodeName, int] = {}
         self._authorized_controlled_regions: frozenset[str] = frozenset()
+        self._request_no_wait_nodes: frozenset[NodeName] = frozenset()
 
     def plan(
         self,
@@ -142,6 +144,11 @@ class SippPlanner:
             str(region_id)
             for region_id in request.authorized_controlled_regions
             if str(region_id)
+        )
+        self._request_no_wait_nodes = frozenset(
+            str(node)
+            for node in request.no_wait_nodes
+            if str(node)
         )
         start = self._start_state(request, reservations, blocked_nodes)
         if start is None:
@@ -266,7 +273,10 @@ class SippPlanner:
             vertex = self.graph.vertices.get(state.node)
             if (
                 vertex is not None
-                and not vertex.can_wait
+                and (
+                    not vertex.can_wait
+                    or state.node in self._request_no_wait_nodes
+                )
                 and len(lane_yaws) > 1
             ):
                 # An unspecified-motion edge offers the geometric heading and
@@ -406,10 +416,12 @@ class SippPlanner:
             return None
         vertex = self.graph.vertices.get(state.node)
         if (
-            vertex is not None
-            and not vertex.can_wait
-            and depart > state.time + rotate_duration
-        ):
+            (
+                vertex is not None
+                and not vertex.can_wait
+            )
+            or state.node in self._request_no_wait_nodes
+        ) and depart > state.time + rotate_duration:
             self.last_failure = (
                 f"cannot_wait:{state.node}"
                 f"@{state.time + rotate_duration}-{depart}"

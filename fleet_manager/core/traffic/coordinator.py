@@ -313,6 +313,11 @@ class TrafficCoordinatorMixin:
                 # receiving the same grant forever.
                 robot.traffic_stall_since = self._active_wait_cycles[cycle_key]
                 continue
+            if cycle_key in self._wait_cycle_grant_signatures:
+                # A priority grant is only an attempted arbitration. Count a
+                # resolved cycle after the selected robot has produced enough
+                # spatial progress to change the component geometry.
+                self.traffic_metrics["waitCyclesResolved"] += 1
             self._active_wait_cycles.pop(cycle_key, None)
             self._wait_cycle_last_arbitration.pop(cycle_key, None)
             self._wait_cycle_grant_signatures.pop(cycle_key, None)
@@ -1015,17 +1020,13 @@ class TrafficCoordinatorMixin:
             robot.wait_release_at = lease_until
             robot.blocked_since = robot.blocked_since or now
             robot.updated_at = now
-        if new_episode:
-            # This records one arbitration episode. Actual spatial progress
-            # closes the episode in _record_traffic_progress().
-            self.traffic_metrics["waitCyclesResolved"] += 1
         self._wait_cycle_grant_signatures[cycle_key] = (
             self._wait_cycle_grant_signature(robots)
         )
         self.traffic_metrics["priorityGrants"] += 1
         self._event(
             "warn",
-            f"traffic wait cycle resolved: priority granted to {priority_robot.name}",
+            f"traffic wait cycle arbitration: priority granted to {priority_robot.name}",
         )
 
     def _controlled_corridor_cycle_owner(
@@ -1055,6 +1056,31 @@ class TrafficCoordinatorMixin:
                 physical_owners.append(robot)
         if len(physical_owners) == 1:
             return physical_owners[0]
+
+        # A corridor admission message explicitly names the robot whose
+        # passage is being protected.  If that named owner is part of the
+        # reciprocal wait cycle, preserve its downstream/right-of-way role
+        # even when the calendar has just rolled the old slot out.  Otherwise
+        # the generic name/age tiebreak can grant the red-light waiter and
+        # reinforce the exact cycle the signal was meant to prevent.
+        declared_owners = {
+            blocker_name
+            for robot in robots
+            if str(robot.last_reason or "").startswith(
+                "corridor admission wait at "
+            )
+            and (
+                blocker_name := (
+                    str(robot.wait_for_robot or "").strip()
+                    or self._robot_name_from_conflict_reason(
+                        robot.last_reason
+                    )
+                )
+            ) in by_name
+            and blocker_name != robot.name
+        }
+        if len(declared_owners) == 1:
+            return by_name[next(iter(declared_owners))]
         if self._controlled_corridor_scheduler is None:
             return None
 
@@ -1976,11 +2002,16 @@ class TrafficCoordinatorMixin:
                 and upcoming_regions.intersection(winner_regions)
                 and not robot_regions
             )
-            if winner_regions and robot_regions:
-                # Atomic passage ownership makes the body/bodies already in
-                # the resource authoritative. Moving one of them backwards
-                # cannot create room at the external portal and risks
-                # clearing the only executable exit timeline.
+            if (
+                winner_regions
+                and robot_regions
+                and not winner_regions.intersection(robot_regions)
+            ):
+                # Distinct physical resources may belong to one bundled
+                # passage. Keep both owners moving toward their safe exits.
+                # A shared physical region is different: opposing admission
+                # has already violated capacity-one, so one body must be
+                # evacuated to its previous external holding LM.
                 continue
             if retreats_from_occupied_portal:
                 # The current passage owner cannot leave while an opposing
@@ -2081,14 +2112,19 @@ class TrafficCoordinatorMixin:
                 )
                 if (
                     historical_retreat_blocker
-                    and retreats_from_occupied_portal
+                    and (
+                        retreats_from_occupied_portal
+                        or reciprocal_blocker
+                    )
                 ):
                     # A motion-orientation manoeuvre can carry an admission
                     # loser through the portal and leave its earlier staging
                     # LM on the owner's side.  Reversing that history would
-                    # cross the very owner it must release.  Treat this like a
-                    # fresh portal boundary and find a free external branch
-                    # from the robot's current physical LM instead.
+                    # cross the very owner it must release. The same geometry
+                    # can occur in an ordinary reciprocal swap after selecting
+                    # a farther graph-safe retreat. Treat both as a fresh
+                    # boundary and find a free external branch from the
+                    # robot's current physical LM instead.
                     graph_escape_required = True
             graph_escape_route: list[str] = []
             portal_blocked_edges: list[tuple[str, str]] = []
@@ -2788,22 +2824,48 @@ class TrafficCoordinatorMixin:
         final_sample = robot.trajectory[-1]
         final_time = float(final_sample.get("t", 0.0) or 0.0)
         final_lm = str(final_sample.get("lm") or "").strip()
+        physically_at_candidate = bool(
+            robot.pose is not None
+            and candidate[1] in self.landmarks
+            and self._pose_is_at_lm(robot.pose, candidate[1])
+        )
         if (
-            robot.route_clock >= final_time - 0.000001
-            and final_lm == candidate[1]
+            (
+                (
+                    robot.route_clock >= final_time - 0.000001
+                    and final_lm == candidate[1]
+                )
+                or physically_at_candidate
+            )
             and previous_distinct is not None
         ):
-            # At an exhausted chunk the last tagged LM is the robot's current
-            # physical endpoint. Retreating to that same clock is a no-op and
-            # only queues another replan. Use the most recent distinct LM
-            # instead; repeated wait/rotation samples at either endpoint do
+            # At an exhausted chunk—or during a planned wait after arriving
+            # at a graph LM—the last tagged LM is the robot's current physical
+            # position. Retreating to that same clock is a no-op and only
+            # queues another identical replan. Use the most recent distinct
+            # LM instead; repeated wait/rotation samples at either endpoint do
             # not change which graph segment must be reversed.
+            if self._controlled_corridor_graph is not None:
+                safe_previous = self._previous_safe_trajectory_lm(
+                    robot,
+                    exclude_lm=candidate[1],
+                )
+                if (
+                    safe_previous is not None
+                    and safe_previous[1] != candidate[1]
+                ):
+                    return safe_previous
+                # Never choose an internal/no-wait LM as a deliberate stop.
+                # The caller will request an outward graph escape instead.
+                return candidate
             return previous_distinct
         return candidate
 
     def _previous_safe_trajectory_lm(
         self,
         robot: FleetRobot,
+        *,
+        exclude_lm: str = "",
     ) -> tuple[float, str] | None:
         graph = self._controlled_corridor_graph
         if graph is None:
@@ -2814,6 +2876,8 @@ class TrafficCoordinatorMixin:
             if sample_time > robot.route_clock + 0.000001:
                 break
             lm_name = str(sample.get("lm") or "").strip()
+            if exclude_lm and lm_name == exclude_lm:
+                continue
             vertex = graph.vertices.get(lm_name)
             if (
                 vertex is not None
@@ -2827,12 +2891,17 @@ class TrafficCoordinatorMixin:
         edge = self._parse_edge_id(
             self._edge_id_at_trajectory(robot.trajectory, robot.route_clock)
         )
+        if edge is not None and edge[0] == edge[1]:
+            edge = None
         if edge is None:
             for sample in robot.trajectory:
                 if float(sample.get("t", 0.0) or 0.0) + 0.000001 < robot.route_clock:
                     continue
-                edge = self._parse_edge_id(str(sample.get("edgeId") or ""))
-                if edge is not None:
+                candidate = self._parse_edge_id(
+                    str(sample.get("edgeId") or "")
+                )
+                if candidate is not None and candidate[0] != candidate[1]:
+                    edge = candidate
                     break
         if edge is None:
             return []
@@ -3060,11 +3129,75 @@ class TrafficCoordinatorMixin:
         robot.collision_preflight_revision = robot.route_revision
         robot.collision_preflight_due_at = now + (interval * (0.85 + (phase * 0.30)))
 
+    def _next_safe_holding_clock(
+        self,
+        robot: FleetRobot,
+    ) -> float | None:
+        """Return the end of the next indivisible graph passage.
+
+        Runtime collision lookahead used to be bounded only by seconds.  A
+        slow turn or a long reservation-stretched edge could therefore leave
+        a graph LM before its destination was checked, then stop halfway when
+        the same conflict entered the time window.  A warehouse robot may
+        wait at a graph-safe LM, never by deliberately filling an edge.
+
+        On ordinary graph sections the next LM is the passage end.  Inside an
+        authored controlled corridor, internal/portal LMs are non-waitable, so
+        the passage extends atomically to the first external waitable LM.
+        """
+        if not robot.trajectory or robot.pose is None:
+            return None
+        start_lm = self._safe_replan_start_lm(robot)
+        if start_lm not in self.landmarks:
+            return None
+
+        graph = self._controlled_corridor_graph
+        if graph is not None:
+            start_vertex = graph.vertices.get(start_lm)
+            if (
+                start_vertex is not None
+                and (
+                    not start_vertex.can_wait
+                    or start_vertex.controlled_region_ids
+                )
+            ):
+                # The robot has already crossed the last safe stop line.
+                return None
+
+        for sample in robot.trajectory:
+            sample_clock = float(sample.get("t", 0.0) or 0.0)
+            if sample_clock <= robot.route_clock + 0.000001:
+                continue
+            lm_name = str(sample.get("lm") or "").strip()
+            if lm_name not in self.landmarks or lm_name == start_lm:
+                continue
+            if graph is not None:
+                vertex = graph.vertices.get(lm_name)
+                if (
+                    vertex is not None
+                    and (
+                        not vertex.can_wait
+                        or vertex.controlled_region_ids
+                    )
+                ):
+                    continue
+            return sample_clock
+        return None
+
     def _blocked_ahead(self, robot: FleetRobot, proposed_clock: float) -> str:
         if not robot.trajectory:
             return ""
         final_time = float(robot.trajectory[-1].get("t", 0.0) or 0.0)
         lookahead = self.collision.lookahead_time()
+        safe_holding_clock = self._next_safe_holding_clock(robot)
+        if safe_holding_clock is not None:
+            # Admission is decided while the robot is still centred on its
+            # previous safe LM.  Cover the complete edge, turn, or authored
+            # no-wait corridor even when it is longer than the time lookahead.
+            lookahead = max(
+                lookahead,
+                safe_holding_clock - proposed_clock,
+            )
         robot_candidates = self._lookahead_robot_candidates(robot, lookahead)
         relative_speed = self._runtime_robot_speed(robot) + max(
             (self._runtime_robot_speed(other) for other in robot_candidates),
@@ -3091,6 +3224,11 @@ class TrafficCoordinatorMixin:
             # hold the whole corridor forever.  Immediate checks below remain
             # authoritative and stop before any actual footprint overlap.
             end_clock = proposed_clock
+        elif safe_holding_clock is not None:
+            end_clock = max(
+                end_clock,
+                min(final_time, safe_holding_clock),
+            )
         checks = [proposed_clock]
         clock = proposed_clock + step
         while clock <= end_clock + 0.000001:

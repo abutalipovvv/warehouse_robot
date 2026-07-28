@@ -168,15 +168,21 @@ def deserialize_smap(smap_path: Path, out_dir: Path) -> None:
     if not (maxx > minx and maxy > miny and res > 0):
         raise ValueError("Bad header bounds/resolution; can't build grid.")
 
-    width = int(math.ceil((maxx - minx) / res)) + 1
-    height = int(math.ceil((maxy - miny) / res)) + 1
+    # SMAP bounds are inclusive pixel centres. Nearest-cell rounding avoids
+    # an extra row/column when a decimal bound is represented as
+    # 47.900000000000006.
+    width = int(round((maxx - minx) / res)) + 1
+    height = int(round((maxy - miny) / res)) + 1
 
     # Image buffer (top-left origin)
     grid = [[FREE for _ in range(width)] for _ in range(height)]
 
     def world_to_grid(x: float, y: float) -> tuple[int, int]:
-        gx = int((x - minx) / res)
-        gy = int((y - miny) / res)
+        # SMAP points denote raster cell centres. Rounding avoids sending
+        # exact decimal coordinates such as 7.2 / 0.1 to the preceding cell
+        # because of binary floating-point representation.
+        gx = int(round((x - minx) / res))
+        gy = int(round((y - miny) / res))
         iy = (height - 1) - gy  # flip Y for image coordinates
         ix = gx
         return ix, iy

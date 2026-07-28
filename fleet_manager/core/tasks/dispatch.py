@@ -3288,6 +3288,7 @@ class FleetTaskDispatchMixin:
                 continue
             request["departureNotBefore"] = [dict(departure_gate)]
             request["authorizedControlledRegions"] = list(slot.regions)
+            request["noWaitNodes"] = list(gate.get("noWaitNodes", ()))
             runnable_entries.append(entry)
             runnable_requests.append(request)
             corridor_gates[robot.name] = {
@@ -5482,9 +5483,11 @@ class FleetTaskDispatchMixin:
                 continue
             intent = gate.get("intent")
             if not isinstance(intent, dict):
+                self._queue_controlled_corridor_exit_clearance(robot)
                 corridor_gate_pending.append(robot)
                 continue
             if not bool(gate.get("ready")):
+                self._queue_controlled_corridor_exit_clearance(robot)
                 corridor_gate_pending.append(robot)
                 continue
             slot = gate.get("slot")
@@ -5501,6 +5504,7 @@ class FleetTaskDispatchMixin:
                 continue
             request["departureNotBefore"] = [dict(departure_gate)]
             request["authorizedControlledRegions"] = list(slot.regions)
+            request["noWaitNodes"] = list(gate.get("noWaitNodes", ()))
             runnable.append(
                 (order, robot, request, final_goal, prediction_offset)
             )
@@ -5608,6 +5612,47 @@ class FleetTaskDispatchMixin:
             name="fleet-mapf-prefetch",
             daemon=True,
         ).start()
+        return True
+
+    def _queue_controlled_corridor_exit_clearance(
+        self,
+        waiter: FleetRobot,
+    ) -> bool:
+        """Move an inactive body which keeps a corridor slot unavailable.
+
+        The calendar rejects an unsafe passage before MAPF is invoked.  That
+        is normally correct, but it also meant the ordinary stationary-body
+        recovery never saw a planner failure and could not clear a parked
+        robot from the exit pocket.  Bridge the calendar's exact downstream
+        blocker evidence into the same bounded maintenance-order mechanism.
+        """
+        blocker_name = str(
+            self._controlled_corridor_blockers.get(waiter.name, "")
+            or ""
+        ).strip()
+        blocker = self.robots.get(blocker_name)
+        if blocker is None or blocker.name == waiter.name:
+            return False
+        queued = self._queue_stationary_clearance_relocation(
+            waiter,
+            blocker,
+            cause="controlled corridor exit occupied",
+        )
+        if not queued:
+            return False
+        now = self._now()
+        self._rolling_prefetch_last_attempt_at[waiter.name] = now
+        self._rolling_prefetch_retry_at[waiter.name] = max(
+            self._rolling_prefetch_retry_at.get(waiter.name, 0.0),
+            now + self._rolling_boundary_retry_interval(
+                self._active_order_for_robot(waiter),
+            ),
+        )
+        if self._robot_waits_at_rolling_boundary(waiter):
+            waiter.last_reason = (
+                f"waiting for corridor exit clearance by {blocker.name}"
+            )
+            waiter.updated_at = now
         return True
 
     def _rolling_recovery_planning_goal(

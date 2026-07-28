@@ -1,0 +1,444 @@
+{
+  "sessionId": "rds-dynamic-20260727T092121Z-20260727",
+  "baseUrl": "http://127.0.0.1:8088",
+  "map": "smart_kiva_large_w_mode_current_export",
+  "robots": [
+    "sim_001",
+    "sim_002",
+    "sim_003",
+    "sim_004",
+    "sim_005",
+    "sim_006",
+    "sim_007",
+    "sim_008",
+    "sim_009",
+    "sim_0010",
+    "sim_0011",
+    "sim_0012",
+    "sim_0013",
+    "sim_0014",
+    "sim_0015",
+    "sim_0016",
+    "sim_0017",
+    "sim_0018",
+    "sim_0019",
+    "sim_0020"
+  ],
+  "seed": 20260727,
+  "spawnAssignments": {
+    "sim_001": "S032003",
+    "sim_002": "S002034",
+    "sim_003": "S032034",
+    "sim_004": "S002003",
+    "sim_005": "S018018",
+    "sim_006": "S002018",
+    "sim_007": "S032019",
+    "sim_008": "S018033",
+    "sim_009": "S018003",
+    "sim_0010": "S010010",
+    "sim_0011": "S010025",
+    "sim_0012": "S026011",
+    "sim_0013": "S026027",
+    "sim_0014": "S010034",
+    "sim_0015": "S002026",
+    "sim_0016": "S018010",
+    "sim_0017": "S010003",
+    "sim_0018": "S002010",
+    "sim_0019": "S018025",
+    "sim_0020": "S010018"
+  },
+  "generationDurationSec": 300.0,
+  "elapsedSec": 480.162,
+  "drained": false,
+  "activeAtEnd": {
+    "sim_002": {
+      "id": "rds-dynamic-20260727T092121Z-20260727-000002-sim_002",
+      "origin": "S002034",
+      "target": "S028005",
+      "ageSec": 479.721
+    },
+    "sim_005": {
+      "id": "rds-dynamic-20260727T092121Z-20260727-000005-sim_005",
+      "origin": "S018018",
+      "target": "S006002",
+      "ageSec": 479.115
+    },
+    "sim_006": {
+      "id": "rds-dynamic-20260727T092121Z-20260727-000006-sim_006",
+      "origin": "S002018",
+      "target": "S032005",
+      "ageSec": 478.913
+    },
+    "sim_0010": {
+      "id": "rds-dynamic-20260727T092121Z-20260727-000010-sim_0010",
+      "origin": "S010010",
+      "target": "S028035",
+      "ageSec": 478.105
+    },
+    "sim_0011": {
+      "id": "rds-dynamic-20260727T092121Z-20260727-000011-sim_0011",
+      "origin": "S010025",
+      "target": "S032002",
+      "ageSec": 477.904
+    },
+    "sim_0014": {
+      "id": "rds-dynamic-20260727T092121Z-20260727-000014-sim_0014",
+      "origin": "S010034",
+      "target": "S030004",
+      "ageSec": 477.299
+    },
+    "sim_0016": {
+      "id": "rds-dynamic-20260727T092121Z-20260727-000016-sim_0016",
+      "origin": "S018010",
+      "target": "S004035",
+      "ageSec": 476.895
+    },
+    "sim_0018": {
+      "id": "rds-dynamic-20260727T092121Z-20260727-000018-sim_0018",
+      "origin": "S002010",
+      "target": "S030033",
+      "ageSec": 476.491
+    },
+    "sim_0020": {
+      "id": "rds-dynamic-20260727T092121Z-20260727-000020-sim_0020",
+      "origin": "S010018",
+      "target": "S031035",
+      "ageSec": 476.088
+    },
+    "sim_0012": {
+      "id": "rds-dynamic-20260727T092121Z-20260727-000022-sim_0012",
+      "origin": "S002032",
+      "target": "S030006",
+      "ageSec": 394.365
+    },
+    "sim_007": {
+      "id": "rds-dynamic-20260727T092121Z-20260727-000023-sim_007",
+      "origin": "S002033",
+      "target": "S026003",
+      "ageSec": 388.869
+    },
+    "sim_003": {
+      "id": "rds-dynamic-20260727T092121Z-20260727-000033-sim_003",
+      "origin": "S002002",
+      "target": "S032031",
+      "ageSec": 252.346
+    },
+    "sim_008": {
+      "id": "rds-dynamic-20260727T092121Z-20260727-000038-sim_008",
+      "origin": "S004002",
+      "target": "S032030",
+      "ageSec": 190.333
+    }
+  },
+  "orders": {
+    "generated": 38,
+    "completed": 25,
+    "failed": 0,
+    "submitErrors": 0,
+    "throughputPerMin": 3.124,
+    "averageDurationSec": 135.676,
+    "maxDurationSec": 283.351
+  },
+  "traffic": {
+    "blockedRobotSec": 0,
+    "blockedEvents": 0,
+    "stationaryRobotSec": 5131.398,
+    "maxStationarySec": 474.083,
+    "routeChanges": 487,
+    "rollbacks": 29,
+    "minPairDistanceM": 1.3333,
+    "perRobot": {
+      "sim_001": {
+        "blockedSec": 0.0,
+        "blockedEvents": 0,
+        "stationarySec": 109.026,
+        "maxStationarySec": 13.505,
+        "routeChanges": 17,
+        "rollbacks": 1
+      },
+      "sim_002": {
+        "blockedSec": 0.0,
+        "blockedEvents": 0,
+        "stationarySec": 0.998,
+        "maxStationarySec": 0.5,
+        "routeChanges": 25,
+        "rollbacks": 0
+      },
+      "sim_003": {
+        "blockedSec": 0.0,
+        "blockedEvents": 0,
+        "stationarySec": 156.024,
+        "maxStationarySec": 13.999,
+        "routeChanges": 17,
+        "rollbacks": 3
+      },
+      "sim_004": {
+        "blockedSec": 0.0,
+        "blockedEvents": 0,
+        "stationarySec": 105.53,
+        "maxStationarySec": 12.003,
+        "routeChanges": 19,
+        "rollbacks": 5
+      },
+      "sim_005": {
+        "blockedSec": 0.0,
+        "blockedEvents": 0,
+        "stationarySec": 472.582,
+        "maxStationarySec": 472.582,
+        "routeChanges": 29,
+        "rollbacks": 0
+      },
+      "sim_006": {
+        "blockedSec": 0.0,
+        "blockedEvents": 0,
+        "stationarySec": 474.583,
+        "maxStationarySec": 472.582,
+        "routeChanges": 29,
+        "rollbacks": 0
+      },
+      "sim_007": {
+        "blockedSec": 0.0,
+        "blockedEvents": 0,
+        "stationarySec": 382.569,
+        "maxStationarySec": 354.065,
+        "routeChanges": 30,
+        "rollbacks": 0
+      },
+      "sim_008": {
+        "blockedSec": 0.0,
+        "blockedEvents": 0,
+        "stationarySec": 137.019,
+        "maxStationarySec": 16.003,
+        "routeChanges": 14,
+        "rollbacks": 2
+      },
+      "sim_009": {
+        "blockedSec": 0.0,
+        "blockedEvents": 0,
+        "stationarySec": 84.505,
+        "maxStationarySec": 5.001,
+        "routeChanges": 4,
+        "rollbacks": 5
+      },
+      "sim_0010": {
+        "blockedSec": 0.0,
+        "blockedEvents": 0,
+        "stationarySec": 439.083,
+        "maxStationarySec": 422.576,
+        "routeChanges": 24,
+        "rollbacks": 1
+      },
+      "sim_0011": {
+        "blockedSec": 0.0,
+        "blockedEvents": 0,
+        "stationarySec": 467.582,
+        "maxStationarySec": 459.08,
+        "routeChanges": 24,
+        "rollbacks": 0
+      },
+      "sim_0012": {
+        "blockedSec": 0.0,
+        "blockedEvents": 0,
+        "stationarySec": 28.007,
+        "maxStationarySec": 7.5,
+        "routeChanges": 31,
+        "rollbacks": 0
+      },
+      "sim_0013": {
+        "blockedSec": 0.0,
+        "blockedEvents": 0,
+        "stationarySec": 102.992,
+        "maxStationarySec": 14.503,
+        "routeChanges": 15,
+        "rollbacks": 2
+      },
+      "sim_0014": {
+        "blockedSec": 0.0,
+        "blockedEvents": 0,
+        "stationarySec": 464.084,
+        "maxStationarySec": 463.583,
+        "routeChanges": 32,
+        "rollbacks": 0
+      },
+      "sim_0015": {
+        "blockedSec": 0.0,
+        "blockedEvents": 0,
+        "stationarySec": 124.018,
+        "maxStationarySec": 13.0,
+        "routeChanges": 11,
+        "rollbacks": 3
+      },
+      "sim_0016": {
+        "blockedSec": 0.0,
+        "blockedEvents": 0,
+        "stationarySec": 474.083,
+        "maxStationarySec": 474.083,
+        "routeChanges": 44,
+        "rollbacks": 0
+      },
+      "sim_0017": {
+        "blockedSec": 0.0,
+        "blockedEvents": 0,
+        "stationarySec": 97.538,
+        "maxStationarySec": 11.002,
+        "routeChanges": 14,
+        "rollbacks": 5
+      },
+      "sim_0018": {
+        "blockedSec": 0.0,
+        "blockedEvents": 0,
+        "stationarySec": 474.083,
+        "maxStationarySec": 474.083,
+        "routeChanges": 54,
+        "rollbacks": 0
+      },
+      "sim_0019": {
+        "blockedSec": 0.0,
+        "blockedEvents": 0,
+        "stationarySec": 94.515,
+        "maxStationarySec": 13.002,
+        "routeChanges": 9,
+        "rollbacks": 2
+      },
+      "sim_0020": {
+        "blockedSec": 0.0,
+        "blockedEvents": 0,
+        "stationarySec": 442.576,
+        "maxStationarySec": 414.073,
+        "routeChanges": 45,
+        "rollbacks": 0
+      }
+    }
+  },
+  "corridors": {
+    "corridor:smart-kiva:c002:r002-r004": {
+      "maxOccupancy": 2,
+      "robotSeconds": 102.027
+    },
+    "corridor:smart-kiva:c002:r006-r008": {
+      "maxOccupancy": 2,
+      "robotSeconds": 81.525
+    },
+    "corridor:smart-kiva:c002:r010-r012": {
+      "maxOccupancy": 3,
+      "robotSeconds": 87.016
+    },
+    "corridor:smart-kiva:c002:r014-r016": {
+      "maxOccupancy": 2,
+      "robotSeconds": 72.007
+    },
+    "corridor:smart-kiva:c002:r018-r020": {
+      "maxOccupancy": 2,
+      "robotSeconds": 80.016
+    },
+    "corridor:smart-kiva:c002:r022-r024": {
+      "maxOccupancy": 2,
+      "robotSeconds": 48.508
+    },
+    "corridor:smart-kiva:c002:r026-r028": {
+      "maxOccupancy": 1,
+      "robotSeconds": 15.501
+    },
+    "corridor:smart-kiva:c002:r030-r032": {
+      "maxOccupancy": 1,
+      "robotSeconds": 25.504
+    },
+    "corridor:smart-kiva:c013:r002-r004": {
+      "maxOccupancy": 2,
+      "robotSeconds": 485.083
+    },
+    "corridor:smart-kiva:c013:r006-r008": {
+      "maxOccupancy": 1,
+      "robotSeconds": 21.998
+    },
+    "corridor:smart-kiva:c013:r010-r012": {
+      "maxOccupancy": 2,
+      "robotSeconds": 101.011
+    },
+    "corridor:smart-kiva:c013:r014-r016": {
+      "maxOccupancy": 2,
+      "robotSeconds": 63.009
+    },
+    "corridor:smart-kiva:c013:r018-r020": {
+      "maxOccupancy": 3,
+      "robotSeconds": 518.075
+    },
+    "corridor:smart-kiva:c013:r022-r024": {
+      "maxOccupancy": 1,
+      "robotSeconds": 28.007
+    },
+    "corridor:smart-kiva:c013:r026-r028": {
+      "maxOccupancy": 1,
+      "robotSeconds": 19.502
+    },
+    "corridor:smart-kiva:c013:r030-r032": {
+      "maxOccupancy": 1,
+      "robotSeconds": 29.009
+    },
+    "corridor:smart-kiva:c024:r002-r004": {
+      "maxOccupancy": 2,
+      "robotSeconds": 368.064
+    },
+    "corridor:smart-kiva:c024:r006-r008": {
+      "maxOccupancy": 1,
+      "robotSeconds": 27.004
+    },
+    "corridor:smart-kiva:c024:r010-r012": {
+      "maxOccupancy": 2,
+      "robotSeconds": 483.086
+    },
+    "corridor:smart-kiva:c024:r014-r016": {
+      "maxOccupancy": 2,
+      "robotSeconds": 451.081
+    },
+    "corridor:smart-kiva:c024:r018-r020": {
+      "maxOccupancy": 2,
+      "robotSeconds": 66.511
+    },
+    "corridor:smart-kiva:c024:r022-r024": {
+      "maxOccupancy": 1,
+      "robotSeconds": 46.51
+    },
+    "corridor:smart-kiva:c024:r026-r028": {
+      "maxOccupancy": 2,
+      "robotSeconds": 58.009
+    },
+    "corridor:smart-kiva:c024:r030-r032": {
+      "maxOccupancy": 2,
+      "robotSeconds": 33.004
+    },
+    "corridor:smart-kiva:c035:r002-r004": {
+      "maxOccupancy": 2,
+      "robotSeconds": 32.005
+    },
+    "corridor:smart-kiva:c035:r006-r008": {
+      "maxOccupancy": 2,
+      "robotSeconds": 39.507
+    },
+    "corridor:smart-kiva:c035:r010-r012": {
+      "maxOccupancy": 2,
+      "robotSeconds": 51.009
+    },
+    "corridor:smart-kiva:c035:r014-r016": {
+      "maxOccupancy": 3,
+      "robotSeconds": 113.018
+    },
+    "corridor:smart-kiva:c035:r018-r020": {
+      "maxOccupancy": 2,
+      "robotSeconds": 63.011
+    },
+    "corridor:smart-kiva:c035:r022-r024": {
+      "maxOccupancy": 2,
+      "robotSeconds": 42.497
+    },
+    "corridor:smart-kiva:c035:r026-r028": {
+      "maxOccupancy": 2,
+      "robotSeconds": 49.018
+    },
+    "corridor:smart-kiva:c035:r030-r032": {
+      "maxOccupancy": 2,
+      "robotSeconds": 80.014
+    }
+  },
+  "samples": "var/rds_benchmarks/rds-dynamic-20260727T092121Z-20260727.jsonl"
+}

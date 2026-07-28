@@ -1,0 +1,536 @@
+{
+  "sessionId": "rds-dynamic-20260727T103502Z-20260727",
+  "baseUrl": "http://127.0.0.1:8088",
+  "map": "benchmark_open_kiva_export",
+  "robots": [
+    "sim_001",
+    "sim_002",
+    "sim_003",
+    "sim_004",
+    "sim_005",
+    "sim_006",
+    "sim_007",
+    "sim_008",
+    "sim_009",
+    "sim_0010",
+    "sim_0011",
+    "sim_0012",
+    "sim_0013",
+    "sim_0014",
+    "sim_0015",
+    "sim_0016",
+    "sim_0017",
+    "sim_0018",
+    "sim_0019",
+    "sim_0020",
+    "sim_0021",
+    "sim_0022",
+    "sim_0023",
+    "sim_0024",
+    "sim_0025",
+    "sim_0026",
+    "sim_0027",
+    "sim_0028",
+    "sim_0029",
+    "sim_0030",
+    "sim_0031",
+    "sim_0032",
+    "sim_0033",
+    "sim_0034",
+    "sim_0035",
+    "sim_0036",
+    "sim_0037",
+    "sim_0038",
+    "sim_0039",
+    "sim_0040",
+    "sim_0041",
+    "sim_0042",
+    "sim_0043",
+    "sim_0044",
+    "sim_0045",
+    "sim_0046",
+    "sim_0047",
+    "sim_0048",
+    "sim_0049",
+    "sim_0050"
+  ],
+  "seed": 20260727,
+  "spawnAssignments": {
+    "sim_001": "B0419",
+    "sim_002": "B1001",
+    "sim_003": "B2307",
+    "sim_004": "B1413",
+    "sim_005": "B1509",
+    "sim_006": "B0129",
+    "sim_007": "B1808",
+    "sim_008": "B0329",
+    "sim_009": "B2506",
+    "sim_0010": "B2825",
+    "sim_0011": "B1504",
+    "sim_0012": "B2523",
+    "sim_0013": "B2908",
+    "sim_0014": "B1612",
+    "sim_0015": "B0812",
+    "sim_0016": "B0603",
+    "sim_0017": "B2214",
+    "sim_0018": "B2020",
+    "sim_0019": "B1105",
+    "sim_0020": "B1925",
+    "sim_0021": "B0408",
+    "sim_0022": "B1401",
+    "sim_0023": "B3212",
+    "sim_0024": "B0111",
+    "sim_0025": "B2117",
+    "sim_0026": "B1932",
+    "sim_0027": "B3318",
+    "sim_0028": "B0716",
+    "sim_0029": "B0134",
+    "sim_0030": "B1322",
+    "sim_0031": "B3120",
+    "sim_0032": "B2320",
+    "sim_0033": "B3230",
+    "sim_0034": "B2706",
+    "sim_0035": "B2309",
+    "sim_0036": "B2435",
+    "sim_0037": "B1331",
+    "sim_0038": "B0701",
+    "sim_0039": "B1812",
+    "sim_0040": "B2632",
+    "sim_0041": "B1318",
+    "sim_0042": "B1527",
+    "sim_0043": "B0824",
+    "sim_0044": "B2413",
+    "sim_0045": "B2818",
+    "sim_0046": "B1014",
+    "sim_0047": "B0819",
+    "sim_0048": "B1523",
+    "sim_0049": "B3004",
+    "sim_0050": "B0311"
+  },
+  "generationDurationSec": 300.0,
+  "elapsedSec": 1.107,
+  "drained": true,
+  "activeAtEnd": {},
+  "orders": {
+    "generated": 0,
+    "completed": 0,
+    "failed": 0,
+    "submitErrors": 0,
+    "throughputPerMin": 0.0,
+    "averageDurationSec": 0.0,
+    "maxDurationSec": 0.0
+  },
+  "traffic": {
+    "blockedRobotSec": 0,
+    "blockedEvents": 0,
+    "stationaryRobotSec": 0,
+    "maxStationarySec": 0.0,
+    "routeChanges": 0,
+    "rollbacks": 0,
+    "minPairDistanceM": null,
+    "perRobot": {
+      "sim_001": {
+        "blockedSec": 0.0,
+        "blockedEvents": 0,
+        "stationarySec": 0.0,
+        "maxStationarySec": 0.0,
+        "routeChanges": 0,
+        "rollbacks": 0
+      },
+      "sim_002": {
+        "blockedSec": 0.0,
+        "blockedEvents": 0,
+        "stationarySec": 0.0,
+        "maxStationarySec": 0.0,
+        "routeChanges": 0,
+        "rollbacks": 0
+      },
+      "sim_003": {
+        "blockedSec": 0.0,
+        "blockedEvents": 0,
+        "stationarySec": 0.0,
+        "maxStationarySec": 0.0,
+        "routeChanges": 0,
+        "rollbacks": 0
+      },
+      "sim_004": {
+        "blockedSec": 0.0,
+        "blockedEvents": 0,
+        "stationarySec": 0.0,
+        "maxStationarySec": 0.0,
+        "routeChanges": 0,
+        "rollbacks": 0
+      },
+      "sim_005": {
+        "blockedSec": 0.0,
+        "blockedEvents": 0,
+        "stationarySec": 0.0,
+        "maxStationarySec": 0.0,
+        "routeChanges": 0,
+        "rollbacks": 0
+      },
+      "sim_006": {
+        "blockedSec": 0.0,
+        "blockedEvents": 0,
+        "stationarySec": 0.0,
+        "maxStationarySec": 0.0,
+        "routeChanges": 0,
+        "rollbacks": 0
+      },
+      "sim_007": {
+        "blockedSec": 0.0,
+        "blockedEvents": 0,
+        "stationarySec": 0.0,
+        "maxStationarySec": 0.0,
+        "routeChanges": 0,
+        "rollbacks": 0
+      },
+      "sim_008": {
+        "blockedSec": 0.0,
+        "blockedEvents": 0,
+        "stationarySec": 0.0,
+        "maxStationarySec": 0.0,
+        "routeChanges": 0,
+        "rollbacks": 0
+      },
+      "sim_009": {
+        "blockedSec": 0.0,
+        "blockedEvents": 0,
+        "stationarySec": 0.0,
+        "maxStationarySec": 0.0,
+        "routeChanges": 0,
+        "rollbacks": 0
+      },
+      "sim_0010": {
+        "blockedSec": 0.0,
+        "blockedEvents": 0,
+        "stationarySec": 0.0,
+        "maxStationarySec": 0.0,
+        "routeChanges": 0,
+        "rollbacks": 0
+      },
+      "sim_0011": {
+        "blockedSec": 0.0,
+        "blockedEvents": 0,
+        "stationarySec": 0.0,
+        "maxStationarySec": 0.0,
+        "routeChanges": 0,
+        "rollbacks": 0
+      },
+      "sim_0012": {
+        "blockedSec": 0.0,
+        "blockedEvents": 0,
+        "stationarySec": 0.0,
+        "maxStationarySec": 0.0,
+        "routeChanges": 0,
+        "rollbacks": 0
+      },
+      "sim_0013": {
+        "blockedSec": 0.0,
+        "blockedEvents": 0,
+        "stationarySec": 0.0,
+        "maxStationarySec": 0.0,
+        "routeChanges": 0,
+        "rollbacks": 0
+      },
+      "sim_0014": {
+        "blockedSec": 0.0,
+        "blockedEvents": 0,
+        "stationarySec": 0.0,
+        "maxStationarySec": 0.0,
+        "routeChanges": 0,
+        "rollbacks": 0
+      },
+      "sim_0015": {
+        "blockedSec": 0.0,
+        "blockedEvents": 0,
+        "stationarySec": 0.0,
+        "maxStationarySec": 0.0,
+        "routeChanges": 0,
+        "rollbacks": 0
+      },
+      "sim_0016": {
+        "blockedSec": 0.0,
+        "blockedEvents": 0,
+        "stationarySec": 0.0,
+        "maxStationarySec": 0.0,
+        "routeChanges": 0,
+        "rollbacks": 0
+      },
+      "sim_0017": {
+        "blockedSec": 0.0,
+        "blockedEvents": 0,
+        "stationarySec": 0.0,
+        "maxStationarySec": 0.0,
+        "routeChanges": 0,
+        "rollbacks": 0
+      },
+      "sim_0018": {
+        "blockedSec": 0.0,
+        "blockedEvents": 0,
+        "stationarySec": 0.0,
+        "maxStationarySec": 0.0,
+        "routeChanges": 0,
+        "rollbacks": 0
+      },
+      "sim_0019": {
+        "blockedSec": 0.0,
+        "blockedEvents": 0,
+        "stationarySec": 0.0,
+        "maxStationarySec": 0.0,
+        "routeChanges": 0,
+        "rollbacks": 0
+      },
+      "sim_0020": {
+        "blockedSec": 0.0,
+        "blockedEvents": 0,
+        "stationarySec": 0.0,
+        "maxStationarySec": 0.0,
+        "routeChanges": 0,
+        "rollbacks": 0
+      },
+      "sim_0021": {
+        "blockedSec": 0.0,
+        "blockedEvents": 0,
+        "stationarySec": 0.0,
+        "maxStationarySec": 0.0,
+        "routeChanges": 0,
+        "rollbacks": 0
+      },
+      "sim_0022": {
+        "blockedSec": 0.0,
+        "blockedEvents": 0,
+        "stationarySec": 0.0,
+        "maxStationarySec": 0.0,
+        "routeChanges": 0,
+        "rollbacks": 0
+      },
+      "sim_0023": {
+        "blockedSec": 0.0,
+        "blockedEvents": 0,
+        "stationarySec": 0.0,
+        "maxStationarySec": 0.0,
+        "routeChanges": 0,
+        "rollbacks": 0
+      },
+      "sim_0024": {
+        "blockedSec": 0.0,
+        "blockedEvents": 0,
+        "stationarySec": 0.0,
+        "maxStationarySec": 0.0,
+        "routeChanges": 0,
+        "rollbacks": 0
+      },
+      "sim_0025": {
+        "blockedSec": 0.0,
+        "blockedEvents": 0,
+        "stationarySec": 0.0,
+        "maxStationarySec": 0.0,
+        "routeChanges": 0,
+        "rollbacks": 0
+      },
+      "sim_0026": {
+        "blockedSec": 0.0,
+        "blockedEvents": 0,
+        "stationarySec": 0.0,
+        "maxStationarySec": 0.0,
+        "routeChanges": 0,
+        "rollbacks": 0
+      },
+      "sim_0027": {
+        "blockedSec": 0.0,
+        "blockedEvents": 0,
+        "stationarySec": 0.0,
+        "maxStationarySec": 0.0,
+        "routeChanges": 0,
+        "rollbacks": 0
+      },
+      "sim_0028": {
+        "blockedSec": 0.0,
+        "blockedEvents": 0,
+        "stationarySec": 0.0,
+        "maxStationarySec": 0.0,
+        "routeChanges": 0,
+        "rollbacks": 0
+      },
+      "sim_0029": {
+        "blockedSec": 0.0,
+        "blockedEvents": 0,
+        "stationarySec": 0.0,
+        "maxStationarySec": 0.0,
+        "routeChanges": 0,
+        "rollbacks": 0
+      },
+      "sim_0030": {
+        "blockedSec": 0.0,
+        "blockedEvents": 0,
+        "stationarySec": 0.0,
+        "maxStationarySec": 0.0,
+        "routeChanges": 0,
+        "rollbacks": 0
+      },
+      "sim_0031": {
+        "blockedSec": 0.0,
+        "blockedEvents": 0,
+        "stationarySec": 0.0,
+        "maxStationarySec": 0.0,
+        "routeChanges": 0,
+        "rollbacks": 0
+      },
+      "sim_0032": {
+        "blockedSec": 0.0,
+        "blockedEvents": 0,
+        "stationarySec": 0.0,
+        "maxStationarySec": 0.0,
+        "routeChanges": 0,
+        "rollbacks": 0
+      },
+      "sim_0033": {
+        "blockedSec": 0.0,
+        "blockedEvents": 0,
+        "stationarySec": 0.0,
+        "maxStationarySec": 0.0,
+        "routeChanges": 0,
+        "rollbacks": 0
+      },
+      "sim_0034": {
+        "blockedSec": 0.0,
+        "blockedEvents": 0,
+        "stationarySec": 0.0,
+        "maxStationarySec": 0.0,
+        "routeChanges": 0,
+        "rollbacks": 0
+      },
+      "sim_0035": {
+        "blockedSec": 0.0,
+        "blockedEvents": 0,
+        "stationarySec": 0.0,
+        "maxStationarySec": 0.0,
+        "routeChanges": 0,
+        "rollbacks": 0
+      },
+      "sim_0036": {
+        "blockedSec": 0.0,
+        "blockedEvents": 0,
+        "stationarySec": 0.0,
+        "maxStationarySec": 0.0,
+        "routeChanges": 0,
+        "rollbacks": 0
+      },
+      "sim_0037": {
+        "blockedSec": 0.0,
+        "blockedEvents": 0,
+        "stationarySec": 0.0,
+        "maxStationarySec": 0.0,
+        "routeChanges": 0,
+        "rollbacks": 0
+      },
+      "sim_0038": {
+        "blockedSec": 0.0,
+        "blockedEvents": 0,
+        "stationarySec": 0.0,
+        "maxStationarySec": 0.0,
+        "routeChanges": 0,
+        "rollbacks": 0
+      },
+      "sim_0039": {
+        "blockedSec": 0.0,
+        "blockedEvents": 0,
+        "stationarySec": 0.0,
+        "maxStationarySec": 0.0,
+        "routeChanges": 0,
+        "rollbacks": 0
+      },
+      "sim_0040": {
+        "blockedSec": 0.0,
+        "blockedEvents": 0,
+        "stationarySec": 0.0,
+        "maxStationarySec": 0.0,
+        "routeChanges": 0,
+        "rollbacks": 0
+      },
+      "sim_0041": {
+        "blockedSec": 0.0,
+        "blockedEvents": 0,
+        "stationarySec": 0.0,
+        "maxStationarySec": 0.0,
+        "routeChanges": 0,
+        "rollbacks": 0
+      },
+      "sim_0042": {
+        "blockedSec": 0.0,
+        "blockedEvents": 0,
+        "stationarySec": 0.0,
+        "maxStationarySec": 0.0,
+        "routeChanges": 0,
+        "rollbacks": 0
+      },
+      "sim_0043": {
+        "blockedSec": 0.0,
+        "blockedEvents": 0,
+        "stationarySec": 0.0,
+        "maxStationarySec": 0.0,
+        "routeChanges": 0,
+        "rollbacks": 0
+      },
+      "sim_0044": {
+        "blockedSec": 0.0,
+        "blockedEvents": 0,
+        "stationarySec": 0.0,
+        "maxStationarySec": 0.0,
+        "routeChanges": 0,
+        "rollbacks": 0
+      },
+      "sim_0045": {
+        "blockedSec": 0.0,
+        "blockedEvents": 0,
+        "stationarySec": 0.0,
+        "maxStationarySec": 0.0,
+        "routeChanges": 0,
+        "rollbacks": 0
+      },
+      "sim_0046": {
+        "blockedSec": 0.0,
+        "blockedEvents": 0,
+        "stationarySec": 0.0,
+        "maxStationarySec": 0.0,
+        "routeChanges": 0,
+        "rollbacks": 0
+      },
+      "sim_0047": {
+        "blockedSec": 0.0,
+        "blockedEvents": 0,
+        "stationarySec": 0.0,
+        "maxStationarySec": 0.0,
+        "routeChanges": 0,
+        "rollbacks": 0
+      },
+      "sim_0048": {
+        "blockedSec": 0.0,
+        "blockedEvents": 0,
+        "stationarySec": 0.0,
+        "maxStationarySec": 0.0,
+        "routeChanges": 0,
+        "rollbacks": 0
+      },
+      "sim_0049": {
+        "blockedSec": 0.0,
+        "blockedEvents": 0,
+        "stationarySec": 0.0,
+        "maxStationarySec": 0.0,
+        "routeChanges": 0,
+        "rollbacks": 0
+      },
+      "sim_0050": {
+        "blockedSec": 0.0,
+        "blockedEvents": 0,
+        "stationarySec": 0.0,
+        "maxStationarySec": 0.0,
+        "routeChanges": 0,
+        "rollbacks": 0
+      }
+    }
+  },
+  "corridors": {},
+  "samples": "var/rds_benchmarks/rds-dynamic-20260727T103502Z-20260727.jsonl"
+}

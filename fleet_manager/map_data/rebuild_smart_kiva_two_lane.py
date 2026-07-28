@@ -11,6 +11,13 @@ import yaml
 
 MAP_NAME = "smart_kiva_large_w_mode"
 MAP_DIR = Path(__file__).resolve().parent / "maps_out" / f"{MAP_NAME}.smap"
+# The original SMART grid uses a 1.0 m pitch while the Ecom robot has a
+# 1.302 m safe circumscribed diameter (body plus collision margin).  Adjacent
+# robots therefore overlap during an in-place turn even though both centres
+# are on valid LMs.  Expand the complete physical map instead of weakening the
+# collision model.  4/3 keeps the raster dimensions integral and gives every
+# pair of adjacent LMs enough room for arbitrary simultaneous headings.
+MAP_SCALE = 4.0 / 3.0
 MIDDLE_ROWS = frozenset(range(5, 30, 4))
 LOWER_LANE_ROWS = frozenset(range(4, 29, 4))
 UPPER_LANE_ROWS = frozenset(range(6, 31, 4))
@@ -25,8 +32,10 @@ CONTROLLED_CORRIDOR_ROW_PAIRS = tuple(
     (row, row + 2)
     for row in range(2, 31, 4)
 )
-PGM_WIDTH = 360
-PGM_HEIGHT = 330
+BASE_PGM_WIDTH = 360
+BASE_PGM_HEIGHT = 330
+PGM_WIDTH = round(BASE_PGM_WIDTH * MAP_SCALE)
+PGM_HEIGHT = round(BASE_PGM_HEIGHT * MAP_SCALE)
 SHELF_PIXEL_ROW_STARTS = tuple(range(20, 301, 40))
 SHELF_END_TRIM_RANGES = (
     (118, 120),
@@ -35,7 +44,7 @@ SHELF_END_TRIM_RANGES = (
     (240, 242),
 )
 LM_NAME_PATTERN = re.compile(r"^S(?P<row>\d{3})(?P<column>\d{3})$")
-EDGE_PROPERTIES = {"direction": 2, "capacity": 1, "smart": True}
+EDGE_PROPERTIES = {"capacity": 1, "smart": True}
 
 
 def _grid_position(name: str) -> tuple[int, int]:
@@ -45,28 +54,37 @@ def _grid_position(name: str) -> tuple[int, int]:
     return int(match["row"]), int(match["column"])
 
 
-def _lane_y(row: int, current_y: float) -> float:
+def _scaled(value: float) -> float:
+    return round(value * MAP_SCALE, 6)
+
+
+def _lane_y(row: int) -> float:
     grid_y = float(row) - 0.5
     if row == 2:
-        return 1.0
+        return _scaled(1.0)
     if row == 32:
-        return 32.0
+        return _scaled(32.0)
     if row in LOWER_LANE_ROWS:
-        return round(grid_y + 0.3, 6)
+        return _scaled(grid_y + 0.3)
     if row in UPPER_LANE_ROWS:
-        return round(grid_y - 0.3, 6)
-    return current_y
+        return _scaled(grid_y - 0.3)
+    return _scaled(grid_y)
 
 
-def _lane_x(column: int, current_x: float) -> float:
+def _lane_x(column: int) -> float:
     if column == 2:
-        return 1.0
+        return _scaled(1.0)
     if column == 35:
-        return 35.0
-    return current_x
+        return _scaled(35.0)
+    return _scaled(float(column) - 0.5)
 
 
-def _edge(start: dict[str, Any], goal: dict[str, Any]) -> dict[str, Any]:
+def _edge(
+    start: dict[str, Any],
+    goal: dict[str, Any],
+    *,
+    motion_direction: int,
+) -> dict[str, Any]:
     length = round(
         math.hypot(
             float(goal["x"]) - float(start["x"]),
@@ -74,7 +92,13 @@ def _edge(start: dict[str, Any], goal: dict[str, Any]) -> dict[str, Any]:
         ),
         6,
     )
-    properties = dict(EDGE_PROPERTIES)
+    properties = {
+        **EDGE_PROPERTIES,
+        # Traffic direction is represented by the presence of each directed
+        # graph edge.  This field is the robot body motion rule: canonical
+        # increasing grid direction is forward, its reverse is backward.
+        "direction": motion_direction,
+    }
     return {
         "from": start["name"],
         "to": goal["name"],
@@ -110,26 +134,64 @@ def _write_yaml(path: Path, payload: Any) -> None:
     )
 
 
-def _widen_internal_cross_aisles(map_dir: Path) -> None:
+def _parse_pgm(raw: bytes, pgm_path: Path) -> tuple[int, int, bytearray]:
+    match = re.match(rb"^P5\s+(\d+)\s+(\d+)\s+255\s", raw)
+    if match is None:
+        raise ValueError(f"unexpected PGM format: {pgm_path}")
+    width = int(match[1])
+    height = int(match[2])
+    pixels = bytearray(raw[match.end():])
+    if len(pixels) != width * height:
+        raise ValueError(
+            f"unexpected PGM payload: {pgm_path} "
+            f"({len(pixels)} != {width}x{height})"
+        )
+    return width, height, pixels
+
+
+def _widen_and_expand_map(map_dir: Path) -> None:
     map_yaml = yaml.safe_load(
         (map_dir / f"{MAP_NAME}.yaml").read_text(encoding="utf-8")
     )
     pgm_path = map_dir / str(map_yaml["image"])
-    raw = pgm_path.read_bytes()
-    pixel_count = PGM_WIDTH * PGM_HEIGHT
-    if not raw.startswith(b"P5") or len(raw) < pixel_count:
-        raise ValueError(f"unexpected PGM format: {pgm_path}")
+    width, height, pixels = _parse_pgm(pgm_path.read_bytes(), pgm_path)
+    if (width, height) == (PGM_WIDTH, PGM_HEIGHT):
+        return
+    if (width, height) != (BASE_PGM_WIDTH, BASE_PGM_HEIGHT):
+        raise ValueError(
+            f"unexpected PGM dimensions: {pgm_path} "
+            f"({width}x{height})"
+        )
 
-    header = raw[:-pixel_count]
-    pixels = bytearray(raw[-pixel_count:])
+    # Open the shelf ends before scaling.  Scaling the complete occupancy
+    # raster keeps PGM obstacles, graph coordinates and traffic zones in the
+    # same frame while increasing both corridor width and LM separation.
     for row_start in SHELF_PIXEL_ROW_STARTS:
         for y in range(row_start, row_start + 10):
-            row_offset = y * PGM_WIDTH
+            row_offset = y * BASE_PGM_WIDTH
             for column_start, column_end in SHELF_END_TRIM_RANGES:
                 pixels[
                     row_offset + column_start : row_offset + column_end
                 ] = b"\xfe" * (column_end - column_start)
-    pgm_path.write_bytes(header + pixels)
+
+    expanded = bytearray(PGM_WIDTH * PGM_HEIGHT)
+    for target_y in range(PGM_HEIGHT):
+        source_y = min(
+            BASE_PGM_HEIGHT - 1,
+            (target_y * BASE_PGM_HEIGHT) // PGM_HEIGHT,
+        )
+        source_row = source_y * BASE_PGM_WIDTH
+        target_row = target_y * PGM_WIDTH
+        for target_x in range(PGM_WIDTH):
+            source_x = min(
+                BASE_PGM_WIDTH - 1,
+                (target_x * BASE_PGM_WIDTH) // PGM_WIDTH,
+            )
+            expanded[target_row + target_x] = pixels[source_row + source_x]
+
+    pgm_path.write_bytes(
+        f"P5\n{PGM_WIDTH} {PGM_HEIGHT}\n255\n".encode("ascii") + expanded
+    )
 
 
 def rebuild(map_dir: Path = MAP_DIR) -> None:
@@ -148,8 +210,8 @@ def rebuild(map_dir: Path = MAP_DIR) -> None:
             continue
         landmark = {
             **source,
-            "x": _lane_x(column, float(source["x"])),
-            "y": _lane_y(row, float(source["y"])),
+            "x": _lane_x(column),
+            "y": _lane_y(row),
         }
         properties = dict(landmark.get("properties") or {})
         for legacy_key in (
@@ -166,8 +228,8 @@ def rebuild(map_dir: Path = MAP_DIR) -> None:
     edges: list[dict[str, Any]] = []
 
     def connect(start: dict[str, Any], goal: dict[str, Any]) -> None:
-        edges.append(_edge(start, goal))
-        edges.append(_edge(goal, start))
+        edges.append(_edge(start, goal, motion_direction=0))
+        edges.append(_edge(goal, start, motion_direction=1))
 
     for row in row_numbers:
         columns = sorted(column for item_row, column in landmarks_by_grid if item_row == row)
@@ -246,25 +308,27 @@ def rebuild(map_dir: Path = MAP_DIR) -> None:
                     "shape": "rectangle",
                     "bounds": {
                         "minX": round(
-                            float(landmarks_by_grid[(top, column)]["x"]) - 0.18,
+                            float(landmarks_by_grid[(top, column)]["x"])
+                            - _scaled(0.18),
                             6,
                         ),
                         "minY": round(
                             min(
                                 float(landmarks_by_grid[(top, column)]["y"]),
                                 float(landmarks_by_grid[(bottom, column)]["y"]),
-                            ) - 0.08,
+                            ) - _scaled(0.08),
                             6,
                         ),
                         "maxX": round(
-                            float(landmarks_by_grid[(top, column)]["x"]) + 0.18,
+                            float(landmarks_by_grid[(top, column)]["x"])
+                            + _scaled(0.18),
                             6,
                         ),
                         "maxY": round(
                             max(
                                 float(landmarks_by_grid[(top, column)]["y"]),
                                 float(landmarks_by_grid[(bottom, column)]["y"]),
-                            ) + 0.08,
+                            ) + _scaled(0.08),
                             6,
                         ),
                     },
@@ -278,7 +342,7 @@ def rebuild(map_dir: Path = MAP_DIR) -> None:
             ],
         },
     )
-    _widen_internal_cross_aisles(map_dir)
+    _widen_and_expand_map(map_dir)
 
     metadata_path = map_dir / ".operator_meta.json"
     metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
@@ -286,9 +350,13 @@ def rebuild(map_dir: Path = MAP_DIR) -> None:
         {
             "directedEdges": len(edges),
             "landmarks": len(landmarks),
-            "layoutVariant": "two_lane_clearance",
-            "aisleLaneClearanceM": 0.8,
-            "aisleLaneSpacingM": 1.4,
+            "layoutVariant": "two_lane_expanded_clearance",
+            "mapScale": round(MAP_SCALE, 6),
+            "cellSizeM": _scaled(1.0),
+            "imageWidthPx": PGM_WIDTH,
+            "imageHeightPx": PGM_HEIGHT,
+            "aisleLaneClearanceM": _scaled(0.8),
+            "aisleLaneSpacingM": _scaled(1.4),
             "aisleConnectorColumns": sorted(AISLE_CONNECTOR_COLUMNS),
             "crossLaneConnectionsPerAisle": len(AISLE_CONNECTOR_COLUMNS),
             "controlledCorridorColumns": sorted(CONTROLLED_CORRIDOR_COLUMNS),
@@ -301,11 +369,11 @@ def rebuild(map_dir: Path = MAP_DIR) -> None:
                 * len(CONTROLLED_CORRIDOR_ROW_PAIRS)
             ),
             "controlledCorridorMode": "explicit_shelf_crossings",
-            "internalCrossAisleWidthM": 1.4,
-            "perimeterLaneClearanceM": 1.0,
+            "internalCrossAisleWidthM": _scaled(1.4),
+            "perimeterLaneClearanceM": _scaled(1.0),
             "perimeterLaneCount": 1,
             "removedMiddleRows": len(MIDDLE_ROWS),
-            "shelfEndTrimM": 0.2,
+            "shelfEndTrimM": _scaled(0.2),
         }
     )
     metadata_path.write_text(

@@ -958,6 +958,61 @@ def test_rolling_sipp_waits_at_corridor_staging_not_route_start() -> None:
     assert plan["times"][-1] >= 6
 
 
+def test_request_scoped_no_wait_moves_clearance_wait_before_stop_line() -> None:
+    """A backed-off corridor passage may not pause after its stop line."""
+    landmarks = _landmarks("A", "B", "C", "D")
+    params = _rolling_params()
+    params["fleet"]["cbs_low_level_max_time"] = 40
+    planner = FleetMapfPlanner(
+        landmarks,
+        _line_edges(("A", "B"), ("B", "C"), ("C", "D")),
+        params=params,
+    )
+
+    result = planner.plan(
+        {
+            "robots": [
+                {
+                    "name": "r1",
+                    "startLm": "A",
+                    "goalLm": "D",
+                    "routeNodes": ["A", "B", "C", "D"],
+                    "departureNotBefore": [
+                        {"node": "A", "timeSec": 0.0},
+                    ],
+                    # B and C are ordinarily waitable map LMs, but for this
+                    # admitted atomic passage they lie beyond its stop line.
+                    "noWaitNodes": ["B", "C"],
+                }
+            ],
+            "reserved_edge_intervals": [
+                {
+                    "from": "C",
+                    "to": "D",
+                    "start": 0.0,
+                    "end": 8.0,
+                    "robot": "other",
+                },
+            ],
+        }
+    )
+
+    assert result["ok"], result["debug"]
+    plan = result["plans"][0]
+    assert "staging_wait_repairs=" in result["debug"]["reason"]
+    assert any(
+        node == "A" and action == "wait"
+        for node, action in zip(plan["nodes"], plan["actions"])
+    )
+    assert all(
+        not (
+            node in {"B", "C"}
+            and action == "wait"
+        )
+        for node, action in zip(plan["nodes"], plan["actions"])
+    )
+
+
 def test_central_authority_pipelines_same_direction_corridor_convoy() -> None:
     landmarks = {
         name: Landmark(name=name, x=x, y=y)

@@ -387,6 +387,142 @@ def test_late_corridor_slot_commits_only_the_approach_to_stop_line() -> None:
     assert request["routeNodes"] == ["X", "A"]
 
 
+def test_missed_corridor_slot_still_releases_safe_approach_prefix(
+    monkeypatch,
+) -> None:
+    landmarks = {
+        "X": Landmark(name="X", x=-3.0, y=0.0),
+        "S": Landmark(name="S", x=-2.0, y=0.0),
+        "A": Landmark(name="A", x=0.0, y=0.0),
+        "B": Landmark(name="B", x=1.0, y=0.0),
+    }
+    edges = [
+        GraphEdge(
+            from_name=source,
+            to_name=target,
+            length=abs(landmarks[target].x - landmarks[source].x),
+            kind="line",
+            edge_type="FeatureLine",
+            world_points=(
+                landmarks[source].to_point(),
+                landmarks[target].to_point(),
+            ),
+            properties={
+                "direction": 2,
+                **(
+                    {"controlled_region": REGION}
+                    if {source, target} == {"A", "B"}
+                    else {}
+                ),
+            },
+        )
+        for source, target in (
+            ("X", "S"),
+            ("S", "X"),
+            ("S", "A"),
+            ("A", "S"),
+            ("A", "B"),
+            ("B", "A"),
+        )
+    ]
+    manager = FleetManagerSim(
+        landmarks,
+        edges,
+        params={
+            "fleet": {
+                "controlled_corridors_enabled": True,
+                "controlled_corridor_auto_detect": False,
+                "controlled_corridor_schedule_horizon_sec": 30.0,
+                "controlled_corridor_commit_horizon_sec": 2.0,
+                "traffic_zone_control_enabled": False,
+            }
+        },
+    )
+    order = FleetOrder(
+        order_id="order-approach",
+        target_lm="B",
+        vehicle="approach",
+        assigned_robot="approach",
+        status="PLANNING",
+        spatial_route_nodes=["X", "S", "A", "B"],
+    )
+    robot = FleetRobot(
+        name="approach",
+        current_lm="X",
+        target_lm="X",
+        status="WAITING",
+        active_order_id=order.order_id,
+        pose={"x": -3.0, "y": 0.0, "yaw": 0.0},
+        trajectory=[
+            {
+                "t": 0.0,
+                "x": -3.0,
+                "y": 0.0,
+                "yaw": 0.0,
+                "edgeId": "X->X",
+                "lm": "X",
+            },
+            {
+                "t": 1.0,
+                "x": -3.0,
+                "y": 0.0,
+                "yaw": 0.0,
+                "edgeId": "X->X",
+                "lm": "X",
+            },
+        ],
+        route_clock=1.0,
+        route_revision=1,
+        route_chunk_goal_lm="X",
+        route_final_lm="B",
+        has_executed_route=True,
+        last_reason="rolling continuation pending",
+    )
+    manager.orders[order.order_id] = order
+    manager.robots[robot.name] = robot
+    monkeypatch.setattr(manager, "_rolling_horizon", lambda: 0.1)
+    request: dict[str, object] = {
+        "name": robot.name,
+        "startLm": "X",
+        "goalLm": "B",
+        "routeNodes": ["X", "S", "A", "B"],
+        "startPose": dict(robot.pose),
+    }
+    now = 1_000.0
+
+    first = manager._controlled_corridor_prefetch_gate(
+        order,
+        robot,
+        request,
+        prediction_offset=0.0,
+        now=now,
+    )
+    assert first is not None
+    assert first["ready"] is False
+    manager._prepare_controlled_corridor_admissions(now)
+    scheduled_intent = manager._controlled_corridor_prefetch_intents[
+        robot.name
+    ]
+    assert manager._controlled_corridor_schedule is not None
+    assert scheduled_intent["last_schedule_epoch"] == (
+        manager._controlled_corridor_schedule.epoch
+    )
+
+    missed = manager._controlled_corridor_prefetch_gate(
+        order,
+        robot,
+        request,
+        prediction_offset=0.0,
+        now=now + 20.0,
+    )
+
+    assert missed is not None
+    assert missed["ready"] is True
+    assert missed["approachOnly"] is True
+    assert request["goalLm"] == "S"
+    assert request["routeNodes"] == ["X", "S"]
+
+
 def test_corridor_approach_chunks_queue_on_distinct_safe_lms() -> None:
     names = ("X3", "X2", "X1", "A", "B")
     landmarks = {
@@ -1338,6 +1474,49 @@ def test_passing_backed_off_staging_does_not_roll_atomic_bundle_forever(
     ) <= 6.000001
 
 
+def test_wait_after_backed_off_staging_is_not_irrevocably_committed(
+    monkeypatch,
+) -> None:
+    manager = _manager()
+    robot = _robot("delayed-approach")
+    robot.route_clock = 1.0
+    manager.robots = {robot.name: robot}
+    manager.orders = {
+        robot.active_order_id: FleetOrder(
+            order_id=robot.active_order_id,
+            target_lm="B",
+            vehicle=robot.name,
+            assigned_robot=robot.name,
+            status="EXECUTING",
+        )
+    }
+    entry = _entry(3.0, 3.0)
+    entry["staging_clock"] = 0.0
+    entry["passed_staging"] = True
+    entry["has_wait_after_staging"] = True
+    monkeypatch.setattr(
+        manager,
+        "_next_controlled_corridor_entry",
+        lambda _robot: dict(entry),
+    )
+    monkeypatch.setattr(
+        manager,
+        "_controlled_regions_intersecting_footprint",
+        lambda _robot: set(),
+    )
+    monkeypatch.setattr(
+        manager,
+        "_controlled_corridor_downstream_blocker",
+        lambda _robot, _exit_lm, _exit_clock: "",
+    )
+
+    manager._prepare_controlled_corridor_admissions(1_000.0)
+
+    slot = manager._controlled_corridor_schedule.slot_for(robot.name)
+    assert slot is not None
+    assert not slot.past_commit_point
+
+
 def test_physical_corridor_windows_remain_bounded_across_waiting_ticks(
     monkeypatch,
 ) -> None:
@@ -1701,7 +1880,7 @@ def test_deferred_red_light_wait_is_not_promoted_to_global_replan(
     owner.status = "WAITING"
     owner.last_reason = f"occupied by {robot.name}"
     owner.wait_for_robot = robot.name
-    assert manager._central_corridor_manages_wait(robot)
+    assert not manager._central_corridor_manages_wait(robot)
 
     manager._controlled_corridor_blockers = {
         robot.name: owner.name,
@@ -1712,6 +1891,129 @@ def test_deferred_red_light_wait_is_not_promoted_to_global_replan(
     manager._controlled_corridor_blockers.clear()
     manager._controlled_corridor_passages[owner.name]["entered"] = True
     assert not manager._central_corridor_manages_wait(robot)
+
+
+def test_reciprocal_red_light_cycle_keeps_declared_owner_as_winner(
+    monkeypatch,
+) -> None:
+    manager = _manager()
+    waiter = _robot("waiter")
+    owner = _robot("owner")
+    waiter.status = "WAITING"
+    waiter.last_reason = (
+        f"corridor admission wait at A for {REGION}; owner {owner.name}"
+    )
+    waiter.wait_for_robot = owner.name
+    owner.status = "WAITING"
+    owner.last_reason = f"occupied by {waiter.name}"
+    owner.wait_for_robot = waiter.name
+    manager.robots = {
+        waiter.name: waiter,
+        owner.name: owner,
+    }
+    monkeypatch.setattr(
+        manager,
+        "_controlled_regions_for_robot",
+        lambda _robot: set(),
+    )
+    # Model the instant at which the old slot rolled out of the current
+    # calendar while the physical reciprocal dependency still exists.
+    manager._controlled_corridor_schedule = None
+
+    assert manager._controlled_corridor_cycle_owner(
+        [waiter, owner],
+    ) is owner
+
+
+def test_rolling_chunk_cuts_on_exact_lm_not_later_mid_edge_sample() -> None:
+    manager = _manager()
+    trajectory = [
+        {
+            "t": 0.0,
+            "x": 0.0,
+            "y": 0.0,
+            "yaw": 0.0,
+            "lm": "A",
+        },
+        {
+            # Continuous interpolation reaches B a fraction before the
+            # discrete SIPP tick.
+            "t": 0.95,
+            "x": 1.0,
+            "y": 0.0,
+            "yaw": 0.0,
+            "lm": "B",
+        },
+        {
+            # The old fallback selected this later sample and published B as
+            # the endpoint even though the body was already leaving it.
+            "t": 1.0,
+            "x": 1.05,
+            "y": 0.0,
+            "yaw": 0.0,
+            "edgeId": "B->next",
+        },
+    ]
+
+    assert manager._trajectory_chunk_end_index(
+        trajectory,
+        "B",
+        1.0,
+    ) == 1
+
+
+def test_pending_corridor_gate_queues_exact_parked_exit_clearance(
+    monkeypatch,
+) -> None:
+    manager = _manager()
+    waiter = _robot("waiter")
+    blocker = FleetRobot(
+        name="parked",
+        current_lm="B",
+        status="ARRIVED",
+        pose={"x": 1.0, "y": 0.0, "yaw": 0.0},
+    )
+    manager.robots = {
+        waiter.name: waiter,
+        blocker.name: blocker,
+    }
+    manager.orders[waiter.active_order_id] = FleetOrder(
+        order_id=waiter.active_order_id,
+        target_lm="B",
+        vehicle=waiter.name,
+        assigned_robot=waiter.name,
+        status="EXECUTING",
+    )
+    manager._controlled_corridor_blockers = {
+        waiter.name: blocker.name,
+    }
+    calls: list[tuple[str, str, str]] = []
+
+    def queue_clearance(
+        current_waiter: FleetRobot,
+        current_blocker: FleetRobot,
+        *,
+        cause: str,
+    ) -> bool:
+        calls.append(
+            (current_waiter.name, current_blocker.name, cause)
+        )
+        return True
+
+    monkeypatch.setattr(
+        manager,
+        "_queue_stationary_clearance_relocation",
+        queue_clearance,
+    )
+
+    assert manager._queue_controlled_corridor_exit_clearance(waiter)
+    assert calls == [
+        (
+            waiter.name,
+            blocker.name,
+            "controlled corridor exit occupied",
+        )
+    ]
 
 
 def test_physical_corridor_recovery_is_latched_until_owner_clears(

@@ -1237,6 +1237,62 @@ class TrafficRoutingMixin:
             float(entry.get("exit_clock", staging_clock) or staging_clock)
             - staging_clock,
         )
+        exit_clock = float(
+            entry.get("exit_clock", staging_clock) or staging_clock
+        )
+        passage_samples = [
+            sample
+            for sample in robot.trajectory
+            if (
+                isinstance(sample, dict)
+                and staging_clock - 0.000001
+                <= float(sample.get("t", 0.0) or 0.0)
+                <= exit_clock + 0.000001
+            )
+        ]
+        entry["no_wait_lms"] = tuple(dict.fromkeys(
+            lm_name
+            for sample in passage_samples
+            if (
+                float(sample.get("t", 0.0) or 0.0)
+                > staging_clock + 0.000001
+                and float(sample.get("t", 0.0) or 0.0)
+                < exit_clock - 0.000001
+                and (lm_name := str(sample.get("lm") or "").strip())
+            )
+        ))
+        entry["has_wait_after_staging"] = any(
+            (
+                float(second.get("t", 0.0) or 0.0)
+                > float(first.get("t", 0.0) or 0.0) + 0.000001
+                and float(first.get("t", 0.0) or 0.0)
+                > staging_clock + 0.000001
+                and math.hypot(
+                    float(second.get("x", 0.0) or 0.0)
+                    - float(first.get("x", 0.0) or 0.0),
+                    float(second.get("y", 0.0) or 0.0)
+                    - float(first.get("y", 0.0) or 0.0),
+                )
+                <= 0.000001
+                and abs(
+                    math.atan2(
+                        math.sin(
+                            float(second.get("yaw", 0.0) or 0.0)
+                            - float(first.get("yaw", 0.0) or 0.0)
+                        ),
+                        math.cos(
+                            float(second.get("yaw", 0.0) or 0.0)
+                            - float(first.get("yaw", 0.0) or 0.0)
+                        ),
+                    )
+                )
+                <= 0.000001
+            )
+            for first, second in zip(
+                passage_samples,
+                passage_samples[1:],
+            )
+        )
         entry["resource_windows"] = tuple(
             CorridorResourceWindow(
                 region_id=region_id,
@@ -1690,6 +1746,22 @@ class TrafficRoutingMixin:
             float(getattr(self.planner, "time_step_sec", 0.2) or 0.2),
         )
         if float(slot.entry_time) < nominal_staging_at - timing_tolerance:
+            # Missing a tentative corridor slot must not freeze a robot which
+            # is still outside the controlled passage.  The old slot is no
+            # longer a valid entry command, but the ordinary graph prefix up
+            # to a safe external holding LM is independent of that command.
+            #
+            # Refreshing the ETA first used to create a moving-target loop:
+            # every scheduler tick shifted the slot forward while the robot
+            # remained at its rolling boundary, so it could never reach the
+            # stop line from which the slot could actually be honoured.
+            approach_gate = self._corridor_approach_gate(
+                robot,
+                request,
+                intent,
+            )
+            if approach_gate is not None:
+                return approach_gate
             # The robot missed a tentative command while its previous chunk
             # was held.  Refresh the intent ETA and let the next runtime tick
             # place it again; never silently enter on an expired green light.
@@ -1757,6 +1829,14 @@ class TrafficRoutingMixin:
                 "node": corridor_request.staging_lm,
                 "timeSec": departure_not_before,
             },
+            # The backed-off stop line is the last legal waiting point. SIPP
+            # may rotate while traversing the passage, but any traffic delay
+            # after this LM must be moved back to the stop line.
+            "noWaitNodes": list(
+                entry.get("no_wait_lms", ())
+                if isinstance(entry, dict)
+                else ()
+            ),
         }
 
     def _corridor_approach_gate(
@@ -2085,6 +2165,8 @@ class TrafficRoutingMixin:
             or str(entry.get("exit_lm") or "") != corridor_request.exit_lm
         ):
             return False, "MAPF result changed the scheduled corridor passage"
+        if bool(entry.get("has_wait_after_staging")):
+            return False, "MAPF result waits after corridor commit point"
 
         current_end = (
             float(robot.trajectory[-1].get("t", 0.0) or 0.0)
@@ -2595,51 +2677,17 @@ class TrafficRoutingMixin:
                 if blocker is not None
                 else ""
             )
-            blocker_physical_regions = (
-                set(self._controlled_regions_for_robot(blocker))
-                if blocker is not None
-                else set()
-            )
-            if blocker is not None:
-                blocker_physical_regions.update(
-                    region_id
-                    for region_id, owners
-                    in self._controlled_corridor_occupancy.items()
-                    if blocker.name in owners
-                )
-            blocker_passage = self._controlled_corridor_passages.get(
-                blocker_name
-            )
-            reciprocal_downstream = bool(
-                blocker_name
-                and self._controlled_corridor_blockers.get(robot.name)
-                == blocker_name
-                and self._controlled_corridor_blockers.get(blocker_name)
-                == robot.name
-            )
-            blocker_physically_committed = bool(
-                blocker_physical_regions.intersection(regions)
-                or reciprocal_downstream
-                or (
-                    isinstance(blocker_passage, dict)
-                    and (
-                        bool(blocker_passage.get("entered"))
-                        or bool(
-                            blocker_passage.get("past_commit_point")
-                        )
-                    )
-                )
-            )
             if (
                 blocker is not None
                 and blocker.status == "WAITING"
                 and blocker_dependency == robot.name
-                and blocker_physically_committed
             ):
-                # The nominal owner cannot clear because this external body
-                # physically seals its mouth. Expose the reciprocal pair to
-                # bounded local evacuation instead of hiding a real deadlock
-                # behind a valid red-light decision.
+                # A red-light waiter and its named owner now wait for each
+                # other.  That reciprocal dependency is a real cycle even
+                # while both bodies are still outside the authored region;
+                # hiding one edge as an "expected queue" turns it into an
+                # acyclic chain and can grant the red-light waiter forever.
+                # Expose both edges to deterministic local arbitration.
                 return False
             if decision.slot is None:
                 # A deferred request is still an intentional calendar
@@ -3092,9 +3140,12 @@ class TrafficRoutingMixin:
                 past_commit_point=bool(
                     physical_by_robot.get(robot.name, set())
                     .intersection(regions)
-                    or bool(entry.get("passed_staging"))
-                    or float(robot.route_clock)
-                    > entry_clock + 0.000001
+                    or (
+                        bool(entry.get("passed_staging"))
+                        and not bool(
+                            entry.get("has_wait_after_staging")
+                        )
+                    )
                 ),
                 resource_windows=tuple(
                     window
@@ -4717,6 +4768,27 @@ class TrafficRoutingMixin:
                 chunk_goal,
                 arrival_time,
             )
+            if trajectory_end is None and trajectory:
+                # A planner result from an older/in-flight worker can lack an
+                # LM marker at the newly selected rolling boundary.  Do not
+                # publish a shorter node list with the uncut full trajectory:
+                # make its real graph terminal the chunk endpoint instead.
+                trajectory_goal = str(
+                    trajectory[-1].get("lm") or ""
+                ).strip()
+                terminal_indices = [
+                    index
+                    for index, node in enumerate(nodes)
+                    if node == trajectory_goal
+                ]
+                if terminal_indices:
+                    chunk_index = terminal_indices[-1]
+                    chunk_goal = trajectory_goal
+                    trajectory_end = len(trajectory) - 1
+                    arrival_time = float(
+                        trajectory[-1].get("t", arrival_time)
+                        or arrival_time
+                    )
             if trajectory_end is not None:
                 plan["trajectory"] = trajectory[:trajectory_end + 1]
                 if plan["trajectory"]:
@@ -4799,13 +4871,31 @@ class TrafficRoutingMixin:
             index
             for index, sample in enumerate(trajectory)
             if str(sample.get("lm") or "").strip() == chunk_goal
-            and float(sample.get("t", 0.0) or 0.0) >= arrival_time - 0.001
         ]
         if candidates:
-            return candidates[0]
-        before = [
-            index
-            for index, sample in enumerate(trajectory)
-            if float(sample.get("t", 0.0) or 0.0) <= arrival_time + 0.001
-        ]
-        return before[-1] if before else 0
+            # Discrete SIPP node times and the continuous trajectory can
+            # differ slightly after acceleration/rotation interpolation.
+            # Selecting the last sample before ``arrival_time`` used to cut
+            # the trajectory on the following edge while still publishing
+            # ``chunk_goal`` as its endpoint.  The robot then physically
+            # stopped at one LM but rolling continuation waited forever for
+            # another.  A rolling boundary is a graph resource, so the sample
+            # carrying that exact LM is authoritative; time is only used to
+            # disambiguate repeated visits to the same node.
+            return min(
+                candidates,
+                key=lambda index: (
+                    abs(
+                        float(
+                            trajectory[index].get("t", 0.0)
+                            or 0.0
+                        )
+                        - arrival_time
+                    ),
+                    index,
+                ),
+            )
+        # Never manufacture a graph endpoint from an arbitrary mid-edge
+        # sample.  Callers retain the complete trajectory and the metadata
+        # guard normalises its real terminal LM.
+        return None

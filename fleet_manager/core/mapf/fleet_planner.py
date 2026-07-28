@@ -263,6 +263,29 @@ class FleetMapfPlanner:
                 for region_id in raw_authorized_regions
                 if str(region_id).strip()
             ))
+            raw_no_wait_nodes = item.get(
+                "noWaitNodes",
+                item.get("no_wait_nodes", ()),
+            )
+            if raw_no_wait_nodes is None:
+                raw_no_wait_nodes = ()
+            if not isinstance(raw_no_wait_nodes, (list, tuple, set)):
+                raise ValueError(
+                    f"robots[{index}] noWaitNodes must be a list"
+                )
+            no_wait_nodes = tuple(dict.fromkeys(
+                str(node).strip()
+                for node in raw_no_wait_nodes
+                if str(node).strip()
+            ))
+            if route_nodes:
+                outside_route = set(no_wait_nodes) - set(route_nodes)
+                if outside_route:
+                    raise ValueError(
+                        f"robots[{index}] noWaitNodes contains node(s) "
+                        "outside routeNodes: "
+                        + ", ".join(sorted(outside_route))
+                    )
             if authorized_controlled_regions:
                 if not node_departure_not_before:
                     raise ValueError(
@@ -300,6 +323,7 @@ class FleetMapfPlanner:
                     start_not_before_tick,
                     tuple(node_departure_not_before),
                     authorized_controlled_regions,
+                    no_wait_nodes,
                 )
             )
 

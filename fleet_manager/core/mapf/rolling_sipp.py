@@ -182,6 +182,7 @@ class RollingSippPlanner:
                             authorized_controlled_regions=(
                                 request.authorized_controlled_regions
                             ),
+                            no_wait_nodes=request.no_wait_nodes,
                         ),
                         reservations,
                         blocked_nodes=blocked_set,

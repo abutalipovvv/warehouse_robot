@@ -13,9 +13,19 @@ from fleet_manager.core.route_core.map_loader import WarehouseMapLoader
 ROOT = Path(__file__).resolve().parents[1]
 MAP_DIR = ROOT / "fleet_manager" / "map_data" / "maps_out" / "smart_kiva_large_w_mode.smap"
 PARAMS_PATH = ROOT / "fleet_manager" / "config" / "params.yaml"
-LOWER_LANE_Y = tuple(3.8 + (4.0 * index) for index in range(7))
-UPPER_LANE_Y = tuple(5.2 + (4.0 * index) for index in range(7))
-REMOVED_MIDDLE_Y = tuple(4.5 + (4.0 * index) for index in range(7))
+MAP_SCALE = 4.0 / 3.0
+LOWER_LANE_Y = tuple(
+    round((3.8 + (4.0 * index)) * MAP_SCALE, 6)
+    for index in range(7)
+)
+UPPER_LANE_Y = tuple(
+    round((5.2 + (4.0 * index)) * MAP_SCALE, 6)
+    for index in range(7)
+)
+REMOVED_MIDDLE_Y = tuple(
+    round((4.5 + (4.0 * index)) * MAP_SCALE, 6)
+    for index in range(7)
+)
 AISLE_CONNECTOR_COLUMNS = frozenset({2, 13, 24, 35})
 CONTROLLED_CORRIDOR_ROW_PAIRS = tuple(
     (row, row + 2)
@@ -49,12 +59,20 @@ def test_smart_kiva_uses_two_clearance_lanes_per_internal_aisle() -> None:
         ]
         assert len(lower_lane) == 34
         assert len(upper_lane) == 34
-        assert math.isclose(upper_y - lower_y, 1.4, abs_tol=1e-9)
+        assert math.isclose(upper_y - lower_y, 1.4 * MAP_SCALE, abs_tol=1e-6)
 
         upper_shelf_edge = 3.0 + (4.0 * aisle_index)
         lower_shelf_edge = 6.0 + (4.0 * aisle_index)
-        assert math.isclose(lower_y - upper_shelf_edge, 0.8, abs_tol=1e-9)
-        assert math.isclose(lower_shelf_edge - upper_y, 0.8, abs_tol=1e-9)
+        assert math.isclose(
+            lower_y - (upper_shelf_edge * MAP_SCALE),
+            0.8 * MAP_SCALE,
+            abs_tol=1e-6,
+        )
+        assert math.isclose(
+            (lower_shelf_edge * MAP_SCALE) - upper_y,
+            0.8 * MAP_SCALE,
+            abs_tol=1e-6,
+        )
 
 
 def test_smart_kiva_two_lane_graph_is_bidirectional_and_connected() -> None:
@@ -108,6 +126,49 @@ def test_smart_kiva_two_lane_graph_is_bidirectional_and_connected() -> None:
     assert ("S024014", "S024013") in edge_pairs
     assert ("S024014", "S024015") in edge_pairs
     assert ("S024013", "S026013") in edge_pairs
+
+
+def test_smart_kiva_reverse_edges_keep_one_stable_body_heading() -> None:
+    loaded = WarehouseMapLoader(MAP_DIR).load()
+    edges = {
+        (edge.from_name, edge.to_name): edge
+        for edge in loaded.edges
+    }
+
+    for start, goal in edges:
+        reverse = edges[(goal, start)]
+        assert edges[(start, goal)].motion_direction_code() in {0, 1}
+        assert {
+            edges[(start, goal)].motion_direction_code(),
+            reverse.motion_direction_code(),
+        } == {0, 1}
+        start_lm = loaded.landmarks[start]
+        goal_lm = loaded.landmarks[goal]
+        body_heading = math.atan2(
+            goal_lm.y - start_lm.y,
+            goal_lm.x - start_lm.x,
+        )
+        if edges[(start, goal)].motion_direction_code() == 1:
+            body_heading += math.pi
+        reverse_heading = math.atan2(
+            start_lm.y - goal_lm.y,
+            start_lm.x - goal_lm.x,
+        )
+        if reverse.motion_direction_code() == 1:
+            reverse_heading += math.pi
+        heading_delta = math.atan2(
+            math.sin(body_heading - reverse_heading),
+            math.cos(body_heading - reverse_heading),
+        )
+        assert math.isclose(heading_delta, 0.0, abs_tol=1e-9)
+
+    # The generator's canonical increasing grid direction is forward. The
+    # reverse edge is driven backward, so both traversals keep the same body
+    # orientation instead of adding a 180 degree turn at every reversal.
+    assert edges[("S002002", "S002003")].motion_direction_code() == 0
+    assert edges[("S002003", "S002002")].motion_direction_code() == 1
+    assert edges[("S002002", "S003002")].motion_direction_code() == 0
+    assert edges[("S003002", "S002002")].motion_direction_code() == 1
 
 
 def test_smart_kiva_compiles_geometric_corridors_with_external_stop_lines() -> None:
@@ -182,22 +243,22 @@ def test_smart_kiva_perimeter_uses_one_centered_clearance_lane() -> None:
         landmark.x
         for landmark in landmarks.values()
         if landmark.name.endswith("002")
-    } == {1.0}
+    } == {round(1.0 * MAP_SCALE, 6)}
     assert {
         landmark.x
         for landmark in landmarks.values()
         if landmark.name.endswith("035")
-    } == {35.0}
+    } == {round(35.0 * MAP_SCALE, 6)}
     assert {
         landmark.y
         for landmark in landmarks.values()
         if landmark.name.startswith("S002")
-    } == {1.0}
+    } == {round(1.0 * MAP_SCALE, 6)}
     assert {
         landmark.y
         for landmark in landmarks.values()
         if landmark.name.startswith("S032")
-    } == {32.0}
+    } == {round(32.0 * MAP_SCALE, 6)}
 
 
 def test_smart_kiva_every_turn_capable_lm_clears_the_robot_footprint() -> None:
@@ -221,13 +282,26 @@ def test_smart_kiva_every_turn_capable_lm_clears_the_robot_footprint() -> None:
         if not horizontal or not vertical:
             continue
         checked += 1
-        for yaw in (0.0, math.pi / 2.0, math.pi, 3.0 * math.pi / 2.0):
+        for yaw_step in range(72):
+            yaw = yaw_step * math.pi / 36.0
             assert not collision.blocked_reason(
                 {"x": landmark.x, "y": landmark.y, "yaw": yaw},
                 [],
                 [],
             ), f"{name} cannot safely turn at yaw={yaw}"
     assert checked > 0
+
+
+def test_smart_kiva_adjacent_lms_clear_two_turning_robot_footprints() -> None:
+    loaded = WarehouseMapLoader(MAP_DIR).load()
+    params = yaml.safe_load(PARAMS_PATH.read_text(encoding="utf-8"))
+    collision = FleetCollisionChecker(params, MAP_DIR, loaded.map_metadata)
+    minimum_edge = min(edge.length for edge in loaded.edges)
+
+    # This is a deliberately stronger invariant than checking a few known
+    # corners: centres on any two adjacent graph LMs remain farther apart than
+    # the complete safe turning diameter, regardless of both robot headings.
+    assert minimum_edge > collision.robot_broadphase_distance()
 
 
 def test_smart_kiva_keeps_24_physical_obstacles() -> None:
@@ -256,7 +330,7 @@ def test_smart_kiva_keeps_24_physical_obstacles() -> None:
 
     assert len(components) == 24
     assert Counter(len(component) for component in components) == Counter(
-        {960: 8, 980: 16}
+        {1664: 5, 1703: 10, 1792: 3, 1834: 6}
     )
 
     bounds = sorted(
@@ -268,10 +342,20 @@ def test_smart_kiva_keeps_24_physical_obstacles() -> None:
         )
         for component in components
     )
-    for row_start in range(20, 301, 40):
+    expected_row_bounds = (
+        (27, 39),
+        (80, 93),
+        (134, 146),
+        (187, 199),
+        (240, 253),
+        (294, 306),
+        (347, 359),
+        (400, 413),
+    )
+    for row_start, row_end in expected_row_bounds:
         row_bounds = [bound for bound in bounds if bound[2] == row_start]
         assert row_bounds == [
-            (20, 117, row_start, row_start + 9),
-            (132, 227, row_start, row_start + 9),
-            (242, 339, row_start, row_start + 9),
+            (27, 157, row_start, row_end),
+            (176, 303, row_start, row_end),
+            (323, 453, row_start, row_end),
         ]

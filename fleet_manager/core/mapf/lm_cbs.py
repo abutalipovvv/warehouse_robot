@@ -144,6 +144,7 @@ class LmRobotRequest:
     start_not_before_tick: int = 0
     node_departure_not_before: tuple[tuple[NodeName, int], ...] = ()
     authorized_controlled_regions: tuple[str, ...] = ()
+    no_wait_nodes: tuple[NodeName, ...] = ()
 
 
 @dataclass

@@ -2025,8 +2025,69 @@ class FleetManagerCore(
         self._clear_rolling_prefetch_state(robot.name)
         previous_final = robot.route_final_lm
         previous_chunk = robot.route_chunk_goal_lm
-        chunk_goal = str(plan.get("goalLm") or order.target_lm).strip()
+        planned_chunk_goal = str(
+            plan.get("goalLm") or order.target_lm
+        ).strip()
+        trajectory = [
+            sample
+            for sample in plan.get("trajectory", [])
+            if isinstance(sample, dict)
+        ]
+        trajectory_goal = (
+            str(trajectory[-1].get("lm") or "").strip()
+            if trajectory
+            else ""
+        )
+        chunk_goal = (
+            trajectory_goal
+            if trajectory_goal in self.landmarks
+            else planned_chunk_goal
+        )
         final_goal = str(plan.get("finalGoalLm") or order.target_lm).strip()
+        plan_nodes = [
+            str(node)
+            for node in plan.get("nodes", [])
+            if str(node) in self.landmarks
+        ]
+        trajectory_nodes: list[str] = []
+        for sample in trajectory:
+            sample_lm = str(sample.get("lm") or "").strip()
+            if (
+                sample_lm in self.landmarks
+                and (
+                    not trajectory_nodes
+                    or trajectory_nodes[-1] != sample_lm
+                )
+            ):
+                trajectory_nodes.append(sample_lm)
+        if (
+            chunk_goal
+            and plan_nodes
+            and chunk_goal not in plan_nodes
+            and trajectory_nodes
+            and trajectory_nodes[-1] == chunk_goal
+        ):
+            plan_nodes = trajectory_nodes
+        if (
+            chunk_goal
+            and plan_nodes
+            and plan_nodes[-1] != chunk_goal
+            and chunk_goal in plan_nodes
+        ):
+            # Keep every consumer on the same executable prefix.  This is a
+            # defensive boundary for old/in-flight planner results; new
+            # rolling results are already cut on the exact LM sample.
+            terminal_index = max(
+                index
+                for index, node in enumerate(plan_nodes)
+                if node == chunk_goal
+            )
+            plan_nodes = plan_nodes[: terminal_index + 1]
+            plan["nodes"] = list(plan_nodes)
+        if chunk_goal:
+            plan["goalLm"] = chunk_goal
+            robot.plan_nodes = list(plan_nodes)
+            order.route_nodes = list(plan_nodes)
         if previous_final == final_goal and previous_chunk == robot.current_lm:
             chunk_index = robot.route_chunk_index + 1
         else:

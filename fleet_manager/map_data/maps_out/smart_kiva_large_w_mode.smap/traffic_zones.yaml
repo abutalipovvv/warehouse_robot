@@ -5,10 +5,10 @@ zones:
   kind: controlled_corridor
   shape: rectangle
   bounds:
-    minX: 0.82
-    minY: 0.92
-    maxX: 1.18
-    maxY: 3.88
+    minX: 1.093333
+    minY: 1.226666
+    maxX: 1.573333
+    maxY: 5.173334
   capacity: 1
   properties:
     policy: traffic_light
@@ -16,10 +16,10 @@ zones:
   kind: controlled_corridor
   shape: rectangle
   bounds:
-    minX: 0.82
-    minY: 5.12
-    maxX: 1.18
-    maxY: 7.88
+    minX: 1.093333
+    minY: 6.826666
+    maxX: 1.573333
+    maxY: 10.506667
   capacity: 1
   properties:
     policy: traffic_light
@@ -27,10 +27,10 @@ zones:
   kind: controlled_corridor
   shape: rectangle
   bounds:
-    minX: 0.82
-    minY: 9.12
-    maxX: 1.18
-    maxY: 11.88
+    minX: 1.093333
+    minY: 12.16
+    maxX: 1.573333
+    maxY: 15.84
   capacity: 1
   properties:
     policy: traffic_light
@@ -38,10 +38,10 @@ zones:
   kind: controlled_corridor
   shape: rectangle
   bounds:
-    minX: 0.82
-    minY: 13.12
-    maxX: 1.18
-    maxY: 15.88
+    minX: 1.093333
+    minY: 17.493333
+    maxX: 1.573333
+    maxY: 21.173334
   capacity: 1
   properties:
     policy: traffic_light
@@ -49,10 +49,10 @@ zones:
   kind: controlled_corridor
   shape: rectangle
   bounds:
-    minX: 0.82
-    minY: 17.12
-    maxX: 1.18
-    maxY: 19.88
+    minX: 1.093333
+    minY: 22.826666
+    maxX: 1.573333
+    maxY: 26.506667
   capacity: 1
   properties:
     policy: traffic_light
@@ -60,10 +60,10 @@ zones:
   kind: controlled_corridor
   shape: rectangle
   bounds:
-    minX: 0.82
-    minY: 21.12
-    maxX: 1.18
-    maxY: 23.88
+    minX: 1.093333
+    minY: 28.16
+    maxX: 1.573333
+    maxY: 31.84
   capacity: 1
   properties:
     policy: traffic_light
@@ -71,10 +71,10 @@ zones:
   kind: controlled_corridor
   shape: rectangle
   bounds:
-    minX: 0.82
-    minY: 25.12
-    maxX: 1.18
-    maxY: 27.88
+    minX: 1.093333
+    minY: 33.493333
+    maxX: 1.573333
+    maxY: 37.173334
   capacity: 1
   properties:
     policy: traffic_light
@@ -82,10 +82,10 @@ zones:
   kind: controlled_corridor
   shape: rectangle
   bounds:
-    minX: 0.82
-    minY: 29.12
-    maxX: 1.18
-    maxY: 32.08
+    minX: 1.093333
+    minY: 38.826666
+    maxX: 1.573333
+    maxY: 42.773334
   capacity: 1
   properties:
     policy: traffic_light
@@ -93,10 +93,10 @@ zones:
   kind: controlled_corridor
   shape: rectangle
   bounds:
-    minX: 12.32
-    minY: 0.92
-    maxX: 12.68
-    maxY: 3.88
+    minX: 16.426667
+    minY: 1.226666
+    maxX: 16.906667
+    maxY: 5.173334
   capacity: 1
   properties:
     policy: traffic_light
@@ -104,10 +104,10 @@ zones:
   kind: controlled_corridor
   shape: rectangle
   bounds:
-    minX: 12.32
-    minY: 5.12
-    maxX: 12.68
-    maxY: 7.88
+    minX: 16.426667
+    minY: 6.826666
+    maxX: 16.906667
+    maxY: 10.506667
   capacity: 1
   properties:
     policy: traffic_light
@@ -115,10 +115,10 @@ zones:
   kind: controlled_corridor
   shape: rectangle
   bounds:
-    minX: 12.32
-    minY: 9.12
-    maxX: 12.68
-    maxY: 11.88
+    minX: 16.426667
+    minY: 12.16
+    maxX: 16.906667
+    maxY: 15.84
   capacity: 1
   properties:
     policy: traffic_light
@@ -126,10 +126,10 @@ zones:
   kind: controlled_corridor
   shape: rectangle
   bounds:
-    minX: 12.32
-    minY: 13.12
-    maxX: 12.68
-    maxY: 15.88
+    minX: 16.426667
+    minY: 17.493333
+    maxX: 16.906667
+    maxY: 21.173334
   capacity: 1
   properties:
     policy: traffic_light
@@ -137,10 +137,10 @@ zones:
   kind: controlled_corridor
   shape: rectangle
   bounds:
-    minX: 12.32
-    minY: 17.12
-    maxX: 12.68
-    maxY: 19.88
+    minX: 16.426667
+    minY: 22.826666
+    maxX: 16.906667
+    maxY: 26.506667
   capacity: 1
   properties:
     policy: traffic_light
@@ -148,10 +148,10 @@ zones:
   kind: controlled_corridor
   shape: rectangle
   bounds:
-    minX: 12.32
-    minY: 21.12
-    maxX: 12.68
-    maxY: 23.88
+    minX: 16.426667
+    minY: 28.16
+    maxX: 16.906667
+    maxY: 31.84
   capacity: 1
   properties:
     policy: traffic_light
@@ -159,10 +159,10 @@ zones:
   kind: controlled_corridor
   shape: rectangle
   bounds:
-    minX: 12.32
-    minY: 25.12
-    maxX: 12.68
-    maxY: 27.88
+    minX: 16.426667
+    minY: 33.493333
+    maxX: 16.906667
+    maxY: 37.173334
   capacity: 1
   properties:
     policy: traffic_light
@@ -170,10 +170,10 @@ zones:
   kind: controlled_corridor
   shape: rectangle
   bounds:
-    minX: 12.32
-    minY: 29.12
-    maxX: 12.68
-    maxY: 32.08
+    minX: 16.426667
+    minY: 38.826666
+    maxX: 16.906667
+    maxY: 42.773334
   capacity: 1
   properties:
     policy: traffic_light
@@ -181,10 +181,10 @@ zones:
   kind: controlled_corridor
   shape: rectangle
   bounds:
-    minX: 23.32
-    minY: 0.92
-    maxX: 23.68
-    maxY: 3.88
+    minX: 31.093333
+    minY: 1.226666
+    maxX: 31.573333
+    maxY: 5.173334
   capacity: 1
   properties:
     policy: traffic_light
@@ -192,10 +192,10 @@ zones:
   kind: controlled_corridor
   shape: rectangle
   bounds:
-    minX: 23.32
-    minY: 5.12
-    maxX: 23.68
-    maxY: 7.88
+    minX: 31.093333
+    minY: 6.826666
+    maxX: 31.573333
+    maxY: 10.506667
   capacity: 1
   properties:
     policy: traffic_light
@@ -203,10 +203,10 @@ zones:
   kind: controlled_corridor
   shape: rectangle
   bounds:
-    minX: 23.32
-    minY: 9.12
-    maxX: 23.68
-    maxY: 11.88
+    minX: 31.093333
+    minY: 12.16
+    maxX: 31.573333
+    maxY: 15.84
   capacity: 1
   properties:
     policy: traffic_light
@@ -214,10 +214,10 @@ zones:
   kind: controlled_corridor
   shape: rectangle
   bounds:
-    minX: 23.32
-    minY: 13.12
-    maxX: 23.68
-    maxY: 15.88
+    minX: 31.093333
+    minY: 17.493333
+    maxX: 31.573333
+    maxY: 21.173334
   capacity: 1
   properties:
     policy: traffic_light
@@ -225,10 +225,10 @@ zones:
   kind: controlled_corridor
   shape: rectangle
   bounds:
-    minX: 23.32
-    minY: 17.12
-    maxX: 23.68
-    maxY: 19.88
+    minX: 31.093333
+    minY: 22.826666
+    maxX: 31.573333
+    maxY: 26.506667
   capacity: 1
   properties:
     policy: traffic_light
@@ -236,10 +236,10 @@ zones:
   kind: controlled_corridor
   shape: rectangle
   bounds:
-    minX: 23.32
-    minY: 21.12
-    maxX: 23.68
-    maxY: 23.88
+    minX: 31.093333
+    minY: 28.16
+    maxX: 31.573333
+    maxY: 31.84
   capacity: 1
   properties:
     policy: traffic_light
@@ -247,10 +247,10 @@ zones:
   kind: controlled_corridor
   shape: rectangle
   bounds:
-    minX: 23.32
-    minY: 25.12
-    maxX: 23.68
-    maxY: 27.88
+    minX: 31.093333
+    minY: 33.493333
+    maxX: 31.573333
+    maxY: 37.173334
   capacity: 1
   properties:
     policy: traffic_light
@@ -258,10 +258,10 @@ zones:
   kind: controlled_corridor
   shape: rectangle
   bounds:
-    minX: 23.32
-    minY: 29.12
-    maxX: 23.68
-    maxY: 32.08
+    minX: 31.093333
+    minY: 38.826666
+    maxX: 31.573333
+    maxY: 42.773334
   capacity: 1
   properties:
     policy: traffic_light
@@ -269,10 +269,10 @@ zones:
   kind: controlled_corridor
   shape: rectangle
   bounds:
-    minX: 34.82
-    minY: 0.92
-    maxX: 35.18
-    maxY: 3.88
+    minX: 46.426667
+    minY: 1.226666
+    maxX: 46.906667
+    maxY: 5.173334
   capacity: 1
   properties:
     policy: traffic_light
@@ -280,10 +280,10 @@ zones:
   kind: controlled_corridor
   shape: rectangle
   bounds:
-    minX: 34.82
-    minY: 5.12
-    maxX: 35.18
-    maxY: 7.88
+    minX: 46.426667
+    minY: 6.826666
+    maxX: 46.906667
+    maxY: 10.506667
   capacity: 1
   properties:
     policy: traffic_light
@@ -291,10 +291,10 @@ zones:
   kind: controlled_corridor
   shape: rectangle
   bounds:
-    minX: 34.82
-    minY: 9.12
-    maxX: 35.18
-    maxY: 11.88
+    minX: 46.426667
+    minY: 12.16
+    maxX: 46.906667
+    maxY: 15.84
   capacity: 1
   properties:
     policy: traffic_light
@@ -302,10 +302,10 @@ zones:
   kind: controlled_corridor
   shape: rectangle
   bounds:
-    minX: 34.82
-    minY: 13.12
-    maxX: 35.18
-    maxY: 15.88
+    minX: 46.426667
+    minY: 17.493333
+    maxX: 46.906667
+    maxY: 21.173334
   capacity: 1
   properties:
     policy: traffic_light
@@ -313,10 +313,10 @@ zones:
   kind: controlled_corridor
   shape: rectangle
   bounds:
-    minX: 34.82
-    minY: 17.12
-    maxX: 35.18
-    maxY: 19.88
+    minX: 46.426667
+    minY: 22.826666
+    maxX: 46.906667
+    maxY: 26.506667
   capacity: 1
   properties:
     policy: traffic_light
@@ -324,10 +324,10 @@ zones:
   kind: controlled_corridor
   shape: rectangle
   bounds:
-    minX: 34.82
-    minY: 21.12
-    maxX: 35.18
-    maxY: 23.88
+    minX: 46.426667
+    minY: 28.16
+    maxX: 46.906667
+    maxY: 31.84
   capacity: 1
   properties:
     policy: traffic_light
@@ -335,10 +335,10 @@ zones:
   kind: controlled_corridor
   shape: rectangle
   bounds:
-    minX: 34.82
-    minY: 25.12
-    maxX: 35.18
-    maxY: 27.88
+    minX: 46.426667
+    minY: 33.493333
+    maxX: 46.906667
+    maxY: 37.173334
   capacity: 1
   properties:
     policy: traffic_light
@@ -346,10 +346,10 @@ zones:
   kind: controlled_corridor
   shape: rectangle
   bounds:
-    minX: 34.82
-    minY: 29.12
-    maxX: 35.18
-    maxY: 32.08
+    minX: 46.426667
+    minY: 38.826666
+    maxX: 46.906667
+    maxY: 42.773334
   capacity: 1
   properties:
     policy: traffic_light

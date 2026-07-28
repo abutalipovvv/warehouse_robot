@@ -147,8 +147,7 @@ class FleetMotionRuntimeMixin:
                 endpoint = self._pose_at_trajectory(robot.trajectory, final_time)
                 if endpoint is not None:
                     robot.pose = endpoint
-                self._update_current_lm_from_trajectory(robot)
-                robot.current_lm = robot.target_lm or robot.current_lm
+                self._settle_completed_trajectory_endpoint(robot, now)
                 if self._activate_rolling_prefetch(robot, now):
                     final_time = float(robot.trajectory[-1].get("t", 0.0) or 0.0)
                 elif self._complete_simulated_route_chunk(robot, now):
@@ -197,8 +196,7 @@ class FleetMotionRuntimeMixin:
                         endpoint = self._pose_at_trajectory(robot.trajectory, robot.route_clock)
                         if endpoint is not None:
                             robot.pose = endpoint
-                        self._update_current_lm_from_trajectory(robot)
-                        robot.current_lm = robot.target_lm or robot.current_lm
+                        self._settle_completed_trajectory_endpoint(robot, now)
                         if handoffs >= 4 or not self._activate_rolling_prefetch(robot, now):
                             break
                         handoffs += 1
@@ -293,7 +291,7 @@ class FleetMotionRuntimeMixin:
             self._update_active_order_from_robot(robot)
             final_time = float(robot.trajectory[-1].get("t", 0.0) or 0.0)
             if final_time > 0.0 and robot.route_clock >= final_time:
-                robot.current_lm = robot.target_lm or robot.current_lm
+                self._settle_completed_trajectory_endpoint(robot, now)
                 if self._activate_rolling_prefetch(robot, now):
                     continue
                 rolling_chunk = self._complete_simulated_route_chunk(robot, now)
@@ -305,6 +303,66 @@ class FleetMotionRuntimeMixin:
         self._runtime_tick_route_clocks = {}
         self._resolve_runtime_wait_cycles(now)
         self._dispatch_orders(async_simulated=True)
+
+    def _settle_completed_trajectory_endpoint(
+        self,
+        robot: FleetRobot,
+        now: float,
+    ) -> None:
+        """Commit the physical trajectory endpoint as the rolling boundary.
+
+        A target label is intent; the terminal trajectory sample is the
+        executable contract.  Keeping an older target after a rolling trim
+        makes continuation wait for an LM the robot never reached.  Repair
+        such legacy/in-flight metadata atomically at the graph boundary.
+        """
+        self._update_current_lm_from_trajectory(robot)
+        if not robot.trajectory:
+            return
+        endpoint_lm = str(robot.trajectory[-1].get("lm") or "").strip()
+        if endpoint_lm not in self.landmarks:
+            return
+        if robot.pose is not None and not self._pose_is_at_lm(
+            robot.pose,
+            endpoint_lm,
+        ):
+            return
+        robot.current_lm = endpoint_lm
+        expected_lm = str(
+            robot.route_chunk_goal_lm or robot.target_lm or ""
+        ).strip()
+        if (
+            not robot.active_order_id
+            or not expected_lm
+            or expected_lm == endpoint_lm
+        ):
+            return
+
+        robot.target_lm = endpoint_lm
+        robot.route_chunk_goal_lm = endpoint_lm
+        if endpoint_lm in robot.plan_nodes:
+            terminal_index = max(
+                index
+                for index, node in enumerate(robot.plan_nodes)
+                if node == endpoint_lm
+            )
+            robot.plan_nodes = robot.plan_nodes[: terminal_index + 1]
+        order = self.orders.get(robot.active_order_id)
+        if order is not None and order.status not in TERMINAL_ORDER_STATUSES:
+            order.route_nodes = list(robot.plan_nodes)
+            order.start_lm = endpoint_lm
+            order.updated_at = now
+        robot.pending_route = None
+        robot.route_revision = self._next_route_revision()
+        robot.trajectory_dirty = True
+        robot.route_preview_dirty = True
+        robot.updated_at = now
+        self._clear_rolling_prefetch_state(robot.name)
+        self._event(
+            "warn",
+            f"{robot.name} rolling endpoint normalised: "
+            f"{expected_lm}->{endpoint_lm}",
+        )
 
     def _settle_degenerate_simulated_route(
         self,
