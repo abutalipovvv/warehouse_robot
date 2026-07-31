@@ -12,6 +12,7 @@ import yaml
 from .map_loader import WarehouseMapLoader
 from .models import LoadedMapData
 from fleet_manager.core.traffic.corridors import strip_derived_traffic_properties
+from fleet_manager.storage import atomic_write_bytes, atomic_write_text
 
 
 MAP_SUPPORT_YAML_FILES = {
@@ -117,9 +118,10 @@ def _write_occupancy_raster(target_dir: Path, payload: dict[str, Any]) -> None:
     if image_path.suffix.lower() != ".pgm":
         raise ValueError("occupancy raster editing currently requires a PGM map image")
 
-    temporary = image_path.with_suffix(f"{image_path.suffix}.tmp")
-    temporary.write_bytes(f"P5\n{width} {height}\n255\n".encode("ascii") + pixels)
-    temporary.replace(image_path)
+    atomic_write_bytes(
+        image_path,
+        f"P5\n{width} {height}\n255\n".encode("ascii") + pixels,
+    )
 
 
 def _find_ros_map_yaml(map_dir: Path) -> Path:
@@ -388,4 +390,7 @@ def _round_m(value: Any) -> float:
 
 
 def _write_yaml(path: Path, payload: Any) -> None:
-    path.write_text(yaml.safe_dump(payload, sort_keys=False, allow_unicode=True), encoding="utf-8")
+    atomic_write_text(
+        path,
+        yaml.safe_dump(payload, sort_keys=False, allow_unicode=True),
+    )

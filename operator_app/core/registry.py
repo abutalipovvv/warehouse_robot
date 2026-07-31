@@ -4,6 +4,8 @@ import json
 import os
 from pathlib import Path
 
+from fleet_manager.storage import atomic_write_json
+
 from .models import KnownRobot
 
 
@@ -38,9 +40,8 @@ class RobotRegistry:
         return robots
 
     def save(self, robots: list[KnownRobot]) -> None:
-        self.path.parent.mkdir(parents=True, exist_ok=True)
         payload = {"robots": [robot.to_dict() for robot in robots]}
-        self.path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        atomic_write_json(self.path, payload)
 
     def upsert(self, robot: KnownRobot) -> KnownRobot:
         robots = self.load()

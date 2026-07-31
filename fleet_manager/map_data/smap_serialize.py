@@ -17,6 +17,9 @@ from typing import Any
 
 import yaml
 
+from fleet_manager.storage import atomic_write_text
+from fleet_manager.map_data.pgm import PgmImage
+
 
 def _read_yaml(path: Path) -> Any:
     return yaml.safe_load(path.read_text(encoding="utf-8"))
@@ -41,38 +44,10 @@ def _find_ros_yaml(map_dir: Path) -> Path:
 
 
 def _read_pgm(path: Path) -> tuple[int, int, int, bytes]:
-    raw = path.read_bytes()
-    tokens: list[bytes] = []
-    index = 0
-    while index < len(raw) and len(tokens) < 4:
-        while index < len(raw) and chr(raw[index]).isspace():
-            index += 1
-        if index < len(raw) and raw[index] == ord("#"):
-            while index < len(raw) and raw[index] not in {10, 13}:
-                index += 1
-            continue
-        start = index
-        while index < len(raw) and not chr(raw[index]).isspace():
-            index += 1
-        if start < index:
-            tokens.append(raw[start:index])
-
-    if len(tokens) != 4 or tokens[0] != b"P5":
+    image = PgmImage.read(path)
+    if image.encoding != "P5":
         raise ValueError(f"only binary P5 PGM is supported: {path}")
-    width = int(tokens[1])
-    height = int(tokens[2])
-    maximum = int(tokens[3])
-    pixel_count = width * height
-    # Binary pixel values may themselves be ASCII whitespace. Taking the
-    # declared number of bytes from the end avoids consuming valid pixels
-    # while still accepting LF and CRLF PGM headers.
-    pixels = raw[-pixel_count:]
-    if len(pixels) != width * height:
-        raise ValueError(
-            f"invalid PGM payload in {path}: "
-            f"{len(pixels)} != {width}x{height}"
-        )
-    return width, height, maximum, pixels
+    return image.width, image.height, image.maximum, image.pixels
 
 
 def _coordinate_frame_is_map_top_left(payload: Any) -> bool:
@@ -482,10 +457,9 @@ def serialize_smap_bundle(map_dir: Path, output_path: Path) -> dict[str, Any]:
         ),
     }
 
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(
+    atomic_write_text(
+        output_path,
         json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
-        encoding="utf-8",
     )
     return {
         "mapName": map_name,

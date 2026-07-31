@@ -8,6 +8,7 @@ from typing import Any
 
 import yaml
 
+from .atomic_storage import atomic_write_text
 from .map_loader import WarehouseMapLoader
 from .models import LoadedMapData
 
@@ -259,4 +260,11 @@ def _round_m(value: Any) -> float:
 
 
 def _write_yaml(path: Path, payload: Any) -> None:
-    path.write_text(yaml.safe_dump(payload, sort_keys=False, allow_unicode=True), encoding="utf-8")
+    atomic_write_text(
+        path,
+        yaml.safe_dump(
+            payload,
+            sort_keys=False,
+            allow_unicode=True,
+        ),
+    )

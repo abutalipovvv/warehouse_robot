@@ -8,6 +8,7 @@ from pathlib import Path
 import yaml
 
 from fleet_manager.core.traffic.corridors import compile_controlled_corridor_zones
+from fleet_manager.map_data.pgm import PgmImage
 
 from .models import (
     EdgeGeometry,
@@ -29,20 +30,26 @@ MAP_SUPPORT_YAML_FILES = {
 
 
 class WarehouseMapLoader:
-    def __init__(self, map_dir: Path) -> None:
+    def __init__(
+        self,
+        map_dir: Path,
+        *,
+        compile_traffic_policies: bool = True,
+    ) -> None:
         self.map_dir = map_dir.resolve()
+        self.compile_traffic_policies = bool(compile_traffic_policies)
 
     def load(self) -> LoadedMapData:
         if not self.map_dir.is_dir():
             raise FileNotFoundError(f"Map directory does not exist: {self.map_dir}")
 
-        ros_map_yaml = self._find_ros_map_yaml()
-        ros_map = self._read_yaml(ros_map_yaml)
+        ros_map_yaml = self.find_ros_map_yaml()
+        ros_map = self.read_yaml(ros_map_yaml)
         if not isinstance(ros_map, dict):
             raise ValueError(f"Unexpected ROS map file format: {ros_map_yaml}")
 
         image_path = (self.map_dir / str(ros_map["image"])).resolve()
-        width, height, pixels = self._load_pgm(image_path)
+        width, height, pixels = self.load_pgm(image_path)
         png_bytes = self._build_grayscale_png(width, height, pixels)
         image_png_base64 = base64.b64encode(png_bytes).decode("ascii")
 
@@ -61,11 +68,12 @@ class WarehouseMapLoader:
             self.map_dir / "traffic_zones.yaml",
             map_metadata,
         )
-        landmarks, edges = compile_controlled_corridor_zones(
-            landmarks,
-            edges,
-            traffic_zones,
-        )
+        if self.compile_traffic_policies:
+            landmarks, edges = compile_controlled_corridor_zones(
+                landmarks,
+                edges,
+                traffic_zones,
+            )
         return LoadedMapData(
             map_dir=self.map_dir,
             map_metadata=map_metadata,
@@ -74,10 +82,10 @@ class WarehouseMapLoader:
             traffic_zones=traffic_zones,
         )
 
-    def _read_yaml(self, path: Path) -> object:
+    def read_yaml(self, path: Path) -> object:
         return yaml.safe_load(path.read_text(encoding="utf-8"))
 
-    def _find_ros_map_yaml(self) -> Path:
+    def find_ros_map_yaml(self) -> Path:
         candidates = sorted(
             path
             for path in self.map_dir.glob("*.yaml")
@@ -87,55 +95,20 @@ class WarehouseMapLoader:
             raise FileNotFoundError(f"No ROS map yaml found in {self.map_dir}")
         return candidates[0]
 
-    def _read_pgm_token(self, data: bytes, index: int) -> tuple[bytes, int]:
-        length = len(data)
-        while index < length:
-            byte = data[index]
-            if byte == 35:
-                while index < length and data[index] not in (10, 13):
-                    index += 1
-            elif chr(byte).isspace():
-                index += 1
-            else:
-                break
+    def load_pgm(self, path: Path) -> tuple[int, int, bytes]:
+        image = PgmImage.read(path)
+        return image.width, image.height, image.pixels
 
-        start = index
-        while index < length and not chr(data[index]).isspace():
-            index += 1
+    # Compatibility aliases for older callers. New code should use the
+    # public methods above instead of reaching into loader internals.
+    def _read_yaml(self, path: Path) -> object:
+        return self.read_yaml(path)
 
-        return data[start:index], index
+    def _find_ros_map_yaml(self) -> Path:
+        return self.find_ros_map_yaml()
 
     def _load_pgm(self, path: Path) -> tuple[int, int, bytes]:
-        raw = path.read_bytes()
-        magic, index = self._read_pgm_token(raw, 0)
-        if magic not in {b"P5", b"P2"}:
-            raise ValueError(f"Unsupported PGM format in {path}: {magic!r}")
-
-        width_token, index = self._read_pgm_token(raw, index)
-        height_token, index = self._read_pgm_token(raw, index)
-        max_value_token, index = self._read_pgm_token(raw, index)
-        width = int(width_token)
-        height = int(height_token)
-        max_value = int(max_value_token)
-
-        while index < len(raw) and chr(raw[index]).isspace():
-            index += 1
-
-        if magic == b"P5":
-            if max_value > 255:
-                raise ValueError("Only 8-bit binary PGM files are supported.")
-            pixels = raw[index : index + (width * height)]
-            if len(pixels) != width * height:
-                raise ValueError("PGM pixel data is shorter than expected.")
-            return width, height, pixels
-
-        text_values = raw[index:].split()
-        if len(text_values) < width * height:
-            raise ValueError("PGM ascii pixel data is shorter than expected.")
-
-        scale = 255 / max_value if max_value else 1.0
-        pixels = bytes(int(round(int(token) * scale)) for token in text_values[: width * height])
-        return width, height, pixels
+        return self.load_pgm(path)
 
     def _build_grayscale_png(self, width: int, height: int, pixels: bytes) -> bytes:
         if len(pixels) != width * height:

@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
-import math
 from pathlib import Path
 from typing import Any
 
 from fleet_manager.core.route_core.map_loader import WarehouseMapLoader
 from fleet_manager.core.route_core.models import MapMetadata
+from fleet_manager.math import (
+    Polygon2D,
+    Pose2D,
+    Vector2,
+    distance_to_segment,
+)
 
 
 class FleetCollisionChecker:
@@ -23,6 +28,7 @@ class FleetCollisionChecker:
         self.map_width = 0
         self.map_height = 0
         self._footprint_cache: list[dict[str, float]] | None = None
+        self._footprint_polygon_cache: Polygon2D | None = None
         self._footprint_diameter_cache: float | None = None
         self._pose_sample_local_points_cache: list[dict[str, float]] | None = None
         if map_dir is not None:
@@ -31,6 +37,7 @@ class FleetCollisionChecker:
     def set_params(self, params: dict[str, Any]) -> None:
         self.params = params
         self._footprint_cache = None
+        self._footprint_polygon_cache = None
         self._footprint_diameter_cache = None
         self._pose_sample_local_points_cache = None
 
@@ -110,20 +117,32 @@ class FleetCollisionChecker:
         margin = self.collision_margin()
         if not self._footprint_bounds_may_overlap(first_pose, second_pose, margin):
             return False
-        return self.polygons_overlap(
-            self.footprint_corners(first_pose),
-            self.footprint_corners(second_pose),
-            margin,
+        footprint = self._footprint_polygon()
+        return footprint.overlaps_positioned(
+            float(first_pose.get("x", 0.0) or 0.0),
+            float(first_pose.get("y", 0.0) or 0.0),
+            float(first_pose.get("yaw", 0.0) or 0.0),
+            footprint,
+            float(second_pose.get("x", 0.0) or 0.0),
+            float(second_pose.get("y", 0.0) or 0.0),
+            float(second_pose.get("yaw", 0.0) or 0.0),
+            margin=margin,
         )
 
     def robot_footprints_conflict(self, first_pose: dict[str, float], second_pose: dict[str, float]) -> bool:
         margin = self.robot_collision_margin()
         if not self._footprint_bounds_may_overlap(first_pose, second_pose, margin):
             return False
-        return self.polygons_overlap(
-            self.footprint_corners(first_pose),
-            self.footprint_corners(second_pose),
-            margin,
+        footprint = self._footprint_polygon()
+        return footprint.overlaps_positioned(
+            float(first_pose.get("x", 0.0) or 0.0),
+            float(first_pose.get("y", 0.0) or 0.0),
+            float(first_pose.get("yaw", 0.0) or 0.0),
+            footprint,
+            float(second_pose.get("x", 0.0) or 0.0),
+            float(second_pose.get("y", 0.0) or 0.0),
+            float(second_pose.get("yaw", 0.0) or 0.0),
+            margin=margin,
         )
 
     def _footprint_bounds_may_overlap(
@@ -151,10 +170,7 @@ class FleetCollisionChecker:
         if self._footprint_diameter_cache is not None:
             return self._footprint_diameter_cache
         radius = max(
-            (
-                math.hypot(point["x"], point["y"])
-                for point in self.footprint()
-            ),
+            (point.length for point in self._footprint_polygon().points),
             default=0.22,
         )
         self._footprint_diameter_cache = radius * 2.0
@@ -213,45 +229,35 @@ class FleetCollisionChecker:
         return x1 <= point["x"] <= x2 and y1 <= point["y"] <= y2
 
     def footprint_corners(self, pose: dict[str, float]) -> list[dict[str, float]]:
-        return self._local_points_to_world(pose, self.footprint())
+        return [
+            self._point_payload(point)
+            for point in self._footprint_at(pose).points
+        ]
 
     @staticmethod
     def _local_points_to_world(
         pose: dict[str, float],
         points: list[dict[str, float]],
     ) -> list[dict[str, float]]:
-        yaw = float(pose.get("yaw", 0.0) or 0.0)
-        cos_yaw = math.cos(yaw)
-        sin_yaw = math.sin(yaw)
-        center_x = float(pose.get("x", 0.0) or 0.0)
-        center_y = float(pose.get("y", 0.0) or 0.0)
+        world_pose = FleetCollisionChecker._pose(pose)
         return [
-            {
-                "x": center_x + (point["x"] * cos_yaw) - (point["y"] * sin_yaw),
-                "y": center_y + (point["x"] * sin_yaw) + (point["y"] * cos_yaw),
-            }
+            FleetCollisionChecker._point_payload(
+                world_pose.transform_local_vector(
+                    FleetCollisionChecker._point(point)
+                )
+            )
             for point in points
         ]
 
     def local_to_world(self, pose: dict[str, float], point: dict[str, float]) -> dict[str, float]:
-        yaw = float(pose.get("yaw", 0.0) or 0.0)
-        cos_yaw = math.cos(yaw)
-        sin_yaw = math.sin(yaw)
-        return {
-            "x": float(pose.get("x", 0.0) or 0.0) + (point["x"] * cos_yaw) - (point["y"] * sin_yaw),
-            "y": float(pose.get("y", 0.0) or 0.0) + (point["x"] * sin_yaw) + (point["y"] * cos_yaw),
-        }
+        return self._point_payload(
+            self._pose(pose).transform_local_vector(self._point(point))
+        )
 
     def world_to_local(self, pose: dict[str, float], point: dict[str, float]) -> dict[str, float]:
-        yaw = float(pose.get("yaw", 0.0) or 0.0)
-        cos_yaw = math.cos(yaw)
-        sin_yaw = math.sin(yaw)
-        dx = point["x"] - float(pose.get("x", 0.0) or 0.0)
-        dy = point["y"] - float(pose.get("y", 0.0) or 0.0)
-        return {
-            "x": (dx * cos_yaw) + (dy * sin_yaw),
-            "y": (-dx * sin_yaw) + (dy * cos_yaw),
-        }
+        return self._point_payload(
+            self._pose(pose).relative_vector_to(self._point(point))
+        )
 
     def world_to_image(self, point: dict[str, float]) -> dict[str, int]:
         assert self.map_metadata is not None
@@ -267,53 +273,26 @@ class FleetCollisionChecker:
         second: list[dict[str, float]],
         margin: float,
     ) -> bool:
-        axes = self.polygon_axes(first) + self.polygon_axes(second)
-        for axis in axes:
-            first_projection = self.project_polygon(first, axis)
-            second_projection = self.project_polygon(second, axis)
-            if (
-                first_projection["max"] + margin < second_projection["min"]
-                or second_projection["max"] + margin < first_projection["min"]
-            ):
-                return False
-        return True
+        return self._polygon(first).overlaps(
+            self._polygon(second),
+            margin=margin,
+        )
 
     def polygon_axes(self, polygon: list[dict[str, float]]) -> list[dict[str, float]]:
-        axes: list[dict[str, float]] = []
-        for index, start in enumerate(polygon):
-            end = polygon[(index + 1) % len(polygon)]
-            dx = end["x"] - start["x"]
-            dy = end["y"] - start["y"]
-            length = math.hypot(dx, dy)
-            if length > 0.000001:
-                axes.append({"x": -dy / length, "y": dx / length})
-        return axes
+        return [
+            self._point_payload(axis)
+            for axis in self._polygon(polygon).axes()
+        ]
 
     def project_polygon(self, polygon: list[dict[str, float]], axis: dict[str, float]) -> dict[str, float]:
-        values = [(point["x"] * axis["x"]) + (point["y"] * axis["y"]) for point in polygon]
-        return {"min": min(values), "max": max(values)}
+        projection = self._polygon(polygon).project(self._point(axis))
+        return {"min": projection.minimum, "max": projection.maximum}
 
     def point_in_polygon(self, point: dict[str, float], polygon: list[dict[str, float]]) -> bool:
-        inside = False
-        j = len(polygon) - 1
-        for i, a in enumerate(polygon):
-            b = polygon[j]
-            crosses = (
-                (a["y"] > point["y"]) != (b["y"] > point["y"])
-                and point["x"]
-                < ((b["x"] - a["x"]) * (point["y"] - a["y"])) / ((b["y"] - a["y"]) or 0.000001)
-                + a["x"]
-            )
-            if crosses:
-                inside = not inside
-            j = i
-        return inside
+        return self._polygon(polygon).contains(self._point(point))
 
     def distance_to_polygon(self, point: dict[str, float], polygon: list[dict[str, float]]) -> float:
-        return min(
-            self.distance_to_segment(point, polygon[index], polygon[(index + 1) % len(polygon)])
-            for index in range(len(polygon))
-        )
+        return self._polygon(polygon).distance_to(self._point(point))
 
     def distance_to_segment(
         self,
@@ -321,14 +300,11 @@ class FleetCollisionChecker:
         start: dict[str, float],
         end: dict[str, float],
     ) -> float:
-        dx = end["x"] - start["x"]
-        dy = end["y"] - start["y"]
-        length_sq = (dx * dx) + (dy * dy)
-        if length_sq <= 0.000001:
-            return math.hypot(point["x"] - start["x"], point["y"] - start["y"])
-        ratio = max(0.0, min(1.0, (((point["x"] - start["x"]) * dx) + ((point["y"] - start["y"]) * dy)) / length_sq))
-        closest = {"x": start["x"] + (dx * ratio), "y": start["y"] + (dy * ratio)}
-        return math.hypot(point["x"] - closest["x"], point["y"] - closest["y"])
+        return distance_to_segment(
+            self._point(point),
+            self._point(start),
+            self._point(end),
+        )
 
     def footprint(self) -> list[dict[str, float]]:
         if self._footprint_cache is not None:
@@ -364,6 +340,34 @@ class FleetCollisionChecker:
         ]
         return self._footprint_cache
 
+    def _footprint_polygon(self) -> Polygon2D:
+        if self._footprint_polygon_cache is None:
+            self._footprint_polygon_cache = self._polygon(self.footprint())
+        return self._footprint_polygon_cache
+
+    def _footprint_at(self, pose: dict[str, float]) -> Polygon2D:
+        return self._footprint_polygon().transformed(self._pose(pose))
+
+    @staticmethod
+    def _pose(payload: dict[str, float]) -> Pose2D:
+        return Pose2D.from_xy(
+            float(payload.get("x", 0.0) or 0.0),
+            float(payload.get("y", 0.0) or 0.0),
+            float(payload.get("yaw", 0.0) or 0.0),
+        )
+
+    @staticmethod
+    def _point(payload: dict[str, float]) -> Vector2:
+        return Vector2(float(payload["x"]), float(payload["y"]))
+
+    @classmethod
+    def _polygon(cls, payload: list[dict[str, float]]) -> Polygon2D:
+        return Polygon2D(cls._point(point) for point in payload)
+
+    @staticmethod
+    def _point_payload(point: Vector2) -> dict[str, float]:
+        return {"x": point.x, "y": point.y}
+
     def collision_margin(self) -> float:
         navigation = self._dict_param("navigation")
         return max(0.0, float(navigation.get("collision_margin", 0.04) or 0.04))
@@ -384,12 +388,12 @@ class FleetCollisionChecker:
     def _load_map_pixels(self, map_dir: Path) -> None:
         try:
             loader = WarehouseMapLoader(map_dir)
-            ros_map_yaml = loader._find_ros_map_yaml()
-            ros_map = loader._read_yaml(ros_map_yaml)
+            ros_map_yaml = loader.find_ros_map_yaml()
+            ros_map = loader.read_yaml(ros_map_yaml)
             if not isinstance(ros_map, dict):
                 return
             image_path = (map_dir / str(ros_map["image"])).resolve()
-            width, height, pixels = loader._load_pgm(image_path)
+            width, height, pixels = loader.load_pgm(image_path)
         except Exception:
             return
         self.map_width = width

@@ -8,8 +8,9 @@ Main runtime split:
 - `sim_robot/ws/src/robot_status` - robot status ROS 2 node.
 - `sim_robot/ws/src/robot_map_manager` - robot map state/load/sync ROS 2 services.
 - `sim_robot/ws/src/robot_grpc_api` - local ROS 2 robot gRPC API backed by robot topics/services.
-- `operator_app/core/grpc` - local Operator App copy of the robot gRPC client contract.
-- `fleet_manager/robot_grpc_api` - local Fleet Manager copy of the robot gRPC client contract.
+- `operator_app/core/grpc` - thin Operator App compatibility facade over the
+  canonical Fleet Manager robot gRPC client.
+- `fleet_manager/runtime/grpc/api` - Fleet Manager robot gRPC client/runtime contract.
 - `operator_app/core` - Operator App state, Fleet Manager bridge, gRPC client and domain logic.
 - `operator_app/web` - offline browser UI and HTTP/WebSocket transport.
 - `operator_app/server.py` - Operator App entry point; settings live in `operator_app/config/config.yaml`.
@@ -17,11 +18,21 @@ Main runtime split:
 
 Map/planning ownership:
 
-- `fleet_manager/route_core` owns Fleet Manager map loading/edit exchange for `fleet_manager/map_data`.
-- `fleet_manager/mapf` owns Fleet Manager MAPF and space-time planning.
+- `fleet_manager/core/route_core` owns Fleet Manager map loading/edit exchange for `fleet_manager/map_data`.
+- `fleet_manager/core/mapf` owns Fleet Manager MAPF and space-time planning.
+- `fleet_manager/math` and `fleet_manager/search` contain reusable mathematical
+  primitives and graph-search algorithms.
+- `fleet_manager/map_data/smap_bundle.py` and `smap_raster.py` separate SMAP
+  parsing, graph reconstruction, raster math, and durable output.
 - `sim_robot/ws/src/robot_planner/robot_planner/route_core` owns robot-side map/route loading.
 - Operator App stores its local editable map cache independently and only synchronizes by push/pull.
 - `robot_grpc_api` is only the network API contract/runtime; it does not own maps or MAPF.
+
+See [`docs/architecture.md`](docs/architecture.md) for dependency boundaries
+and a suggested code-reading order. Test commands are in
+[`docs/testing.md`](docs/testing.md).
+Русскоязычный маршрут по коду находится в
+[`docs/code-reading-guide.ru.md`](docs/code-reading-guide.ru.md).
 
 Runtime transport rule:
 

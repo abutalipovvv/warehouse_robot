@@ -26,6 +26,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from fleet_manager.core.route_core.map_loader import WarehouseMapLoader
+from fleet_manager.core.route_core.models import WorldPoint
 
 TERMINAL_STATES = {"FINISHED", "FAILED", "STOPPED", "ERROR"}
 
@@ -135,9 +137,63 @@ class RdsClient:
 
 class MapGraph:
     def __init__(self, path: Path, *, landmark_limit: int = 0) -> None:
-        payload = json.loads(path.read_text(encoding="utf-8"))
         self.points: dict[str, tuple[float, float]] = {}
         self.point_properties: dict[str, dict[str, Any]] = {}
+        self.adjacency: dict[str, set[str]] = defaultdict(set)
+        self.corridors: list[dict[str, Any]] = []
+
+        if path.is_dir():
+            self._load_map_bundle(path, landmark_limit=landmark_limit)
+            return
+        self._load_smap(path, landmark_limit=landmark_limit)
+
+    def _load_map_bundle(self, path: Path, *, landmark_limit: int) -> None:
+        loaded_map = WarehouseMapLoader(
+            path,
+            compile_traffic_policies=False,
+        ).load()
+        for landmark in loaded_map.landmarks.values():
+            if landmark_limit > 0 and len(self.points) >= landmark_limit:
+                break
+            point = loaded_map.map_metadata.map_to_ros_point(
+                landmark.to_point()
+            )
+            self.points[landmark.name] = (point.x, point.y)
+            self.point_properties[landmark.name] = dict(landmark.properties)
+
+        for edge in loaded_map.edges:
+            source = edge.from_name
+            target = edge.to_name
+            if source in self.points and target in self.points and source != target:
+                self.adjacency[source].add(target)
+
+        for zone in loaded_map.traffic_zones:
+            if zone.kind.strip().lower() != "controlled_corridor":
+                continue
+            map_corners = [
+                (zone.min_x, zone.min_y),
+                (zone.max_x, zone.min_y),
+                (zone.max_x, zone.max_y),
+                (zone.min_x, zone.max_y),
+            ]
+            corners = [
+                loaded_map.map_metadata.map_to_ros_point(
+                    WorldPoint(x=x, y=y)
+                )
+                for x, y in map_corners
+            ]
+            xs = [point.x for point in corners]
+            ys = [point.y for point in corners]
+            self._add_corridor(
+                corridor_id=zone.zone_id,
+                min_x=min(xs),
+                max_x=max(xs),
+                min_y=min(ys),
+                max_y=max(ys),
+            )
+
+    def _load_smap(self, path: Path, *, landmark_limit: int) -> None:
+        payload = json.loads(path.read_text(encoding="utf-8"))
         for item in payload.get("advancedPointList", []):
             if not isinstance(item, dict) or item.get("className") != "LocationMark":
                 continue
@@ -149,7 +205,6 @@ class MapGraph:
                 self.points[name] = (float(pos["x"]), float(pos["y"]))
                 self.point_properties[name] = _properties(item.get("property"))
 
-        self.adjacency: dict[str, set[str]] = defaultdict(set)
         for item in (
             list(payload.get("advancedLineList") or [])
             + list(payload.get("advancedCurveList") or [])
@@ -163,7 +218,6 @@ class MapGraph:
             if source in self.points and target in self.points and source != target:
                 self.adjacency[source].add(target)
 
-        self.corridors: list[dict[str, Any]] = []
         for item in payload.get("advancedAreaList", []):
             if not isinstance(item, dict):
                 continue
@@ -179,16 +233,36 @@ class MapGraph:
                 continue
             xs = [point[0] for point in polygon]
             ys = [point[1] for point in polygon]
-            self.corridors.append(
-                {
-                    "id": str(item.get("instanceName") or f"corridor-{len(self.corridors) + 1}"),
-                    "min_x": min(xs),
-                    "max_x": max(xs),
-                    "min_y": min(ys),
-                    "max_y": max(ys),
-                    "axis": "x" if max(xs) - min(xs) >= max(ys) - min(ys) else "y",
-                }
+            self._add_corridor(
+                corridor_id=str(
+                    item.get("instanceName")
+                    or f"corridor-{len(self.corridors) + 1}"
+                ),
+                min_x=min(xs),
+                max_x=max(xs),
+                min_y=min(ys),
+                max_y=max(ys),
             )
+
+    def _add_corridor(
+        self,
+        *,
+        corridor_id: str,
+        min_x: float,
+        max_x: float,
+        min_y: float,
+        max_y: float,
+    ) -> None:
+        self.corridors.append(
+            {
+                "id": corridor_id,
+                "min_x": min_x,
+                "max_x": max_x,
+                "min_y": min_y,
+                "max_y": max_y,
+                "axis": "x" if max_x - min_x >= max_y - min_y else "y",
+            }
+        )
 
     def safe_spawn_points(self, count: int, *, margin_m: float) -> list[str]:
         def outside_corridors(name: str) -> bool:
@@ -951,11 +1025,11 @@ def parse_args() -> argparse.Namespace:
         "--map",
         type=Path,
         default=Path(
-            "operator_app/operator_data/fleet_manager_sim/maps/"
-            "smart_kiva_large_w_mode_export.smap"
+            "fleet_manager/map_data/maps_out/"
+            "smart_kiva_large_w_mode.smap"
         ),
     )
-    parser.add_argument("--expected-map", default="smart_kiva_large_w_mode_export")
+    parser.add_argument("--expected-map", default="smart_kiva_large_w_mode")
     parser.add_argument("--robot-count", type=int, default=20)
     parser.add_argument(
         "--landmark-limit",

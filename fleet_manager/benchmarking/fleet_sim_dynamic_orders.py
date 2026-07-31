@@ -329,7 +329,7 @@ def parse_args() -> argparse.Namespace:
         "--lms",
         type=Path,
         default=Path(
-            "operator_app/operator_data/fleet_manager_sim/maps/"
+            "fleet_manager/map_data/maps_out/"
             "benchmark_open_kiva.smap/LMs.yaml"
         ),
     )

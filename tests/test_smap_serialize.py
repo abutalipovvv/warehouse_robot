@@ -8,25 +8,13 @@ import yaml
 from fleet_manager.map_data.smap_deserialize import deserialize_smap
 from fleet_manager.map_data.smap_serialize import serialize_smap_bundle
 from fleet_manager.core.route_core.map_loader import WarehouseMapLoader
+from fleet_manager.benchmarking.rds_dynamic_orders import MapGraph
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SOURCE = (
-    ROOT
-    / "operator_app"
-    / "operator_data"
-    / "fleet_manager_sim"
-    / "maps"
-    / "smart_kiva_large_w_mode.smap"
-)
-OPEN_SOURCE = (
-    ROOT
-    / "operator_app"
-    / "operator_data"
-    / "fleet_manager_sim"
-    / "maps"
-    / "benchmark_open_kiva.smap"
-)
+MAPS_ROOT = ROOT / "fleet_manager" / "map_data" / "maps_out"
+SOURCE = MAPS_ROOT / "smart_kiva_large_w_mode.smap"
+OPEN_SOURCE = MAPS_ROOT / "benchmark_open_kiva.smap"
 
 
 def test_unpacked_smart_kiva_round_trips_through_single_smap(
@@ -47,6 +35,13 @@ def test_unpacked_smart_kiva_round_trips_through_single_smap(
     assert len(payload["advancedPointList"]) == 576
     assert len(payload["advancedCurveList"]) == 1240
     assert len(payload["advancedAreaList"]) == 32
+
+    bundle_graph = MapGraph(SOURCE)
+    serialized_graph = MapGraph(output)
+    assert serialized_graph.points == bundle_graph.points
+    assert serialized_graph.point_properties == bundle_graph.point_properties
+    assert serialized_graph.adjacency == bundle_graph.adjacency
+    assert serialized_graph.corridors == bundle_graph.corridors
 
     unpacked = tmp_path / "roundtrip"
     deserialize_smap(output, unpacked)

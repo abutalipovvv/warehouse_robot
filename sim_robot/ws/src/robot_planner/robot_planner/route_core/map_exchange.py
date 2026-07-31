@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+from .atomic_storage import atomic_write_bytes
 from .map_loader import WarehouseMapLoader
 from .planner import LmRoutePlanner
 
@@ -87,7 +88,10 @@ def restore_editable_map_bundle(map_dir: Path, payload: dict[str, Any]) -> Path:
         content = item.get("content")
         if encoding != "base64" or not isinstance(content, str):
             raise ValueError(f"unsupported bundle entry for {relative}")
-        target.write_bytes(base64.b64decode(content.encode("ascii")))
+        atomic_write_bytes(
+            target,
+            base64.b64decode(content.encode("ascii")),
+        )
     return root
 
 

@@ -18,5 +18,9 @@ robot/log/
 *.swo
 
 robot/.active_map.json
+sim_robot/.active_map.json
 sim_robot/ws/src/robot_map_manager/.active_map.json
+operator_app/operator_data/
 var/operator_app/
+var/fleet_sim_benchmarks/
+var/rds_benchmarks/

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 from pathlib import Path
 
 from fleet_manager.core.manager import FleetManagerCore
@@ -80,16 +81,102 @@ def test_packages_do_not_hide_runtime_classes_behind_reexports() -> None:
     assert "FleetManagerSim" not in vars(fleet_manager.runtime)
 
 
-def test_fleet_manager_package_initializers_stay_empty() -> None:
+def test_fleet_manager_package_initializers_are_declarative_only() -> None:
     package_root = Path(__file__).resolve().parents[1] / "fleet_manager"
 
-    non_empty = [
-        path.relative_to(package_root)
-        for path in package_root.rglob("__init__.py")
-        if path.read_text(encoding="utf-8")
-    ]
+    violations: list[tuple[Path, int, str]] = []
+    for path in package_root.rglob("__init__.py"):
+        module = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for statement in module.body:
+            is_docstring = (
+                isinstance(statement, ast.Expr)
+                and isinstance(statement.value, ast.Constant)
+                and isinstance(statement.value.value, str)
+            )
+            is_local_export = (
+                isinstance(statement, ast.ImportFrom)
+                and statement.level == 1
+            )
+            is_all_declaration = (
+                isinstance(statement, ast.Assign)
+                and len(statement.targets) == 1
+                and isinstance(statement.targets[0], ast.Name)
+                and statement.targets[0].id == "__all__"
+            )
+            if not (is_docstring or is_local_export or is_all_declaration):
+                violations.append(
+                    (
+                        path.relative_to(package_root),
+                        statement.lineno,
+                        type(statement).__name__,
+                    )
+                )
 
-    assert non_empty == []
+    assert violations == []
+
+
+def test_transport_neutral_core_does_not_import_runtime_packages() -> None:
+    core_root = (
+        Path(__file__).resolve().parents[1]
+        / "fleet_manager"
+        / "core"
+    )
+    violations: list[tuple[Path, int, str]] = []
+
+    for path in core_root.rglob("*.py"):
+        module = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(module):
+            imported_modules: list[str] = []
+            if isinstance(node, ast.Import):
+                imported_modules = [alias.name for alias in node.names]
+            elif isinstance(node, ast.ImportFrom) and node.module:
+                imported_modules = [node.module]
+            for imported_module in imported_modules:
+                if imported_module.startswith("fleet_manager.runtime"):
+                    violations.append(
+                        (
+                            path.relative_to(core_root),
+                            node.lineno,
+                            imported_module,
+                        )
+                    )
+
+    assert violations == []
+
+
+def test_foundation_packages_do_not_import_policy_or_runtime_layers() -> None:
+    project_root = Path(__file__).resolve().parents[1]
+    forbidden_prefixes = (
+        "fleet_manager.core",
+        "fleet_manager.runtime",
+        "operator_app",
+    )
+    violations: list[tuple[Path, int, str]] = []
+
+    for package_name in ("math", "search", "map_data"):
+        package_root = project_root / "fleet_manager" / package_name
+        for path in package_root.rglob("*.py"):
+            module = ast.parse(
+                path.read_text(encoding="utf-8"),
+                filename=str(path),
+            )
+            for node in ast.walk(module):
+                modules: list[str] = []
+                if isinstance(node, ast.Import):
+                    modules = [alias.name for alias in node.names]
+                elif isinstance(node, ast.ImportFrom) and node.module:
+                    modules = [node.module]
+                for imported in modules:
+                    if imported.startswith(forbidden_prefixes):
+                        violations.append(
+                            (
+                                path.relative_to(project_root),
+                                node.lineno,
+                                imported,
+                            )
+                        )
+
+    assert violations == []
 
 
 def test_simulation_params_refresh_does_not_install_a_grpc_gateway() -> None:

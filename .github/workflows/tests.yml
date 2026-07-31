@@ -1,0 +1,32 @@
+name: Tests
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  pytest:
+    runs-on: ubuntu-24.04
+    container: ros:jazzy-ros-base
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install Python test dependencies
+        run: |
+          apt-get update
+          apt-get install --yes --no-install-recommends \
+            python3-grpcio \
+            python3-protobuf \
+            python3-pytest \
+            python3-yaml
+
+      - name: Run root test suite
+        run: |
+          source /opt/ros/jazzy/setup.bash
+          python3 -m pytest -q

@@ -14,6 +14,7 @@ from fleet_manager.core.route_core.map_exchange import (
     restore_editable_map_bundle,
 )
 from fleet_manager.core.route_core.map_writer import save_editable_map
+from fleet_manager.storage import atomic_write_json
 
 
 def default_maps_cache_root() -> Path:
@@ -59,10 +60,9 @@ class MapCache:
         if not map_dir.is_dir():
             raise ValueError(f"local map not found: {map_name}")
         state_path = self._state_file(robot_id)
-        state_path.parent.mkdir(parents=True, exist_ok=True)
         payload = self._state_payload(robot_id)
         payload["activeMapName"] = str(map_name or "").strip()
-        state_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        atomic_write_json(state_path, payload)
 
     def load_active_map(self, robot_id: str) -> dict[str, Any] | None:
         active_name = self.active_map_name(robot_id)
@@ -268,8 +268,7 @@ class MapCache:
         return payload if isinstance(payload, dict) else {}
 
     def _write_map_meta(self, map_dir: Path, payload: dict[str, Any]) -> None:
-        map_dir.mkdir(parents=True, exist_ok=True)
-        self._map_meta_file(map_dir).write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        atomic_write_json(self._map_meta_file(map_dir), payload)
 
     def _safe_name(self, value: str) -> str:
         return re.sub(r"[^A-Za-z0-9_.-]+", "_", str(value).strip()).strip("._") or "unnamed"

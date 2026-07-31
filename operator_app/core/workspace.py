@@ -13,6 +13,8 @@ try:
 except Exception:  # pragma: no cover - optional runtime dependency fallback
     yaml = None
 
+from fleet_manager.storage import atomic_write_json, atomic_write_text
+
 from .models import KnownRobot
 
 
@@ -95,12 +97,15 @@ class OperatorWorkspace:
         }
         self._write_json(params_dir / "params.json", payload)
         if yaml is not None:
-            (params_dir / "params.yaml").write_text(
+            atomic_write_text(
+                params_dir / "params.yaml",
                 yaml.safe_dump(params, allow_unicode=True, sort_keys=False),
-                encoding="utf-8",
             )
         else:
-            (params_dir / "params.yaml").write_text(json.dumps(params, ensure_ascii=False, indent=2), encoding="utf-8")
+            atomic_write_text(
+                params_dir / "params.yaml",
+                json.dumps(params, ensure_ascii=False, indent=2),
+            )
         robot_model = params.get("robot_model") if isinstance(params, dict) else None
         if isinstance(robot_model, dict):
             self.save_robot_model(robot, robot_model, source=source)
@@ -168,8 +173,7 @@ class OperatorWorkspace:
         return payload if isinstance(payload, dict) else {}
 
     def _write_json(self, path: Path, payload: dict[str, Any]) -> None:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        atomic_write_json(path, payload)
 
     def _safe_name(self, value: str) -> str:
         return re.sub(r"[^A-Za-z0-9_.-]+", "_", str(value).strip()).strip("._") or "unnamed"

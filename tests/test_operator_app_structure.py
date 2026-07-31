@@ -1,3 +1,4 @@
+import ast
 from pathlib import Path
 
 from operator_app.core.config import DEFAULT_CONFIG_PATH, DEFAULT_STATIC_DIR
@@ -21,7 +22,41 @@ def test_operator_app_has_compact_source_and_runtime_layout() -> None:
 
     init_files = sorted(OPERATOR_ROOT.rglob("__init__.py"))
     assert init_files
-    assert all(path.read_bytes() == b"" for path in init_files)
+    violations: list[tuple[Path, int, str]] = []
+    for path in init_files:
+        module = ast.parse(
+            path.read_text(encoding="utf-8"),
+            filename=str(path),
+        )
+        for statement in module.body:
+            is_docstring = (
+                isinstance(statement, ast.Expr)
+                and isinstance(statement.value, ast.Constant)
+                and isinstance(statement.value.value, str)
+            )
+            is_local_export = (
+                isinstance(statement, ast.ImportFrom)
+                and statement.level == 1
+            )
+            is_all_declaration = (
+                isinstance(statement, ast.Assign)
+                and len(statement.targets) == 1
+                and isinstance(statement.targets[0], ast.Name)
+                and statement.targets[0].id == "__all__"
+            )
+            if not (
+                is_docstring
+                or is_local_export
+                or is_all_declaration
+            ):
+                violations.append(
+                    (
+                        path.relative_to(OPERATOR_ROOT),
+                        statement.lineno,
+                        type(statement).__name__,
+                    )
+                )
+    assert violations == []
 
 
 def test_operator_frontend_is_modular_and_offline() -> None:

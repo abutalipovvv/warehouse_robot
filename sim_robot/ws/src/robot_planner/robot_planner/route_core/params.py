@@ -8,6 +8,8 @@ from typing import Any
 
 import yaml
 
+from .atomic_storage import atomic_write_text
+
 
 def discover_default_params_path() -> Path:
     module_path = Path(__file__).resolve()
@@ -241,11 +243,10 @@ def save_route_params(
 ) -> Path:
     params_path = path or DEFAULT_PARAMS_PATH
     default_params = DEFAULT_ROUTE_PARAMS if defaults is None else defaults
-    params_path.parent.mkdir(parents=True, exist_ok=True)
     merged = _deep_merge(deepcopy(default_params), params)
-    params_path.write_text(
+    atomic_write_text(
+        params_path,
         yaml.safe_dump(merged, allow_unicode=True, sort_keys=False),
-        encoding="utf-8",
     )
     return params_path
 

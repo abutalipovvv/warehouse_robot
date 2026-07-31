@@ -25,18 +25,8 @@ from robot_planner import (
     editable_map_signature,
     restore_editable_map_bundle,
 )
-
-
-def find_ros_map_yaml(map_dir: Path) -> Path:
-    directory = Path(map_dir).resolve()
-    candidates = sorted(
-        path
-        for path in directory.glob("*.yaml")
-        if path.name not in {"LMs.yaml", "graphs.yaml", "graph_edges_lengths.yaml", "traffic_zones.yaml"}
-    )
-    if not candidates:
-        raise FileNotFoundError(f"No ROS map yaml found in {directory}")
-    return candidates[0]
+from robot_planner.route_core.atomic_storage import atomic_write_text
+from robot_planner.route_core.map_exchange import find_ros_map_yaml
 
 
 class RobotMapManagerNode(Node):
@@ -280,13 +270,19 @@ class RobotMapManagerNode(Node):
         return self._active_map_dir.stem.replace(".smap", "")
 
     def _persist_state(self) -> None:
-        self.state_file.parent.mkdir(parents=True, exist_ok=True)
         payload = {
             "mapName": self._active_map_name(),
             "mapDir": str(self._active_map_dir),
             "mapId": self._active_map_id,
         }
-        self.state_file.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        atomic_write_text(
+            self.state_file,
+            json.dumps(
+                payload,
+                ensure_ascii=False,
+                indent=2,
+            ),
+        )
 
     def _call_service(self, client, request, service_label: str, *, timeout_sec: float = 15.0):
         if not client.wait_for_service(timeout_sec=2.0):

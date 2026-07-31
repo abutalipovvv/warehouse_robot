@@ -8,6 +8,8 @@ from typing import Any
 
 import yaml
 
+from fleet_manager.storage import atomic_write_text
+
 
 DEFAULT_PARAMS_PATH = Path(__file__).resolve().parents[2] / "config" / "params.yaml"
 DEFAULT_NAV2_ROBOT_RADIUS = 0.22
@@ -231,11 +233,10 @@ def save_route_params(
 ) -> Path:
     params_path = path or DEFAULT_PARAMS_PATH
     default_params = DEFAULT_ROUTE_PARAMS if defaults is None else defaults
-    params_path.parent.mkdir(parents=True, exist_ok=True)
     merged = _deep_merge(deepcopy(default_params), params)
-    params_path.write_text(
+    atomic_write_text(
+        params_path,
         yaml.safe_dump(merged, allow_unicode=True, sort_keys=False),
-        encoding="utf-8",
     )
     return params_path
 
