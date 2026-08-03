@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from fleet_manager.core.manager import FleetManagerCore
-from fleet_manager.runtime.gateways.simulation import SimulationRobotGateway
+from ..gateways.simulation import SimulationRobotGateway
 
 
 class FleetManagerSim(FleetManagerCore):

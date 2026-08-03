@@ -99,7 +99,10 @@ def test_evacuation_facade_composes_focused_recovery_stages() -> None:
         EvacuationActivationMixin,
         GraphEscapeInstallMixin,
     )
-    assert len(_hooks(DeadlockEvacuationMixin)) == 24
+    # The facade keeps the original hooks and now also exposes the named
+    # geometry, activation and transactional escape-installation stages used
+    # to replace three monolithic methods.
+    assert len(_hooks(DeadlockEvacuationMixin)) == 41
     assert (
         DeadlockEvacuationMixin._graph_escape_route_current_body_blocker
         is EvacuationGeometryMixin._graph_escape_route_current_body_blocker

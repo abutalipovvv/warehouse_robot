@@ -92,6 +92,30 @@ runtime recovery при длительной остановке
 точки, установку escape-маршрута и разрыв цикла. Поэтому при изменении одного
 правила не нужно читать весь recovery-механизм.
 
+Три recovery-конвейера удобно читать по именам стадий:
+
+```text
+deadlock geometry
+  edge variants → orientation selection → swept motion samples → blocker
+
+deadlock activation
+  candidate → blocked edges → graph escape / replan / reverse retreat → latch
+
+rolling collapse
+  stopped cohort → dependency graph → free sink → vacancy Dijkstra → prefetch
+```
+
+Установка graph escape является транзакцией: сначала обычный planner строит
+траекторию, затем проверяется текущая геометрия тел, освобождаются устаревшие
+corridor leases и только после этого одновременно меняются заказ и робот.
+
+В `core/tasks` stationary recovery устроен аналогично: causal episode хранит
+signature и visited pockets, отдельный ограниченный поиск доказывает graph cut,
+а отдельный commit создаёт внутренний `traffic_clearance` order. Ручное
+возвращение робота после free-drive разделено на генерацию sampled motion,
+collision audit и commit; публичный `manager.plan()` только координирует эти
+стадии.
+
 ## 5. Runtime и Operator App
 
 После алгоритмов переходите к прикладному слою:
@@ -142,6 +166,14 @@ python3 -m operator_app.benchmarking.operator_fleet_refactor_guard \
 parameters и ROS helpers. Роботный пакет
 `sim_robot/ws/src/robot_grpc_api` имеет такие же локальные компоненты, но не
 зависит от исходников Fleet Manager и может разворачиваться отдельно.
+
+Локальный контур движения робота находится в
+`sim_robot/ws/src/robot_planner/robot_planner/executor.py`. Его лучше читать
+сверху вниз через математические модели `RouteControlParameters`,
+`RouteProgress` и `RouteSteeringState`: projection пути, reservation gate,
+проверка arrival, steering errors и итоговая velocity command. Параметры
+кэшируются до атомарной замены словаря при hot reload; геометрия вычисляется
+заново на каждом control tick.
 
 ## Где вносить изменения
 

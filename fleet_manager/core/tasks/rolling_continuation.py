@@ -5,8 +5,8 @@ from __future__ import annotations
 import math
 from typing import Any
 
-from fleet_manager.core.constants import TERMINAL_ORDER_STATUSES
-from fleet_manager.core.models import FleetOrder, FleetRobot
+from fleet_manager.core.domain.constants import TERMINAL_ORDER_STATUSES
+from fleet_manager.core.domain.models import FleetOrder, FleetRobot
 
 
 class RollingContinuationMixin:
@@ -235,6 +235,30 @@ class RollingContinuationMixin:
         chunk, has no pending/retreat motion, and has already failed a normal
         continuation attempt.
         """
+        cohort = self._stopped_rolling_collapse_cohort()
+        if cohort is None:
+            return None
+        signature = self._rolling_collapse_signature(cohort)
+        dependencies, by_name, dependencies_complete = (
+            self._rolling_collapse_dependencies(cohort)
+        )
+        sink_name = self._rolling_collapse_sink(
+            dependencies,
+            dependencies_complete,
+        )
+        if sink_name:
+            order, robot = by_name[sink_name]
+            return [self._rolling_collapse_prefetch_entry(order, robot)]
+
+        vacancy_entry = self._rolling_vacancy_escape_entry(cohort, signature)
+        # A missing pocket is not terminal. The ordinary fair endpoint queue
+        # may retry after the physical traffic state changes.
+        return [vacancy_entry] if vacancy_entry is not None else None
+
+    def _stopped_rolling_collapse_cohort(
+        self,
+    ) -> list[tuple[FleetOrder, FleetRobot]] | None:
+        """Return the active cohort only when every member is fully stopped."""
         cohort: list[tuple[FleetOrder, FleetRobot]] = []
         for robot in self._runtime_robots():
             if robot.is_remote() or not robot.active_order_id:
@@ -243,10 +267,7 @@ class RollingContinuationMixin:
             if order is None or order.status in TERMINAL_ORDER_STATUSES:
                 continue
             if order.internal_kind == "traffic_clearance":
-                # Full-collapse vacancy recovery deliberately replaces one
-                # spatial suffix with a route to an arbitrary free pocket.
-                # A maintenance clearance already *is* such a bounded escape
-                # and its authored route is immutable until completion/cancel.
+                # Maintenance routes are immutable bounded escapes already.
                 return None
             cohort.append((order, robot))
         if len(cohort) < 2:
@@ -259,7 +280,13 @@ class RollingContinuationMixin:
             for _, robot in cohort
         ):
             return None
+        return cohort
 
+    def _rolling_collapse_signature(
+        self,
+        cohort: list[tuple[FleetOrder, FleetRobot]],
+    ) -> tuple[tuple[str, str, int], ...]:
+        """Reset failed pockets when the physical collapse episode changes."""
         signature = tuple(sorted(
             (
                 robot.name,
@@ -271,7 +298,17 @@ class RollingContinuationMixin:
         if signature != self._rolling_vacancy_recovery_signature:
             self._rolling_vacancy_recovery_signature = signature
             self._rolling_vacancy_recovery_blacklist.clear()
+        return signature
 
+    def _rolling_collapse_dependencies(
+        self,
+        cohort: list[tuple[FleetOrder, FleetRobot]],
+    ) -> tuple[
+        dict[str, set[str]],
+        dict[str, tuple[FleetOrder, FleetRobot]],
+        bool,
+    ]:
+        """Build the resource dependency graph for stopped route prefixes."""
         starts = {
             robot.name: str(robot.route_chunk_goal_lm or "")
             for _, robot in cohort
@@ -327,39 +364,34 @@ class RollingContinuationMixin:
                     if blocker_name in dependencies
                     and blocker_name != requester_name
                 )
+        return dependencies, by_name, dependencies_complete
 
-        sinks = (
-            [
-                name
-                for name, blocked_by in dependencies.items()
-                if not blocked_by
-            ]
-            if dependencies_complete
-            else []
-        )
-        if dependencies_complete and sinks:
-            incoming = {
-                name: sum(
-                    name in blocked_by
-                    for blocked_by in dependencies.values()
-                )
-                for name in sinks
-            }
-            sink_name = min(
-                sinks,
-                key=lambda name: (-incoming[name], name),
+    @staticmethod
+    def _rolling_collapse_sink(
+        dependencies: dict[str, set[str]],
+        dependencies_complete: bool,
+    ) -> str:
+        """Choose the unblocked body that releases the most peers."""
+        if not dependencies_complete:
+            return ""
+        sinks = [
+            name
+            for name, blocked_by in dependencies.items()
+            if not blocked_by
+        ]
+        if not sinks:
+            return ""
+        incoming = {
+            name: sum(
+                name in blocked_by
+                for blocked_by in dependencies.values()
             )
-            order, robot = by_name[sink_name]
-            return [self._rolling_collapse_prefetch_entry(order, robot)]
-
-        vacancy_entry = self._rolling_vacancy_escape_entry(
-            cohort,
-            signature,
+            for name in sinks
+        }
+        return min(
+            sinks,
+            key=lambda name: (-incoming[name], name),
         )
-        # No free pocket is not a terminal scheduler state. Falling back to
-        # the ordinary fair endpoint queue lets SIPP/local recovery retry when
-        # traffic changes instead of suppressing all continuations forever.
-        return [vacancy_entry] if vacancy_entry is not None else None
 
     def _rolling_collapse_route_prefix(
         self,

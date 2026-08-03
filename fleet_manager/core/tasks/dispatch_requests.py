@@ -6,10 +6,10 @@ from dataclasses import dataclass, field
 import math
 from typing import Any
 
-from fleet_manager.core.constants import (
+from fleet_manager.core.domain.constants import (
     TERMINAL_ORDER_STATUSES,
 )
-from fleet_manager.core.models import FleetOrder, FleetRobot
+from fleet_manager.core.domain.models import FleetOrder, FleetRobot
 from fleet_manager.core.traffic.corridor_scheduler import (
     CorridorRequest,
     CorridorSlot,
@@ -17,6 +17,7 @@ from fleet_manager.core.traffic.corridor_scheduler import (
 
 
 DispatchEntry = tuple[FleetOrder, FleetRobot, dict[str, Any], str]
+ManualReconnectTarget = tuple[str, Any]
 
 
 @dataclass(slots=True)
@@ -303,7 +304,6 @@ class DispatchRequestBatchMixin:
         context: _PredispatchCoordination,
     ) -> None:
         stationary_entries = context.stationary_entries
-        by_name = context.by_name
         state = context.state
         local_limit = max(2, int(self.planner.local_cbs_max_robots))
         all_release_names = {entry[1].name for entry in stationary_entries}
@@ -434,12 +434,8 @@ class DispatchRequestBatchMixin:
         self,
         context: _PredispatchCoordination,
     ) -> bool:
-        by_name = context.by_name
         state = context.state
-        protected_names = context.protected_names
         local_limit = context.local_limit
-        routes = context.routes
-        starts = context.starts
         adjacency = context.adjacency
         components = context.components
         component_keys = set(components)
@@ -676,15 +672,61 @@ class DispatchRequestBatchMixin:
         route can be planned. Keeping it as part of the same order avoids both
         teleporting the robot and silently dropping the operator's goal.
         """
+        target = self._manual_reconnect_target(order, robot)
+        if target is None:
+            return False
+        reconnect_lm, landmark = target
+        trajectory = self._manual_reconnect_trajectory(
+            order,
+            robot,
+            reconnect_lm,
+            landmark,
+        )
+        if not trajectory:
+            robot.current_lm = reconnect_lm
+            return False
+        reason = self._manual_reconnect_blocked_reason(robot, trajectory)
+        if reason:
+            self._set_order_error(
+                order,
+                f"manual graph reconnect blocked: {reason}",
+            )
+            return False
+        self._commit_manual_graph_reconnect(
+            order,
+            robot,
+            reconnect_lm,
+            final_goal,
+            trajectory,
+        )
+        return True
+
+    def _manual_reconnect_target(
+        self,
+        order: FleetOrder,
+        robot: FleetRobot,
+    ) -> ManualReconnectTarget | None:
+        """Resolve a simulated manual pose to its nearest graph landmark."""
         if robot.is_remote() or robot.pose is None:
             self._set_order_error(order, "robot has no graph-safe start pose")
-            return False
+            return None
         reconnect_lm = self._nearest_lm_for_robot(robot)
         landmark = self.landmarks.get(reconnect_lm)
         if landmark is None:
             self._set_order_error(order, "no graph landmark near manual pose")
-            return False
+            return None
+        return reconnect_lm, landmark
 
+    def _manual_reconnect_trajectory(
+        self,
+        order: FleetOrder,
+        robot: FleetRobot,
+        reconnect_lm: str,
+        landmark: Any,
+    ) -> list[dict[str, Any]]:
+        """Generate a sampled rotate-then-drive approach to the graph."""
+        if robot.pose is None:
+            return []
         start_pose = {
             "x": float(robot.pose.get("x", 0.0) or 0.0),
             "y": float(robot.pose.get("y", 0.0) or 0.0),
@@ -694,8 +736,7 @@ class DispatchRequestBatchMixin:
         dy = float(landmark.y) - start_pose["y"]
         distance = math.hypot(dx, dy)
         if distance <= 0.000001:
-            robot.current_lm = reconnect_lm
-            return False
+            return []
 
         navigation = self.params.get("navigation", {})
         if not isinstance(navigation, dict):
@@ -706,7 +747,11 @@ class DispatchRequestBatchMixin:
         )
         turn_speed = max(
             0.05,
-            float(order.turn_speed or navigation.get("max_angular_speed", 0.9) or 0.9),
+            float(
+                order.turn_speed
+                or navigation.get("max_angular_speed", 0.9)
+                or 0.9
+            ),
         )
         heading = math.atan2(dy, dx)
         yaw_delta = math.atan2(
@@ -715,7 +760,11 @@ class DispatchRequestBatchMixin:
         )
         sample_dt = max(0.03, min(0.08, self.collision.sample_time_step() / 2.0))
         rotate_duration = abs(yaw_delta) / turn_speed
-        rotate_steps = max(1, int(math.ceil(rotate_duration / sample_dt))) if rotate_duration > 0.01 else 0
+        rotate_steps = (
+            max(1, int(math.ceil(rotate_duration / sample_dt)))
+            if rotate_duration > 0.01
+            else 0
+        )
         move_duration = distance / speed
         move_steps = max(
             1,
@@ -754,7 +803,14 @@ class DispatchRequestBatchMixin:
             if index == move_steps:
                 sample["lm"] = reconnect_lm
             trajectory.append(sample)
+        return trajectory
 
+    def _manual_reconnect_blocked_reason(
+        self,
+        robot: FleetRobot,
+        trajectory: list[dict[str, Any]],
+    ) -> str:
+        """Return the first static or live-footprint collision reason."""
         for sample in trajectory:
             reason = self.collision.blocked_reason(
                 pose=sample,
@@ -769,9 +825,18 @@ class DispatchRequestBatchMixin:
                         reason = f"robot footprint conflict with {other.name}"
                         break
             if reason:
-                self._set_order_error(order, f"manual graph reconnect blocked: {reason}")
-                return False
+                return str(reason)
+        return ""
 
+    def _commit_manual_graph_reconnect(
+        self,
+        order: FleetOrder,
+        robot: FleetRobot,
+        reconnect_lm: str,
+        final_goal: str,
+        trajectory: list[dict[str, Any]],
+    ) -> None:
+        """Commit the validated approach chunk and retain the operator goal."""
         now = self._now()
         robot.current_lm = reconnect_lm
         robot.target_lm = reconnect_lm
@@ -807,7 +872,6 @@ class DispatchRequestBatchMixin:
             "info",
             f"manual graph reconnect: {robot.name}->{reconnect_lm}; then {final_goal}",
         )
-        return True
 
     def _dispatch_simulated_order_batch(
         self,

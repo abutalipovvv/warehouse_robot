@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from fleet_manager.core.constants import TERMINAL_ORDER_STATUSES
-from fleet_manager.core.models import FleetOrder, FleetRobot
+from fleet_manager.core.domain.constants import TERMINAL_ORDER_STATUSES
+from fleet_manager.core.domain.models import FleetOrder, FleetRobot
 
 
 class OrderLifecycleMixin:

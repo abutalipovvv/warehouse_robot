@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from fleet_manager.core.models import FleetOrder, FleetRobot
+from fleet_manager.core.domain.models import FleetOrder, FleetRobot
 from fleet_manager.core.traffic.corridor_scheduler import CorridorSlot
 
 

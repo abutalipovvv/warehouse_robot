@@ -1,6 +1,6 @@
 """Real robot gateway backed by the existing gRPC tunnel."""
 
-from fleet_manager.runtime.grpc.api.client import GrpcRobotAdapter
+from ..grpc.api.client import GrpcRobotAdapter
 
 
 class GrpcRobotGateway(GrpcRobotAdapter):

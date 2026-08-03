@@ -5,8 +5,8 @@ from __future__ import annotations
 from typing import Any
 
 from fleet_manager.core.manager import FleetManagerCore
-from fleet_manager.runtime.gateways.grpc import GrpcRobotGateway
-from fleet_manager.runtime.grpc.mixin import GrpcRobotRuntimeMixin
+from ..gateways.grpc import GrpcRobotGateway
+from .mixin import GrpcRobotRuntimeMixin
 
 
 class FleetManagerROS(GrpcRobotRuntimeMixin, FleetManagerCore):

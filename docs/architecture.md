@@ -101,6 +101,25 @@ The large compatibility surfaces are composition facades:
 Existing hook names remain on these facade classes, while each implementation
 file represents one reason to change.
 
+Long recovery flows are pipelines rather than single methods:
+
+- rolling collapse collects a stopped cohort, builds a resource-dependency
+  graph, selects a free sink, and only then runs bounded vacancy Dijkstra;
+- stationary clearance restores one causal episode, proves a releasing graph
+  cut, selects a safe pocket, and commits an internal maintenance order;
+- deadlock evacuation separates swept-body geometry, activation policy,
+  graph-escape planning, stale corridor-state release, and atomic commit;
+- rolling result trimming separates the horizon boundary, corridor atomicity,
+  resource-safe holding point, physical trajectory boundary, and array commit.
+
+The independently deployed robot controller follows the same pattern.
+`robot_planner.executor` uses `RouteControlParameters`, `RouteProgress`, and
+`RouteSteeringState` to separate parameter normalization, path projection,
+reservation gating, arrival checks, steering geometry, and velocity limits.
+The normalized parameters are cached by the params mapping identity; hot reload
+replaces that mapping and therefore invalidates the cache without polling or
+locks in the 10 Hz control path.
+
 The same rule applies to ROS runtime code. The canonical server runtime under
 `fleet_manager/runtime/grpc/api` is split into lifecycle, control, maps, SLAM,
 parameters and ROS helpers. The independently deployable

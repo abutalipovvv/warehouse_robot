@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from fleet_manager.core.endpoints import (
+from fleet_manager.core.transport.endpoints import (
     DEFAULT_GRPC_PORT,
     EndpointError as RobotApiError,
     RobotEndpoint,

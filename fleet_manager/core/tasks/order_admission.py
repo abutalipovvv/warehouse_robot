@@ -6,13 +6,13 @@ from dataclasses import dataclass, field
 import math
 from typing import Any
 
-from fleet_manager.core.constants import (
+from fleet_manager.core.domain.constants import (
     FLEET_CONTROL_OWNER_ID,
     ORDER_SEQUENCE_KEYS,
     ORDER_TARGET_KEYS,
     TERMINAL_ORDER_STATUSES,
 )
-from fleet_manager.core.models import FleetOrder, FleetRobot
+from fleet_manager.core.domain.models import FleetOrder, FleetRobot
 
 
 DispatchEntry = tuple[FleetOrder, FleetRobot, dict[str, Any], str]

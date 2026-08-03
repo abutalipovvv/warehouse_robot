@@ -34,7 +34,10 @@ python3 -m pytest -q \
   tests/test_fleet_mapf_rolling_sipp.py \
   tests/test_corridor_scheduler.py \
   tests/test_cbs_components.py \
-  tests/test_rolling_sipp_components.py
+  tests/test_rolling_sipp_components.py \
+  tests/test_traffic_routing_components.py \
+  tests/test_motion_components.py \
+  tests/test_robot_timed_route.py
 ```
 
 For one file or one test:
@@ -66,6 +69,12 @@ The suite also enforces dependency direction, declarative package
 initializers, gRPC source parity for the standalone ROS package, atomic file
 replacement, runtime-loop ownership, and component boundaries for the
 planning algorithms.
+
+For a behavior-preserving algorithm split, also run a seeded differential
+harness against the committed implementation. Compare both the return value
+and mutated state/call order. Benchmark control-tick, occupancy, A*, and other
+hot paths separately; a recovery path that runs only after a timeout should be
+reported in absolute microseconds as well as a ratio.
 
 ## Coverage
 

@@ -1,0 +1,21 @@
+"""Compatibility import for the domain constants public API."""
+
+from fleet_manager.core.domain.constants import (
+    EXTERNAL_CONTROL_PAUSE_PREFIX,
+    FLEET_CONTROL_OWNER_ID,
+    FLEET_CONTROL_OWNER_NAME,
+    ORDER_ID_KEYS,
+    ORDER_SEQUENCE_KEYS,
+    ORDER_TARGET_KEYS,
+    TERMINAL_ORDER_STATUSES,
+)
+
+__all__ = [
+    "EXTERNAL_CONTROL_PAUSE_PREFIX",
+    "FLEET_CONTROL_OWNER_ID",
+    "FLEET_CONTROL_OWNER_NAME",
+    "ORDER_ID_KEYS",
+    "ORDER_SEQUENCE_KEYS",
+    "ORDER_TARGET_KEYS",
+    "TERMINAL_ORDER_STATUSES",
+]

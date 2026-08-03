@@ -23,7 +23,7 @@ import yaml
 from fleet_manager.core.route_core.map_loader import WarehouseMapLoader
 from fleet_manager.core.route_core.models import WorldPoint
 from fleet_manager.map_data.pgm import read_pgm_size
-from fleet_manager.storage import atomic_write_bytes, atomic_write_text
+from fleet_manager.core.io.atomic_files import atomic_write_bytes, atomic_write_text
 
 from .contracts import (
     DEFAULT_GRPC_MAP_LOAD_TIMEOUT_SEC,

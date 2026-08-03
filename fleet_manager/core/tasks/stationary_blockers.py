@@ -2,15 +2,16 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from heapq import heappop, heappush
 import math
 from typing import Any
 
-from fleet_manager.core.constants import (
+from fleet_manager.core.domain.constants import (
     FLEET_CONTROL_OWNER_ID,
     TERMINAL_ORDER_STATUSES,
 )
-from fleet_manager.core.models import FleetOrder, FleetRobot
+from fleet_manager.core.domain.models import FleetOrder, FleetRobot
 
 
 CommandedVacancyCandidate = tuple[
@@ -21,6 +22,38 @@ CommandedVacancyCandidate = tuple[
     list[str],
     tuple[tuple[str, str, int], ...],
 ]
+VacancySignature = tuple[tuple[str, str, int], ...]
+RollingVacancyCandidate = tuple[
+    float,
+    str,
+    str,
+    FleetOrder,
+    FleetRobot,
+    list[str],
+]
+
+
+@dataclass(slots=True)
+class _CommandedVacancyContext:
+    """Stable causal state for one queued departure and its waiters."""
+
+    sink: FleetRobot
+    sink_order: FleetOrder
+    sink_lm: str
+    signature: VacancySignature
+    next_landmark: Any
+    sink_edges: set[tuple[str, str]]
+
+
+@dataclass(slots=True)
+class _StationaryCutSearch:
+    """Bounded proof inputs for one unchanged stationary graph cut."""
+
+    retry_state: dict[str, Any]
+    start_lm: str
+    goal_lm: str
+    candidates: list[FleetRobot]
+    signature: tuple[Any, ...]
 
 
 class StationaryBlockerRecoveryMixin:
@@ -153,16 +186,7 @@ class StationaryBlockerRecoveryMixin:
     def _commanded_sink_vacancy_candidates(
         self,
     ) -> tuple[list[CommandedVacancyCandidate], set[str]]:
-        candidates: list[
-            tuple[
-                tuple[float, int, str, str],
-                FleetRobot,
-                FleetOrder,
-                FleetRobot,
-                list[str],
-                tuple[tuple[str, str, int], ...],
-            ]
-        ] = []
+        candidates: list[CommandedVacancyCandidate] = []
         live_episode_sinks: set[str] = {
             str(state.get("queued_departure_sink") or "")
             for state in self._runtime_replans.values()
@@ -192,139 +216,193 @@ class StationaryBlockerRecoveryMixin:
             if not waiters:
                 continue
             live_episode_sinks.add(sink.name)
-            sink_lm = self._traffic_lm_for_robot(sink)
-            if sink_lm not in self.landmarks:
+            context = self._commanded_vacancy_context(
+                sink,
+                sink_order,
+                waiters,
+            )
+            if context is None:
                 continue
-            signature = tuple(sorted(
-                (
-                    robot.name,
-                    self._traffic_lm_for_robot(robot),
-                    int(robot.route_revision),
-                )
-                for robot in [sink, *waiters]
-            ))
-            if (
-                signature
-                != self._commanded_sink_vacancy_signatures.get(sink.name)
-            ):
-                self._commanded_sink_vacancy_signatures[sink.name] = signature
-                self._commanded_sink_vacancy_blacklist = {
-                    item
-                    for item in self._commanded_sink_vacancy_blacklist
-                    if item[0] != sink.name
-                }
-
-            route_nodes = [
-                str(node)
-                for node in sink_order.spatial_route_nodes
-                if str(node) in self.landmarks
-            ]
-            next_lm = ""
-            if sink_lm in route_nodes:
-                suffix = route_nodes[route_nodes.index(sink_lm):]
-                if len(suffix) > 1:
-                    next_lm = suffix[1]
-            next_landmark = self.landmarks.get(next_lm)
-            sink_edges = self._blocked_edges_for_lms({sink_lm})
             for waiter in waiters:
-                if waiter.name in self._runtime_replans:
-                    continue
-                waiter_order = self._active_order_for_robot(waiter)
-                start_lm = self._safe_replan_start_lm(waiter)
-                if (
-                    waiter_order is None
-                    or start_lm not in self.landmarks
-                    or waiter.is_remote()
-                ):
-                    continue
-                forbidden = {
-                    pocket
-                    for known_sink, known_signature, owner, pocket
-                    in self._commanded_sink_vacancy_blacklist
-                    if known_sink == sink.name
-                    and known_signature == signature
-                    and owner == waiter.name
-                }
-                # A graph node can be distinct from the queued sink while its
-                # approach still enters that robot's physical footprint.  In
-                # the live Kiva case the selected "escape" began by moving an
-                # upstream waiter one LM *towards* the parked departure. SIPP
-                # could commit the graph route, but runtime collision safety
-                # stopped it before the first sample; the same transaction was
-                # then rebuilt at 10 Hz. Block every known-bad first edge and
-                # audit the complete route against the causal sink body.
-                blocked_escape_edges = set(sink_edges)
-                for neighbour in self.planner.graph.get(start_lm, []):
-                    neighbour = str(neighbour)
-                    if neighbour not in self.landmarks:
-                        continue
-                    if self._graph_escape_route_current_body_blocker(
-                        waiter,
-                        [start_lm, neighbour],
-                        only_robot_names={sink.name},
-                    ):
-                        blocked_escape_edges.add((start_lm, neighbour))
-
-                escape: list[str] = []
-                # A full-route audit may reject an intermediate sweep even
-                # when its first edge is safe. Try a bounded number of other
-                # pockets in this scheduler turn and persist rejected goals
-                # for the unchanged physical episode.
-                for _ in range(4):
-                    candidate = self._stationary_clearance_route(
-                        sink,
-                        waiter,
-                        forbidden_lms=forbidden,
-                        extra_blocked_edges=blocked_escape_edges,
-                        start_lm_override=start_lm,
-                    )
-                    if len(candidate) < 2:
-                        break
-                    body_blocker = self._graph_escape_route_current_body_blocker(
-                        waiter,
-                        candidate,
-                        only_robot_names={sink.name},
-                    )
-                    if not body_blocker:
-                        escape = candidate
-                        break
-                    rejected_pocket = str(candidate[-1])
-                    self._commanded_sink_vacancy_blacklist.add(
-                        (
-                            sink.name,
-                            signature,
-                            waiter.name,
-                            rejected_pocket,
-                        )
-                    )
-                    if rejected_pocket in forbidden:
-                        break
-                    forbidden.add(rejected_pocket)
-                if len(escape) < 2:
-                    continue
-                waiter_landmark = self.landmarks.get(start_lm)
-                exit_distance = (
-                    math.hypot(
-                        float(waiter_landmark.x) - float(next_landmark.x),
-                        float(waiter_landmark.y) - float(next_landmark.y),
-                    )
-                    if waiter_landmark is not None and next_landmark is not None
-                    else float("inf")
-                )
-                candidates.append((
-                    (
-                        exit_distance,
-                        len(escape),
-                        waiter.name,
-                        str(escape[-1]),
-                    ),
-                    sink,
-                    sink_order,
+                candidate = self._commanded_waiter_vacancy_candidate(
+                    context,
                     waiter,
-                    escape,
-                    signature,
-                ))
+                )
+                if candidate is not None:
+                    candidates.append(candidate)
         return candidates, live_episode_sinks
+
+    def _commanded_vacancy_context(
+        self,
+        sink: FleetRobot,
+        sink_order: FleetOrder,
+        waiters: list[FleetRobot],
+    ) -> _CommandedVacancyContext | None:
+        sink_lm = self._traffic_lm_for_robot(sink)
+        if sink_lm not in self.landmarks:
+            return None
+        signature = tuple(sorted(
+            (
+                robot.name,
+                self._traffic_lm_for_robot(robot),
+                int(robot.route_revision),
+            )
+            for robot in [sink, *waiters]
+        ))
+        if (
+            signature
+            != self._commanded_sink_vacancy_signatures.get(sink.name)
+        ):
+            self._commanded_sink_vacancy_signatures[sink.name] = signature
+            self._commanded_sink_vacancy_blacklist = {
+                item
+                for item in self._commanded_sink_vacancy_blacklist
+                if item[0] != sink.name
+            }
+
+        route_nodes = [
+            str(node)
+            for node in sink_order.spatial_route_nodes
+            if str(node) in self.landmarks
+        ]
+        next_lm = ""
+        if sink_lm in route_nodes:
+            suffix = route_nodes[route_nodes.index(sink_lm):]
+            if len(suffix) > 1:
+                next_lm = suffix[1]
+        return _CommandedVacancyContext(
+            sink=sink,
+            sink_order=sink_order,
+            sink_lm=sink_lm,
+            signature=signature,
+            next_landmark=self.landmarks.get(next_lm),
+            sink_edges=self._blocked_edges_for_lms({sink_lm}),
+        )
+
+    def _commanded_waiter_vacancy_candidate(
+        self,
+        context: _CommandedVacancyContext,
+        waiter: FleetRobot,
+    ) -> CommandedVacancyCandidate | None:
+        if waiter.name in self._runtime_replans:
+            return None
+        waiter_order = self._active_order_for_robot(waiter)
+        start_lm = self._safe_replan_start_lm(waiter)
+        if (
+            waiter_order is None
+            or start_lm not in self.landmarks
+            or waiter.is_remote()
+        ):
+            return None
+        forbidden = {
+            pocket
+            for known_sink, known_signature, owner, pocket
+            in self._commanded_sink_vacancy_blacklist
+            if known_sink == context.sink.name
+            and known_signature == context.signature
+            and owner == waiter.name
+        }
+        blocked_edges = self._commanded_sink_escape_blocked_edges(
+            context.sink,
+            waiter,
+            start_lm,
+            context.sink_edges,
+        )
+        escape = self._commanded_sink_escape_route(
+            context,
+            waiter,
+            start_lm,
+            forbidden,
+            blocked_edges,
+        )
+        if len(escape) < 2:
+            return None
+        waiter_landmark = self.landmarks.get(start_lm)
+        exit_distance = (
+            math.hypot(
+                float(waiter_landmark.x)
+                - float(context.next_landmark.x),
+                float(waiter_landmark.y)
+                - float(context.next_landmark.y),
+            )
+            if (
+                waiter_landmark is not None
+                and context.next_landmark is not None
+            )
+            else float("inf")
+        )
+        return (
+            (
+                exit_distance,
+                len(escape),
+                waiter.name,
+                str(escape[-1]),
+            ),
+            context.sink,
+            context.sink_order,
+            waiter,
+            escape,
+            context.signature,
+        )
+
+    def _commanded_sink_escape_blocked_edges(
+        self,
+        sink: FleetRobot,
+        waiter: FleetRobot,
+        start_lm: str,
+        sink_edges: set[tuple[str, str]],
+    ) -> set[tuple[str, str]]:
+        """Reject first steps that enter the queued sink's body envelope."""
+        blocked_edges = set(sink_edges)
+        for neighbour in self.planner.graph.get(start_lm, []):
+            neighbour = str(neighbour)
+            if neighbour not in self.landmarks:
+                continue
+            if self._graph_escape_route_current_body_blocker(
+                waiter,
+                [start_lm, neighbour],
+                only_robot_names={sink.name},
+            ):
+                blocked_edges.add((start_lm, neighbour))
+        return blocked_edges
+
+    def _commanded_sink_escape_route(
+        self,
+        context: _CommandedVacancyContext,
+        waiter: FleetRobot,
+        start_lm: str,
+        forbidden: set[str],
+        blocked_edges: set[tuple[str, str]],
+    ) -> list[str]:
+        """Try at most four safe pockets for one unchanged episode."""
+        for _ in range(4):
+            candidate = self._stationary_clearance_route(
+                context.sink,
+                waiter,
+                forbidden_lms=forbidden,
+                extra_blocked_edges=blocked_edges,
+                start_lm_override=start_lm,
+            )
+            if len(candidate) < 2:
+                break
+            body_blocker = self._graph_escape_route_current_body_blocker(
+                waiter,
+                candidate,
+                only_robot_names={context.sink.name},
+            )
+            if not body_blocker:
+                return candidate
+            rejected_pocket = str(candidate[-1])
+            self._commanded_sink_vacancy_blacklist.add((
+                context.sink.name,
+                context.signature,
+                waiter.name,
+                rejected_pocket,
+            ))
+            if rejected_pocket in forbidden:
+                break
+            forbidden.add(rejected_pocket)
+        return []
 
     def _prune_commanded_sink_vacancy_episodes(
         self,
@@ -626,13 +704,32 @@ class StationaryBlockerRecoveryMixin:
         connectivity; the normal clearance selector then proves that its
         physical move is safe and genuinely releases the waiter.
         """
+        search = self._stationary_cut_search(order, waiter)
+        if search is None:
+            return ""
+        candidate_names = self._stationary_cut_candidate_names(search, waiter)
+        for candidate_name in candidate_names:
+            if self._queue_stationary_cut_candidate(
+                waiter,
+                candidate_name,
+                cause=cause,
+            ):
+                return candidate_name
+        return ""
+
+    def _stationary_cut_search(
+        self,
+        order: FleetOrder,
+        waiter: FleetRobot,
+    ) -> _StationaryCutSearch | None:
+        """Collect and rank the movable bodies for one bounded cut proof."""
         retry_state = self._stationary_order_retry_state.get(order.order_id)
         if (
             not isinstance(retry_state, dict)
             or int(retry_state.get("failure_count", 0) or 0)
             < self._stationary_clearance_failure_limit()
         ):
-            return ""
+            return None
         start_lm = self._safe_replan_start_lm(waiter)
         goal_lm = self._active_order_target(order)
         if (
@@ -640,7 +737,7 @@ class StationaryBlockerRecoveryMixin:
             or goal_lm not in self.landmarks
             or start_lm == goal_lm
         ):
-            return ""
+            return None
 
         candidates = sorted(
             (
@@ -664,108 +761,132 @@ class StationaryBlockerRecoveryMixin:
             ),
         )
         if not candidates:
-            return ""
+            return None
 
         # The proof is deliberately bounded for very large fleets. Nearest
         # cut bodies are checked first, while a changed fleet signature makes
         # the next episode eligible for a fresh scan.
         candidates = candidates[:64]
-        search_signature = self._stationary_cut_search_signature(
-            order,
-            waiter,
-            start_lm,
-            goal_lm,
-            candidates,
+        return _StationaryCutSearch(
+            retry_state=retry_state,
+            start_lm=start_lm,
+            goal_lm=goal_lm,
+            candidates=candidates,
+            signature=self._stationary_cut_search_signature(
+                order,
+                waiter,
+                start_lm,
+                goal_lm,
+                candidates,
+            ),
         )
-        cached_signature = retry_state.get("cut_search_signature")
-        if cached_signature == search_signature:
-            candidate_names = tuple(
+
+    def _stationary_cut_candidate_names(
+        self,
+        search: _StationaryCutSearch,
+        waiter: FleetRobot,
+    ) -> tuple[str, ...]:
+        """Reuse an unchanged proof or calculate the releasing candidates."""
+        if search.retry_state.get("cut_search_signature") == search.signature:
+            return tuple(
                 str(name)
-                for name in retry_state.get("cut_candidate_names", ())
+                for name in search.retry_state.get("cut_candidate_names", ())
                 if str(name) in self.robots
             )
-        else:
-            stationary_lms = self._stationary_robot_blocked_lms(
-                exclude_robot_names={waiter.name},
-            )
-            names_by_lm: dict[str, list[str]] = {}
-            for candidate in candidates:
-                candidate_lm = self._traffic_lm_for_robot(candidate)
-                names_by_lm.setdefault(candidate_lm, []).append(candidate.name)
-            dynamic_edges = self._dynamic_blocked_edges()
-            proven: list[tuple[float, str]] = []
-            for candidate in candidates:
-                candidate_lm = self._traffic_lm_for_robot(candidate)
-                # Removing one of multiple bodies on the same LM does not
-                # release that graph resource.
-                if len(names_by_lm.get(candidate_lm, ())) != 1:
-                    continue
-                blocked_lms = set(stationary_lms)
-                blocked_lms.discard(candidate_lm)
-                try:
-                    route = self.planner.route_planner.find_route(
-                        start_lm,
-                        goal_lm,
-                        blocked_edges=(
-                            dynamic_edges
-                            | self._blocked_edges_for_lms(blocked_lms)
-                        ),
-                    )
-                except ValueError:
-                    continue
-                if candidate_lm not in route.nodes:
-                    continue
-                proven.append((float(route.length), candidate.name))
-            proven.sort(key=lambda item: (item[0], item[1]))
-            candidate_names = tuple(name for _, name in proven)
-            retry_state["cut_search_signature"] = search_signature
-            retry_state["cut_candidate_names"] = candidate_names
+        candidate_names = self._prove_stationary_cut_candidates(search, waiter)
+        search.retry_state["cut_search_signature"] = search.signature
+        search.retry_state["cut_candidate_names"] = candidate_names
+        return candidate_names
 
-        for candidate_name in candidate_names:
-            blocker = self.robots.get(candidate_name)
-            if not self._inactive_stationary_clearance_candidate(
-                blocker,
-                exclude_name=waiter.name,
-            ):
+    def _prove_stationary_cut_candidates(
+        self,
+        search: _StationaryCutSearch,
+        waiter: FleetRobot,
+    ) -> tuple[str, ...]:
+        """Prove which single-body removal reconnects start and goal."""
+        stationary_lms = self._stationary_robot_blocked_lms(
+            exclude_robot_names={waiter.name},
+        )
+        names_by_lm: dict[str, list[str]] = {}
+        for candidate in search.candidates:
+            candidate_lm = self._traffic_lm_for_robot(candidate)
+            names_by_lm.setdefault(candidate_lm, []).append(candidate.name)
+        dynamic_edges = self._dynamic_blocked_edges()
+        proven: list[tuple[float, str]] = []
+        for candidate in search.candidates:
+            candidate_lm = self._traffic_lm_for_robot(candidate)
+            # Removing one of multiple bodies on the same LM does not release
+            # that graph resource.
+            if len(names_by_lm.get(candidate_lm, ())) != 1:
                 continue
-            replan_state = self._runtime_replans.get(waiter.name)
-            previous_blocker_names = (
-                tuple(replan_state.get("blocker_names", ()))
-                if isinstance(replan_state, dict)
-                else ()
-            )
-            if isinstance(replan_state, dict):
-                # The graph-cut proof is also the missing causal identity
-                # after a runtime restore. Mark the candidate during physical
-                # route validation so a maintenance path through the held
-                # waiter's body is rejected just as strictly as a
-                # planner-reported blocker.
-                replan_state["blocker_names"] = tuple(sorted({
-                    *(
-                        str(name)
-                        for name in previous_blocker_names
-                        if str(name)
+            blocked_lms = set(stationary_lms)
+            blocked_lms.discard(candidate_lm)
+            try:
+                route = self.planner.route_planner.find_route(
+                    search.start_lm,
+                    search.goal_lm,
+                    blocked_edges=(
+                        dynamic_edges
+                        | self._blocked_edges_for_lms(blocked_lms)
                     ),
-                    candidate_name,
-                }))
-            queued = self._queue_stationary_clearance_relocation(
-                waiter,
-                blocker,
-                cause=cause,
-            )
-            if not queued and isinstance(replan_state, dict):
-                if previous_blocker_names:
-                    replan_state["blocker_names"] = previous_blocker_names
-                else:
-                    replan_state.pop("blocker_names", None)
-            if queued:
-                self._event(
-                    "warn",
-                    f"{waiter.name} alternate stationary cut released by "
-                    f"{candidate_name}",
                 )
-                return candidate_name
-        return ""
+            except ValueError:
+                continue
+            if candidate_lm not in route.nodes:
+                continue
+            proven.append((float(route.length), candidate.name))
+        proven.sort(key=lambda item: (item[0], item[1]))
+        return tuple(name for _, name in proven)
+
+    def _queue_stationary_cut_candidate(
+        self,
+        waiter: FleetRobot,
+        candidate_name: str,
+        *,
+        cause: str,
+    ) -> bool:
+        """Temporarily attach causal identity and queue one proven move."""
+        blocker = self.robots.get(candidate_name)
+        if not self._inactive_stationary_clearance_candidate(
+            blocker,
+            exclude_name=waiter.name,
+        ):
+            return False
+        replan_state = self._runtime_replans.get(waiter.name)
+        previous_blocker_names = (
+            tuple(replan_state.get("blocker_names", ()))
+            if isinstance(replan_state, dict)
+            else ()
+        )
+        if isinstance(replan_state, dict):
+            # This identity lets physical route validation reject a
+            # maintenance path through the held waiter's body.
+            replan_state["blocker_names"] = tuple(sorted({
+                *(
+                    str(name)
+                    for name in previous_blocker_names
+                    if str(name)
+                ),
+                candidate_name,
+            }))
+        queued = self._queue_stationary_clearance_relocation(
+            waiter,
+            blocker,
+            cause=cause,
+        )
+        if not queued and isinstance(replan_state, dict):
+            if previous_blocker_names:
+                replan_state["blocker_names"] = previous_blocker_names
+            else:
+                replan_state.pop("blocker_names", None)
+        if not queued:
+            return False
+        self._event(
+            "warn",
+            f"{waiter.name} alternate stationary cut released by "
+            f"{candidate_name}",
+        )
+        return True
 
     def _stage_stationary_waiter_escape(
         self,
@@ -942,133 +1063,18 @@ class StationaryBlockerRecoveryMixin:
             if robot.route_chunk_goal_lm
         )
         blocked_edges = self._dynamic_blocked_edges()
-        candidates: list[
-            tuple[
-                float,
-                str,
-                str,
-                FleetOrder,
-                FleetRobot,
-                list[str],
-            ]
-        ] = []
+        candidates: list[RollingVacancyCandidate] = []
         for order, robot in sorted(cohort, key=lambda item: item[1].name):
-            start_lm = str(robot.route_chunk_goal_lm or "")
-            if start_lm not in self.landmarks:
-                continue
-            route_payload: dict[str, Any] = {}
-            if order.speed > 0.0:
-                route_payload["speed"] = order.speed
-            if order.acceleration > 0.0:
-                route_payload["acceleration"] = order.acceleration
-            speed = self.planner._route_speed(route_payload)
-            acceleration = self.planner._route_acceleration(route_payload)
-            graph = self.planner._traffic_graph(speed)
-            source_shared_resources = {
-                resource
-                for resource in graph.vertex_resources(start_lm)
-                if resource.kind in {
-                    "controlled_region",
-                    "mutex_zone",
-                    "clearance",
-                }
-            }
-            other_cohort_occupancy = set()
-            for _, other in cohort:
-                if other.name == robot.name:
-                    continue
-                other_start = str(other.route_chunk_goal_lm or "")
-                if other_start:
-                    other_cohort_occupancy.update(
-                        graph.vertex_resources(other_start)
-                    )
-            blocked_lms = occupied_lms - {start_lm}
-            horizon = self._rolling_horizon()
-            step_limit = self._rolling_horizon_steps()
-            queue: list[
-                tuple[float, int, str, tuple[str, ...]]
-            ] = [(0.0, 0, start_lm, (start_lm,))]
-            best_elapsed = {start_lm: 0.0}
-            while queue:
-                elapsed, edge_count, node, path_tuple = heappop(queue)
-                if elapsed > best_elapsed.get(node, float("inf")) + 0.000001:
-                    continue
-                for neighbour in sorted(self.planner.graph.get(node, [])):
-                    lane = graph.lane_for(node, neighbour)
-                    if (
-                        lane is None
-                        or neighbour in blocked_lms
-                        or (node, neighbour) in blocked_edges
-                        or set(graph.lane_resources(lane)).intersection(
-                            other_cohort_occupancy
-                        )
-                    ):
-                        continue
-                    next_edge_count = edge_count + 1
-                    next_elapsed = elapsed + (
-                        self.planner._edge_tick_cost(
-                            node,
-                            neighbour,
-                            speed,
-                            acceleration,
-                        )
-                        * max(0.001, self.planner.time_step_sec)
-                    )
-                    if (
-                        step_limit > 0
-                        and next_edge_count > max(1, step_limit)
-                    ):
-                        continue
-                    if (
-                        horizon > 0.0
-                        and next_edge_count > 1
-                        and next_elapsed > horizon + 0.000001
-                    ):
-                        continue
-                    previous_best = best_elapsed.get(neighbour)
-                    if (
-                        previous_best is not None
-                        and previous_best <= next_elapsed + 0.000001
-                    ):
-                        continue
-                    best_elapsed[neighbour] = next_elapsed
-                    next_path = (*path_tuple, neighbour)
-                    vertex = graph.vertices.get(neighbour)
-                    blacklist_key = (signature, robot.name, neighbour)
-                    goal_resources = set(
-                        graph.vertex_resources(neighbour)
-                    )
-                    if (
-                        neighbour not in occupied_lms
-                        and vertex is not None
-                        and vertex.can_wait
-                        and not source_shared_resources.intersection(
-                            goal_resources
-                        )
-                        and blacklist_key
-                        not in self._rolling_vacancy_recovery_blacklist
-                    ):
-                        candidates.append(
-                            (
-                                next_elapsed,
-                                robot.name,
-                                neighbour,
-                                order,
-                                robot,
-                                list(next_path),
-                            )
-                        )
-                        queue.clear()
-                        break
-                    heappush(
-                        queue,
-                        (
-                            next_elapsed,
-                            next_edge_count,
-                            neighbour,
-                            next_path,
-                        ),
-                    )
+            candidate = self._rolling_vacancy_candidate(
+                order,
+                robot,
+                cohort,
+                signature,
+                occupied_lms,
+                blocked_edges,
+            )
+            if candidate is not None:
+                candidates.append(candidate)
 
         if not candidates:
             return None
@@ -1084,6 +1090,157 @@ class StationaryBlockerRecoveryMixin:
             "vacancyRecovery": True,
         })
         return entry
+
+    def _rolling_vacancy_candidate(
+        self,
+        order: FleetOrder,
+        robot: FleetRobot,
+        cohort: list[tuple[FleetOrder, FleetRobot]],
+        signature: VacancySignature,
+        occupied_lms: set[str],
+        blocked_edges: set[tuple[str, str]],
+    ) -> RollingVacancyCandidate | None:
+        """Prepare one robot's resource view and search for a wait pocket."""
+        start_lm = str(robot.route_chunk_goal_lm or "")
+        if start_lm not in self.landmarks:
+            return None
+        route_payload: dict[str, Any] = {}
+        if order.speed > 0.0:
+            route_payload["speed"] = order.speed
+        if order.acceleration > 0.0:
+            route_payload["acceleration"] = order.acceleration
+        speed = self.planner._route_speed(route_payload)
+        acceleration = self.planner._route_acceleration(route_payload)
+        graph = self.planner._traffic_graph(speed)
+        source_shared_resources = {
+            resource
+            for resource in graph.vertex_resources(start_lm)
+            if resource.kind in {
+                "controlled_region",
+                "mutex_zone",
+                "clearance",
+            }
+        }
+        other_cohort_occupancy: set[Any] = set()
+        for _, other in cohort:
+            if other.name == robot.name:
+                continue
+            other_start = str(other.route_chunk_goal_lm or "")
+            if other_start:
+                other_cohort_occupancy.update(
+                    graph.vertex_resources(other_start)
+                )
+        pocket = self._search_rolling_vacancy_pocket(
+            robot=robot,
+            signature=signature,
+            start_lm=start_lm,
+            graph=graph,
+            speed=speed,
+            acceleration=acceleration,
+            occupied_lms=occupied_lms,
+            blocked_lms=occupied_lms - {start_lm},
+            blocked_edges=blocked_edges,
+            other_cohort_occupancy=other_cohort_occupancy,
+            source_shared_resources=source_shared_resources,
+            horizon=self._rolling_horizon(),
+            step_limit=self._rolling_horizon_steps(),
+        )
+        if pocket is None:
+            return None
+        elapsed, pocket_lm, route_nodes = pocket
+        return (
+            elapsed,
+            robot.name,
+            pocket_lm,
+            order,
+            robot,
+            route_nodes,
+        )
+
+    def _search_rolling_vacancy_pocket(
+        self,
+        *,
+        robot: FleetRobot,
+        signature: VacancySignature,
+        start_lm: str,
+        graph: Any,
+        speed: float,
+        acceleration: float,
+        occupied_lms: set[str],
+        blocked_lms: set[str],
+        blocked_edges: set[tuple[str, str]],
+        other_cohort_occupancy: set[Any],
+        source_shared_resources: set[Any],
+        horizon: float,
+        step_limit: int,
+    ) -> tuple[float, str, list[str]] | None:
+        """Run the bounded Dijkstra search used only for cycle recovery."""
+        queue: list[tuple[float, int, str, tuple[str, ...]]] = [
+            (0.0, 0, start_lm, (start_lm,))
+        ]
+        best_elapsed = {start_lm: 0.0}
+        while queue:
+            elapsed, edge_count, node, path_tuple = heappop(queue)
+            if elapsed > best_elapsed.get(node, float("inf")) + 0.000001:
+                continue
+            for neighbour in sorted(self.planner.graph.get(node, [])):
+                lane = graph.lane_for(node, neighbour)
+                if (
+                    lane is None
+                    or neighbour in blocked_lms
+                    or (node, neighbour) in blocked_edges
+                    or set(graph.lane_resources(lane)).intersection(
+                        other_cohort_occupancy
+                    )
+                ):
+                    continue
+                next_edge_count = edge_count + 1
+                next_elapsed = elapsed + (
+                    self.planner._edge_tick_cost(
+                        node,
+                        neighbour,
+                        speed,
+                        acceleration,
+                    )
+                    * max(0.001, self.planner.time_step_sec)
+                )
+                if (
+                    step_limit > 0
+                    and next_edge_count > max(1, step_limit)
+                ):
+                    continue
+                if (
+                    horizon > 0.0
+                    and next_edge_count > 1
+                    and next_elapsed > horizon + 0.000001
+                ):
+                    continue
+                previous_best = best_elapsed.get(neighbour)
+                if (
+                    previous_best is not None
+                    and previous_best <= next_elapsed + 0.000001
+                ):
+                    continue
+                best_elapsed[neighbour] = next_elapsed
+                next_path = (*path_tuple, neighbour)
+                vertex = graph.vertices.get(neighbour)
+                goal_resources = set(graph.vertex_resources(neighbour))
+                if (
+                    neighbour not in occupied_lms
+                    and vertex is not None
+                    and vertex.can_wait
+                    and not source_shared_resources.intersection(
+                        goal_resources
+                    )
+                    and (signature, robot.name, neighbour)
+                    not in self._rolling_vacancy_recovery_blacklist
+                ):
+                    return next_elapsed, neighbour, list(next_path)
+                heappush(
+                    queue,
+                    (next_elapsed, next_edge_count, neighbour, next_path),
+                )
+        return None
 
     def _queue_controlled_corridor_exit_clearance(
         self,

@@ -5,13 +5,13 @@ from __future__ import annotations
 import math
 from typing import Any
 
-from fleet_manager.core.constants import (
+from fleet_manager.core.domain.constants import (
     EXTERNAL_CONTROL_PAUSE_PREFIX,
     FLEET_CONTROL_OWNER_ID,
     FLEET_CONTROL_OWNER_NAME,
     TERMINAL_ORDER_STATUSES,
 )
-from fleet_manager.core.models import FleetOrder, FleetRobot
+from fleet_manager.core.domain.models import FleetOrder, FleetRobot
 
 
 class GrpcRobotRuntimeMixin:

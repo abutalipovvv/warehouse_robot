@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable
 
-from fleet_manager.core.constants import TERMINAL_ORDER_STATUSES
-from fleet_manager.core.models import FleetOrder
+from fleet_manager.core.domain.constants import TERMINAL_ORDER_STATUSES
+from fleet_manager.core.domain.models import FleetOrder
 
 
 class FleetTaskManager:

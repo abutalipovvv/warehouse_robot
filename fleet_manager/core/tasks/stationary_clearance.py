@@ -2,13 +2,27 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any
 
-from fleet_manager.core.constants import (
+from fleet_manager.core.domain.constants import (
     FLEET_CONTROL_OWNER_ID,
     TERMINAL_ORDER_STATUSES,
 )
-from fleet_manager.core.models import FleetOrder, FleetRobot
+from fleet_manager.core.domain.models import FleetOrder, FleetRobot
+
+
+ClearanceWaiterSignature = tuple[str, str, str, str]
+
+
+@dataclass(frozen=True, slots=True)
+class _ClearanceEpisode:
+    """Stable inputs for one bounded parked-body relocation attempt."""
+
+    waiter_order: FleetOrder
+    waiter_signature: ClearanceWaiterSignature
+    now: float
+    forbidden_lms: set[str]
 
 
 class StationaryClearanceMixin:
@@ -483,6 +497,56 @@ class StationaryClearanceMixin:
         cause: str,
     ) -> bool:
         """Move a genuinely inactive parked body through the normal MAPF path."""
+        waiter_order = self._stationary_clearance_waiter_order(waiter, blocker)
+        if waiter_order is None:
+            return False
+        episode = self._stationary_clearance_episode(
+            waiter,
+            blocker,
+            waiter_order,
+        )
+        if episode is None:
+            return False
+        route_nodes = self._select_stationary_clearance_route(
+            waiter,
+            blocker,
+            episode.forbidden_lms,
+        )
+        if len(route_nodes) < 2:
+            return False
+        start_lm = str(route_nodes[0])
+        target_lm = str(route_nodes[-1])
+        order_id = self._stationary_clearance_order_id(blocker, episode.now)
+        relocation = self._build_stationary_clearance_order(
+            order_id,
+            blocker,
+            episode.waiter_order,
+            target_lm,
+            route_nodes,
+            episode.now,
+        )
+        self.orders[order_id] = relocation
+        self._record_stationary_clearance_episode(
+            waiter,
+            blocker,
+            episode,
+            order_id,
+            start_lm,
+            target_lm,
+        )
+        self._event(
+            "warn",
+            f"traffic clearance move queued: {blocker.name} "
+            f"{start_lm}->{target_lm}; releases {waiter.name} ({cause})",
+        )
+        return True
+
+    def _stationary_clearance_waiter_order(
+        self,
+        waiter: FleetRobot,
+        blocker: FleetRobot,
+    ) -> FleetOrder | None:
+        """Validate both robots and return the causal active waiter order."""
         if (
             not self._stationary_clearance_enabled()
             or waiter.name == blocker.name
@@ -492,22 +556,30 @@ class StationaryClearanceMixin:
             or blocker.target_lm
             or not blocker.remote_online
         ):
-            return False
+            return None
         pending = self._active_order_for_robot(blocker)
         if pending is not None and pending.status not in TERMINAL_ORDER_STATUSES:
-            return False
+            return None
         if blocker.is_remote():
             owner_id, _ = self._remote_control_owner(blocker)
             if owner_id and owner_id != FLEET_CONTROL_OWNER_ID:
-                return False
+                return None
         waiter_order = self._active_order_for_robot(waiter)
         if (
             waiter_order is None
             or waiter_order.status in TERMINAL_ORDER_STATUSES
             or waiter_order.internal_kind
         ):
-            return False
+            return None
+        return waiter_order
 
+    def _stationary_clearance_episode(
+        self,
+        waiter: FleetRobot,
+        blocker: FleetRobot,
+        waiter_order: FleetOrder,
+    ) -> _ClearanceEpisode | None:
+        """Restore cooldown and visited-pocket state for this causal waiter."""
         waiter_signature = (
             waiter.name,
             waiter_order.order_id,
@@ -526,16 +598,29 @@ class StationaryClearanceMixin:
                 current_order is not None
                 and current_order.status not in TERMINAL_ORDER_STATUSES
             ):
-                return False
+                return None
             if now < float(current_state.get("cooldown_until", 0.0) or 0.0):
-                return False
+                return None
             if tuple(current_state.get("waiter_signature", ())) == waiter_signature:
                 forbidden_lms.update(
                     str(lm_name)
                     for lm_name in current_state.get("visited_lms", ())
                     if str(lm_name) in self.landmarks
                 )
+        return _ClearanceEpisode(
+            waiter_order=waiter_order,
+            waiter_signature=waiter_signature,
+            now=now,
+            forbidden_lms=forbidden_lms,
+        )
 
+    def _select_stationary_clearance_route(
+        self,
+        waiter: FleetRobot,
+        blocker: FleetRobot,
+        forbidden_lms: set[str],
+    ) -> list[str]:
+        """Prefer an external pocket without acquiring a corridor token."""
         route_nodes = self._stationary_clearance_route(
             waiter,
             blocker,
@@ -562,10 +647,14 @@ class StationaryClearanceMixin:
                 require_waiter_release=True,
                 require_unowned_controlled_regions=True,
             )
-        if len(route_nodes) < 2:
-            return False
-        start_lm = str(route_nodes[0])
-        target_lm = str(route_nodes[-1])
+        return route_nodes
+
+    def _stationary_clearance_order_id(
+        self,
+        blocker: FleetRobot,
+        now: float,
+    ) -> str:
+        """Allocate a deterministic, collision-free maintenance order id."""
         order_id = f"traffic-clearance-{blocker.name}-{int(now * 1000)}"
         suffix = 1
         while order_id in self.orders:
@@ -573,11 +662,19 @@ class StationaryClearanceMixin:
             order_id = (
                 f"traffic-clearance-{blocker.name}-{int(now * 1000)}-{suffix}"
             )
+        return order_id
 
-        navigation = self.params.get("navigation", {})
-        if not isinstance(navigation, dict):
-            navigation = {}
-        relocation = FleetOrder(
+    def _build_stationary_clearance_order(
+        self,
+        order_id: str,
+        blocker: FleetRobot,
+        waiter_order: FleetOrder,
+        target_lm: str,
+        route_nodes: list[str],
+        now: float,
+    ) -> FleetOrder:
+        """Create the internal order that executes through ordinary MAPF."""
+        return FleetOrder(
             order_id=order_id,
             target_lm=target_lm,
             vehicle=blocker.name,
@@ -587,37 +684,37 @@ class StationaryClearanceMixin:
             targets=[target_lm],
             speed=float(waiter_order.speed or 0.0),
             acceleration=float(waiter_order.acceleration or 0.0),
-            rotate=(
-                bool(waiter_order.rotate)
-                if waiter_order is not None
-                else bool(navigation.get("simulate_rotation", False))
-            ),
+            rotate=bool(waiter_order.rotate),
             turn_speed=float(waiter_order.turn_speed or 0.0),
             stretch_motion_to_reservation_ticks=True,
             spatial_route_nodes=list(route_nodes),
             spatial_route_revision=self._next_route_revision(),
             internal_kind="traffic_clearance",
         )
-        self.orders[order_id] = relocation
-        visited_lms = set(forbidden_lms)
+
+    def _record_stationary_clearance_episode(
+        self,
+        waiter: FleetRobot,
+        blocker: FleetRobot,
+        episode: _ClearanceEpisode,
+        order_id: str,
+        start_lm: str,
+        target_lm: str,
+    ) -> None:
+        """Persist bounded retry state only after the order is installed."""
+        visited_lms = set(episode.forbidden_lms)
         visited_lms.update({start_lm, target_lm})
         self._stationary_clearance_relocations[blocker.name] = {
             "order_id": order_id,
             "waiter": waiter.name,
-            "waiter_signature": waiter_signature,
+            "waiter_signature": episode.waiter_signature,
             "origin_lm": start_lm,
             "target_lm": target_lm,
             "visited_lms": tuple(sorted(visited_lms)),
-            "queued_at": now,
+            "queued_at": episode.now,
             "cooldown_until": 0.0,
             "cooldown_sec": self._stationary_clearance_cooldown(),
         }
-        self._event(
-            "warn",
-            f"traffic clearance move queued: {blocker.name} "
-            f"{start_lm}->{target_lm}; releases {waiter.name} ({cause})",
-        )
-        return True
 
     def _active_stationary_clearance_for(
         self,
