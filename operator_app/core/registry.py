@@ -4,7 +4,7 @@ import json
 import os
 from pathlib import Path
 
-from fleet_manager.core.io.atomic_files import atomic_write_json
+from fleet_manager.storage import atomic_write_json
 
 from .models import KnownRobot
 

@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import pytest
 
-from fleet_manager.core.transport.endpoints import (
+from fleet_manager.manager.endpoints import (
     EndpointError,
     RobotEndpoint,
     build_grpc_endpoint,
     normalize_grpc_endpoint,
     parse_grpc_endpoint,
 )
+from fleet_manager.runtime.grpc.api.contracts import json_loads_object
 
 
 def test_endpoint_round_trip_preserves_identity_and_security() -> None:
@@ -59,11 +60,6 @@ def test_build_rejects_invalid_host_and_port() -> None:
         build_grpc_endpoint("localhost", 0)
 
 
-def test_grpc_contracts_reexport_the_neutral_endpoint_contract() -> None:
-    from fleet_manager.runtime.grpc.api import contracts as fleet_contracts
-    from operator_app.core.grpc import contracts as operator_contracts
-
-    assert fleet_contracts.RobotEndpoint is RobotEndpoint
-    assert operator_contracts.RobotEndpoint is RobotEndpoint
-    assert fleet_contracts.RobotApiError is EndpointError
-    assert operator_contracts.RobotApiError is EndpointError
+def test_runtime_json_contract_uses_the_neutral_endpoint_error() -> None:
+    with pytest.raises(EndpointError, match="invalid JSON"):
+        json_loads_object("not-json")

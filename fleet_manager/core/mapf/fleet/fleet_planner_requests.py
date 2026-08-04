@@ -6,7 +6,7 @@ from dataclasses import dataclass
 import math
 from typing import Any
 
-from ..cbs.lm_cbs import LmRobotRequest
+from ..cbs.cbs_models import LmRobotRequest
 
 
 @dataclass(slots=True)

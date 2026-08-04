@@ -2,14 +2,17 @@ from __future__ import annotations
 
 import math
 
-from fleet_manager.core.fleet.domain.models import FleetOrder, FleetRobot
+from fleet_manager.manager.tasks.models import FleetOrder
+from fleet_manager.robot.model import FleetRobot
 from fleet_manager.core.mapping.maps.models import GraphEdge, Landmark, WorldPoint
 from fleet_manager.runtime.simulation.manager import FleetManagerSim
 from operator_app.core.fleet_manager import (
-    DEFAULT_FLEET_MAP_DIR,
-    DEFAULT_FLEET_SIM_MAP_DIR,
     FLEET_MANAGER_SIM_ID,
     OperatorFleetManager,
+)
+from operator_app.core.fleet_context import (
+    DEFAULT_FLEET_MAP_DIR,
+    DEFAULT_FLEET_SIM_MAP_DIR,
 )
 
 

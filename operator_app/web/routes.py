@@ -203,16 +203,3 @@ def _query_value(parsed: ParseResult, name: str) -> str:
     return str(
         parse_qs(parsed.query).get(name, [""])[0] or ""
     ).strip()
-
-
-__all__ = [
-    "FLEET_ACTIONS",
-    "ROBOT_MAP_ACTIONS",
-    "FleetRoute",
-    "RobotMapRoute",
-    "parse_fleet_route",
-    "parse_robot_map_route",
-    "parse_robot_params_route",
-    "parse_robot_proxy_route",
-    "parse_robot_slam_route",
-]

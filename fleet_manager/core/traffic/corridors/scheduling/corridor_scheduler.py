@@ -1,4 +1,4 @@
-"""Public facade for controlled-corridor scheduling."""
+"""Controlled-corridor schedule construction and retained calendar."""
 
 from __future__ import annotations
 
@@ -11,12 +11,10 @@ from fleet_manager.core.traffic.corridors.scheduling.corridor_models import (
     CorridorDecisionStatus,
     CorridorOccupancy,
     CorridorRequest,
-    CorridorResourceWindow,
     CorridorSchedule,
     CorridorSchedulerConfig,
     CorridorSlot,
     CorridorSlotState,
-    RouteRevision,
 )
 from fleet_manager.core.traffic.corridors.scheduling.corridor_planner import (
     CorridorScheduleBuilder,
@@ -46,7 +44,7 @@ def build_corridor_schedule(
 
 
 class CentralCorridorScheduler:
-    """Stateful facade that retains only the last immutable calendar."""
+    """Retain the last immutable controlled-corridor calendar."""
 
     def __init__(
         self,

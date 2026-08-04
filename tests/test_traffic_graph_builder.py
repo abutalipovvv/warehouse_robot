@@ -1,15 +1,12 @@
 from __future__ import annotations
 
-from fleet_manager.core.mapf.graph.traffic_graph import (
+from fleet_manager.core.mapf.graph.traffic_graph_models import (
     TrafficGraph,
     TrafficLane,
     TrafficVertex,
     lane_id,
 )
 from fleet_manager.core.mapf.graph.traffic_graph_builder import TrafficGraphBuilder
-from fleet_manager.core.mapf.graph.traffic_graph_models import (
-    TrafficGraph as TrafficGraphModel,
-)
 from fleet_manager.core.mapping.maps.models import (
     EdgeGeometry,
     GraphEdge,
@@ -39,8 +36,7 @@ def _edge(
     )
 
 
-def test_traffic_graph_module_remains_a_stable_facade() -> None:
-    assert TrafficGraph is TrafficGraphModel
+def test_traffic_graph_models_have_direct_imports() -> None:
     assert TrafficVertex.__name__ == "TrafficVertex"
     assert TrafficLane.__name__ == "TrafficLane"
     assert lane_id("A", "B") == "A->B"

@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from math import isfinite
 from typing import Any, Iterable, Mapping
 
-from fleet_manager.core.algorithms.math.geometry import Vector2
+from fleet_manager.core.math.geometry import Vector2
 
 
 FREE_CELL = 254

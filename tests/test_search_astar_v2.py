@@ -6,9 +6,9 @@ from typing import Iterable
 
 import pytest
 
-from fleet_manager.core.algorithms.math.search.astar import AStarSolver
-from fleet_manager.core.algorithms.math.search.problem import SearchProblem
-from fleet_manager.core.algorithms.math.search.result import SearchResult
+from fleet_manager.core.search.astar import AStarSolver
+from fleet_manager.core.search.problem import SearchProblem
+from fleet_manager.core.search.result import SearchResult
 
 
 @dataclass

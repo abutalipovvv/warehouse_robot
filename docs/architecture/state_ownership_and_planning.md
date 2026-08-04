@@ -20,17 +20,17 @@ mutable runtime objects.
   `RevisionClock`;
 - `TrafficState` — temporal reservations, stationary blockers, traffic-zone
   state, controlled-corridor schedule/leases и traffic metrics;
-- `PlanningState` — активная compatibility job, runtime replans, rolling
+- `PlanningState` — активная planning job, runtime replans, rolling
   continuation latches и runtime-owned lifecycle planning jobs;
 - `RecoveryState` — wait cycles, recovery attempts, quarantine и cooldowns.
 
-Контейнеры собраны в одном модуле `fleet_manager/core/manager_state.py`.
+Контейнеры собраны в одном модуле `fleet_manager/manager/state.py`.
 Immutable snapshot/job/result модели находятся в
-`fleet_manager/core/planning_models.py`, а bounded worker и границы
-solver/commit — в `fleet_manager/core/planning_scheduler.py`. Отдельного
+`fleet_manager/manager/planning.py`, включая границы solver/commit. Bounded
+worker находится в `fleet_manager/manager/scheduler.py`. Отдельного
 package с одним state-классом на файл нет.
 
-Старые mixin-методы пока используют compatibility properties (`robots`,
+Сохраняемые mixin-методы пока используют переходные properties (`robots`,
 `_controlled_corridor_leases`, `_runtime_replans` и другие). Property возвращает
 тот же объект из контейнера и не создаёт второй словарь или второй источник
 истины. Новый код получает контейнеры через constructor injection.
@@ -59,7 +59,7 @@ threads, callbacks, transport clients или manager services. Solver получ
 - reset planning runtime и смена режима/скорости симуляции, влияющая на
   planning horizon.
 
-Legacy mixins дополнительно проверяются компактным deterministic fingerprint в
+Оставшиеся mixins дополнительно проверяются компактным deterministic fingerprint в
 начале и конце runtime tick. Предсказуемое продвижение `route_clock` по уже
 committed trajectory не увеличивает revision: solver уже получил эту trajectory
 и её `route_revision`. Аналогично внутренний переход активного заказа между
@@ -128,14 +128,17 @@ queue отсутствует.
   callable;
 - `PlanCommitService` владеет revision check и rollback transaction;
 - `OrderAdmissionService` получает `FleetState`, landmarks и clock;
-- `RollingContinuationService` получает `PlanningState` и retry policy.
+- `RollingContinuationService` получает `FleetState`, `PlanningState`, clock и
+  retry policy;
+- `ReplanningService` получает `FleetState`, `PlanningState`, `RecoveryState`,
+  безопасный выбор start LM и clock.
 
 Ни один из этих сервисов не получает весь `FleetManagerCore`. Spatial routing
 использует общий `AStarSolver` через `_LandmarkRouteProblem`; landmark neighbors,
 edge costs, congestion penalties, forbidden edges, heuristic и tie-breaking
 остаются domain policy.
 
-## Временная mixin-совместимость
+## Постепенная миграция mixin
 
 Mixin-архитектура остаётся для motion, corridor admission, traffic zones,
 recovery orchestration и части dispatch commit. Это намеренный постепенный

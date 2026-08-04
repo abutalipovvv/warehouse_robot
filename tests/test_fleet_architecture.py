@@ -3,12 +3,27 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-from fleet_manager.core.fleet.management.manager import FleetManagerCore
-from fleet_manager.core.fleet.domain.models import FleetOrder
-from fleet_manager.core.fleet.domain.models import FleetRobot
+from fleet_manager.manager.manager import FleetManagerCore
+from fleet_manager.manager.tasks.models import FleetOrder
+from fleet_manager.manager.scheduler import PlanningWorker
 from fleet_manager.core.mapping.maps.models import GraphEdge, Landmark, WorldPoint
 from fleet_manager.runtime.grpc.manager import FleetManagerGrpc, FleetManagerROS
 from fleet_manager.runtime.simulation.manager import FleetManagerSim
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+PACKAGE_ROOT = PROJECT_ROOT / "fleet_manager"
+
+
+def _absolute_imports(path: Path) -> list[tuple[int, str]]:
+    module = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    imports: list[tuple[int, str]] = []
+    for node in ast.walk(module):
+        if isinstance(node, ast.Import):
+            imports.extend((node.lineno, alias.name) for alias in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
+            imports.append((node.lineno, node.module))
+    return imports
 
 
 class _FakeGrpcGateway:
@@ -81,11 +96,9 @@ def test_packages_do_not_hide_runtime_classes_behind_reexports() -> None:
     assert "FleetManagerSim" not in vars(fleet_manager.runtime)
 
 
-def test_fleet_manager_package_initializers_are_declarative_only() -> None:
-    package_root = Path(__file__).resolve().parents[1] / "fleet_manager"
-
+def test_fleet_manager_package_initializers_do_not_reexport_names() -> None:
     violations: list[tuple[Path, int, str]] = []
-    for path in package_root.rglob("__init__.py"):
+    for path in PACKAGE_ROOT.rglob("__init__.py"):
         module = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
         for statement in module.body:
             is_docstring = (
@@ -93,20 +106,10 @@ def test_fleet_manager_package_initializers_are_declarative_only() -> None:
                 and isinstance(statement.value, ast.Constant)
                 and isinstance(statement.value.value, str)
             )
-            is_local_export = (
-                isinstance(statement, ast.ImportFrom)
-                and statement.level == 1
-            )
-            is_all_declaration = (
-                isinstance(statement, ast.Assign)
-                and len(statement.targets) == 1
-                and isinstance(statement.targets[0], ast.Name)
-                and statement.targets[0].id == "__all__"
-            )
-            if not (is_docstring or is_local_export or is_all_declaration):
+            if not is_docstring:
                 violations.append(
                     (
-                        path.relative_to(package_root),
+                        path.relative_to(PACKAGE_ROOT),
                         statement.lineno,
                         type(statement).__name__,
                     )
@@ -115,28 +118,34 @@ def test_fleet_manager_package_initializers_are_declarative_only() -> None:
     assert violations == []
 
 
-def test_transport_neutral_core_does_not_import_runtime_packages() -> None:
-    core_root = (
-        Path(__file__).resolve().parents[1]
-        / "fleet_manager"
-        / "core"
-    )
+def test_package_dependencies_follow_core_robot_manager_runtime_order() -> None:
+    forbidden_by_package = {
+        "core": (
+            "fleet_manager.manager",
+            "fleet_manager.robot",
+            "fleet_manager.runtime",
+            "operator_app",
+        ),
+        "robot": (
+            "fleet_manager.manager",
+            "fleet_manager.runtime",
+            "operator_app",
+        ),
+        "manager": (
+            "fleet_manager.runtime",
+            "operator_app",
+        ),
+    }
     violations: list[tuple[Path, int, str]] = []
-
-    for path in core_root.rglob("*.py"):
-        module = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-        for node in ast.walk(module):
-            imported_modules: list[str] = []
-            if isinstance(node, ast.Import):
-                imported_modules = [alias.name for alias in node.names]
-            elif isinstance(node, ast.ImportFrom) and node.module:
-                imported_modules = [node.module]
-            for imported_module in imported_modules:
-                if imported_module.startswith("fleet_manager.runtime"):
+    for package_name, forbidden_prefixes in forbidden_by_package.items():
+        package_root = PACKAGE_ROOT / package_name
+        for path in package_root.rglob("*.py"):
+            for line, imported_module in _absolute_imports(path):
+                if imported_module.startswith(forbidden_prefixes):
                     violations.append(
                         (
-                            path.relative_to(core_root),
-                            node.lineno,
+                            path.relative_to(PACKAGE_ROOT),
+                            line,
                             imported_module,
                         )
                     )
@@ -144,39 +153,54 @@ def test_transport_neutral_core_does_not_import_runtime_packages() -> None:
     assert violations == []
 
 
-def test_foundation_packages_do_not_import_policy_or_runtime_layers() -> None:
-    project_root = Path(__file__).resolve().parents[1]
-    forbidden_prefixes = (
-        "fleet_manager.core",
-        "fleet_manager.runtime",
-        "operator_app",
-    )
+def test_source_has_no_wildcard_imports_or_all_declarations() -> None:
     violations: list[tuple[Path, int, str]] = []
-
-    for package_name in ("math", "search", "map_data"):
-        package_root = project_root / "fleet_manager" / package_name
-        for path in package_root.rglob("*.py"):
-            module = ast.parse(
-                path.read_text(encoding="utf-8"),
-                filename=str(path),
-            )
-            for node in ast.walk(module):
-                modules: list[str] = []
-                if isinstance(node, ast.Import):
-                    modules = [alias.name for alias in node.names]
-                elif isinstance(node, ast.ImportFrom) and node.module:
-                    modules = [node.module]
-                for imported in modules:
-                    if imported.startswith(forbidden_prefixes):
-                        violations.append(
-                            (
-                                path.relative_to(project_root),
-                                node.lineno,
-                                imported,
-                            )
-                        )
+    for path in PACKAGE_ROOT.rglob("*.py"):
+        module = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(module):
+            if isinstance(node, ast.ImportFrom) and any(
+                alias.name == "*" for alias in node.names
+            ):
+                violations.append((path.relative_to(PACKAGE_ROOT), node.lineno, "*"))
+            if isinstance(node, (ast.Assign, ast.AnnAssign)):
+                targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+                if any(
+                    isinstance(target, ast.Name) and target.id == "__all__"
+                    for target in targets
+                ):
+                    violations.append(
+                        (path.relative_to(PACKAGE_ROOT), node.lineno, "__all__")
+                    )
 
     assert violations == []
+
+
+def test_removed_architecture_paths_do_not_return() -> None:
+    removed_paths = (
+        "core/algorithms",
+        "core/io",
+        "core/fleet",
+        "core/tasks",
+        "core/transport",
+        "core/manager_state.py",
+        "core/planning_models.py",
+        "core/planning_scheduler.py",
+        "core/mapf/cbs/lm_cbs.py",
+        "core/mapf/graph/traffic_graph.py",
+    )
+    assert [path for path in removed_paths if (PACKAGE_ROOT / path).exists()] == []
+
+
+def test_planning_worker_has_one_submission_api() -> None:
+    assert hasattr(PlanningWorker, "submit_job")
+    assert not hasattr(PlanningWorker, "submit")
+    assert not hasattr(PlanningWorker, "publish_result")
+
+    source = (PACKAGE_ROOT / "manager/tasks/planning_jobs.py").read_text(
+        encoding="utf-8"
+    )
+    assert "_submit_legacy_planning_hook" not in source
+    assert "_LegacyPlanningResult" not in source
 
 
 def test_simulation_params_refresh_does_not_install_a_grpc_gateway() -> None:

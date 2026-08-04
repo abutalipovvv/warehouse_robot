@@ -1,7 +1,7 @@
 """Safe Interval Path Planning state space.
 
 This module owns SIPP-specific temporal and reservation mathematics.  The
-generic A* loop lives in :mod:`fleet_manager.core.algorithms.math.search`; keeping the two concerns
+generic A* loop lives in :mod:`fleet_manager.core.search`; keeping the two concerns
 separate makes both pieces independently testable.
 """
 
@@ -10,7 +10,7 @@ from __future__ import annotations
 from time import monotonic
 from typing import Callable, Sequence
 
-from fleet_manager.core.algorithms.math.geometry import normalize_angle_rounded
+from fleet_manager.core.math.geometry import normalize_angle_rounded
 
 from ..common.reservations import ReservationTable, ResourceId, SafeInterval
 from .sipp_models import (
@@ -19,7 +19,7 @@ from .sipp_models import (
     SippState,
     TimedState,
 )
-from ..graph.traffic_graph import TrafficGraph, TrafficLane
+from ..graph.traffic_graph_models import TrafficGraph, TrafficLane
 
 
 class SippSearchProblem:

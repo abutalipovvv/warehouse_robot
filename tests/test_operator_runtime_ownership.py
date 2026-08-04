@@ -4,7 +4,7 @@ from pathlib import Path
 from threading import Event, Lock, RLock, Thread, current_thread, get_ident
 from time import monotonic, sleep
 
-import operator_app.core.state as state_module
+import operator_app.core.state_runtime as state_runtime_module
 from fleet_manager.runtime.loop import RuntimeLoop, RuntimeLoopState
 from operator_app.core.fleet_manager import (
     FLEET_MANAGER_ID,
@@ -100,11 +100,15 @@ def test_operator_state_owns_real_and_simulation_runtime_loops(
             self.timeout = timeout
 
     monkeypatch.setattr(
-        state_module,
+        state_runtime_module,
         "OperatorFleetManager",
         FakeOperatorFleetManager,
     )
-    monkeypatch.setattr(state_module, "GrpcRobotAdapter", FakeGrpcAdapter)
+    monkeypatch.setattr(
+        state_runtime_module,
+        "GrpcRobotAdapter",
+        FakeGrpcAdapter,
+    )
 
     state = OperatorAppState(
         registry_path=tmp_path / "robots.json",

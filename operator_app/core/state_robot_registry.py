@@ -12,7 +12,7 @@ from .config import GRPC_ROBOT_TYPES
 from .fleet_manager import FLEET_MANAGER_ID, FLEET_MANAGER_IDS
 from .models import KnownRobot
 from .grpc.client import GrpcRobotAdapter
-from .grpc.contracts import DEFAULT_GRPC_PORT
+from fleet_manager.manager.endpoints import DEFAULT_GRPC_PORT
 from .state_common import (
     OPERATOR_CONTROL_OWNER_ID,
     OPERATOR_CONTROL_OWNER_NAME,
@@ -340,6 +340,3 @@ class RobotRegistryProbeMixin:
             "probed": True,
             **ping,
         }
-
-
-__all__ = ["RobotRegistryProbeMixin"]

@@ -179,6 +179,3 @@ class FleetApiRoutingMixin:
             manager_id,
             build_snapshot,
         )
-
-
-__all__ = ["FleetApiRoutingMixin"]

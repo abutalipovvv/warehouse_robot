@@ -11,8 +11,8 @@ from .fleet_planner_backends import BackendRunner, BackendSelector
 from .fleet_planner_requests import PlanningRequestPreparer
 from .fleet_planner_results import PlanningResultFormatter
 from .fleet_planner_trajectory import FleetMotionModel, TrajectoryBuilder
-from ..cbs.lm_cbs import LmRobotRequest
-from ..graph.traffic_graph import TrafficGraph
+from ..cbs.cbs_models import LmRobotRequest
+from ..graph.traffic_graph_models import TrafficGraph
 
 
 class FleetMapfPlanner:

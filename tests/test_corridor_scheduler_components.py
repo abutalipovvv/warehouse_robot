@@ -5,17 +5,18 @@ from itertools import permutations
 
 import pytest
 
-import fleet_manager.core.traffic.corridors.scheduling.corridor_models as corridor_models
 from fleet_manager.core.traffic.corridors.scheduling.corridor_calendar import CorridorCalendar
 from fleet_manager.core.traffic.corridors.scheduling.corridor_planner import (
     CorridorScheduleBuilder,
 )
-from fleet_manager.core.traffic.corridors.scheduling.corridor_scheduler import (
+from fleet_manager.core.traffic.corridors.scheduling.corridor_models import (
     CorridorRequest,
     CorridorResourceWindow,
     CorridorSchedulerConfig,
     CorridorSlot,
     CorridorSlotState,
+)
+from fleet_manager.core.traffic.corridors.scheduling.corridor_scheduler import (
     build_corridor_schedule,
 )
 
@@ -44,17 +45,13 @@ def _request(
     )
 
 
-def test_public_facade_reexports_immutable_domain_models() -> None:
-    assert CorridorRequest is corridor_models.CorridorRequest
-    assert CorridorResourceWindow is corridor_models.CorridorResourceWindow
-    assert CorridorSchedulerConfig is corridor_models.CorridorSchedulerConfig
-
+def test_corridor_domain_models_are_immutable() -> None:
     request = _request("robot")
     with pytest.raises(FrozenInstanceError):
         request.direction = "west"  # type: ignore[misc]
 
 
-def test_function_facade_and_builder_publish_the_same_schedule() -> None:
+def test_schedule_function_and_builder_publish_the_same_schedule() -> None:
     config = CorridorSchedulerConfig(
         horizon_sec=40.0,
         headway_sec=0.25,

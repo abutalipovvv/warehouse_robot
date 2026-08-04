@@ -5,7 +5,8 @@ from time import monotonic, sleep
 
 import yaml
 
-from fleet_manager.core.fleet.domain.models import FleetOrder, FleetRobot
+from fleet_manager.manager.tasks.models import FleetOrder
+from fleet_manager.robot.model import FleetRobot
 from fleet_manager.core.mapping.maps.map_loader import WarehouseMapLoader
 from fleet_manager.core.mapping.maps.models import (
     GraphEdge,

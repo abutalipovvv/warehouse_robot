@@ -187,17 +187,3 @@ def teleop_command(message: Mapping[str, Any]) -> dict[str, object] | None:
         "angular": angular,
         "timeoutMs": max(80, timeout_ms),
     }
-
-
-__all__ = [
-    "CLOSE_OPCODE",
-    "DEFAULT_MAX_FRAME_BYTES",
-    "PING_OPCODE",
-    "PONG_OPCODE",
-    "TEXT_OPCODE",
-    "WebSocketConnection",
-    "encode_frame",
-    "is_websocket_upgrade",
-    "teleop_command",
-    "websocket_accept_value",
-]

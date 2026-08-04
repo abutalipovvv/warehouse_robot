@@ -13,7 +13,7 @@ from ..core.config import (
     MIN_FLEET_WS_INTERVAL_MS,
 )
 from ..core.fleet_manager import FLEET_MANAGER_ID
-from ..core.state import utc_now
+from ..core.state_common import utc_now
 from .websocket import (
     WebSocketConnection,
     encode_frame,

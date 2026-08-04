@@ -16,10 +16,6 @@ from fleet_manager.core.mapf.cbs.cbs_models import (
     VertexConstraint,
     VertexIntervalConstraint,
 )
-from fleet_manager.core.mapf.cbs.lm_cbs import (
-    LmCBSEnvironment as PublicEnvironment,
-    State as PublicState,
-)
 from fleet_manager.core.mapf.common.reservations import ResourceId
 
 
@@ -59,9 +55,9 @@ def _analyzer(
     )
 
 
-def test_lm_cbs_facade_reexports_component_types() -> None:
-    assert PublicState is State
-    assert PublicEnvironment is LmCBSEnvironment
+def test_cbs_types_live_in_their_focused_modules() -> None:
+    assert State.__module__.endswith("cbs_models")
+    assert LmCBSEnvironment.__module__.endswith("cbs_low_level")
 
 
 def test_constraints_merge_without_sharing_default_sets() -> None:

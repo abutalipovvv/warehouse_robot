@@ -10,7 +10,7 @@ from typing import Any
 
 import yaml
 
-from fleet_manager.core.io.atomic_files import atomic_write_text
+from fleet_manager.storage import atomic_write_text
 
 
 DEFAULT_PARAMS_PATH = (

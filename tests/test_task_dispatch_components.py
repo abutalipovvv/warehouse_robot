@@ -5,22 +5,22 @@ from threading import Lock
 from types import SimpleNamespace
 from typing import Any
 
-from fleet_manager.core.fleet.domain.constants import ORDER_SEQUENCE_KEYS, ORDER_TARGET_KEYS
-from fleet_manager.core.fleet.domain.models import FleetOrder
-from fleet_manager.core.tasks.dispatch import FleetTaskDispatchMixin
-from fleet_manager.core.tasks.dispatch_requests import DispatchRequestBatchMixin
-from fleet_manager.core.tasks.dispatch_results import DispatchResultMixin
-from fleet_manager.core.tasks.order_admission import OrderAdmissionMixin
-from fleet_manager.core.tasks.order_lifecycle import OrderLifecycleMixin
-from fleet_manager.core.tasks.planning_jobs import AsyncPlanningJobMixin
-from fleet_manager.core.tasks.rolling_continuation import (
+from fleet_manager.manager.tasks.statuses import ORDER_SEQUENCE_KEYS, ORDER_TARGET_KEYS
+from fleet_manager.manager.tasks.models import FleetOrder
+from fleet_manager.manager.tasks.dispatch import FleetTaskDispatchMixin
+from fleet_manager.manager.tasks.dispatch_requests import DispatchRequestBatchMixin
+from fleet_manager.manager.tasks.dispatch_results import DispatchResultMixin
+from fleet_manager.manager.tasks.order_admission import OrderAdmissionMixin
+from fleet_manager.manager.tasks.order_lifecycle import OrderLifecycleMixin
+from fleet_manager.manager.tasks.planning_jobs import AsyncPlanningJobMixin
+from fleet_manager.manager.tasks.rolling_continuation import (
     RollingContinuationMixin,
 )
-from fleet_manager.core.tasks.runtime_replans import RuntimeReplanMixin
-from fleet_manager.core.tasks.stationary_blockers import (
+from fleet_manager.manager.tasks.replanning import RuntimeReplanMixin
+from fleet_manager.manager.tasks.stationary_blockers import (
     StationaryBlockerRecoveryMixin,
 )
-from fleet_manager.core.tasks.stationary_clearance import (
+from fleet_manager.manager.tasks.stationary_clearance import (
     StationaryClearanceMixin,
 )
 
@@ -244,22 +244,25 @@ def test_dispatch_cycle_keeps_phase_order_and_short_circuits() -> None:
     assert prefetch.calls == ["prepare", "runtime", "collect", "prefetch"]
 
 
-def test_planner_worker_publishes_only_to_the_current_job() -> None:
+def test_async_planning_uses_only_the_explicit_job_api() -> None:
     class Worker:
-        callback: Any = None
+        planning_job: Any = None
+        solver: Any = None
 
-        def submit(self, callback: Any, *, thread_name: str) -> bool:
-            assert thread_name == "planner-test"
-            self.callback = callback
+        def submit_job(self, planning_job: Any, solver: Any) -> bool:
+            self.planning_job = planning_job
+            self.solver = solver
             return True
 
     instance = AsyncPlanningJobMixin.__new__(AsyncPlanningJobMixin)
     instance._dispatch_job_lock = Lock()
     instance._planning_worker = Worker()
-    instance._plan_valid_requests = lambda requests, payload: {
-        "ok": True,
-        "plans": [requests, payload],
-    }
+    planning_job = object()
+    solver = SimpleNamespace(solve=lambda _job: None)
+    instance._planning_solver_service = solver
+    instance._build_planning_job = (
+        lambda _job, _requests, _payload: planning_job
+    )
     job = {"result": None, "done": False}
     instance._dispatch_job = job
 
@@ -267,12 +270,7 @@ def test_planner_worker_publishes_only_to_the_current_job() -> None:
         job,
         [{"name": "robot"}],
         {"mode": "test"},
-        failure_reason="failed",
-        thread_name="planner-test",
     )
-
-    replacement = {"result": None, "done": False}
-    instance._dispatch_job = replacement
-    instance._planning_worker.callback()
-    assert job == {"result": None, "done": False}
-    assert replacement == {"result": None, "done": False}
+    assert instance._planning_worker.planning_job is planning_job
+    assert instance._planning_worker.solver == solver.solve
+    assert not hasattr(instance._planning_worker, "submit")

@@ -231,7 +231,6 @@ def test_geometric_corridor_is_compiled_by_core_not_the_map_generator() -> None:
         GraphEdge,
         Landmark,
         TrafficZone,
-        WorldPoint,
     )
     from fleet_manager.core.traffic.corridors.corridors import (
         compile_controlled_corridor_zones,

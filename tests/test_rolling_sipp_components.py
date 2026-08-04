@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fleet_manager.core.mapf.cbs.lm_cbs import (
+from fleet_manager.core.mapf.cbs.cbs_models import (
     LmRobotPlan,
     LmRobotRequest,
 )
@@ -23,8 +23,8 @@ from fleet_manager.core.mapf.rolling.rolling_reservations import (
     ResourceReservationWriter,
     RollingPlanValidator,
 )
-from fleet_manager.core.mapf.sipp.sipp import TimedPath, TimedState
-from fleet_manager.core.mapf.graph.traffic_graph import TrafficGraph
+from fleet_manager.core.mapf.sipp.sipp_models import TimedPath, TimedState
+from fleet_manager.core.mapf.graph.traffic_graph_models import TrafficGraph
 from fleet_manager.core.mapping.maps.models import (
     GraphEdge,
     Landmark,

@@ -4,14 +4,14 @@ import ast
 import inspect
 from pathlib import Path
 
-from fleet_manager.core.tasks.planning_jobs import (
+from fleet_manager.manager.tasks.planning_jobs import (
     AsyncPlanningJobMixin,
     _CoupledReplanContext,
     _CoupledReplanMember,
 )
 
 
-def test_coupled_replan_hook_keeps_compatibility_signature() -> None:
+def test_coupled_replan_hook_keeps_stable_signature() -> None:
     signature = inspect.signature(
         AsyncPlanningJobMixin._start_async_coupled_replan
     )
@@ -37,7 +37,7 @@ def test_coupled_replan_stage_models_express_mutability() -> None:
 def test_coupled_replan_orchestration_stays_in_focused_stages() -> None:
     source = (
         Path(__file__).parents[1]
-        / "fleet_manager/core/tasks/planning_jobs.py"
+        / "fleet_manager/manager/tasks/planning_jobs.py"
     )
     tree = ast.parse(source.read_text())
     methods = {

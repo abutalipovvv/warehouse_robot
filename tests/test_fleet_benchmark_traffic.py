@@ -2,14 +2,15 @@ from __future__ import annotations
 
 from time import monotonic, sleep
 
-import fleet_manager.core.fleet.management.manager as runtime_module
+import fleet_manager.manager.manager as runtime_module
 import operator_app.core.fleet_manager as service_module
 
+from fleet_manager.manager.planning import PlanningSolverService
 from operator_app.core.fleet_manager import (
-    DEFAULT_FLEET_MAP_DIR,
     FLEET_MANAGER_SIM_ID,
     OperatorFleetManager,
 )
+from operator_app.core.fleet_context import DEFAULT_FLEET_MAP_DIR
 
 
 def test_plan_action_starts_continuous_random_orders_for_every_robot(monkeypatch) -> None:
@@ -24,14 +25,17 @@ def test_plan_action_starts_continuous_random_orders_for_every_robot(monkeypatch
     )
 
     planner_calls = 0
-    original_plan = service.manager._plan_valid_requests
+    original_plan = service.manager._planning_solver_service._planner_call
 
-    def counted_plan(requests, payload):
+    def counted_plan(payload):
         nonlocal planner_calls
         planner_calls += 1
-        return original_plan(requests, payload)
+        return original_plan(payload)
 
-    monkeypatch.setattr(service.manager, "_plan_valid_requests", counted_plan)
+    service.manager._planning_solver_service = PlanningSolverService(
+        counted_plan,
+        service.manager._planner_lock,
+    )
 
     result = service.benchmark_payload(
         {

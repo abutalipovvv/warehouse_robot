@@ -3,9 +3,9 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable
 import math
 
-from fleet_manager.core.algorithms.math.curves import cubic_bezier_derivative
-from fleet_manager.core.algorithms.math.geometry import Vector2
-from fleet_manager.core.algorithms.math.search.astar import AStarSolver
+from fleet_manager.core.math.curves import cubic_bezier_derivative
+from fleet_manager.core.math.geometry import Vector2
+from fleet_manager.core.search.astar import AStarSolver
 
 from ..maps.models import GraphEdge, Landmark, PlannedRoute, WorldPoint
 from .params import load_route_params

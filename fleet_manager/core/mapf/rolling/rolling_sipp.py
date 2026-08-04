@@ -1,10 +1,10 @@
-"""Public facade for prioritized rolling SIPP planning."""
+"""Prioritized rolling SIPP planner."""
 
 from __future__ import annotations
 
 from typing import Callable
 
-from ..cbs.lm_cbs import (
+from ..cbs.cbs_models import (
     LmRobotPlan,
     LmRobotRequest,
     NodeName,
@@ -28,7 +28,7 @@ from .rolling_reservations import (
     ResourceReservationWriter,
     RollingPlanValidator,
 )
-from ..graph.traffic_graph import TrafficGraph
+from ..graph.traffic_graph_models import TrafficGraph
 
 
 class RollingSippPlanner:

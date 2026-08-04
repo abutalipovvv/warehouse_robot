@@ -7,7 +7,7 @@ from typing import Any
 
 import yaml
 
-from fleet_manager.core.io.atomic_files import atomic_write_text
+from fleet_manager.storage import atomic_write_text
 
 NAV2_RUNTIME_PARAMETERS: tuple[tuple[str, str, str], ...] = (
     ("nav2.amcl.update_min_d", "/amcl/set_parameters", "update_min_d"),

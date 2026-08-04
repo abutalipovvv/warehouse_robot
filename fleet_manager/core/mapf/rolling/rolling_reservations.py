@@ -2,15 +2,15 @@
 
 from __future__ import annotations
 
-from ..cbs.lm_cbs import LmRobotPlan, LmRobotRequest, NodeName
+from ..cbs.cbs_models import LmRobotPlan, LmRobotRequest, NodeName
 from ..common.reservations import (
     ReservationInterval,
     ReservationTable,
     ResourceId,
 )
 from .rolling_models import StaticReservations
-from ..sipp.sipp import TimedPath, TimedState
-from ..graph.traffic_graph import TrafficGraph
+from ..sipp.sipp_models import TimedPath, TimedState
+from ..graph.traffic_graph_models import TrafficGraph
 
 
 class ResourceReservationWriter:

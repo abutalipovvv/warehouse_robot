@@ -323,6 +323,3 @@ class FleetMapSyncMixin:
             "local": synced_local,
             "loaded": loaded,
         }
-
-
-__all__ = ["FleetMapSyncMixin"]

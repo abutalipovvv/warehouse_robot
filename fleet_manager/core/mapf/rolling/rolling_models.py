@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from ..cbs.lm_cbs import NodeName
+from ..cbs.cbs_models import NodeName
 
 
 VertexConstraintInput = tuple[int, NodeName]

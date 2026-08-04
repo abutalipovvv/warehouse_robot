@@ -32,10 +32,10 @@ from fleet_manager.runtime.grpc.api.ros_runtime_ros_helpers import (
 from fleet_manager.runtime.grpc.api.ros_runtime_slam import (
     RosRuntimeSlamMixin,
 )
-from fleet_manager.core.io.atomic_files import (
+from fleet_manager.storage import (
     atomic_write_bytes as real_atomic_write_bytes,
 )
-from fleet_manager.core.io.atomic_files import (
+from fleet_manager.storage import (
     atomic_write_text as real_atomic_write_text,
 )
 

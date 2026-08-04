@@ -12,7 +12,7 @@ import yaml
 from .map_loader import WarehouseMapLoader
 from .models import LoadedMapData
 from fleet_manager.core.traffic.corridors.corridors import strip_derived_traffic_properties
-from fleet_manager.core.io.atomic_files import atomic_write_bytes, atomic_write_text
+from fleet_manager.storage import atomic_write_bytes, atomic_write_text
 
 
 MAP_SUPPORT_YAML_FILES = {

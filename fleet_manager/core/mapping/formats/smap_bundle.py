@@ -12,12 +12,11 @@ from typing import Any, Iterable, Mapping
 
 import yaml
 
-from fleet_manager.core.io.atomic_files import atomic_write_bytes, atomic_write_text
-from fleet_manager.core.algorithms.math.curves import (
+from fleet_manager.storage import atomic_write_bytes, atomic_write_text
+from fleet_manager.core.math.curves import (
     cubic_bezier_length,
-    cubic_bezier_point,
 )
-from fleet_manager.core.algorithms.math.geometry import Vector2
+from fleet_manager.core.math.geometry import Vector2
 
 from .smap_raster import (
     OCCUPIED_CELL,

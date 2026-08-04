@@ -8,8 +8,8 @@ Main runtime split:
 - `sim_robot/ws/src/robot_status` - robot status ROS 2 node.
 - `sim_robot/ws/src/robot_map_manager` - robot map state/load/sync ROS 2 services.
 - `sim_robot/ws/src/robot_grpc_api` - local ROS 2 robot gRPC API backed by robot topics/services.
-- `operator_app/core/grpc` - thin Operator App compatibility facade over the
-  canonical Fleet Manager robot gRPC client.
+- `operator_app/core/grpc` - Operator App client code using the canonical
+  Fleet Manager robot gRPC contract directly.
 - `fleet_manager/runtime/grpc/api` - Fleet Manager robot gRPC client/runtime contract.
 - `operator_app/core` - Operator App state, Fleet Manager bridge, gRPC client and domain logic.
 - `operator_app/web` - offline browser UI and HTTP/WebSocket transport.
@@ -20,7 +20,7 @@ Map/planning ownership:
 
 - `fleet_manager/core/mapping` owns Fleet Manager map loading/edit exchange for `fleet_manager/map_data`.
 - `fleet_manager/core/mapf` owns Fleet Manager MAPF and space-time planning.
-- `fleet_manager/core/algorithms/math` contains reusable mathematical
+- `fleet_manager/core/math` contains reusable mathematical
   primitives and graph-search algorithms.
 - `fleet_manager/core/mapping/formats/smap_bundle.py` and `smap_raster.py` separate SMAP
   parsing, graph reconstruction, raster math, and durable output.

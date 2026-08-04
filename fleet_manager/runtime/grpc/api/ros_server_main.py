@@ -4,7 +4,8 @@ import argparse
 import signal
 import time
 
-from .contracts import DEFAULT_GRPC_PORT
+from fleet_manager.manager.endpoints import DEFAULT_GRPC_PORT
+
 from .ros_runtime import RosRobotRuntime
 from .server import serve_robot_api
 

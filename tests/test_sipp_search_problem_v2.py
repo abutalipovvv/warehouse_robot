@@ -7,17 +7,14 @@ from fleet_manager.core.mapf.common.reservations import (
     ReservationTable,
     ResourceId,
 )
-from fleet_manager.core.mapf.sipp.sipp import (
-    SippPlanner,
+from fleet_manager.core.mapf.sipp.sipp import SippPlanner
+from fleet_manager.core.mapf.sipp.sipp_models import (
     SippRobotRequest,
     SippState,
     TimedPath,
     TimedState,
 )
-from fleet_manager.core.mapf.sipp.sipp_models import (
-    SippState as ExtractedSippState,
-)
-from fleet_manager.core.mapf.graph.traffic_graph import TrafficGraph
+from fleet_manager.core.mapf.graph.traffic_graph_models import TrafficGraph
 from fleet_manager.core.mapping.maps.models import (
     GraphEdge,
     Landmark,
@@ -48,8 +45,8 @@ def _line_graph() -> TrafficGraph:
     )
 
 
-def test_public_sipp_imports_remain_compatible() -> None:
-    assert SippState is ExtractedSippState
+def test_sipp_models_have_direct_stable_modules() -> None:
+    assert SippState.__module__.endswith("sipp_models")
     assert TimedState.__module__.endswith("sipp_models")
     assert TimedPath.__module__.endswith("sipp_models")
 

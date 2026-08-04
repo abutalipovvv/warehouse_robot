@@ -6,7 +6,7 @@ Operator App: эти модули связывают много уже гото�
 
 ## 1. Математика
 
-Начните с каталога `fleet_manager/core/algorithms/math`:
+Начните с каталога `fleet_manager/core/math`:
 
 - `Vector2` — точка или вектор на плоскости;
 - `Pose2D` — позиция и угол робота;
@@ -18,7 +18,7 @@ Operator App: эти модули связывают много уже гото�
 
 ## 2. Обычный поиск пути
 
-Затем прочитайте `fleet_manager/core/algorithms/math/search`. Там находится
+Затем прочитайте `fleet_manager/core/search`. Там находится
 общий детерминированный A*. Алгоритм работает с абстрактной задачей поиска:
 
 1. задача выдаёт начальное состояние;
@@ -33,12 +33,12 @@ MAPF-модули используют этот механизм и добавл
 
 Рекомендуемый порядок:
 
-1. `core/mapf/graph/traffic_graph.py` — граф движения;
+1. `core/mapf/graph/traffic_graph_models.py` — граф движения;
 2. `core/mapf/common/reservations.py` — занятость вершин и рёбер во времени;
 3. `core/mapf/sipp/sipp.py` — маршрут одного робота между безопасными интервалами;
-4. `core/mapf/rolling_sipp.py` — планирование нескольких роботов по частям;
-5. `core/mapf/lm_cbs.py` — локальное разрешение сложного конфликта;
-6. `core/mapf/fleet_planner.py` — выбор алгоритма и построение траекторий.
+4. `core/mapf/rolling/rolling_sipp.py` — планирование нескольких роботов по частям;
+5. `core/mapf/cbs/cbs_high_level.py` — локальное разрешение сложного конфликта;
+6. `core/mapf/fleet/fleet_planner.py` — выбор алгоритма и построение траекторий.
 
 Файлы-фасады намеренно короткие. Модели, подготовка запроса, сам алгоритм и
 формирование результата находятся в соседних файлах с говорящими именами.
@@ -62,7 +62,7 @@ cbs_high_level   координация поиска
 
 ## 4. Управление движением и трафиком
 
-`core/motion.py` объединяет независимые части runtime движения:
+`manager/movement/motion.py` объединяет части управления live-движением:
 
 - шаг движения и завершение сегмента;
 - кинематика;
@@ -109,7 +109,7 @@ rolling collapse
 траекторию, затем проверяется текущая геометрия тел, освобождаются устаревшие
 corridor leases и только после этого одновременно меняются заказ и робот.
 
-В `core/tasks` stationary recovery устроен аналогично: causal episode хранит
+В `manager/tasks` stationary recovery устроен аналогично: causal episode хранит
 signature и visited pockets, отдельный ограниченный поиск доказывает graph cut,
 а отдельный commit создаёт внутренний `traffic_clearance` order. Ручное
 возвращение робота после free-drive разделено на генерацию sampled motion,
@@ -120,8 +120,8 @@ collision audit и commit; публичный `manager.plan()` только ко
 
 После алгоритмов переходите к прикладному слою:
 
-1. `fleet_manager/core/fleet/management/manager.py` собирает Fleet Manager,
-   а `fleet_manager/core/manager_state.py` хранит контейнеры состояния;
+1. `fleet_manager/manager/manager.py` собирает Fleet Manager,
+   а `fleet_manager/manager/state.py` хранит контейнеры состояния;
 2. `fleet_manager/runtime` подключает simulation или gRPC;
 3. `operator_app/core/fleet_manager.py` формирует данные для Operator UI;
 4. `operator_app/core/state.py` владеет менеджерами и рабочими каталогами;
@@ -146,7 +146,7 @@ FleetManagerCore
 └── motion step / safety / retreat / replanning
 ```
 
-`operator_app/core/fleet_manager.py` — совместимый фасад. Работа с картами,
+`operator_app/core/fleet_manager.py` — web-facing слой оркестрации. Работа с картами,
 контекстом менеджера, ручным управлением, snapshot-ответами и benchmark
 выполняется отдельными `fleet_*` компонентами в той же директории. Offline
 differential/performance guard находится вне production core:
@@ -178,12 +178,13 @@ parameters и ROS helpers. Роботный пакет
 
 ## Где вносить изменения
 
-- Новая формула или геометрическая операция — `core/algorithms/math`.
-- Новый общий алгоритм поиска — `core/algorithms/math/search`.
+- Новая формула или геометрическая операция — `core/math`.
+- Новый общий алгоритм поиска — `core/search`.
 - Изменение SIPP/CBS/MAPF — соответствующий компонент в `core/mapf`.
-- Политика очередей, коридоров или восстановления — `core/traffic`.
-- Команда флота или жизненный цикл робота — `core/fleet/management` или
-  `core/tasks`.
+- Чистая геометрия коридоров, collision math и wait graph — `core/traffic`.
+- Live-политика очередей, коридоров и восстановления — `manager/traffic`.
+- Команда флота или жизненный цикл робота — `manager` или
+  `manager/tasks`.
 - ROS/gRPC-преобразование — `fleet_manager/runtime`.
 - HTTP-маршрут или WebSocket — `operator_app/web`.
 - Визуальное поведение браузера — `operator_app/web/static/js`.

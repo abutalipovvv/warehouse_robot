@@ -34,21 +34,7 @@ def test_operator_app_has_compact_source_and_runtime_layout() -> None:
                 and isinstance(statement.value, ast.Constant)
                 and isinstance(statement.value.value, str)
             )
-            is_local_export = (
-                isinstance(statement, ast.ImportFrom)
-                and statement.level == 1
-            )
-            is_all_declaration = (
-                isinstance(statement, ast.Assign)
-                and len(statement.targets) == 1
-                and isinstance(statement.targets[0], ast.Name)
-                and statement.targets[0].id == "__all__"
-            )
-            if not (
-                is_docstring
-                or is_local_export
-                or is_all_declaration
-            ):
+            if not is_docstring:
                 violations.append(
                     (
                         path.relative_to(OPERATOR_ROOT),
@@ -57,6 +43,38 @@ def test_operator_app_has_compact_source_and_runtime_layout() -> None:
                     )
                 )
     assert violations == []
+
+    export_violations: list[tuple[Path, int, str]] = []
+    for path in OPERATOR_ROOT.rglob("*.py"):
+        module = ast.parse(
+            path.read_text(encoding="utf-8"),
+            filename=str(path),
+        )
+        for node in ast.walk(module):
+            if isinstance(node, ast.ImportFrom) and any(
+                alias.name == "*" for alias in node.names
+            ):
+                export_violations.append(
+                    (path.relative_to(OPERATOR_ROOT), node.lineno, "*")
+                )
+            if isinstance(node, (ast.Assign, ast.AnnAssign)):
+                targets = (
+                    node.targets
+                    if isinstance(node, ast.Assign)
+                    else [node.target]
+                )
+                if any(
+                    isinstance(target, ast.Name) and target.id == "__all__"
+                    for target in targets
+                ):
+                    export_violations.append(
+                        (
+                            path.relative_to(OPERATOR_ROOT),
+                            node.lineno,
+                            "__all__",
+                        )
+                    )
+    assert export_violations == []
 
 
 def test_operator_frontend_is_modular_and_offline() -> None:

@@ -14,7 +14,7 @@ from fleet_manager.core.mapping.maps.map_exchange import (
     restore_editable_map_bundle,
 )
 from fleet_manager.core.mapping.maps.map_writer import save_editable_map
-from fleet_manager.core.io.atomic_files import atomic_write_json
+from fleet_manager.storage import atomic_write_json
 
 
 def default_maps_cache_root() -> Path:

@@ -5,9 +5,10 @@ from http.server import SimpleHTTPRequestHandler
 from urllib.parse import parse_qs, unquote, urlparse
 
 from ..core.config import APP_ROUTES
-from ..core.state import OperatorAppState, RobotProbeError
+from ..core.state import OperatorAppState
+from ..core.state_common import RobotProbeError
 from ..core.fleet_manager import FLEET_MANAGER_ID, FLEET_MANAGER_SIM_ID
-from ..core.grpc.client import GrpcRobotError
+from fleet_manager.runtime.grpc.api.client import GrpcRobotError
 from .routes import (
     parse_fleet_route,
     parse_robot_map_route,

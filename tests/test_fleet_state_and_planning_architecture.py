@@ -6,24 +6,27 @@ from time import monotonic, sleep
 
 import pytest
 
-from fleet_manager.core.fleet.management.manager import FleetManagerCore
-from fleet_manager.core.fleet.domain.models import FleetOrder, FleetRobot
+from fleet_manager.manager.manager import FleetManagerCore
+from fleet_manager.manager.tasks.models import FleetOrder
+from fleet_manager.robot.model import FleetRobot
 from fleet_manager.core.mapping.maps.models import GraphEdge, Landmark, WorldPoint
-from fleet_manager.core.planning_scheduler import (
+from fleet_manager.manager.planning import (
     PlanCommitService,
     PlanCommitStatus,
 )
-from fleet_manager.core.tasks.order_admission import OrderAdmissionService
-from fleet_manager.core.tasks.rolling_continuation import (
+from fleet_manager.manager.tasks.order_admission import OrderAdmissionService
+from fleet_manager.manager.tasks.replanning import ReplanningService
+from fleet_manager.manager.tasks.rolling_continuation import (
     RollingContinuationService,
 )
-from fleet_manager.core.manager_state import (
+from fleet_manager.manager.state import (
     FleetState,
     PlanningSnapshotFactory,
     PlanningState,
+    RecoveryState,
     TrafficState,
 )
-from fleet_manager.core.planning_models import (
+from fleet_manager.manager.planning import (
     FrozenMapping,
     PlanCandidate,
     PlanningJob,
@@ -32,6 +35,7 @@ from fleet_manager.core.planning_models import (
     PlanningReason,
     PlanningSnapshot,
 )
+from fleet_manager.manager.scheduler import PlanningWorker
 from fleet_manager.runtime.loop import RuntimeLoop
 
 
@@ -308,6 +312,93 @@ def test_plan_commit_rolls_back_route_and_reservations_on_failure() -> None:
     assert reservations == ["old-reservation"]
 
 
+def test_worker_returns_candidate_and_runtime_owner_commits_it() -> None:
+    revision = [10]
+    routes: list[str] = []
+    reservations: list[str] = []
+    solver_threads: list[str] = []
+    commit_threads: list[str] = []
+    worker = PlanningWorker(name="planning-owner-test", max_queue_size=1)
+    job = PlanningJob(
+        job_id="owner-job",
+        reason=PlanningReason.ORDER_DISPATCH,
+        priority=PlanningPriority.ORDER_DISPATCH,
+        snapshot=_empty_snapshot(10),
+        submitted_at=monotonic(),
+    )
+
+    def solve(planning_job: PlanningJob) -> PlanCandidate:
+        solver_threads.append(current_thread().name)
+        return PlanCandidate.from_result(
+            planning_job,
+            {
+                "ok": True,
+                "plans": [{"robot": "r1", "route": "A-B"}],
+                "reservations": [{"resource": "A-B"}],
+            },
+            finished_at=monotonic(),
+        )
+
+    assert worker.submit_job(job, solve)
+    assert worker.join(timeout=1.0)
+    candidates = worker.take_completed_results()
+    assert len(candidates) == 1
+    candidate = candidates[0]
+    assert solver_threads == ["planning-owner-test"]
+    assert routes == []
+    assert reservations == []
+
+    commit_service = PlanCommitService(lambda: revision[0])
+
+    def apply() -> None:
+        commit_threads.append(current_thread().name)
+        routes.append("A-B")
+        reservations.append("A-B")
+
+    def restore(checkpoint: tuple[list[str], list[str]]) -> None:
+        routes[:] = checkpoint[0]
+        reservations[:] = checkpoint[1]
+
+    runtime = RuntimeLoop(
+        lambda: None,
+        interval_seconds=10.0,
+        name="planning-commit-owner",
+    )
+    assert runtime.start()
+    try:
+        outcome = runtime.execute(
+            lambda: commit_service.commit(
+                candidate,
+                validate=lambda: None,
+                capture=lambda: (list(routes), list(reservations)),
+                apply=apply,
+                restore=restore,
+            )
+        )
+        assert outcome.status is PlanCommitStatus.COMMITTED
+        assert commit_threads == ["planning-commit-owner"]
+        assert routes == ["A-B"]
+        assert reservations == ["A-B"]
+
+        revision[0] = 11
+        stale_outcome = runtime.execute(
+            lambda: commit_service.commit(
+                candidate,
+                validate=lambda: None,
+                capture=lambda: (list(routes), list(reservations)),
+                apply=apply,
+                restore=lambda checkpoint: None,
+            )
+        )
+        assert stale_outcome.status is PlanCommitStatus.STALE
+        assert commit_threads == ["planning-commit-owner"]
+        assert routes == ["A-B"]
+        assert reservations == ["A-B"]
+    finally:
+        assert runtime.close()
+        assert worker.close()
+
+
 def test_planning_job_state_machine_rejects_invalid_transition() -> None:
     job = PlanningJob(
         job_id="job-1",
@@ -354,7 +445,12 @@ def test_rolling_continuation_service_works_without_manager() -> None:
     state = PlanningState()
     state.rolling_prefetch_eligible_since["r1"] = 4.0
     state.rolling_prefetch_failures["r1"] = 2
-    service = RollingContinuationService(state, lambda order: 0.5)
+    service = RollingContinuationService(
+        FleetState(),
+        state,
+        lambda order: 0.5,
+        lambda: 10.0,
+    )
     order = FleetOrder(order_id="o1", target_lm="B", updated_at=5.0)
     robot = FleetRobot(name="r1", current_lm="A", updated_at=6.0)
 
@@ -366,6 +462,76 @@ def test_rolling_continuation_service_works_without_manager() -> None:
         4.0,
         "r1",
     )
+
+    service.mark_eligible(order, robot, 0.0)
+    service.defer_prefetch(
+        order,
+        robot,
+        boundary_waiting=True,
+        boundary_retry_interval=0.5,
+        time_scale=1.0,
+    )
+    assert robot.rolling_boundary_since == 4.0
+    assert state.rolling_prefetch_retry_at[robot.name] == 10.5
+
+
+def test_replanning_service_works_without_full_manager() -> None:
+    fleet_state = FleetState()
+    planning_state = PlanningState()
+    recovery_state = RecoveryState()
+    order = FleetOrder(
+        order_id="o1",
+        target_lm="B",
+        vehicle="r1",
+        assigned_robot="r1",
+        status="EXECUTING",
+    )
+    robot = FleetRobot(
+        name="r1",
+        current_lm="A",
+        active_order_id=order.order_id,
+        route_revision=3,
+        route_clock=1.5,
+    )
+    fleet_state.task_manager.orders[order.order_id] = order
+    fleet_state.robots[robot.name] = robot
+    service = ReplanningService(
+        fleet_state,
+        planning_state,
+        recovery_state,
+        lambda _robot: "A",
+        lambda: 20.0,
+    )
+
+    state = service.install_transaction(
+        robot,
+        order,
+        start_lm="A",
+        now=20.0,
+        reason="traffic changed",
+        generation=1,
+        blocker_names=("r2",),
+        causal_blocker_signatures=(("r2", "B", 2),),
+        wait_dependency_signature=("r2", "A->B"),
+        retained_route_superseded=False,
+        requires_spatial_replan=False,
+    )
+
+    assert planning_state.runtime_replans[robot.name] is state
+    assert service.state_is_current(robot, state)
+    assert order.status == "PLANNING"
+    assert robot.status == "WAITING"
+
+    recovery_state.coupled_replan_failures[("r1", "r2")] = 2
+    recovery_state.coupled_replan_last_attempt[("r1", "r2")] = 19.0
+    assert service.coupled_failure_count({"r1"}) == 2
+    assert service.coupled_latest_attempt({"r1"}) == 19.0
+    service.clear_coupled_attempts({"r1", "r2"})
+    assert recovery_state.coupled_replan_failures == {}
+    assert recovery_state.coupled_replan_last_attempt == {}
+
+    robot.route_revision += 1
+    assert not service.state_is_current(robot, state)
 
 
 def test_runtime_commands_execute_on_owner_thread_without_extra_step() -> None:

@@ -12,32 +12,12 @@ FLEET_MANAGER_IDS = {FLEET_MANAGER_ID, FLEET_MANAGER_SIM_ID}
 from .fleet_benchmark_commands import FleetBenchmarkCommandService
 from .fleet_benchmark_topology import BenchmarkTopologyService
 from .fleet_context import (
-    DEFAULT_FLEET_MAP_DIR,
-    DEFAULT_FLEET_SIM_MAP_DIR,
-    FLEET_MAP_DATA_ROOT,
-    FLEET_MAPS_OUT_ROOT,
-    FLEET_ROOT,
-    PROJECT_ROOT,
     FleetContextService,
 )
 from .fleet_dynamic_benchmark import DynamicBenchmarkRuntime
 from .fleet_manual_control import FleetManualControlService
 from .fleet_map_service import FleetMapService
 from .fleet_snapshot_service import FleetSnapshotService
-
-
-__all__ = (
-    "DEFAULT_FLEET_MAP_DIR",
-    "DEFAULT_FLEET_SIM_MAP_DIR",
-    "FLEET_MANAGER_ID",
-    "FLEET_MANAGER_IDS",
-    "FLEET_MANAGER_SIM_ID",
-    "FLEET_MAP_DATA_ROOT",
-    "FLEET_MAPS_OUT_ROOT",
-    "FLEET_ROOT",
-    "OperatorFleetManager",
-    "PROJECT_ROOT",
-)
 
 
 class _LazyService:

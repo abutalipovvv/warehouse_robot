@@ -1,15 +1,10 @@
-"""Public SIPP planner facade.
-
-Existing callers keep importing models and :class:`SippPlanner` from this
-module.  Temporal state-space logic lives in :mod:`sipp_problem`, while the
-shared A* implementation owns the generic search loop.
-"""
+"""SIPP planner built on the shared deterministic A* search loop."""
 
 from __future__ import annotations
 
 from typing import Callable
 
-from fleet_manager.core.algorithms.math.search.astar import AStarSolver
+from fleet_manager.core.search.astar import AStarSolver
 
 from ..common.reservations import ReservationTable, ResourceId
 from .sipp_models import (
@@ -17,16 +12,12 @@ from .sipp_models import (
     SippRobotRequest,
     SippState,
     TimedPath,
-    TimedState,
 )
 from .sipp_problem import SippSearchProblem
-from ..graph.traffic_graph import TrafficGraph
-
-
-
+from ..graph.traffic_graph_models import TrafficGraph
 
 class SippPlanner:
-    """Compatibility facade that plans one robot through safe intervals."""
+    """Plan one robot through safe intervals."""
 
     def __init__(
         self,

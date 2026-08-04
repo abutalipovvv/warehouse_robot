@@ -3,15 +3,21 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from fleet_manager.core.transport.endpoints import (
-    DEFAULT_GRPC_PORT,
+from fleet_manager.manager.endpoints import (
+    DEFAULT_GRPC_PORT as _DEFAULT_GRPC_PORT,
     EndpointError as RobotApiError,
-    RobotEndpoint,
-    build_grpc_endpoint,
-    normalize_grpc_endpoint,
-    parse_grpc_endpoint,
+    RobotEndpoint as _RobotEndpoint,
+    build_grpc_endpoint as _build_grpc_endpoint,
+    normalize_grpc_endpoint as _normalize_grpc_endpoint,
+    parse_grpc_endpoint as _parse_grpc_endpoint,
 )
 from .proto import robot_api_pb2
+
+DEFAULT_GRPC_PORT = _DEFAULT_GRPC_PORT
+RobotEndpoint = _RobotEndpoint
+build_grpc_endpoint = _build_grpc_endpoint
+normalize_grpc_endpoint = _normalize_grpc_endpoint
+parse_grpc_endpoint = _parse_grpc_endpoint
 
 DEFAULT_GRPC_MAX_MESSAGE_BYTES = 128 * 1024 * 1024
 DEFAULT_GRPC_MAP_QUERY_TIMEOUT_SEC = 60.0

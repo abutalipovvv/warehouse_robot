@@ -7,8 +7,8 @@ import json
 from typing import Any
 from urllib.parse import urlparse
 
-from .grpc.client import GrpcRobotError
-from .grpc.contracts import DEFAULT_GRPC_PORT
+from fleet_manager.manager.endpoints import DEFAULT_GRPC_PORT
+from fleet_manager.runtime.grpc.api.client import GrpcRobotError
 from .state_common import (
     OPERATOR_CONTROL_OWNER_ID,
     OPERATOR_CONTROL_OWNER_NAME,
@@ -274,6 +274,3 @@ class RobotControlProxyMixin:
     @staticmethod
     def _payload_robot_type(payload: dict[str, Any]) -> str:
         return str(payload.get("type") or payload.get("mode") or "grpc").strip().lower() or "grpc"
-
-
-__all__ = ["RobotControlProxyMixin"]

@@ -365,6 +365,3 @@ class RobotMapSyncMixin:
             robot = self.get_robot(robot_id)
             return self.grpc_adapter.get_map_bundle(self._grpc_endpoint(robot), map_name)
         raise ValueError("unsupported robot transport; use grpc")
-
-
-__all__ = ["RobotMapSyncMixin"]

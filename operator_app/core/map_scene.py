@@ -230,11 +230,3 @@ def rectangle_payload(
         "height": wall_height,
         "stride": stride,
     }
-
-
-__all__ = [
-    "MAP_SUPPORT_YAML_FILES",
-    "MapSceneBuilder",
-    "horizontal_runs",
-    "rectangle_payload",
-]

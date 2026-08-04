@@ -2,45 +2,43 @@ from __future__ import annotations
 
 import inspect
 
-from fleet_manager.core.fleet.domain.models import FleetRobot
-from fleet_manager.core.traffic.deadlocks.arbitration.deadlock_arbitration import (
+from fleet_manager.robot.model import FleetRobot
+from fleet_manager.manager.traffic.deadlocks.arbitration.deadlock_arbitration import (
     DeadlockArbitrationMixin,
-    _RuntimeWaitSnapshot,
 )
-from fleet_manager.core.traffic.deadlocks.arbitration.deadlock_corridor_ownership import (
+from fleet_manager.manager.traffic.deadlocks.arbitration.deadlock_corridor_ownership import (
     CorridorOwnershipMixin,
 )
-from fleet_manager.core.traffic.deadlocks.recovery.cycles.deadlock_cycle_recovery import (
+from fleet_manager.manager.traffic.deadlocks.recovery.cycles.deadlock_cycle_recovery import (
     WaitCycleRecoveryMixin,
 )
-from fleet_manager.core.traffic.deadlocks.recovery.evacuation.deadlock_escape_install import (
+from fleet_manager.manager.traffic.deadlocks.recovery.evacuation.deadlock_escape_install import (
     GraphEscapeInstallMixin,
 )
-from fleet_manager.core.traffic.deadlocks.recovery.evacuation.deadlock_evacuation import (
+from fleet_manager.manager.traffic.deadlocks.recovery.evacuation.deadlock_evacuation import (
     DeadlockEvacuationMixin,
-    _EvacuationCandidate,
 )
-from fleet_manager.core.traffic.deadlocks.recovery.evacuation.deadlock_evacuation_activation import (
+from fleet_manager.manager.traffic.deadlocks.recovery.evacuation.deadlock_evacuation_activation import (
     EvacuationActivationMixin,
 )
-from fleet_manager.core.traffic.deadlocks.recovery.evacuation.deadlock_evacuation_candidates import (
+from fleet_manager.manager.traffic.deadlocks.recovery.evacuation.deadlock_evacuation_candidates import (
     EvacuationCandidateMixin,
 )
-from fleet_manager.core.traffic.deadlocks.recovery.evacuation.deadlock_evacuation_geometry import (
+from fleet_manager.manager.traffic.deadlocks.recovery.evacuation.deadlock_evacuation_geometry import (
     EvacuationGeometryMixin,
 )
-from fleet_manager.core.traffic.deadlocks.recovery.evacuation.deadlock_evacuation_latches import (
+from fleet_manager.manager.traffic.deadlocks.recovery.evacuation.deadlock_evacuation_latches import (
     EvacuationLatchMixin,
 )
-from fleet_manager.core.traffic.deadlocks.recovery.evacuation.deadlock_evacuation_models import (
+from fleet_manager.manager.traffic.deadlocks.recovery.evacuation.deadlock_evacuation_models import (
     _EvacuationCandidate as EvacuationCandidateModel,
 )
-from fleet_manager.core.traffic.deadlocks.arbitration.deadlock_leases import DeadlockLeaseMixin
-from fleet_manager.core.traffic.deadlocks.arbitration.deadlock_policy import DeadlockPolicyMixin
-from fleet_manager.core.traffic.deadlocks.arbitration.deadlock_priority import (
+from fleet_manager.manager.traffic.deadlocks.arbitration.deadlock_leases import DeadlockLeaseMixin
+from fleet_manager.manager.traffic.deadlocks.arbitration.deadlock_policy import DeadlockPolicyMixin
+from fleet_manager.manager.traffic.deadlocks.arbitration.deadlock_priority import (
     DeadlockPriorityMixin,
 )
-from fleet_manager.core.traffic.deadlocks.arbitration.deadlock_wait_detection import (
+from fleet_manager.manager.traffic.deadlocks.arbitration.deadlock_wait_detection import (
     WaitCycleDetectionMixin,
     _RuntimeWaitSnapshot as RuntimeWaitSnapshotModel,
 )
@@ -88,7 +86,9 @@ def test_arbitration_facade_composes_focused_decision_stages() -> None:
         DeadlockArbitrationMixin._deadlock_retreat_after
         is DeadlockPolicyMixin._deadlock_retreat_after
     )
-    assert _RuntimeWaitSnapshot is RuntimeWaitSnapshotModel
+    assert RuntimeWaitSnapshotModel.__module__.endswith(
+        "deadlock_wait_detection"
+    )
 
 
 def test_evacuation_facade_composes_focused_recovery_stages() -> None:
@@ -123,7 +123,9 @@ def test_evacuation_facade_composes_focused_recovery_stages() -> None:
         DeadlockEvacuationMixin._install_graph_escape_retreat
         is GraphEscapeInstallMixin._install_graph_escape_retreat
     )
-    assert _EvacuationCandidate is EvacuationCandidateModel
+    assert EvacuationCandidateModel.__module__.endswith(
+        "deadlock_evacuation_models"
+    )
 
 
 def test_corridor_recovery_latch_key_remains_static_and_deterministic() -> None:

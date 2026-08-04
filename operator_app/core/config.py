@@ -9,7 +9,7 @@ try:
 except ModuleNotFoundError:  # pragma: no cover - PyYAML is available in the normal app environment.
     yaml = None  # type: ignore[assignment]
 
-from .fleet_manager import DEFAULT_FLEET_MAP_DIR
+from .fleet_context import DEFAULT_FLEET_MAP_DIR
 from .registry import default_registry_path
 
 PACKAGE_ROOT = Path(__file__).resolve().parents[1]

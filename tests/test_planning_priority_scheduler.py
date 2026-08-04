@@ -3,12 +3,12 @@ from __future__ import annotations
 from threading import Event
 from time import monotonic, sleep
 
-from fleet_manager.core.planning_scheduler import (
+from fleet_manager.manager.scheduler import (
     PlanningWorker,
     PlanningWorkerJobEvent,
     PlanningWorkerState,
 )
-from fleet_manager.core.planning_models import (
+from fleet_manager.manager.planning import (
     FrozenMapping,
     PlanCandidate,
     PlanningJob,

@@ -6,7 +6,7 @@ from pathlib import Path
 
 import yaml
 
-from fleet_manager.core.fleet.safety.collision import FleetCollisionChecker
+from fleet_manager.core.traffic.collision import FleetCollisionChecker
 from fleet_manager.core.mapping.maps.map_loader import WarehouseMapLoader
 
 

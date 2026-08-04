@@ -23,7 +23,7 @@ if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[4]))
 
 from fleet_manager.core.mapping.formats.pgm import PgmImage
-from fleet_manager.core.io.atomic_files import atomic_write_text
+from fleet_manager.storage import atomic_write_text
 
 
 def _read_yaml(path: Path) -> Any:

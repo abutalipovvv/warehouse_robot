@@ -3,8 +3,9 @@ from pathlib import Path
 
 from operator_app.core.models import KnownRobot
 from operator_app.core.state import OperatorAppState
-from operator_app.core.grpc.contracts import robot_status_from_json, robot_status_to_json
-from operator_app.core.grpc.proto import robot_api_pb2, robot_api_pb2_grpc
+from fleet_manager.runtime.grpc.api.contracts import robot_status_from_json
+from operator_app.core.grpc.contracts import robot_status_to_json
+from fleet_manager.runtime.grpc.api.proto import robot_api_pb2, robot_api_pb2_grpc
 from fleet_manager.runtime.grpc.api.server import RobotApiService
 
 
@@ -110,7 +111,6 @@ def test_operator_ui_requests_force_takeover_and_graph_safe_fleet_pose() -> None
 
 
 def test_all_static_map_views_and_editors_use_babylon_2d() -> None:
-    project_root = Path(__file__).resolve().parents[1]
     app_js = _operator_app_source()
     editor_js = (OPERATOR_STATIC_ROOT / "map-editor.js").read_text(encoding="utf-8")
     editor_html = (OPERATOR_STATIC_ROOT / "map-editor.html").read_text(encoding="utf-8")
@@ -154,7 +154,6 @@ def test_all_static_map_views_and_editors_use_babylon_2d() -> None:
 
 
 def test_operator_map_context_and_edge_controls_are_explicit() -> None:
-    project_root = Path(__file__).resolve().parents[1]
     app_js = _operator_app_source()
     editor_js = (OPERATOR_STATIC_ROOT / "map-editor.js").read_text(encoding="utf-8")
     editor_html = (OPERATOR_STATIC_ROOT / "map-editor.html").read_text(encoding="utf-8")
@@ -226,7 +225,6 @@ def test_map_editor_raster_history_is_atomic_and_has_consistent_shortcuts() -> N
 
 
 def test_operator_workspace_navigation_and_fleet_sidebar_contract() -> None:
-    project_root = Path(__file__).resolve().parents[1]
     app_js = _operator_app_source()
     styles_css = (OPERATOR_STATIC_ROOT / "styles.css").read_text(encoding="utf-8")
 
@@ -255,7 +253,6 @@ def test_operator_workspace_navigation_and_fleet_sidebar_contract() -> None:
 
 
 def test_babylon_2d_uses_robot_model_footprint_and_future_route() -> None:
-    project_root = Path(__file__).resolve().parents[1]
     app_js = _operator_app_source()
     scene_js = (OPERATOR_STATIC_ROOT / "scene3d.js").read_text(encoding="utf-8")
 

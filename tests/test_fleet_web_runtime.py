@@ -7,15 +7,27 @@ from types import SimpleNamespace
 
 import pytest
 
-import fleet_manager.core.fleet.management.manager as runtime_module
-from fleet_manager.core.fleet.domain.constants import FLEET_CONTROL_OWNER_ID
-from fleet_manager.core.fleet.domain.models import FleetOrder, FleetRobot
+import fleet_manager.manager.manager as runtime_module
+from fleet_manager.manager.tasks.statuses import FLEET_CONTROL_OWNER_ID
+from fleet_manager.manager.tasks.models import FleetOrder
+from fleet_manager.manager.planning import PlanningSolverService
+from fleet_manager.robot.model import FleetRobot
 from fleet_manager.core.mapping.maps.models import GraphEdge, Landmark, WorldPoint
 from fleet_manager.core.traffic.corridors.scheduling.corridor_scheduler import (
     CentralCorridorScheduler,
 )
 from fleet_manager.runtime.grpc.manager import FleetManagerROS
 from fleet_manager.runtime.simulation.manager import FleetManagerSim
+
+
+def _install_planning_solver(manager: FleetManagerSim, planner) -> None:
+    def planner_call(payload):
+        return planner(payload.get("robots", []), payload)
+
+    manager._planning_solver_service = PlanningSolverService(
+        planner_call,
+        manager._planner_lock,
+    )
 
 
 def test_runtime_replan_is_deferred_while_robot_is_mid_edge() -> None:
@@ -4305,14 +4317,17 @@ def test_runtime_tick_does_not_wait_for_background_mapf(monkeypatch) -> None:
     )
     started = Event()
     release = Event()
-    original = manager._plan_valid_requests
+    original = manager._planning_solver_service._planner_call
 
-    def delayed_plan(requests, payload):
+    def delayed_plan(payload):
         started.set()
         release.wait(timeout=1.0)
-        return original(requests, payload)
+        return original(payload)
 
-    monkeypatch.setattr(manager, "_plan_valid_requests", delayed_plan)
+    manager._planning_solver_service = PlanningSolverService(
+        delayed_plan,
+        manager._planner_lock,
+    )
     before = perf_counter()
     manager._advance_runtime()
     elapsed = perf_counter() - before
@@ -6618,7 +6633,7 @@ def test_rolling_boundary_holders_are_prefetched_as_one_recovery_batch(
             "debug": {"reason": "captured recovery batch"},
         }
 
-    monkeypatch.setattr(manager, "_plan_valid_requests", capture_plan)
+    _install_planning_solver(manager, capture_plan)
     manager._start_async_rolling_prefetch(entries)
 
     assert planned.wait(1.0)
@@ -6681,9 +6696,8 @@ def test_singleton_prefetch_selects_boundary_goal_only_after_chunk_exhaustion(
         recovery_goal,
     )
     monkeypatch.setattr(manager, "_rolling_planning_goal", rolling_goal)
-    monkeypatch.setattr(
+    _install_planning_solver(
         manager,
-        "_plan_valid_requests",
         lambda *_args, **_kwargs: (
             planned.set()
             or {
@@ -7472,7 +7486,7 @@ def test_cyclic_rolling_collapse_uses_fixed_pocket_and_blacklists_failure(
             "debug": {"reason": "no_low_level_path:r1:fixed pocket blocked"},
         }
 
-    monkeypatch.setattr(manager, "_plan_valid_requests", fail_fixed_path)
+    _install_planning_solver(manager, fail_fixed_path)
     manager._start_async_rolling_prefetch(first)
 
     assert planner_called.wait(1.0)

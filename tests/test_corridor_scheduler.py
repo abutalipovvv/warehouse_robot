@@ -7,6 +7,8 @@ import pytest
 
 from fleet_manager.core.traffic.corridors.scheduling.corridor_scheduler import (
     CentralCorridorScheduler,
+)
+from fleet_manager.core.traffic.corridors.scheduling.corridor_models import (
     CorridorDecisionStatus,
     CorridorOccupancy,
     CorridorRequest,

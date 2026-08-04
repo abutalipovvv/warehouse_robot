@@ -4,15 +4,16 @@ import math
 import pytest
 
 from fleet_manager.core.mapf.fleet.fleet_planner import FleetMapfPlanner
-from fleet_manager.core.mapf.cbs.lm_cbs import LmRobotRequest
+from fleet_manager.core.mapf.cbs.cbs_models import LmRobotRequest
 from fleet_manager.core.mapf.common.reservations import (
     ReservationInterval,
     ReservationTable,
     ResourceId,
 )
 from fleet_manager.core.mapf.rolling.rolling_sipp import RollingSippPlanner
-from fleet_manager.core.mapf.sipp.sipp import SippPlanner, SippRobotRequest
-from fleet_manager.core.mapf.graph.traffic_graph import TrafficGraph
+from fleet_manager.core.mapf.sipp.sipp import SippPlanner
+from fleet_manager.core.mapf.sipp.sipp_models import SippRobotRequest
+from fleet_manager.core.mapf.graph.traffic_graph_models import TrafficGraph
 from fleet_manager.core.mapping.maps.models import GraphEdge, Landmark, WorldPoint
 
 

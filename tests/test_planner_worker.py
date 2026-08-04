@@ -5,10 +5,19 @@ from time import monotonic, sleep
 
 import pytest
 
-from fleet_manager.core.fleet.management.manager import FleetManagerCore
-from fleet_manager.core.planning_scheduler import (
+from fleet_manager.manager.manager import FleetManagerCore
+from fleet_manager.manager.scheduler import (
     PlanningWorker,
     PlanningWorkerState,
+)
+from fleet_manager.manager.planning import (
+    FrozenMapping,
+    PlanCandidate,
+    PlanningJob,
+    PlanningPriority,
+    PlanningReason,
+    PlanningSnapshot,
+    PlanningSolverService,
 )
 from fleet_manager.core.mapping.maps.models import (
     GraphEdge,
@@ -50,31 +59,75 @@ def _manager() -> FleetManagerCore:
     )
 
 
+def _planning_job(job_id: str) -> PlanningJob:
+    snapshot = PlanningSnapshot(
+        revision=1,
+        created_at=monotonic(),
+        robots=(),
+        active_routes=(),
+        reservations=(),
+        traffic_resources=(),
+        blockers=(),
+        graph_revision=None,
+        map_revision=None,
+        requests=(),
+        primary_payload=FrozenMapping(),
+    )
+    return PlanningJob(
+        job_id=job_id,
+        reason=PlanningReason.ORDER_DISPATCH,
+        priority=PlanningPriority.ORDER_DISPATCH,
+        snapshot=snapshot,
+        submitted_at=monotonic(),
+    )
+
+
+def _candidate(job: PlanningJob) -> PlanCandidate:
+    return PlanCandidate.from_result(
+        job,
+        {"ok": True, "plans": []},
+        finished_at=monotonic(),
+    )
+
+
+def _install_planner(manager: FleetManagerCore, planner) -> None:
+    def planner_call(payload):
+        requests = payload.get("robots", [])
+        return planner(requests, payload)
+
+    manager._planning_solver_service = PlanningSolverService(
+        planner_call,
+        manager._planner_lock,
+    )
+
+
 def test_worker_owns_one_finite_non_daemon_thread() -> None:
-    worker = PlanningWorker(name="test-planner")
+    worker = PlanningWorker(name="test-planner", max_queue_size=1)
     started = Event()
     release = Event()
     observations: list[tuple[str, bool]] = []
 
-    def task() -> None:
+    def solver(job: PlanningJob) -> PlanCandidate:
         observations.append(
             (current_thread().name, current_thread().daemon)
         )
         started.set()
         release.wait(1.0)
+        return _candidate(job)
 
     assert worker.state is PlanningWorkerState.IDLE
-    assert worker.submit(task, thread_name="test-mapf-job")
+    assert worker.submit_job(_planning_job("active"), solver)
     assert started.wait(1.0)
     assert worker.state is PlanningWorkerState.RUNNING
     assert worker.active_submission == 1
-    assert not worker.submit(lambda: None)
+    assert worker.submit_job(_planning_job("queued"), _candidate)
+    assert not worker.submit_job(_planning_job("queue-full"), _candidate)
 
     release.set()
     assert worker.join(timeout=1.0)
     assert worker.state is PlanningWorkerState.IDLE
     assert worker.active_submission == 0
-    assert observations == [("test-mapf-job", False)]
+    assert observations == [("test-planner", False)]
     assert worker.close()
 
 
@@ -82,9 +135,17 @@ def test_worker_can_run_a_new_job_after_previous_thread_exits() -> None:
     worker = PlanningWorker()
     completed: list[int] = []
 
-    assert worker.submit(lambda: completed.append(1))
+    def first(job: PlanningJob) -> PlanCandidate:
+        completed.append(1)
+        return _candidate(job)
+
+    def second(job: PlanningJob) -> PlanCandidate:
+        completed.append(2)
+        return _candidate(job)
+
+    assert worker.submit_job(_planning_job("first"), first)
     assert worker.join(timeout=1.0)
-    assert worker.submit(lambda: completed.append(2))
+    assert worker.submit_job(_planning_job("second"), second)
     assert worker.join(timeout=1.0)
 
     assert completed == [1, 2]
@@ -95,10 +156,10 @@ def test_worker_can_run_a_new_job_after_previous_thread_exits() -> None:
 def test_unexpected_task_exception_is_recorded_and_worker_recovers() -> None:
     worker = PlanningWorker()
 
-    def fail() -> None:
+    def fail(_job: PlanningJob) -> PlanCandidate:
         raise ValueError("planner exploded")
 
-    assert worker.submit(fail)
+    assert worker.submit_job(_planning_job("failed"), fail)
     assert worker.join(timeout=1.0)
     assert _wait_until(lambda: worker.state is PlanningWorkerState.IDLE)
 
@@ -109,7 +170,12 @@ def test_unexpected_task_exception_is_recorded_and_worker_recovers() -> None:
     assert failure.message == "planner exploded"
 
     recovered = Event()
-    assert worker.submit(recovered.set)
+
+    def recover(job: PlanningJob) -> PlanCandidate:
+        recovered.set()
+        return _candidate(job)
+
+    assert worker.submit_job(_planning_job("recovered"), recover)
     assert recovered.wait(1.0)
     assert worker.join(timeout=1.0)
     assert worker.close()
@@ -120,21 +186,22 @@ def test_timed_out_close_rejects_work_until_job_finishes() -> None:
     started = Event()
     release = Event()
 
-    def task() -> None:
+    def solver(job: PlanningJob) -> PlanCandidate:
         started.set()
         release.wait(1.0)
+        return _candidate(job)
 
-    assert worker.submit(task)
+    assert worker.submit_job(_planning_job("active"), solver)
     assert started.wait(1.0)
     assert not worker.close(timeout=0.01)
     assert worker.state is PlanningWorkerState.CLOSING
-    assert not worker.submit(lambda: None)
+    assert not worker.submit_job(_planning_job("rejected"), _candidate)
 
     release.set()
     assert worker.close(timeout=1.0)
     assert worker.state is PlanningWorkerState.CLOSED
     assert worker.close()
-    assert not worker.submit(lambda: None)
+    assert not worker.submit_job(_planning_job("closed"), _candidate)
 
 
 @pytest.mark.parametrize(
@@ -166,15 +233,13 @@ def test_dispatch_completion_does_not_publish_into_replaced_job(
         release_planning.wait(1.0)
         return {"ok": True, "plans": []}
 
-    monkeypatch.setattr(manager, "_plan_valid_requests", plan)
+    _install_planner(manager, plan)
     with manager._dispatch_job_lock:
         manager._dispatch_job = stale_job
     assert manager._submit_async_planning_job(
         stale_job,
         [],
         {},
-        failure_reason="background planner failed",
-        thread_name="test-stale-mapf",
     )
     assert planning_started.wait(1.0)
 
@@ -183,11 +248,10 @@ def test_dispatch_completion_does_not_publish_into_replaced_job(
     release_planning.set()
     assert manager._planning_worker.join(timeout=1.0)
 
-    assert stale_job == {
-        "kind": "dispatch",
-        "done": False,
-        "result": None,
-    }
+    assert stale_job["kind"] == "dispatch"
+    assert stale_job["done"] is False
+    assert stale_job["result"] is None
+    assert "candidate" not in stale_job
     assert replacement_job == {
         "kind": "prefetch",
         "done": False,
@@ -207,26 +271,21 @@ def test_dispatch_helper_preserves_background_failure_reason(
     def fail(_requests, _payload):
         raise RuntimeError("no route")
 
-    monkeypatch.setattr(manager, "_plan_valid_requests", fail)
+    _install_planner(manager, fail)
     with manager._dispatch_job_lock:
         manager._dispatch_job = job
     assert manager._submit_async_planning_job(
         job,
         [],
         {},
-        failure_reason="background planner failed",
-        thread_name="test-failed-mapf",
     )
     assert manager._planning_worker.join(timeout=1.0)
 
     assert job["done"] is True
-    assert job["result"] == {
-        "ok": False,
-        "plans": [],
-        "debug": {
-            "reason": "background planner failed: no route",
-        },
-    }
+    candidate = job["candidate"]
+    assert isinstance(candidate, PlanCandidate)
+    assert candidate.result.get("ok") is False
+    assert candidate.diagnostics.get("reason") == "planning solver failed: no route"
     manager.close()
 
 
@@ -251,7 +310,7 @@ def test_manager_close_discards_current_job_and_joins_worker(
         release_planning.wait(1.0)
         return {"ok": True, "plans": []}
 
-    monkeypatch.setattr(manager, "_plan_valid_requests", plan)
+    _install_planner(manager, plan)
     monkeypatch.setattr(
         manager,
         "_release_controlled_corridor_gate_pins",
@@ -263,8 +322,6 @@ def test_manager_close_discards_current_job_and_joins_worker(
         job,
         [],
         {},
-        failure_reason="background planner failed",
-        thread_name="test-close-mapf",
     )
     assert planning_started.wait(1.0)
 

@@ -2,17 +2,19 @@ from __future__ import annotations
 
 import random
 
-from fleet_manager.core.fleet.domain.models import FleetRobot
-from fleet_manager.core.traffic.runtime.coordinator import TrafficCoordinatorMixin
-from fleet_manager.core.traffic.deadlocks.arbitration.deadlock_arbitration import (
+from fleet_manager.robot.model import FleetRobot
+from fleet_manager.manager.traffic.coordinator import TrafficCoordinatorMixin
+from fleet_manager.manager.traffic.deadlocks.arbitration.deadlock_arbitration import (
     DeadlockArbitrationMixin,
 )
-from fleet_manager.core.traffic.deadlocks.recovery.evacuation.deadlock_evacuation import (
+from fleet_manager.manager.traffic.deadlocks.recovery.evacuation.deadlock_evacuation import (
     DeadlockEvacuationMixin,
+)
+from fleet_manager.manager.traffic.deadlocks.recovery.evacuation.deadlock_evacuation_models import (
     _EvacuationCandidate,
 )
-from fleet_manager.core.traffic.runtime.runtime_conflicts import RuntimeConflictMixin
-from fleet_manager.core.traffic.deadlocks.arbitration.wait_graph import WaitForGraph
+from fleet_manager.manager.traffic.runtime_conflicts import RuntimeConflictMixin
+from fleet_manager.core.traffic.deadlocks.wait_graph import WaitForGraph
 
 
 def _legacy_cycles(dependencies: dict[str, str]) -> list[tuple[str, ...]]:

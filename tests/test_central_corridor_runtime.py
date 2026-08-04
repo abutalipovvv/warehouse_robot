@@ -3,9 +3,11 @@ from __future__ import annotations
 from dataclasses import replace
 from threading import Event
 
-from fleet_manager.core.fleet.domain.models import FleetOrder, FleetRobot
+from fleet_manager.manager.tasks.models import FleetOrder
+from fleet_manager.manager.planning import PlanningSolverService
+from fleet_manager.robot.model import FleetRobot
 from fleet_manager.core.mapping.maps.models import GraphEdge, Landmark
-from fleet_manager.core.traffic.corridors.scheduling.corridor_scheduler import (
+from fleet_manager.core.traffic.corridors.scheduling.corridor_models import (
     CorridorDecisionStatus,
     CorridorRequest,
     CorridorResourceWindow,
@@ -16,6 +18,16 @@ from fleet_manager.runtime.simulation.manager import FleetManagerSim
 
 
 REGION = "corridor:runtime"
+
+
+def _install_planning_solver(manager: FleetManagerSim, planner) -> None:
+    def planner_call(payload):
+        return planner(payload.get("robots", []), payload)
+
+    manager._planning_solver_service = PlanningSolverService(
+        planner_call,
+        manager._planner_lock,
+    )
 
 
 def _manager(*, controlled: bool = True) -> FleetManagerSim:
@@ -847,7 +859,7 @@ def test_live_prefetch_passes_central_slot_to_sipp(monkeypatch) -> None:
             "debug": {"reason": "captured central gate"},
         }
 
-    monkeypatch.setattr(manager, "_plan_valid_requests", capture)
+    _install_planning_solver(manager, capture)
     manager._start_async_rolling_prefetch(entry)
 
     assert planned.wait(1.0)
@@ -912,7 +924,7 @@ def test_initial_dispatch_uses_the_same_central_corridor_gate(
             "debug": {"reason": "captured initial central gate"},
         }
 
-    monkeypatch.setattr(manager, "_plan_valid_requests", capture)
+    _install_planning_solver(manager, capture)
     assert manager._start_async_simulated_dispatch([entry])
     assert planned.wait(1.0)
     assert captured[0]["departureNotBefore"][0]["node"] == "A"

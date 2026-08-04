@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from fleet_manager.core.fleet.management.manager import FleetManagerCore
+from fleet_manager.manager.manager import FleetManagerCore
 from ..gateways.grpc import GrpcRobotGateway
 from .mixin import GrpcRobotRuntimeMixin
 

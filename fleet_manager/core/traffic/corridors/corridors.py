@@ -5,8 +5,8 @@ from __future__ import annotations
 from dataclasses import replace
 from typing import Iterable
 
-from fleet_manager.core.algorithms.math.curves import bezier_point
-from fleet_manager.core.algorithms.math.geometry import Vector2
+from fleet_manager.core.math.curves import bezier_point
+from fleet_manager.core.math.geometry import Vector2
 from fleet_manager.core.mapping.maps.models import (
     GraphEdge,
     Landmark,

@@ -6,7 +6,8 @@ from dataclasses import dataclass
 import logging
 from typing import Any
 
-from ..cbs.lm_cbs import LmCBSPlanner, LmRobotRequest
+from ..cbs.cbs_high_level import LmCBSPlanner
+from ..cbs.cbs_models import LmRobotRequest
 from ..rolling.rolling_sipp import RollingSippPlanner
 
 

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from sys import modules
 from threading import Lock, RLock
 from typing import Any, Callable, TypeVar
 
@@ -13,11 +12,11 @@ from fleet_manager.runtime.loop import (
 )
 
 from .fleet_manager import (
-    DEFAULT_FLEET_SIM_MAP_DIR,
     FLEET_MANAGER_ID,
     FLEET_MANAGER_SIM_ID,
     OperatorFleetManager,
 )
+from .fleet_context import DEFAULT_FLEET_SIM_MAP_DIR
 from .map_cache import MapCache, default_maps_cache_root
 from .models import KnownRobot
 from .registry import RobotRegistry
@@ -28,34 +27,20 @@ from .workspace import OperatorWorkspace
 CommandResultT = TypeVar("CommandResultT")
 
 
-def _state_dependency(name: str, default: Any) -> Any:
-    """Respect compatibility monkeypatches made through ``core.state``."""
-    facade = modules.get("operator_app.core.state")
-    return getattr(facade, name, default) if facade is not None else default
-
-
 class RuntimeOwnershipMixin:
     """Own runtimes, manager selection and workspace lifecycle."""
 
     def __init__(self, registry_path: Path, probe_timeout: float, fleet_params_path: Path, fleet_map_dir: Path) -> None:
-        grpc_adapter_type = _state_dependency(
-            "GrpcRobotAdapter",
-            GrpcRobotAdapter,
-        )
-        fleet_manager_type = _state_dependency(
-            "OperatorFleetManager",
-            OperatorFleetManager,
-        )
         self.registry = RobotRegistry(registry_path)
         self.workspace = OperatorWorkspace()
         self.legacy_map_cache_root = default_maps_cache_root().expanduser().resolve()
         self.map_cache = MapCache(robot_dir_resolver=self._maps_dir_for_robot_id)
-        self.grpc_adapter = grpc_adapter_type(
+        self.grpc_adapter = GrpcRobotAdapter(
             timeout=max(1.5, float(probe_timeout))
         )
         self.map_timeout = max(10.0, float(probe_timeout) * 10.0)
         self.fleet_params_path = Path(fleet_params_path).expanduser().resolve()
-        self.fleet_manager = fleet_manager_type(
+        self.fleet_manager = OperatorFleetManager(
             fleet_map_dir,
             self.fleet_params_path,
             remote_adapter=self.grpc_adapter,
@@ -64,7 +49,7 @@ class RuntimeOwnershipMixin:
             mode="robots",
         )
         sim_map_dir = DEFAULT_FLEET_SIM_MAP_DIR if DEFAULT_FLEET_SIM_MAP_DIR.exists() else fleet_map_dir
-        self.fleet_manager_sim = fleet_manager_type(
+        self.fleet_manager_sim = OperatorFleetManager(
             sim_map_dir,
             self.fleet_params_path,
             remote_adapter=None,
@@ -372,6 +357,3 @@ class RuntimeOwnershipMixin:
             "activeMapName": active_name,
             "warnings": warnings,
         }
-
-
-__all__ = ["RuntimeOwnershipMixin"]

@@ -1,4 +1,4 @@
-"""Operator-facing compatibility layer for the shared robot gRPC client.
+"""Operator adapter for the shared robot gRPC client.
 
 The wire protocol and RPC implementation live in ``fleet_manager.runtime``.
 The operator only specializes how an unavailable pose is represented in its
@@ -12,11 +12,8 @@ from typing import Any
 from fleet_manager.runtime.grpc.api.client import (
     GrpcRobotAdapter as _SharedGrpcRobotAdapter,
     GrpcRobotClient as _SharedGrpcRobotClient,
-    GrpcRobotError,
 )
-
-from .contracts import DEFAULT_GRPC_PORT
-
+from fleet_manager.manager.endpoints import DEFAULT_GRPC_PORT
 
 class GrpcRobotClient(_SharedGrpcRobotClient):
     """Shared client with the operator's nullable-pose presentation rule."""
@@ -45,6 +42,3 @@ class GrpcRobotAdapter(_SharedGrpcRobotAdapter):
             timeout=timeout,
             default_port=default_port,
         )
-
-
-__all__ = ["GrpcRobotAdapter", "GrpcRobotClient", "GrpcRobotError"]
