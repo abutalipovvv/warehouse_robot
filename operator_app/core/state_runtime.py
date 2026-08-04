@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from sys import modules
 from threading import Lock, RLock
-from typing import Any
+from typing import Any, Callable, TypeVar
 
 from fleet_manager.runtime.loop import (
     RuntimeLoop,
@@ -23,6 +23,9 @@ from .models import KnownRobot
 from .registry import RobotRegistry
 from .grpc.client import GrpcRobotAdapter
 from .workspace import OperatorWorkspace
+
+
+CommandResultT = TypeVar("CommandResultT")
 
 
 def _state_dependency(name: str, default: Any) -> Any:
@@ -131,6 +134,43 @@ class RuntimeOwnershipMixin:
     def _fleet_runtime_step(self, manager: OperatorFleetManager) -> None:
         with self._fleet_lock_for_manager(manager):
             manager.runtime_step()
+
+    def _fleet_runtime_loop_for_id(
+        self,
+        manager_id: str,
+    ) -> RuntimeLoop | None:
+        loops = getattr(self, "_fleet_runtime_loops", ())
+        index = 1 if manager_id == FLEET_MANAGER_SIM_ID else 0
+        if index >= len(loops):
+            return None
+        runtime_loop = loops[index]
+        return runtime_loop if isinstance(runtime_loop, RuntimeLoop) else None
+
+    def _execute_fleet_command(
+        self,
+        manager_id: str,
+        command: Callable[[], CommandResultT],
+    ) -> CommandResultT:
+        """Run one manager operation without caller/owner lock inversion.
+
+        The HTTP thread must not hold the fleet lock while waiting for the
+        runtime owner. The owner acquires the lock inside the queued callback,
+        so map replacement and legacy lock users remain serialized with ticks.
+        """
+
+        fleet_lock = self._fleet_lock_for_id(manager_id)
+
+        def owned_command() -> CommandResultT:
+            fleet_lock.acquire()
+            try:
+                return command()
+            finally:
+                fleet_lock.release()
+
+        runtime_loop = self._fleet_runtime_loop_for_id(manager_id)
+        if runtime_loop is None or not runtime_loop.is_running:
+            return owned_command()
+        return runtime_loop.execute(owned_command)
 
     def _report_fleet_runtime_failure(
         self,
@@ -249,8 +289,19 @@ class RuntimeOwnershipMixin:
             (FLEET_MANAGER_SIM_ID, self.fleet_manager_sim),
         )
         for manager_id, manager in managers:
+            if include_runtime:
+                payloads.append(
+                    self._execute_fleet_command(
+                        manager_id,
+                        lambda manager=manager: manager.sidebar_payload(
+                            include_runtime=True
+                        ),
+                    )
+                )
+                continue
+
             lock = self._fleet_lock_for_id(manager_id)
-            acquired = lock.acquire(blocking=include_runtime)
+            acquired = lock.acquire(blocking=False)
             if not acquired:
                 payloads.append(
                     manager.sidebar_payload(include_runtime=False)
@@ -258,9 +309,7 @@ class RuntimeOwnershipMixin:
                 continue
             try:
                 payloads.append(
-                    manager.sidebar_payload(
-                        include_runtime=include_runtime
-                    )
+                    manager.sidebar_payload(include_runtime=False)
                 )
             finally:
                 lock.release()

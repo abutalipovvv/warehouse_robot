@@ -140,6 +140,11 @@ class AsyncPlanningJobMixin:
         requests: list[dict[str, Any]],
         payload: dict[str, Any],
     ) -> PlanningJob:
+        # Legacy dispatch preparation still updates orders, routes and traffic
+        # gates before it builds the immutable worker input.  Include those
+        # changes in the revision now; waiting until the end of the runtime
+        # step would make this freshly-created job stale by construction.
+        self._synchronize_planning_revision()
         snapshot = self._planning_snapshot_for(requests, payload)
         self.planning_state.submission_sequence += 1
         sequence = self.planning_state.submission_sequence

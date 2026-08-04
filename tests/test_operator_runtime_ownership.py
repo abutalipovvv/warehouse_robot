@@ -5,7 +5,7 @@ from threading import Event, Lock, RLock, Thread, current_thread, get_ident
 from time import monotonic, sleep
 
 import operator_app.core.state as state_module
-from fleet_manager.runtime.loop import RuntimeLoopState
+from fleet_manager.runtime.loop import RuntimeLoop, RuntimeLoopState
 from operator_app.core.fleet_manager import (
     FLEET_MANAGER_ID,
     FLEET_MANAGER_SIM_ID,
@@ -213,6 +213,48 @@ def test_slow_real_tick_does_not_delay_simulation_tick() -> None:
 
     assert not real_thread.is_alive()
     assert not simulation_thread.is_alive()
+
+
+def test_api_command_does_not_hold_fleet_lock_while_waiting_for_owner() -> None:
+    owner_thread_ids: list[int] = []
+
+    class RoutedManager:
+        def __init__(self) -> None:
+            self.executor = None
+
+        def sidebar_payload(self) -> dict[str, object]:
+            assert self.executor is not None
+            return self.executor(
+                lambda: owner_thread_ids.append(get_ident()) or {"ok": True}
+            )
+
+    manager = RoutedManager()
+    state = OperatorAppState.__new__(OperatorAppState)
+    state.fleet_manager = manager
+    state.fleet_manager_sim = manager
+    state._fleet_manager_lock = RLock()
+    state._fleet_manager_sim_lock = RLock()
+    state._fleet_lock = state._fleet_manager_lock
+
+    runtime_loop = RuntimeLoop(
+        lambda: None,
+        interval_seconds=1.0,
+        name="operator-api-owner-test",
+    )
+    state._fleet_runtime_loops = (runtime_loop, runtime_loop)
+    manager.executor = runtime_loop.execute
+    caller_thread_id = get_ident()
+    runtime_loop.start()
+    try:
+        assert state.fleet_manager_get_payload(
+            "identity",
+            manager_id=FLEET_MANAGER_SIM_ID,
+        ) == {"ok": True}
+    finally:
+        runtime_loop.close()
+
+    assert owner_thread_ids
+    assert owner_thread_ids[0] != caller_thread_id
 
 
 def test_operator_fleet_runtime_step_advances_both_modes() -> None:

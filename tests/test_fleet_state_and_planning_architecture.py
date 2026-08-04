@@ -177,6 +177,26 @@ def test_revision_changes_only_for_planning_relevant_robot_update() -> None:
         manager.close()
 
 
+def test_planning_job_captures_preparation_changes_in_its_revision() -> None:
+    landmarks, edges = _graph()
+    manager = FleetManagerCore(landmarks, edges, params={"fleet": {}})
+    try:
+        initial_revision = manager.planning_revision
+        manager.traffic_state.stationary_blockers["A"] = "r1"
+
+        planning_job = manager._build_planning_job(
+            {"kind": "dispatch"},
+            [],
+            {},
+        )
+
+        assert manager.planning_revision == initial_revision + 1
+        assert planning_job.snapshot.revision == manager.planning_revision
+        assert manager._synchronize_planning_revision() == initial_revision + 1
+    finally:
+        manager.close()
+
+
 def test_plan_commit_rejects_stale_candidate_without_mutation() -> None:
     revision = 11
     routes = ["old-route"]

@@ -12,12 +12,16 @@ class FleetApiRoutingMixin:
     """Route fleet manager commands and stream snapshots."""
 
     def fleet_params_payload(self) -> dict[str, Any]:
-        with self._fleet_lock_for_id(FLEET_MANAGER_ID):
-            return self.fleet_manager.params_payload()
+        return self._execute_fleet_command(
+            FLEET_MANAGER_ID,
+            self.fleet_manager.params_payload,
+        )
 
     def save_fleet_params_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
-        with self._fleet_lock_for_id(FLEET_MANAGER_ID):
-            return self.fleet_manager.save_params_payload(payload)
+        return self._execute_fleet_command(
+            FLEET_MANAGER_ID,
+            lambda: self.fleet_manager.save_params_payload(payload),
+        )
 
     def fleet_manager_get_payload(
         self,
@@ -26,7 +30,8 @@ class FleetApiRoutingMixin:
         manager_id: str = FLEET_MANAGER_ID,
     ) -> dict[str, Any]:
         manager = self._fleet_manager_for_id(manager_id)
-        with self._fleet_lock_for_id(manager_id):
+
+        def build_payload() -> dict[str, Any]:
             if action == "identity":
                 return manager.sidebar_payload()
             if action == "status":
@@ -61,6 +66,11 @@ class FleetApiRoutingMixin:
                 return manager.orders_payload()
             raise ValueError(f"unknown fleet manager action: {action}")
 
+        return self._execute_fleet_command(
+            manager_id,
+            build_payload,
+        )
+
     def fleet_manager_post_payload(
         self,
         action: str,
@@ -68,7 +78,8 @@ class FleetApiRoutingMixin:
         manager_id: str = FLEET_MANAGER_ID,
     ) -> dict[str, Any]:
         manager = self._fleet_manager_for_id(manager_id)
-        with self._fleet_lock_for_id(manager_id):
+
+        def apply_command() -> dict[str, Any]:
             if action == "mode":
                 return manager.set_mode_payload(payload)
             if action == "params":
@@ -130,6 +141,11 @@ class FleetApiRoutingMixin:
                 return manager.reset_robot_payload(payload)
             raise ValueError(f"unknown fleet manager action: {action}")
 
+        return self._execute_fleet_command(
+            manager_id,
+            apply_command,
+        )
+
     def fleet_manager_stream_payload(
         self,
         initial: bool = False,
@@ -137,22 +153,7 @@ class FleetApiRoutingMixin:
         route_revisions: dict[str, int] | None = None,
         include_runtime_details: bool = True,
     ) -> dict[str, Any] | None:
-        # This is the high-frequency websocket snapshot path. Initialized
-        # states can read their dedicated lock directly; ``__new__``-based
-        # legacy integrations still use the compatibility selector.
-        try:
-            fleet_lock = (
-                self._fleet_manager_sim_lock
-                if manager_id == FLEET_MANAGER_SIM_ID
-                else self._fleet_manager_lock
-            )
-        except AttributeError:
-            fleet_lock = self._fleet_lock_for_id(manager_id)
-        if initial or manager_id == FLEET_MANAGER_SIM_ID:
-            fleet_lock.acquire()
-        elif not fleet_lock.acquire(blocking=False):
-            return None
-        try:
+        def build_snapshot() -> dict[str, Any]:
             manager = self._fleet_manager_for_id(manager_id)
             state = (
                 manager.state_payload(
@@ -173,8 +174,11 @@ class FleetApiRoutingMixin:
                 "state": state,
                 "sentAt": utc_now(),
             }
-        finally:
-            fleet_lock.release()
+
+        return self._execute_fleet_command(
+            manager_id,
+            build_snapshot,
+        )
 
 
 __all__ = ["FleetApiRoutingMixin"]

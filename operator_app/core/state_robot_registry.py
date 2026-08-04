@@ -9,7 +9,7 @@ from time import perf_counter
 from typing import Any
 
 from .config import GRPC_ROBOT_TYPES
-from .fleet_manager import FLEET_MANAGER_IDS
+from .fleet_manager import FLEET_MANAGER_ID, FLEET_MANAGER_IDS
 from .models import KnownRobot
 from .grpc.client import GrpcRobotAdapter
 from .grpc.contracts import DEFAULT_GRPC_PORT
@@ -303,15 +303,20 @@ class RobotRegistryProbeMixin:
 
     def _note_fleet_external_control_takeover(self, endpoint: str) -> None:
         fleet_manager = getattr(self, "fleet_manager", None)
-        fleet_lock = getattr(self, "_fleet_lock", None)
-        if fleet_manager is None or fleet_lock is None:
+        if fleet_manager is None:
             return
-        with fleet_lock:
+
+        def note_takeover() -> None:
             fleet_manager.note_external_control_takeover(
                 endpoint,
                 owner_id=OPERATOR_CONTROL_OWNER_ID,
                 owner_name=OPERATOR_CONTROL_OWNER_NAME,
             )
+
+        self._execute_fleet_command(
+            FLEET_MANAGER_ID,
+            note_takeover,
+        )
 
     def _probe_grpc_robot(self, host: str, port: int) -> dict[str, Any]:
         endpoint = f"grpc://{host}:{port}"
