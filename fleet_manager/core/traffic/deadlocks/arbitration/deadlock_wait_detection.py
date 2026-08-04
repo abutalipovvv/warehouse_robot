@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from fleet_manager.core.domain.models import FleetRobot
-from fleet_manager.core.traffic.wait_graph import WaitForGraph
+from fleet_manager.core.fleet.domain.models import FleetRobot
+from fleet_manager.core.traffic.deadlocks.arbitration.wait_graph import WaitForGraph
 
 
 @dataclass(frozen=True, slots=True)
@@ -341,6 +341,3 @@ class WaitCycleDetectionMixin:
                     now,
                     f"corridor admission timeout: {robot.last_reason}",
                 )
-
-
-__all__ = ['WaitCycleDetectionMixin']

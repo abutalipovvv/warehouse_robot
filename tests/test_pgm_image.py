@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from fleet_manager.map_data.pgm import PgmImage, read_pgm_size
+from fleet_manager.core.mapping.formats.pgm import PgmImage, read_pgm_size
 
 
 @pytest.mark.parametrize("separator", [b"\n", b"\r\n", b" "])

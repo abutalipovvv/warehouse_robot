@@ -3,9 +3,9 @@ from __future__ import annotations
 from dataclasses import replace
 from threading import Event
 
-from fleet_manager.core.models import FleetOrder, FleetRobot
-from fleet_manager.core.route_core.models import GraphEdge, Landmark
-from fleet_manager.core.traffic.corridor_scheduler import (
+from fleet_manager.core.fleet.domain.models import FleetOrder, FleetRobot
+from fleet_manager.core.mapping.maps.models import GraphEdge, Landmark
+from fleet_manager.core.traffic.corridors.scheduling.corridor_scheduler import (
     CorridorDecisionStatus,
     CorridorRequest,
     CorridorResourceWindow,

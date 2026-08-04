@@ -5,8 +5,8 @@ from threading import Lock
 from types import SimpleNamespace
 from typing import Any
 
-from fleet_manager.core.constants import ORDER_SEQUENCE_KEYS, ORDER_TARGET_KEYS
-from fleet_manager.core.models import FleetOrder
+from fleet_manager.core.fleet.domain.constants import ORDER_SEQUENCE_KEYS, ORDER_TARGET_KEYS
+from fleet_manager.core.fleet.domain.models import FleetOrder
 from fleet_manager.core.tasks.dispatch import FleetTaskDispatchMixin
 from fleet_manager.core.tasks.dispatch_requests import DispatchRequestBatchMixin
 from fleet_manager.core.tasks.dispatch_results import DispatchResultMixin

@@ -5,11 +5,11 @@ from __future__ import annotations
 from math import ceil, floor, isfinite
 from typing import Collection, Iterable
 
-from fleet_manager.core.traffic.corridor_calendar import (
+from fleet_manager.core.traffic.corridors.scheduling.corridor_calendar import (
     CorridorCalendar,
     request_entry_after_slot as _request_entry_after_slot,
 )
-from fleet_manager.core.traffic.corridor_models import (
+from fleet_manager.core.traffic.corridors.scheduling.corridor_models import (
     CorridorDecision,
     CorridorDecisionStatus,
     CorridorOccupancy,
@@ -20,13 +20,13 @@ from fleet_manager.core.traffic.corridor_models import (
     CorridorSlot,
     CorridorSlotState,
 )
-from fleet_manager.core.traffic.corridor_planning_models import (
+from fleet_manager.core.traffic.corridors.scheduling.corridor_planning_models import (
     _PlanningContext,
 )
-from fleet_manager.core.traffic.corridor_retention import (
+from fleet_manager.core.traffic.corridors.scheduling.corridor_retention import (
     retain_previous_slots as _retain_previous_slots,
 )
-from fleet_manager.core.traffic.corridor_scheduling import (
+from fleet_manager.core.traffic.corridors.scheduling.corridor_scheduling import (
     schedule_pending as _schedule_pending_requests,
 )
 
@@ -685,6 +685,3 @@ class CorridorScheduleBuilder:
             decisions=decisions,
             changed=changed,
         )
-
-
-__all__ = ["CorridorScheduleBuilder"]

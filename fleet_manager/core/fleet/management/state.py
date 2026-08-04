@@ -3,36 +3,385 @@
 from __future__ import annotations
 
 import math
+from functools import wraps
 from pathlib import Path
 from threading import Lock
 from time import time as _system_time
-from typing import Any
+from typing import Any, Callable, TypeVar
 
-from fleet_manager.core.geometry.collision import FleetCollisionChecker
+from fleet_manager.core.fleet.safety.collision import FleetCollisionChecker
 from fleet_manager.core.transport.gateways import UnavailableRobotGateway
-from fleet_manager.core.mapf.fleet_planner import FleetMapfPlanner
-from fleet_manager.core.domain.constants import TERMINAL_ORDER_STATUSES
-from fleet_manager.core.domain.models import FleetEvent, FleetOrder, FleetRobot
-from fleet_manager.core.workers.planning import PlanningWorker
-from fleet_manager.core.domain.settings import FleetSettings
-from fleet_manager.core.route_core.models import GraphEdge, Landmark, MapMetadata
+from fleet_manager.core.mapf.fleet.fleet_planner import FleetMapfPlanner
+from fleet_manager.core.fleet.domain.constants import TERMINAL_ORDER_STATUSES
+from fleet_manager.core.fleet.domain.models import FleetEvent, FleetOrder, FleetRobot
+from fleet_manager.core.fleet.domain.settings import FleetSettings
+from fleet_manager.core.mapping.maps.models import GraphEdge, Landmark, MapMetadata
 from fleet_manager.core.tasks.manager import FleetTaskManager
-from fleet_manager.core.traffic.corridor_scheduler import (
+from fleet_manager.core.manager_state import (
+    FleetState,
+    PlanningSnapshotFactory,
+    PlanningState,
+    RecoveryState,
+    TrafficState,
+)
+from fleet_manager.core.planning_scheduler import (
+    PlanCommitService,
+    PlanningSolverService,
+    PlanningWorker,
+)
+from fleet_manager.core.tasks.order_admission import OrderAdmissionService
+from fleet_manager.core.tasks.rolling_continuation import (
+    RollingContinuationService,
+)
+from fleet_manager.core.traffic.corridors.scheduling.corridor_scheduler import (
     CentralCorridorScheduler,
     CorridorSchedule,
     CorridorSchedulerConfig,
 )
 
+ResultT = TypeVar("ResultT")
+
+
+def runtime_command(
+    method: Callable[..., ResultT],
+) -> Callable[..., ResultT]:
+    """Route a public mutation through the attached runtime executor."""
+
+    @wraps(method)
+    def wrapped(self: Any, *args: Any, **kwargs: Any) -> ResultT:
+        executor = getattr(self, "_runtime_command_executor", None)
+        if executor is None:
+            return method(self, *args, **kwargs)
+        return executor(lambda: method(self, *args, **kwargs))
+
+    return wrapped
+
+
+def _state_property(container_name: str, field_name: str) -> property:
+    """Route one legacy attribute to exactly one container field."""
+
+    def read(instance: Any) -> Any:
+        container = getattr(instance, container_name)
+        return getattr(container, field_name)
+
+    def write(instance: Any, value: Any) -> None:
+        container = getattr(instance, container_name)
+        setattr(container, field_name, value)
+
+    return property(read, write)
+
+
+class FleetManagerStateCompatibilityMixin:
+    """Map legacy mixin attributes to the explicit state containers."""
+
+    robots = _state_property("fleet_state", "robots")
+    task_manager = _state_property("fleet_state", "task_manager")
+    events = _state_property("fleet_state", "events")
+    obstacles = _state_property("fleet_state", "obstacles")
+    obstacle_areas = _state_property("fleet_state", "obstacle_areas")
+    active_robot_modes = _state_property(
+        "fleet_state",
+        "active_robot_modes",
+    )
+
+    _dispatch_job = _state_property("planning_state", "active_job")
+    _last_async_job_kind = _state_property(
+        "planning_state",
+        "last_async_job_kind",
+    )
+    _runtime_replans = _state_property("planning_state", "runtime_replans")
+    _rolling_prefetch_retry_at = _state_property(
+        "planning_state",
+        "rolling_prefetch_retry_at",
+    )
+    _rolling_prefetch_eligible_since = _state_property(
+        "planning_state",
+        "rolling_prefetch_eligible_since",
+    )
+    _rolling_prefetch_last_attempt_at = _state_property(
+        "planning_state",
+        "rolling_prefetch_last_attempt_at",
+    )
+    _stationary_order_retry_state = _state_property(
+        "planning_state",
+        "stationary_order_retry_state",
+    )
+    _dispatch_conflict_dependencies = _state_property(
+        "planning_state",
+        "dispatch_conflict_dependencies",
+    )
+    _rolling_prefetch_failures = _state_property(
+        "planning_state",
+        "rolling_prefetch_failures",
+    )
+    _rolling_prefetch_blockers = _state_property(
+        "planning_state",
+        "rolling_prefetch_blockers",
+    )
+
+    _stationary_clearance_relocations = _state_property(
+        "recovery_state",
+        "stationary_clearance_relocations",
+    )
+    _rolling_vacancy_recovery_signature = _state_property(
+        "recovery_state",
+        "rolling_vacancy_signature",
+    )
+    _rolling_vacancy_recovery_blacklist = _state_property(
+        "recovery_state",
+        "rolling_vacancy_blacklist",
+    )
+    _commanded_sink_vacancy_signatures = _state_property(
+        "recovery_state",
+        "commanded_vacancy_signatures",
+    )
+    _commanded_sink_vacancy_blacklist = _state_property(
+        "recovery_state",
+        "commanded_vacancy_blacklist",
+    )
+    _coupled_replan_last_attempt = _state_property(
+        "recovery_state",
+        "coupled_replan_last_attempt",
+    )
+    _coupled_replan_failures = _state_property(
+        "recovery_state",
+        "coupled_replan_failures",
+    )
+    _active_wait_cycles = _state_property("recovery_state", "active_wait_cycles")
+    _wait_cycle_last_arbitration = _state_property(
+        "recovery_state",
+        "wait_cycle_last_arbitration",
+    )
+    _wait_cycle_grant_signatures = _state_property(
+        "recovery_state",
+        "wait_cycle_grant_signatures",
+    )
+    _wait_cycle_recovery_attempts = _state_property(
+        "recovery_state",
+        "wait_cycle_recovery_attempts",
+    )
+    _controlled_corridor_recovery_latches = _state_property(
+        "recovery_state",
+        "corridor_recovery_latches",
+    )
+
+    _controlled_corridor_graph = _state_property(
+        "traffic_state",
+        "controlled_corridor_graph",
+    )
+    _controlled_corridor_region_bounds = _state_property(
+        "traffic_state",
+        "controlled_corridor_region_bounds",
+    )
+    _controlled_corridor_scheduler = _state_property(
+        "traffic_state",
+        "controlled_corridor_scheduler",
+    )
+    _controlled_corridor_schedule = _state_property(
+        "traffic_state",
+        "controlled_corridor_schedule",
+    )
+    _controlled_corridor_wait_since = _state_property(
+        "traffic_state",
+        "controlled_corridor_wait_since",
+    )
+    _controlled_corridor_leases = _state_property(
+        "traffic_state",
+        "controlled_corridor_leases",
+    )
+    _controlled_corridor_passages = _state_property(
+        "traffic_state",
+        "controlled_corridor_passages",
+    )
+    _controlled_corridor_prefetch_intents = _state_property(
+        "traffic_state",
+        "controlled_corridor_prefetch_intents",
+    )
+    _controlled_corridor_entry_cache = _state_property(
+        "traffic_state",
+        "controlled_corridor_entry_cache",
+    )
+    _controlled_corridor_approach_holds = _state_property(
+        "traffic_state",
+        "controlled_corridor_approach_holds",
+    )
+    _controlled_corridor_winners = _state_property(
+        "traffic_state",
+        "controlled_corridor_winners",
+    )
+    _controlled_corridor_occupancy = _state_property(
+        "traffic_state",
+        "controlled_corridor_occupancy",
+    )
+    _controlled_corridor_queues = _state_property(
+        "traffic_state",
+        "controlled_corridor_queues",
+    )
+    _controlled_corridor_blockers = _state_property(
+        "traffic_state",
+        "controlled_corridor_blockers",
+    )
+    _controlled_corridor_tick_now = _state_property(
+        "traffic_state",
+        "controlled_corridor_tick_now",
+    )
+
+    _traffic_zone_by_lm = _state_property("traffic_state", "traffic_zone_by_lm")
+    _traffic_zone_wait_since = _state_property(
+        "traffic_state",
+        "traffic_zone_wait_since",
+    )
+    _traffic_zone_leases = _state_property(
+        "traffic_state",
+        "traffic_zone_leases",
+    )
+    _traffic_zone_phase = _state_property("traffic_state", "traffic_zone_phase")
+    _traffic_zone_emergency_until = _state_property(
+        "traffic_state",
+        "traffic_zone_emergency_until",
+    )
+    _traffic_zone_winners = _state_property(
+        "traffic_state",
+        "traffic_zone_winners",
+    )
+    _traffic_zone_demand = _state_property("traffic_state", "traffic_zone_demand")
+    _traffic_zone_occupancy = _state_property(
+        "traffic_state",
+        "traffic_zone_occupancy",
+    )
+    _traffic_zone_queues = _state_property("traffic_state", "traffic_zone_queues")
+    _traffic_zone_tick_now = _state_property(
+        "traffic_state",
+        "traffic_zone_tick_now",
+    )
+    traffic_metrics = _state_property("traffic_state", "metrics")
+    _last_runtime_safety_rollback = _state_property(
+        "traffic_state",
+        "last_runtime_safety_rollback",
+    )
+
 
 def _manager_wall_time() -> float:
-    """Read the compatibility clock exposed by ``core.manager``."""
-    from fleet_manager.core import manager as manager_module
+    """Read the clock exposed by the manager composition module."""
+    from fleet_manager.core.fleet.management import manager as manager_module
 
     return float(getattr(manager_module, "time", _system_time)())
 
 
-class FleetManagerRuntimeStateMixin:
+class FleetManagerRuntimeStateMixin(FleetManagerStateCompatibilityMixin):
     """Own long-lived fleet state, locks, clocks and reset boundaries."""
+
+    @property
+    def planning_revision(self) -> int:
+        """Current version of data that can invalidate a plan."""
+
+        return self.fleet_state.revision.value
+
+    def _advance_planning_revision(self, reason: str) -> int:
+        """Record one planning-relevant state transition."""
+
+        revision = self.fleet_state.revision.advance(reason)
+        if hasattr(self, "_planning_input_fingerprint"):
+            self._planning_input_fingerprint = (
+                self._planning_state_fingerprint()
+            )
+        return revision
+
+    def _synchronize_planning_revision(self) -> int:
+        """Detect planning-relevant mutations made by legacy mixins."""
+
+        current = self._planning_state_fingerprint()
+        previous = getattr(self, "_planning_input_fingerprint", current)
+        if current == previous:
+            return self.planning_revision
+        self._planning_input_fingerprint = current
+        return self.fleet_state.revision.advance(
+            "planning input changed during runtime step"
+        )
+
+    def _planning_state_fingerprint(self) -> tuple[Any, ...]:
+        """Compact deterministic identity of inputs that can stale a plan."""
+
+        robot_values = tuple(
+            self._robot_planning_fingerprint(robot)
+            for robot in sorted(self.robots.values(), key=lambda item: item.name)
+        )
+        active_order_ids = {
+            robot.active_order_id
+            for robot in self.robots.values()
+            if robot.active_order_id
+        }
+        order_values = tuple(
+            (
+                order.order_id,
+                (
+                    "ACTIVE"
+                    if order.order_id in active_order_ids
+                    and order.status
+                    not in TERMINAL_ORDER_STATUSES | {"PAUSED"}
+                    else order.status
+                ),
+                order.vehicle,
+                order.assigned_robot,
+                order.target_lm,
+                tuple(order.targets),
+                int(order.step_index),
+                int(order.spatial_route_revision),
+            )
+            for order in sorted(
+                self.task_manager.orders.values(),
+                key=lambda item: item.order_id,
+            )
+        )
+        schedule = self.traffic_state.controlled_corridor_schedule
+        return (
+            robot_values,
+            order_values,
+            tuple(sorted(str(item) for item in self.obstacles)),
+            tuple(sorted(str(item) for item in self.obstacle_areas)),
+            tuple(sorted(self.traffic_state.stationary_blockers.items())),
+            tuple(sorted(self.traffic_state.controlled_corridor_leases.items())),
+            tuple(sorted(self.traffic_state.traffic_zone_leases.items())),
+            tuple(getattr(schedule, "slots", ()) or ()),
+        )
+
+    @staticmethod
+    def _robot_planning_fingerprint(robot: FleetRobot) -> tuple[Any, ...]:
+        committed_motion = bool(
+            not robot.is_remote()
+            and robot.active_order_id
+            and robot.trajectory
+            and robot.status in {"MOVING", "WAITING", "PLANNING"}
+        )
+        location_state: tuple[Any, ...]
+        if committed_motion:
+            # Route-clock progress and the boundary WAITING transition are
+            # deterministic consequences of the committed trajectory. The
+            # continuation snapshot already contains that trajectory and its
+            # route revision, so invalidating it here would make every rolling
+            # prefetch stale at exactly the handoff it was created for.
+            location_state = ("committed_route",)
+        else:
+            location_state = (
+                robot.status,
+                robot.current_lm,
+                robot.target_lm,
+            )
+        return (
+            robot.name,
+            robot.mode,
+            *location_state,
+            robot.active_order_id,
+            int(robot.route_revision),
+            bool(robot.remote_online),
+        )
+
+    def set_runtime_command_executor(self, executor: Any | None) -> None:
+        """Attach the synchronous command boundary owned by RuntimeLoop."""
+
+        if executor is not None and not callable(executor):
+            raise TypeError("runtime command executor must be callable")
+        self._runtime_command_executor = executor
 
     @property
     def orders(self) -> dict[str, FleetOrder]:
@@ -67,6 +416,7 @@ class FleetManagerRuntimeStateMixin:
         self._initialize_controlled_corridor_state()
         self._initialize_traffic_zone_state()
         self._initialize_traffic_metrics()
+        self._planning_input_fingerprint = self._planning_state_fingerprint()
 
     def _initialize_core_services(
         self,
@@ -79,6 +429,12 @@ class FleetManagerRuntimeStateMixin:
         remote_adapter: Any | None,
     ) -> float:
         """Create immutable inputs and the core planner/collision services."""
+
+        self.fleet_state = FleetState()
+        self.traffic_state = TrafficState()
+        self.planning_state = PlanningState()
+        self.recovery_state = RecoveryState()
+        self._runtime_command_executor = None
 
         self.landmarks = landmarks
         self.edges = edges
@@ -121,6 +477,29 @@ class FleetManagerRuntimeStateMixin:
         self._dispatch_job_lock = Lock()
         self._dispatch_job: dict[str, Any] | None = None
         self._planning_worker = PlanningWorker(name="fleet-mapf-worker")
+        self._planning_worker.set_completion_consumer(
+            self._collect_completed_planning_candidates,
+        )
+        self._planning_snapshot_factory = PlanningSnapshotFactory(
+            self.fleet_state,
+            self.traffic_state,
+        )
+        self._planning_solver_service = PlanningSolverService(
+            self.planner.plan,
+            self._planner_lock,
+        )
+        self._plan_commit_service = PlanCommitService(
+            lambda: self.planning_revision,
+        )
+        self._order_admission_service = OrderAdmissionService(
+            self.fleet_state,
+            self.landmarks,
+            self._now,
+        )
+        self._rolling_continuation_service = RollingContinuationService(
+            self.planning_state,
+            self._order_dispatch_retry_interval,
+        )
         self._last_async_job_kind = ""
 
     def _initialize_recovery_state(self) -> None:
@@ -397,12 +776,20 @@ class FleetManagerRuntimeStateMixin:
         }
 
 
+    @runtime_command
     def set_active_robot_modes(self, modes: set[str] | list[str] | tuple[str, ...] | None) -> None:
+        previous = self.active_robot_modes
         if modes is None:
             self.active_robot_modes = None
-            return
-        clean_modes = {str(mode or "").strip().lower() for mode in modes if str(mode or "").strip()}
-        self.active_robot_modes = clean_modes or None
+        else:
+            clean_modes = {
+                str(mode or "").strip().lower()
+                for mode in modes
+                if str(mode or "").strip()
+            }
+            self.active_robot_modes = clean_modes or None
+        if self.active_robot_modes != previous:
+            self._advance_planning_revision("active robot modes changed")
 
     def reset_traffic_flow_state(self) -> None:
         if self._controlled_corridor_scheduler is not None:
@@ -663,6 +1050,7 @@ class FleetManagerRuntimeStateMixin:
                 else:
                     membership.pop(region_id, None)
 
+    @runtime_command
     def reset_planning_runtime_state(self) -> None:
         """Reset transient planner/arbitration state without racing a worker.
 
@@ -709,8 +1097,16 @@ class FleetManagerRuntimeStateMixin:
         self._wait_cycle_grant_signatures.clear()
         self._wait_cycle_recovery_attempts.clear()
         self._controlled_corridor_recovery_latches.clear()
+        self.recovery_state.quarantined_robots.clear()
+        self.recovery_state.recovery_cooldowns.clear()
+        self.traffic_state.temporal_reservations.clear()
+        self.traffic_state.stationary_blockers.clear()
+        self.planning_state.stale_candidates = 0
+        self.planning_state.committed_candidates = 0
+        self.planning_state.diagnostic_counts.clear()
         self._runtime_tick_route_clocks.clear()
         self.reset_traffic_flow_state()
+        self._advance_planning_revision("planning runtime state reset")
 
     def simulation_time(self) -> float:
         """Return the accelerated clock used by simulated fleet runtime."""
@@ -720,6 +1116,7 @@ class FleetManagerRuntimeStateMixin:
         with self._simulation_clock_lock:
             return self._simulation_time_scale
 
+    @runtime_command
     def set_simulation_time_scale(self, value: Any) -> float:
         try:
             requested = float(value)
@@ -729,12 +1126,15 @@ class FleetManagerRuntimeStateMixin:
             requested = 1.0
         maximum = self._simulation_time_scale_limit()
         requested = max(1.0, min(maximum, requested))
+        previous = self.simulation_time_scale()
         with self._simulation_clock_lock:
             wall_now = _manager_wall_time()
             elapsed = max(0.0, wall_now - self._simulation_clock_wall_at)
             self._simulation_clock += elapsed * self._simulation_time_scale
             self._simulation_clock_wall_at = wall_now
             self._simulation_time_scale = requested
+        if requested != previous:
+            self._advance_planning_revision("simulation time scale changed")
         return requested
 
     def _now(self) -> float:
@@ -762,7 +1162,3 @@ class FleetManagerRuntimeStateMixin:
             maximum=self.MAX_SIMULATION_TIME_SCALE,
             default_if_falsy=True,
         )
-
-
-
-__all__ = ["FleetManagerRuntimeStateMixin"]

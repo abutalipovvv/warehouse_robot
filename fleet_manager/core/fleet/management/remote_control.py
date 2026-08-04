@@ -9,12 +9,14 @@ from fleet_manager.core.transport.endpoints import (
     DEFAULT_GRPC_PORT,
     normalize_grpc_endpoint,
 )
-from fleet_manager.core.domain.constants import (
+from fleet_manager.core.fleet.domain.constants import (
     EXTERNAL_CONTROL_PAUSE_PREFIX,
     FLEET_CONTROL_OWNER_ID,
     TERMINAL_ORDER_STATUSES,
 )
-from fleet_manager.core.domain.models import FleetRobot
+from fleet_manager.core.fleet.domain.models import FleetRobot
+
+from .state import runtime_command
 
 
 class FleetManagerRemoteControlMixin:
@@ -36,6 +38,7 @@ class FleetManagerRemoteControlMixin:
         del robot
 
 
+    @runtime_command
     def teleop_robot(
         self,
         payload: dict[str, Any],
@@ -88,12 +91,14 @@ class FleetManagerRemoteControlMixin:
         robot.last_reason = "manual control active"
         self._clear_remote_route_metadata(robot)
         robot.updated_at = self._now()
+        self._advance_planning_revision(f"manual control started: {name}")
         return {
             "ok": True,
             "robot": robot.to_dict(),
             "state": self.state() if include_state else None,
         }
 
+    @runtime_command
     def teleop_stop_robot(self, payload: dict[str, Any]) -> dict[str, Any]:
         name = str(payload.get("name", "")).strip()
         if not name:
@@ -130,8 +135,10 @@ class FleetManagerRemoteControlMixin:
         robot.trajectory_dirty = True
         self._clear_remote_route_metadata(robot)
         robot.updated_at = self._now()
+        self._advance_planning_revision(f"manual control stopped: {name}")
         return {"ok": True, "robot": robot.to_dict(), "state": self.state()}
 
+    @runtime_command
     def note_external_control_takeover(
         self,
         endpoint: str,
@@ -189,10 +196,16 @@ class FleetManagerRemoteControlMixin:
             order = self.orders.get(robot.active_order_id)
             if order is not None and order.status not in TERMINAL_ORDER_STATUSES:
                 self._pause_order_for_external_control(robot, order, now, owner_name or owner_id)
+                self._advance_planning_revision(
+                    f"external control takeover: {robot.name}"
+                )
                 return True
         robot.status = "MANUAL"
         robot.last_reason = f"{EXTERNAL_CONTROL_PAUSE_PREFIX} {owner_name or owner_id}"
         robot.updated_at = now
+        self._advance_planning_revision(
+            f"external control takeover: {robot.name}"
+        )
         return True
 
 
@@ -356,8 +369,3 @@ class FleetManagerRemoteControlMixin:
             minimum=0.2,
             default_if_falsy=True,
         )
-
-
-
-__all__ = ["FleetManagerRemoteControlMixin"]
-

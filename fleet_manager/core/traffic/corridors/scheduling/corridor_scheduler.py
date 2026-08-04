@@ -5,8 +5,8 @@ from __future__ import annotations
 from dataclasses import replace
 from typing import Collection, Iterable
 
-from fleet_manager.core.traffic.corridor_calendar import slot_interval_fits
-from fleet_manager.core.traffic.corridor_models import (
+from fleet_manager.core.traffic.corridors.scheduling.corridor_calendar import slot_interval_fits
+from fleet_manager.core.traffic.corridors.scheduling.corridor_models import (
     CorridorDecision,
     CorridorDecisionStatus,
     CorridorOccupancy,
@@ -18,7 +18,7 @@ from fleet_manager.core.traffic.corridor_models import (
     CorridorSlotState,
     RouteRevision,
 )
-from fleet_manager.core.traffic.corridor_planner import (
+from fleet_manager.core.traffic.corridors.scheduling.corridor_planner import (
     CorridorScheduleBuilder,
 )
 
@@ -266,19 +266,20 @@ class CentralCorridorScheduler:
         self._schedule = None
         self._pinned_slots.clear()
 
+    def transaction_state(
+        self,
+    ) -> tuple[CorridorSchedule | None, dict[str, CorridorSlot]]:
+        """Return the small mutable facade state used by plan rollback."""
 
-__all__ = [
-    "CentralCorridorScheduler",
-    "CorridorDecision",
-    "CorridorDecisionStatus",
-    "CorridorOccupancy",
-    "CorridorRequest",
-    "CorridorResourceWindow",
-    "CorridorSchedule",
-    "CorridorScheduleBuilder",
-    "CorridorSchedulerConfig",
-    "CorridorSlot",
-    "CorridorSlotState",
-    "RouteRevision",
-    "build_corridor_schedule",
-]
+        return self._schedule, dict(self._pinned_slots)
+
+    def restore_transaction_state(
+        self,
+        state: tuple[CorridorSchedule | None, dict[str, CorridorSlot]],
+    ) -> None:
+        """Restore a checkpoint after a failed runtime plan commit."""
+
+        schedule, pinned_slots = state
+        self._schedule = schedule
+        self._pinned_slots.clear()
+        self._pinned_slots.update(pinned_slots)

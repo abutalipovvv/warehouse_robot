@@ -124,6 +124,3 @@ class CbsHighLevelSearch:
             child.solution
         )
         return child
-
-
-__all__ = ["CbsHighLevelSearch", "CbsTreeResult"]

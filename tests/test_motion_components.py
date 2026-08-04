@@ -6,22 +6,22 @@ from typing import Any
 
 import pytest
 
-from fleet_manager.core.models import FleetOrder, FleetRobot
-from fleet_manager.core.motion import FleetMotionRuntimeMixin
-from fleet_manager.core.motion_kinematics import (
+from fleet_manager.core.fleet.domain.models import FleetOrder, FleetRobot
+from fleet_manager.core.fleet.movement.motion import FleetMotionRuntimeMixin
+from fleet_manager.core.fleet.movement.kinematics import (
     FleetMotionKinematicsMixin,
 )
-from fleet_manager.core.motion_lifecycle import (
+from fleet_manager.core.fleet.movement.lifecycle import (
     FleetRuntimeLifecycleMixin,
 )
-from fleet_manager.core.motion_replanning import (
+from fleet_manager.core.fleet.movement.replanning import (
     FleetRuntimeReplanMixin,
 )
-from fleet_manager.core.motion_retreat import (
+from fleet_manager.core.fleet.movement.deadlock_retreat import (
     FleetDeadlockRetreatMixin,
 )
-from fleet_manager.core.motion_safety import FleetMotionSafetyMixin
-from fleet_manager.core.motion_step import FleetMotionStepMixin
+from fleet_manager.core.fleet.movement.safety import FleetMotionSafetyMixin
+from fleet_manager.core.fleet.movement.step import FleetMotionStepMixin
 
 
 class FleetSettingsStub:

@@ -2,40 +2,39 @@ from __future__ import annotations
 
 import math
 from threading import Lock
-from types import SimpleNamespace
 
 import pytest
 
-import fleet_manager.core.manager as manager_module
-from fleet_manager.core.manager import FleetManagerCore
-from fleet_manager.core.manager_commands import FleetManagerCommandMixin
-from fleet_manager.core.manager_remote import (
+import fleet_manager.core.fleet.management.manager as manager_module
+from fleet_manager.core.fleet.management.manager import FleetManagerCore
+from fleet_manager.core.fleet.management.commands import FleetManagerCommandMixin
+from fleet_manager.core.fleet.management.remote_control import (
     FleetManagerRemoteControlMixin,
 )
-from fleet_manager.core.manager_robots import (
+from fleet_manager.core.fleet.management.robot_lifecycle import (
     FleetManagerRobotLifecycleMixin,
 )
-from fleet_manager.core.manager_routes import (
+from fleet_manager.core.fleet.management.route_metadata import (
     FleetManagerRouteMetadataMixin,
 )
-from fleet_manager.core.manager_snapshots import (
+from fleet_manager.core.fleet.management.snapshots import (
     FleetManagerSnapshotMixin,
 )
-from fleet_manager.core.manager_state import (
+from fleet_manager.core.fleet.management.state import (
     FleetManagerRuntimeStateMixin,
 )
-from fleet_manager.core.models import FleetOrder, FleetRobot
-from fleet_manager.core.motion import FleetMotionRuntimeMixin
-from fleet_manager.core.route_core.models import (
+from fleet_manager.core.fleet.domain.models import FleetOrder, FleetRobot
+from fleet_manager.core.fleet.movement.motion import FleetMotionRuntimeMixin
+from fleet_manager.core.mapping.maps.models import (
     GraphEdge,
     Landmark,
     WorldPoint,
 )
-from fleet_manager.core.traffic.coordinator import (
+from fleet_manager.core.traffic.runtime.coordinator import (
     TrafficCoordinatorMixin,
 )
-from fleet_manager.core.traffic.planning import TrafficPlanningMixin
-from fleet_manager.core.traffic.routing import TrafficRoutingMixin
+from fleet_manager.core.traffic.planning.planning import TrafficPlanningMixin
+from fleet_manager.core.traffic.routing.routing import TrafficRoutingMixin
 from fleet_manager.core.tasks.dispatch import FleetTaskDispatchMixin
 
 

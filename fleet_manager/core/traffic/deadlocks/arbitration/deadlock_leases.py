@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fleet_manager.core.domain.models import FleetRobot
+from fleet_manager.core.fleet.domain.models import FleetRobot
 
 
 class DeadlockLeaseMixin:
@@ -142,6 +142,3 @@ class DeadlockLeaseMixin:
             robot.blocked_since = robot.blocked_since or now
             robot.updated_at = now
         return True
-
-
-__all__ = ['DeadlockLeaseMixin']

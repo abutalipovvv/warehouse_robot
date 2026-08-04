@@ -7,7 +7,7 @@ import random
 from time import perf_counter
 from typing import Any
 
-from fleet_manager.core.route_core.params import load_route_params
+from fleet_manager.core.mapping.navigation.params import load_route_params
 
 
 @dataclass(slots=True)

@@ -23,6 +23,7 @@ class _SearchCallbacks(Generic[StateT]):
 
     key: Callable[[StateT], Hashable] | None
     dominance: Callable[[StateT, float], Real] | None
+    tie_breaker: Callable[[StateT], str] | None
     should_cancel: Callable[[], bool] | None
     cancellation_reason: str
 
@@ -31,7 +32,7 @@ class _SearchCallbacks(Generic[StateT]):
 class _SearchFrontier(Generic[StateT]):
     """Mutable A* state shared by the expansion stages."""
 
-    open_states: list[tuple[float, int, float, StateT, Hashable]]
+    open_states: list[tuple[float, str, int, float, StateT, Hashable]]
     sequence: Iterator[int]
     best_cost: dict[Hashable, float]
     parent: dict[Hashable, Hashable]
@@ -44,8 +45,8 @@ class AStarSolver(Generic[StateT]):
     """Find a least-cost path through a :class:`SearchProblem`.
 
     Equal-priority states are expanded in the order in which ``neighbors``
-    yields them.  A state is reopened when a cheaper path reaches it, so
-    admissible but inconsistent heuristics remain supported.
+    yields them. A problem may define ``tie_breaker(state) -> str`` when a
+    domain already has another deterministic ordering contract.
     """
 
     def __init__(self, *, max_expansions: int | None = None) -> None:
@@ -105,9 +106,15 @@ class AStarSolver(Generic[StateT]):
             and not callable(problem_dominance)
         ):
             raise TypeError("problem.dominance must be callable")
+        problem_tie_breaker = getattr(problem, "tie_breaker", None)
+        if problem_tie_breaker is not None and not callable(
+            problem_tie_breaker
+        ):
+            raise TypeError("problem.tie_breaker must be callable")
         return _SearchCallbacks(
             key=problem_key,
             dominance=problem_dominance,
+            tie_breaker=problem_tie_breaker,
             should_cancel=should_cancel,
             cancellation_reason=cancellation_reason,
         )
@@ -136,15 +143,17 @@ class AStarSolver(Generic[StateT]):
             problem.heuristic(start),
             name="heuristic",
         )
+        start_tie = self._tie_value(callbacks.tie_breaker, start)
 
         sequence = count()
         open_states: list[
-            tuple[float, int, float, StateT, Hashable]
+            tuple[float, str, int, float, StateT, Hashable]
         ] = []
         heappush(
             open_states,
             (
                 start_heuristic,
+                start_tie,
                 next(sequence),
                 0.0,
                 start,
@@ -186,7 +195,7 @@ class AStarSolver(Generic[StateT]):
                     expanded_count=expanded_count,
                 )
 
-            _, _, current_cost, current, current_key = heappop(open_states)
+            _, _, _, current_cost, current, current_key = heappop(open_states)
             current_best_cost = best_cost.get(
                 current_key,
                 math.inf,
@@ -318,6 +327,10 @@ class AStarSolver(Generic[StateT]):
                 problem.heuristic(neighbor),
                 name="heuristic",
             )
+            tie_value = self._tie_value(
+                callbacks.tie_breaker,
+                neighbor,
+            )
             best_cost[neighbor_key] = candidate_cost
             frontier.parent[neighbor_key] = current_key
             frontier.state_by_key[neighbor_key] = neighbor
@@ -325,12 +338,25 @@ class AStarSolver(Generic[StateT]):
                 frontier.open_states,
                 (
                     candidate_cost + heuristic,
+                    tie_value,
                     next(frontier.sequence),
                     candidate_cost,
                     neighbor,
                     neighbor_key,
                 ),
             )
+
+    @staticmethod
+    def _tie_value(
+        tie_breaker: Callable[[StateT], str] | None,
+        state: StateT,
+    ) -> str:
+        if tie_breaker is None:
+            return ""
+        value = tie_breaker(state)
+        if not isinstance(value, str):
+            raise TypeError("problem.tie_breaker must return a string")
+        return value
 
     @staticmethod
     def _validate_hashable(value: object, *, name: str) -> None:

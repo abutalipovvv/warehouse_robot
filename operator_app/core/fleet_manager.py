@@ -83,6 +83,7 @@ class OperatorFleetManager:
         display_name: str = "Fleet Manager",
         mode: str = "robots",
     ) -> None:
+        self._runtime_command_executor = None
         self.params_path = Path(params_path).expanduser().resolve()
         self.remote_adapter = remote_adapter
         mode = str(mode or "").strip().lower()
@@ -107,6 +108,20 @@ class OperatorFleetManager:
             ),
         )
         self._load_context(self.map_dir)
+
+    def set_runtime_command_executor(self, executor: Any | None) -> None:
+        """Retain the owner boundary across map/config manager replacement."""
+
+        if executor is not None and not callable(executor):
+            raise TypeError("runtime command executor must be callable")
+        self._runtime_command_executor = executor
+        attach = getattr(
+            getattr(self, "manager", None),
+            "set_runtime_command_executor",
+            None,
+        )
+        if callable(attach):
+            attach(executor)
 
     def close(self) -> None:
         return self._context_service.close()

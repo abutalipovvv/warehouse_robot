@@ -11,7 +11,7 @@ from fleet_manager.runtime.application.runner import (
     ApplicationOptions,
     FleetManagerApplication,
 )
-from fleet_manager.core.route_core.params import DEFAULT_PARAMS_PATH
+from fleet_manager.core.mapping.navigation.params import DEFAULT_PARAMS_PATH
 
 
 def build_parser() -> argparse.ArgumentParser:

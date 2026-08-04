@@ -18,11 +18,11 @@ if __package__ in {None, ""}:
     # Keep direct execution from the formats directory working.
     sys.path.insert(0, str(Path(__file__).resolve().parents[4]))
 
-from fleet_manager.map_data.smap_bundle import (
+from fleet_manager.core.mapping.formats.smap_bundle import (
     SmapBundleWriter,
     SmapDocumentParser,
 )
-from fleet_manager.map_data.smap_raster import FREE_CELL, OCCUPIED_CELL
+from fleet_manager.core.mapping.formats.smap_raster import FREE_CELL, OCCUPIED_CELL
 
 
 # Backward-compatible constant names used by older conversion scripts.
@@ -68,7 +68,6 @@ def main() -> None:
     print(f"Done.\nOutput dir: {output_dir.resolve()}")
 
 
-__all__ = ["FREE", "OCC", "deserialize_smap", "main"]
 
 
 if __name__ == "__main__":

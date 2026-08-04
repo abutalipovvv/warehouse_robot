@@ -6,7 +6,7 @@ import sys
 
 import pytest
 
-from fleet_manager.map_data.pgm import PgmImage as FleetPgmImage
+from fleet_manager.core.mapping.formats.pgm import PgmImage as FleetPgmImage
 
 
 ROBOT_PLANNER_SRC = (

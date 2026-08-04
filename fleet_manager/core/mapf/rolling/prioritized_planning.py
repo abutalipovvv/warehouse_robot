@@ -6,14 +6,14 @@ import re
 from time import monotonic
 from typing import Callable
 
-from .lm_cbs import (
+from ..cbs.lm_cbs import (
     LmRobotPlan,
     LmRobotRequest,
     NodeName,
     PlannerDebug,
     PlannerResult,
 )
-from .reservations import ReservationTable, ResourceId
+from ..common.reservations import ReservationTable, ResourceId
 from .rolling_models import (
     RollingPlanningMetrics,
     StaticReservations,
@@ -22,8 +22,8 @@ from .rolling_reservations import (
     PathReservationWriter,
     ReservationTableFactory,
 )
-from .sipp import SippPlanner, SippRobotRequest, TimedPath
-from .traffic_graph import TrafficGraph
+from ..sipp.sipp import SippPlanner, SippRobotRequest, TimedPath
+from ..graph.traffic_graph import TrafficGraph
 
 
 class PriorityOrderManager:

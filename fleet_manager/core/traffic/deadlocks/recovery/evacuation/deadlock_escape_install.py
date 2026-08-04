@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from fleet_manager.core.domain.models import FleetOrder, FleetRobot
+from fleet_manager.core.fleet.domain.models import FleetOrder, FleetRobot
 
 
 GraphEscapePlan = tuple[list[dict[str, Any]], float]
@@ -239,6 +239,3 @@ class GraphEscapeInstallMixin:
         robot.route_preview_dirty = True
         self._clear_wait_dependency(robot)
         robot.updated_at = now
-
-
-__all__ = ['GraphEscapeInstallMixin']

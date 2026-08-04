@@ -5,39 +5,39 @@ from pathlib import Path
 
 import pytest
 
-from fleet_manager.core.traffic.controlled_corridor_admission import (
+from fleet_manager.core.traffic.corridors.admission.controlled_corridor_admission import (
     ControlledCorridorAdmissionMixin,
 )
-from fleet_manager.core.traffic.controlled_corridor_admission_decisions import (
+from fleet_manager.core.traffic.corridors.admission.controlled_corridor_admission_decisions import (
     ControlledCorridorAdmissionDecisionMixin,
 )
-from fleet_manager.core.traffic.controlled_corridor_admission_models import (
+from fleet_manager.core.traffic.corridors.admission.controlled_corridor_admission_models import (
     _CentralCorridorBuild,
     _CentralCorridorPublication,
     _CentralCorridorWaitContext,
 )
-from fleet_manager.core.traffic.controlled_corridor_admission_requests import (
+from fleet_manager.core.traffic.corridors.admission.controlled_corridor_admission_requests import (
     ControlledCorridorRequestCollectionMixin,
 )
-from fleet_manager.core.traffic.controlled_corridor_admission_runtime import (
+from fleet_manager.core.traffic.corridors.admission.controlled_corridor_admission_runtime import (
     ControlledCorridorRuntimePublicationMixin,
 )
-from fleet_manager.core.traffic.controlled_corridor_prefetch import (
+from fleet_manager.core.traffic.corridors.prefetch.controlled_corridor_prefetch import (
     ControlledCorridorPrefetchMixin,
 )
-from fleet_manager.core.traffic.controlled_corridor_prefetch_gate import (
+from fleet_manager.core.traffic.corridors.prefetch.controlled_corridor_prefetch_gate import (
     ControlledCorridorPrefetchGateMixin,
 )
-from fleet_manager.core.traffic.controlled_corridor_prefetch_intent import (
+from fleet_manager.core.traffic.corridors.prefetch.controlled_corridor_prefetch_intent import (
     ControlledCorridorPrefetchIntentMixin,
 )
-from fleet_manager.core.traffic.controlled_corridor_prefetch_models import (
+from fleet_manager.core.traffic.corridors.prefetch.controlled_corridor_prefetch_models import (
     _CorridorIntentDraft,
     _CorridorPlannedPassage,
     _CorridorRouteDraft,
     _CorridorValidationContext,
 )
-from fleet_manager.core.traffic.controlled_corridor_prefetch_validation import (
+from fleet_manager.core.traffic.corridors.prefetch.controlled_corridor_prefetch_validation import (
     ControlledCorridorPrefetchValidationMixin,
 )
 
@@ -143,17 +143,17 @@ def test_snapshot_accumulators_are_explicitly_mutable(model: type[object]) -> No
 
 def test_controlled_corridor_stages_keep_methods_reviewable() -> None:
     traffic_dir = Path(__file__).parents[1] / "fleet_manager/core/traffic"
-    component_names = (
-        "controlled_corridor_admission_decisions.py",
-        "controlled_corridor_admission_requests.py",
-        "controlled_corridor_admission_runtime.py",
-        "controlled_corridor_prefetch_intent.py",
-        "controlled_corridor_prefetch_gate.py",
-        "controlled_corridor_prefetch_validation.py",
+    component_paths = (
+        "corridors/admission/controlled_corridor_admission_decisions.py",
+        "corridors/admission/controlled_corridor_admission_requests.py",
+        "corridors/admission/controlled_corridor_admission_runtime.py",
+        "corridors/prefetch/controlled_corridor_prefetch_intent.py",
+        "corridors/prefetch/controlled_corridor_prefetch_gate.py",
+        "corridors/prefetch/controlled_corridor_prefetch_validation.py",
     )
     oversized: dict[str, tuple[str, int]] = {}
-    for component_name in component_names:
-        tree = ast.parse((traffic_dir / component_name).read_text())
+    for component_path in component_paths:
+        tree = ast.parse((traffic_dir / component_path).read_text())
         methods = (
             node
             for parent in tree.body
@@ -164,5 +164,5 @@ def test_controlled_corridor_stages_keep_methods_reviewable() -> None:
         for method in methods:
             length = method.end_lineno - method.lineno + 1
             if length > 140:
-                oversized[component_name] = (method.name, length)
+                oversized[component_path] = (method.name, length)
     assert oversized == {}

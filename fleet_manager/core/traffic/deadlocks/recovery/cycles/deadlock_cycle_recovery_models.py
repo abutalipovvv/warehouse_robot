@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from fleet_manager.core.domain.models import FleetRobot
+from fleet_manager.core.fleet.domain.models import FleetRobot
 
 
 @dataclass(frozen=True, slots=True)
@@ -20,6 +20,3 @@ class _WaitCycleDecisionContext:
     cycle_key: tuple[str, ...]
     grant_already_failed: bool
     cycle_wait: float
-
-
-__all__ = ["_WaitCycleDecisionContext"]

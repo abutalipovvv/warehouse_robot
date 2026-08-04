@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from fleet_manager.core.domain.models import FleetRobot
-from fleet_manager.core.traffic.deadlock_cycle_recovery_models import (
+from fleet_manager.core.fleet.domain.models import FleetRobot
+from fleet_manager.core.traffic.deadlocks.recovery.cycles.deadlock_cycle_recovery_models import (
     _WaitCycleDecisionContext,
 )
 
@@ -437,6 +437,3 @@ class WaitCycleRecoveryMixin:
             "traffic wait cycle arbitration: priority granted to "
             f"{priority_robot.name}",
         )
-
-
-__all__ = ['WaitCycleRecoveryMixin']

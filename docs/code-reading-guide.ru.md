@@ -6,7 +6,7 @@ Operator App: эти модули связывают много уже гото�
 
 ## 1. Математика
 
-Начните с каталога `fleet_manager/math`:
+Начните с каталога `fleet_manager/core/algorithms/math`:
 
 - `Vector2` — точка или вектор на плоскости;
 - `Pose2D` — позиция и угол робота;
@@ -18,8 +18,8 @@ Operator App: эти модули связывают много уже гото�
 
 ## 2. Обычный поиск пути
 
-Затем прочитайте `fleet_manager/search`. Там находится общий детерминированный
-A*. Алгоритм работает с абстрактной задачей поиска:
+Затем прочитайте `fleet_manager/core/algorithms/math/search`. Там находится
+общий детерминированный A*. Алгоритм работает с абстрактной задачей поиска:
 
 1. задача выдаёт начальное состояние;
 2. перечисляет соседей и стоимость перехода;
@@ -33,9 +33,9 @@ MAPF-модули используют этот механизм и добавл
 
 Рекомендуемый порядок:
 
-1. `core/mapf/traffic_graph.py` — публичный фасад графа;
-2. `core/mapf/reservations.py` — занятость вершин и рёбер во времени;
-3. `core/mapf/sipp.py` — маршрут одного робота между безопасными интервалами;
+1. `core/mapf/graph/traffic_graph.py` — граф движения;
+2. `core/mapf/common/reservations.py` — занятость вершин и рёбер во времени;
+3. `core/mapf/sipp/sipp.py` — маршрут одного робота между безопасными интервалами;
 4. `core/mapf/rolling_sipp.py` — планирование нескольких роботов по частям;
 5. `core/mapf/lm_cbs.py` — локальное разрешение сложного конфликта;
 6. `core/mapf/fleet_planner.py` — выбор алгоритма и построение траекторий.
@@ -120,7 +120,8 @@ collision audit и commit; публичный `manager.plan()` только ко
 
 После алгоритмов переходите к прикладному слою:
 
-1. `fleet_manager/core/manager.py` хранит состояние флота и принимает команды;
+1. `fleet_manager/core/fleet/management/manager.py` собирает Fleet Manager,
+   а `fleet_manager/core/manager_state.py` хранит контейнеры состояния;
 2. `fleet_manager/runtime` подключает simulation или gRPC;
 3. `operator_app/core/fleet_manager.py` формирует данные для Operator UI;
 4. `operator_app/core/state.py` владеет менеджерами и рабочими каталогами;
@@ -177,11 +178,12 @@ parameters и ROS helpers. Роботный пакет
 
 ## Где вносить изменения
 
-- Новая формула или геометрическая операция — `fleet_manager/math`.
-- Новый общий алгоритм поиска — `fleet_manager/search`.
+- Новая формула или геометрическая операция — `core/algorithms/math`.
+- Новый общий алгоритм поиска — `core/algorithms/math/search`.
 - Изменение SIPP/CBS/MAPF — соответствующий компонент в `core/mapf`.
 - Политика очередей, коридоров или восстановления — `core/traffic`.
-- Команда флота или жизненный цикл робота — `core/manager`/`core/tasks`.
+- Команда флота или жизненный цикл робота — `core/fleet/management` или
+  `core/tasks`.
 - ROS/gRPC-преобразование — `fleet_manager/runtime`.
 - HTTP-маршрут или WebSocket — `operator_app/web`.
 - Визуальное поведение браузера — `operator_app/web/static/js`.

@@ -7,6 +7,3 @@ class GrpcRobotGateway(GrpcRobotAdapter):
     """Named architecture boundary over the production gRPC adapter."""
 
     transport = "grpc"
-
-
-__all__ = ["GrpcRobotGateway"]

@@ -6,7 +6,7 @@ from collections.abc import Callable
 import math
 from typing import Any
 
-from fleet_manager.core.domain.models import FleetRobot
+from fleet_manager.core.fleet.domain.models import FleetRobot
 
 
 class TrafficContinuousWaitSchedulingMixin:
@@ -452,7 +452,6 @@ class TrafficContinuousWaitSchedulingMixin:
                         and not self.collision.footprints_overlap(priority_pose, waiting_pose)
                     ):
                         continue
-                    priority_edge = self._edge_id_at_trajectory(priority_trajectory, t) or "unknown"
                     waiting_edge = self._edge_id_at_trajectory(waiting_trajectory, t) or "unknown"
                     # Keep one deterministic winner for the complete pair.
                     # Flipping priority after an inserted WAIT made two
@@ -755,4 +754,3 @@ class TrafficContinuousWaitSchedulingMixin:
             for sample in trajectory[insert_index + 1:]
         ]
         return trajectory[: insert_index + 1] + [hold] + shifted
-__all__ = ["TrafficContinuousWaitSchedulingMixin"]

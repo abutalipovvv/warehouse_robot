@@ -5,11 +5,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from fleet_manager.core.domain.constants import (
+from fleet_manager.core.fleet.domain.constants import (
     FLEET_CONTROL_OWNER_ID,
     TERMINAL_ORDER_STATUSES,
 )
-from fleet_manager.core.domain.models import FleetOrder, FleetRobot
+from fleet_manager.core.fleet.domain.models import FleetOrder, FleetRobot
 
 
 ClearanceWaiterSignature = tuple[str, str, str, str]
@@ -829,6 +829,3 @@ class StationaryClearanceMixin:
         for order_id in list(self._stationary_order_retry_state):
             if order_id not in self.orders:
                 self._stationary_order_retry_state.pop(order_id, None)
-
-
-__all__ = ["StationaryClearanceMixin"]

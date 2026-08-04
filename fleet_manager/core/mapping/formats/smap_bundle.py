@@ -13,11 +13,11 @@ from typing import Any, Iterable, Mapping
 import yaml
 
 from fleet_manager.core.io.atomic_files import atomic_write_bytes, atomic_write_text
-from fleet_manager.core.math.curves import (
+from fleet_manager.core.algorithms.math.curves import (
     cubic_bezier_length,
     cubic_bezier_point,
 )
-from fleet_manager.core.math.geometry import Vector2
+from fleet_manager.core.algorithms.math.geometry import Vector2
 
 from .smap_raster import (
     OCCUPIED_CELL,
@@ -557,7 +557,13 @@ def parse_properties(value: Any) -> dict[str, Any]:
 
 
 def property_value(item: Mapping[str, Any]) -> Any:
-    for key in ("int32Value", "doubleValue", "boolValue", "value"):
+    for key in (
+        "int32Value",
+        "doubleValue",
+        "boolValue",
+        "stringValue",
+        "value",
+    ):
         if item.get(key) is not None:
             return item[key]
     return None
@@ -610,18 +616,3 @@ def length_row(
 
 def _mapping(value: Any) -> Mapping[str, Any]:
     return value if isinstance(value, dict) else {}
-
-
-__all__ = [
-    "GraphEdgeBuilder",
-    "LandmarkIndex",
-    "ParsedItems",
-    "SmapBundle",
-    "SmapBundleWriter",
-    "SmapDocumentParser",
-    "cubic_bezier_length",
-    "cubic_bezier_point",
-    "length_statistics",
-    "parse_properties",
-    "property_value",
-]

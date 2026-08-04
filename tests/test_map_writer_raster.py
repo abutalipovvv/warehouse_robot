@@ -6,8 +6,8 @@ from pathlib import Path
 import pytest
 import yaml
 
-from fleet_manager.core.route_core.map_exchange import build_editable_map_payload
-from fleet_manager.core.route_core.map_writer import save_editable_map
+from fleet_manager.core.mapping.maps.map_exchange import build_editable_map_payload
+from fleet_manager.core.mapping.maps.map_writer import save_editable_map
 
 
 def _make_map(tmp_path: Path) -> Path:

@@ -5,14 +5,14 @@ from __future__ import annotations
 from dataclasses import replace
 from typing import Any
 
-from fleet_manager.core.domain.models import FleetRobot
-from fleet_manager.core.traffic.corridor_scheduler import (
+from fleet_manager.core.fleet.domain.models import FleetRobot
+from fleet_manager.core.traffic.corridors.scheduling.corridor_scheduler import (
     CorridorRequest,
     CorridorResourceWindow,
     CorridorSlot,
     CorridorSlotState,
 )
-from fleet_manager.core.traffic.controlled_corridor_prefetch_models import (
+from fleet_manager.core.traffic.corridors.prefetch.controlled_corridor_prefetch_models import (
     _CorridorPlannedPassage,
     _CorridorValidationContext,
 )
@@ -366,5 +366,3 @@ class ControlledCorridorPrefetchValidationMixin:
             intent["last_schedule_epoch"] = None
             return
         self._controlled_corridor_prefetch_intents.pop(robot_name, None)
-
-__all__ = ["ControlledCorridorPrefetchValidationMixin"]

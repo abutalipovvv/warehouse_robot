@@ -22,7 +22,7 @@ if __package__ in {None, ""}:
     # Keep direct execution from the formats directory working.
     sys.path.insert(0, str(Path(__file__).resolve().parents[4]))
 
-from fleet_manager.map_data.pgm import PgmImage
+from fleet_manager.core.mapping.formats.pgm import PgmImage
 from fleet_manager.core.io.atomic_files import atomic_write_text
 
 

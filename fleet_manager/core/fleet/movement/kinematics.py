@@ -5,7 +5,7 @@ from __future__ import annotations
 import math
 from typing import Any
 
-from fleet_manager.core.domain.models import FleetRobot
+from fleet_manager.core.fleet.domain.models import FleetRobot
 
 
 class FleetMotionKinematicsMixin:
@@ -102,4 +102,3 @@ class FleetMotionKinematicsMixin:
             minimum=0.03,
             default_if_falsy=True,
         )
-__all__ = ["FleetMotionKinematicsMixin"]

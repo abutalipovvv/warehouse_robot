@@ -11,21 +11,21 @@ if str(ROBOT_PLANNER_SRC) not in sys.path:
 
 
 def test_route_core_packages_are_owned_by_their_applications() -> None:
-    from fleet_manager.core.route_core.map_loader import WarehouseMapLoader as FleetLoader
-    from fleet_manager.core.route_core.models import Landmark as FleetLandmark
+    from fleet_manager.core.mapping.maps.map_loader import WarehouseMapLoader as FleetLoader
+    from fleet_manager.core.mapping.maps.models import Landmark as FleetLandmark
     from robot_planner.route_core import Landmark as RobotLandmark
     from robot_planner.route_core import WarehouseMapLoader as RobotLoader
 
-    assert FleetLoader.__module__.startswith("fleet_manager.core.route_core")
+    assert FleetLoader.__module__.startswith("fleet_manager.core.mapping.maps")
     assert RobotLoader.__module__.startswith("robot_planner.route_core")
-    assert FleetLandmark.__module__.startswith("fleet_manager.core.route_core")
+    assert FleetLandmark.__module__.startswith("fleet_manager.core.mapping.maps")
     assert RobotLandmark.__module__.startswith("robot_planner.route_core")
     assert FleetLoader is not RobotLoader
     assert FleetLandmark is not RobotLandmark
 
 
 def test_contextual_default_params_paths_are_separate() -> None:
-    from fleet_manager.core.route_core.params import DEFAULT_PARAMS_PATH as fleet_params_path
+    from fleet_manager.core.mapping.navigation.params import DEFAULT_PARAMS_PATH as fleet_params_path
     from robot_planner.route_core import DEFAULT_PARAMS_PATH as robot_params_path
 
     assert fleet_params_path == ROOT / "fleet_manager" / "config" / "params.yaml"
@@ -33,7 +33,7 @@ def test_contextual_default_params_paths_are_separate() -> None:
 
 
 def test_fleet_and_robot_params_keep_separate_defaults() -> None:
-    from fleet_manager.core.route_core.params import load_route_params as load_fleet_params
+    from fleet_manager.core.mapping.navigation.params import load_route_params as load_fleet_params
     from robot_planner.route_core import load_route_params as load_robot_params
 
     fleet_params = load_fleet_params()
@@ -46,8 +46,8 @@ def test_fleet_and_robot_params_keep_separate_defaults() -> None:
 
 
 def test_contextual_route_planners_load_local_params() -> None:
-    from fleet_manager.core.route_core.models import GraphEdge, Landmark, WorldPoint
-    from fleet_manager.core.route_core.planner import LmRoutePlanner
+    from fleet_manager.core.mapping.maps.models import GraphEdge, Landmark, WorldPoint
+    from fleet_manager.core.mapping.navigation.planner import LmRoutePlanner
     from robot_planner.route_core import GraphEdge as RobotGraphEdge
     from robot_planner.route_core import Landmark as RobotLandmark
     from robot_planner.route_core import LmRoutePlanner as RobotLmRoutePlanner
@@ -87,8 +87,8 @@ def test_contextual_route_planners_load_local_params() -> None:
 
 
 def test_edge_direction_is_strict_and_backward_heading_matches_in_both_runtimes() -> None:
-    from fleet_manager.core.route_core.models import GraphEdge, Landmark, PlannedRoute, WorldPoint
-    from fleet_manager.core.route_core.planner import LmRoutePlanner
+    from fleet_manager.core.mapping.maps.models import GraphEdge, Landmark, PlannedRoute, WorldPoint
+    from fleet_manager.core.mapping.navigation.planner import LmRoutePlanner
     from robot_planner.route_core import GraphEdge as RobotGraphEdge
     from robot_planner.route_core import Landmark as RobotLandmark
     from robot_planner.route_core import LmRoutePlanner as RobotLmRoutePlanner
@@ -142,8 +142,8 @@ def test_edge_direction_is_strict_and_backward_heading_matches_in_both_runtimes(
 
 
 def test_not_specified_motion_codes_are_normalized_without_losing_forward_zero() -> None:
-    from fleet_manager.core.route_core.map_writer import _normalize_edges
-    from fleet_manager.core.route_core.models import GraphEdge, WorldPoint
+    from fleet_manager.core.mapping.maps.map_writer import _normalize_edges
+    from fleet_manager.core.mapping.maps.models import GraphEdge, WorldPoint
 
     forward = _normalize_edges(
         [{"from": "A", "to": "B", "motionDirectionCode": 0, "length": 1.0}],
@@ -167,8 +167,8 @@ def test_not_specified_motion_codes_are_normalized_without_losing_forward_zero()
 def test_map_loader_merges_routing_and_geometry_edge_properties(
     tmp_path: Path,
 ) -> None:
-    from fleet_manager.core.route_core.map_loader import WarehouseMapLoader
-    from fleet_manager.core.route_core.models import Landmark, MapMetadata
+    from fleet_manager.core.mapping.maps.map_loader import WarehouseMapLoader
+    from fleet_manager.core.mapping.maps.models import Landmark, MapMetadata
 
     (tmp_path / "graphs.yaml").write_text(
         """
@@ -227,13 +227,13 @@ primitives:
 
 
 def test_geometric_corridor_is_compiled_by_core_not_the_map_generator() -> None:
-    from fleet_manager.core.route_core.models import (
+    from fleet_manager.core.mapping.maps.models import (
         GraphEdge,
         Landmark,
         TrafficZone,
         WorldPoint,
     )
-    from fleet_manager.core.traffic.corridors import (
+    from fleet_manager.core.traffic.corridors.corridors import (
         compile_controlled_corridor_zones,
     )
 

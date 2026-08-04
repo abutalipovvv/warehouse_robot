@@ -19,6 +19,3 @@ class ControlledCorridorPrefetchMixin(
     ControlledCorridorPrefetchValidationMixin,
 ):
     """Compose intent, gate/currentness and commit capabilities."""
-
-
-__all__ = ["ControlledCorridorPrefetchMixin"]

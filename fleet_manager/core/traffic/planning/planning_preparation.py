@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from fleet_manager.core.planning_models import PlanCandidate, PlanningSnapshot
+
 
 @dataclass(frozen=True, slots=True)
 class _TrafficPlanningContext:
@@ -19,6 +21,200 @@ class _TrafficPlanningContext:
 
 class TrafficPlanPreparationMixin:
     """Build planner inputs and choose stationary-obstacle fallbacks."""
+
+    def _planning_snapshot_for(
+        self,
+        valid_requests: list[dict[str, Any]],
+        payload: dict[str, Any] | None = None,
+    ) -> PlanningSnapshot:
+        """Freeze exactly the live data needed by one solver job."""
+
+        clean_payload = payload or {}
+        context = self._traffic_planning_context(
+            valid_requests,
+            clean_payload,
+        )
+        soft_blocked_lms = (
+            set()
+            if bool(clean_payload.get("skipSoftBlockedDetour", False))
+            else self._soft_blocked_lms(
+                valid_requests,
+                context.hard_blocked_lms,
+            )
+        )
+        primary_payload = {
+            **context.planner_payload,
+            "blocked_lms": sorted(
+                context.hard_blocked_lms | soft_blocked_lms
+            ),
+        }
+        fallback_payload = (
+            {
+                **context.planner_payload,
+                "blocked_lms": sorted(context.hard_blocked_lms),
+            }
+            if soft_blocked_lms
+            else None
+        )
+        return self._planning_snapshot_factory.create(
+            created_at=self._now(),
+            requests=valid_requests,
+            primary_payload=primary_payload,
+            fallback_payload=fallback_payload,
+            blockers=context.hard_blocked_lms | soft_blocked_lms,
+            soft_blocked_lms=soft_blocked_lms,
+            strict_stationary_avoidance=bool(
+                clean_payload.get("strictStationaryRobotAvoidance", True)
+            ),
+            reservation_offset=context.reservation_offset,
+            held_snapshot_owners=context.held_snapshot_owners,
+            release_owners=context.release_owners,
+            graph_revision=f"{len(self.landmarks)}:{len(self.edges)}",
+            map_revision=str(getattr(self, "map_dir", "") or "") or None,
+        )
+
+    def _finalize_planning_candidate(
+        self,
+        snapshot: PlanningSnapshot,
+        candidate: PlanCandidate,
+    ) -> dict[str, Any]:
+        """Apply runtime-only validation and policy to solver output."""
+
+        result = candidate.result.to_dict()
+        context = _TrafficPlanningContext(
+            reservation_offset=snapshot.reservation_offset,
+            hard_blocked_lms=set(snapshot.blockers) - set(snapshot.soft_blocked_lms),
+            held_snapshot_owners=set(snapshot.held_snapshot_owners),
+            release_owners=set(snapshot.release_owners),
+            planner_payload=snapshot.primary_payload_dict(),
+        )
+        soft_blocked_lms = set(snapshot.soft_blocked_lms)
+        if not soft_blocked_lms:
+            if result.get("ok"):
+                return self._apply_planning_continuous_waits(result, context)
+            return result
+
+        if result.get("ok"):
+            debug = result.setdefault("debug", {})
+            debug["reason"] = (
+                f"{debug.get('reason', 'success')}:detour_soft_blocks"
+            )
+            debug["softBlockedLms"] = sorted(soft_blocked_lms)
+            result = self._apply_planning_continuous_waits(result, context)
+            self._event(
+                "info",
+                "planner detour around occupied LM(s): "
+                + ", ".join(sorted(soft_blocked_lms)),
+            )
+            return result
+
+        failed_reason = result.get("debug", {}).get("reason", "unknown")
+        fallback = candidate.metadata.get("fallbackResult")
+        fallback_result = fallback if isinstance(fallback, dict) else {}
+        if snapshot.strict_stationary_avoidance:
+            return self._finalize_strict_snapshot_fallback(
+                snapshot,
+                result,
+                fallback_result,
+                context,
+                soft_blocked_lms,
+                failed_reason=failed_reason,
+            )
+        if fallback_result.get("ok"):
+            debug = fallback_result.setdefault("debug", {})
+            debug["reason"] = (
+                f"{debug.get('reason', 'success')}:fallback_wait"
+            )
+            debug["softBlockedLms"] = sorted(soft_blocked_lms)
+            debug["softBlockFailure"] = failed_reason
+            fallback_result = self._apply_planning_continuous_waits(
+                fallback_result,
+                context,
+            )
+            self._event(
+                "warn",
+                "planner found no detour; using original route and "
+                "runtime waiting",
+            )
+        return fallback_result or result
+
+    def _finalize_strict_snapshot_fallback(
+        self,
+        snapshot: PlanningSnapshot,
+        result: dict[str, Any],
+        diagnostic: dict[str, Any],
+        context: _TrafficPlanningContext,
+        soft_blocked_lms: set[str],
+        *,
+        failed_reason: Any,
+    ) -> dict[str, Any]:
+        """Classify a failed immutable soft-block planning attempt."""
+
+        debug = result.setdefault("debug", {})
+        debug["softBlockedLms"] = sorted(soft_blocked_lms)
+        debug["softBlockDetourFailure"] = failed_reason
+        request_names = {
+            str(request.get("name") or "")
+            for request in snapshot.request_dicts()
+        }
+        blocker_names: list[str] = []
+        if diagnostic.get("ok"):
+            diagnostic_debug = diagnostic.setdefault("debug", {})
+            diagnostic_debug["reason"] = (
+                f"{diagnostic_debug.get('reason', 'success')}:"
+                "diagnostic_soft_fallback"
+            )
+            diagnostic_debug["softBlockedLms"] = sorted(soft_blocked_lms)
+            diagnostic_soft_lms = {
+                str(node)
+                for plan in diagnostic.get("plans", [])
+                if isinstance(plan, dict)
+                for node in plan.get("nodes", [])
+                if str(node) in soft_blocked_lms
+            }
+            blocker_names = self._stationary_blockers_named_by_failure(
+                " ".join(sorted(diagnostic_soft_lms)),
+                soft_blocked_lms,
+                request_names=request_names,
+            )
+            if not blocker_names:
+                diagnostic = self._apply_planning_continuous_waits(
+                    diagnostic,
+                    context,
+                )
+                if (
+                    diagnostic.get("ok")
+                    or diagnostic.get("debug", {}).get(
+                        "stationaryBlockerRobots"
+                    )
+                ):
+                    return diagnostic
+        diagnostic_reason = str(
+            diagnostic.get("debug", {}).get("reason", "")
+            if isinstance(diagnostic, dict)
+            else ""
+        )
+        if not blocker_names:
+            blocker_names = self._stationary_blockers_named_by_failure(
+                diagnostic_reason,
+                soft_blocked_lms,
+                request_names=request_names,
+            )
+        if blocker_names:
+            debug["reason"] = (
+                f"{failed_reason}:stationary_robot_blocks_route"
+            )
+            debug["stationaryRobotWait"] = True
+            debug["stationaryBlockerRobots"] = blocker_names
+            self._event(
+                "warn",
+                "planner found no route around proven stationary "
+                "robot(s); order remains queued",
+            )
+        else:
+            debug["reason"] = failed_reason
+            debug["temporalResourceFailure"] = True
+        return result
 
     def _plan_valid_requests_unlocked(
         self,
@@ -424,4 +620,3 @@ class TrafficPlanPreparationMixin:
             ):
                 released.add(robot.name)
         return released
-__all__ = ["TrafficPlanPreparationMixin"]

@@ -2,11 +2,85 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 import math
 from typing import Any
 
-from fleet_manager.core.domain.constants import TERMINAL_ORDER_STATUSES
-from fleet_manager.core.domain.models import FleetOrder, FleetRobot
+from fleet_manager.core.fleet.domain.constants import TERMINAL_ORDER_STATUSES
+from fleet_manager.core.fleet.domain.models import FleetOrder, FleetRobot
+from fleet_manager.core.manager_state import PlanningState
+
+
+class RollingContinuationService:
+    """Calculate continuation priorities from explicit planning state."""
+
+    def __init__(
+        self,
+        planning_state: PlanningState,
+        retry_interval: Callable[[FleetOrder], float],
+    ) -> None:
+        self._state = planning_state
+        self._retry_interval = retry_interval
+
+    def boundary_wait_since(
+        self,
+        order: FleetOrder,
+        robot: FleetRobot,
+        now: float,
+    ) -> float:
+        if robot.rolling_boundary_since is not None:
+            return min(now, float(robot.rolling_boundary_since))
+        eligible = self._state.rolling_prefetch_eligible_since.get(robot.name)
+        timestamps = [
+            float(value)
+            for value in (eligible, order.updated_at, robot.updated_at)
+            if value is not None and float(value) > 0.0
+        ]
+        return min([now, *timestamps]) if timestamps else now
+
+    def boundary_priority(
+        self,
+        order: FleetOrder,
+        robot: FleetRobot,
+        now: float,
+    ) -> tuple[float, float, str]:
+        waiting_since = self.boundary_wait_since(order, robot, now)
+        last_attempt = self._state.rolling_prefetch_last_attempt_at.get(
+            robot.name
+        )
+        if last_attempt is None:
+            failures = self._state.rolling_prefetch_failures.get(robot.name, 0)
+            last_attempt = waiting_since + (
+                min(8, max(0, int(failures))) * self._retry_interval(order)
+            )
+        service_anchor = max(waiting_since, float(last_attempt))
+        return service_anchor, waiting_since, robot.name
+
+    def candidate_priority(
+        self,
+        order: FleetOrder,
+        robot: FleetRobot,
+        remaining: float,
+        now: float,
+    ) -> tuple[float, float, float, str]:
+        if remaining <= 0.000001:
+            service_anchor, waiting_since, name = self.boundary_priority(
+                order,
+                robot,
+                now,
+            )
+            return (
+                service_anchor + self._retry_interval(order),
+                1.0,
+                waiting_since,
+                name,
+            )
+        return (
+            now + remaining,
+            0.0,
+            self._state.rolling_prefetch_eligible_since.get(robot.name, now),
+            robot.name,
+        )
 
 
 class RollingContinuationMixin:
@@ -148,19 +222,11 @@ class RollingContinuationMixin:
         now: float,
     ) -> float:
         """Return a stable age for a stopped continuation holder."""
-        if robot.rolling_boundary_since is not None:
-            return min(now, float(robot.rolling_boundary_since))
-        eligible = self._rolling_prefetch_eligible_since.get(robot.name)
-        timestamps = [
-            float(value)
-            for value in (
-                eligible,
-                order.updated_at,
-                robot.updated_at,
-            )
-            if value is not None and float(value) > 0.0
-        ]
-        return min([now, *timestamps]) if timestamps else now
+        return self._rolling_continuation_service.boundary_wait_since(
+            order,
+            robot,
+            now,
+        )
 
     def _rolling_boundary_priority(
         self,
@@ -169,24 +235,11 @@ class RollingContinuationMixin:
     ) -> tuple[float, float, str]:
         """Least-recently-served ordering with oldest-waiter fallback."""
         order, robot, _, _, _ = entry
-        waiting_since = self._rolling_boundary_wait_since(order, robot, now)
-        last_attempt = self._rolling_prefetch_last_attempt_at.get(robot.name)
-        if last_attempt is None:
-            # Tests and restored older snapshots may contain a failure count
-            # without the new service timestamp. Approximate those completed
-            # turns without allowing failures to erase a genuinely old age.
-            last_attempt = waiting_since + (
-                min(
-                    8,
-                    max(
-                        0,
-                        int(self._rolling_prefetch_failures.get(robot.name, 0)),
-                    ),
-                )
-                * self._rolling_boundary_retry_interval(order)
-            )
-        service_anchor = max(waiting_since, float(last_attempt))
-        return service_anchor, waiting_since, robot.name
+        return self._rolling_continuation_service.boundary_priority(
+            order,
+            robot,
+            now,
+        )
 
     def _rolling_prefetch_candidate_priority(
         self,
@@ -203,22 +256,11 @@ class RollingContinuationMixin:
         cannot starve stopped robots, while a just-serviced blocked holder
         cannot repeatedly preempt a route that is about to expire.
         """
-        if remaining <= 0.000001:
-            service_anchor, waiting_since, name = self._rolling_boundary_priority(
-                (order, robot, {}, "", remaining),
-                now,
-            )
-            return (
-                service_anchor + self._rolling_boundary_retry_interval(order),
-                1.0,
-                waiting_since,
-                name,
-            )
-        return (
-            now + remaining,
-            0.0,
-            self._rolling_prefetch_eligible_since.get(robot.name, now),
-            robot.name,
+        return self._rolling_continuation_service.candidate_priority(
+            order,
+            robot,
+            remaining,
+            now,
         )
 
     def _rolling_full_collapse_release_entries(
@@ -1179,6 +1221,3 @@ class RollingContinuationMixin:
             1.0,
             min(8.0 * time_scale, self._rolling_prefetch_lead() * 0.4),
         )
-
-
-__all__ = ["RollingContinuationMixin"]

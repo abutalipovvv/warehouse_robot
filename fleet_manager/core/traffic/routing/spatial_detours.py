@@ -7,8 +7,8 @@ from heapq import heappop, heappush
 import math
 from typing import Any
 
-from fleet_manager.core.domain.models import FleetOrder, FleetRobot
-from fleet_manager.core.route_core.models import GraphEdge, PlannedRoute
+from fleet_manager.core.fleet.domain.models import FleetOrder, FleetRobot
+from fleet_manager.core.mapping.maps.models import GraphEdge, PlannedRoute
 
 
 @dataclass(frozen=True, slots=True)
@@ -890,6 +890,3 @@ class SpatialDetourMixin:
             return max(0.0, float(value))
         except (TypeError, ValueError):
             return max(0.0, float(default))
-
-
-__all__ = ["SpatialDetourMixin"]

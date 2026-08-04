@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from math import isfinite
 from typing import Any, Iterable, Mapping
 
-from fleet_manager.core.math.geometry import Vector2
+from fleet_manager.core.algorithms.math.geometry import Vector2
 
 
 FREE_CELL = 254
@@ -244,13 +244,3 @@ def _number(value: Any, *, default: float) -> float:
         return float(default if value is None else value)
     except (TypeError, ValueError, OverflowError):
         return default
-
-
-__all__ = [
-    "FREE_CELL",
-    "OCCUPIED_CELL",
-    "OccupancyRaster",
-    "SmapHeader",
-    "point_payload",
-    "vector_from_payload",
-]

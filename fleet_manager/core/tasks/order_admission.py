@@ -2,17 +2,167 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 import math
 from typing import Any
 
-from fleet_manager.core.domain.constants import (
+from fleet_manager.core.fleet.domain.constants import (
     FLEET_CONTROL_OWNER_ID,
     ORDER_SEQUENCE_KEYS,
     ORDER_TARGET_KEYS,
     TERMINAL_ORDER_STATUSES,
 )
-from fleet_manager.core.domain.models import FleetOrder, FleetRobot
+from fleet_manager.core.fleet.domain.models import FleetOrder, FleetRobot
+from fleet_manager.core.manager_state import FleetState
+
+
+class OrderAdmissionService:
+    """Validate payloads and build orders from explicit dependencies."""
+
+    def __init__(
+        self,
+        fleet_state: FleetState,
+        landmarks: Mapping[str, Any],
+        clock: Callable[[], float],
+    ) -> None:
+        self._fleet_state = fleet_state
+        self._landmarks = landmarks
+        self._clock = clock
+
+    def build(self, payload: Mapping[str, Any]) -> FleetOrder:
+        order_id = str(
+            payload.get("id")
+            or payload.get("orderId")
+            or payload.get("taskId")
+            or payload.get("externalId")
+            or ""
+        ).strip()
+        now = float(self._clock())
+        if not order_id:
+            order_id = f"order-{int(now * 1000)}"
+
+        targets = self.target_landmarks(payload)
+        if not targets:
+            raise ValueError("targetLm/goalLm/location is required")
+        for target_lm in targets:
+            if target_lm not in self._landmarks:
+                raise ValueError(f"unknown target LM: {target_lm}")
+
+        vehicle = str(
+            payload.get("vehicle")
+            or payload.get("robot")
+            or payload.get("robotName")
+            or payload.get("name")
+            or ""
+        ).strip()
+        if vehicle and vehicle not in self._fleet_state.robots:
+            raise ValueError(f"unknown robot: {vehicle}")
+
+        try:
+            priority = int(payload.get("priority", 0) or 0)
+        except (TypeError, ValueError):
+            priority = 0
+
+        return FleetOrder(
+            order_id=order_id,
+            target_lm=targets[0],
+            vehicle=vehicle,
+            priority=priority,
+            external_id=str(
+                payload.get("externalId") or payload.get("taskId") or ""
+            ).strip(),
+            targets=targets,
+            speed=self.float_value(payload, ("speed", "routeSpeed")),
+            acceleration=self.float_value(
+                payload,
+                (
+                    "acceleration",
+                    "routeAcceleration",
+                    "route_acceleration",
+                ),
+            ),
+            rotate=self.bool_value(
+                payload,
+                ("rotate", "simulateRotation", "simulate_rotation"),
+            ),
+            turn_speed=self.float_value(
+                payload,
+                (
+                    "turnSpeed",
+                    "turn_speed",
+                    "rotationSpeed",
+                    "rotation_speed",
+                ),
+            ),
+            stretch_motion_to_reservation_ticks=self.bool_value(
+                payload,
+                (
+                    "stretchMotionToReservationTicks",
+                    "stretch_motion_to_reservation_ticks",
+                ),
+                default=True,
+            ),
+            created_at=now,
+            updated_at=now,
+        )
+
+    @classmethod
+    def target_landmarks(cls, payload: Mapping[str, Any]) -> list[str]:
+        targets: list[str] = []
+        for key in ORDER_SEQUENCE_KEYS:
+            raw_sequence = payload.get(key)
+            if not isinstance(raw_sequence, list):
+                continue
+            for item in raw_sequence:
+                target_lm = cls.target_landmark(item)
+                if target_lm:
+                    targets.append(target_lm)
+            if targets:
+                return targets
+
+        target_lm = cls.target_landmark(payload)
+        return [target_lm] if target_lm else []
+
+    @staticmethod
+    def target_landmark(item: Any) -> str:
+        if isinstance(item, Mapping):
+            for key in ORDER_TARGET_KEYS:
+                target_lm = str(item.get(key) or "").strip()
+                if target_lm:
+                    return target_lm
+            return ""
+        return str(item or "").strip()
+
+    @staticmethod
+    def float_value(
+        payload: Mapping[str, Any],
+        keys: tuple[str, ...],
+        default: float = 0.0,
+    ) -> float:
+        for key in keys:
+            if key not in payload:
+                continue
+            try:
+                return float(payload.get(key) or default)
+            except (TypeError, ValueError):
+                return default
+        return default
+
+    @staticmethod
+    def bool_value(
+        payload: Mapping[str, Any],
+        keys: tuple[str, ...],
+        default: bool = False,
+    ) -> bool:
+        for key in keys:
+            if key not in payload:
+                continue
+            value = payload.get(key)
+            if isinstance(value, str):
+                return value.strip().lower() in {"1", "true", "yes", "on"}
+            return bool(value)
+        return default
 
 
 DispatchEntry = tuple[FleetOrder, FleetRobot, dict[str, Any], str]
@@ -72,108 +222,10 @@ class OrderAdmissionMixin:
         return [self._build_order(payload)]
 
     def _build_order(self, payload: dict[str, Any]) -> FleetOrder:
-        order_id = str(
-            payload.get("id")
-            or payload.get("orderId")
-            or payload.get("taskId")
-            or payload.get("externalId")
-            or ""
-        ).strip()
-        if not order_id:
-            order_id = f"order-{int(self._now() * 1000)}"
-
-        targets = self._target_lms_from_payload(payload)
-        if not targets:
-            raise ValueError("targetLm/goalLm/location is required")
-        for target_lm in targets:
-            if target_lm not in self.landmarks:
-                raise ValueError(f"unknown target LM: {target_lm}")
-
-        vehicle = str(
-            payload.get("vehicle")
-            or payload.get("robot")
-            or payload.get("robotName")
-            or payload.get("name")
-            or ""
-        ).strip()
-        if vehicle and vehicle not in self.robots:
-            raise ValueError(f"unknown robot: {vehicle}")
-
-        try:
-            priority = int(payload.get("priority", 0) or 0)
-        except (TypeError, ValueError):
-            priority = 0
-        external_id = str(payload.get("externalId") or payload.get("taskId") or "").strip()
-        speed = self._float_payload(payload, ("speed", "routeSpeed"), 0.0)
-        acceleration = self._float_payload(payload, ("acceleration", "routeAcceleration", "route_acceleration"), 0.0)
-        rotate = self._bool_payload(payload, ("rotate", "simulateRotation", "simulate_rotation"), False)
-        turn_speed = self._float_payload(payload, ("turnSpeed", "turn_speed", "rotationSpeed", "rotation_speed"), 0.0)
-        stretch_motion = self._bool_payload(
-            payload,
-            ("stretchMotionToReservationTicks", "stretch_motion_to_reservation_ticks"),
-            True,
-        )
-        now = self._now()
-        return FleetOrder(
-            order_id=order_id,
-            target_lm=targets[0],
-            vehicle=vehicle,
-            priority=priority,
-            external_id=external_id,
-            targets=targets,
-            speed=speed,
-            acceleration=acceleration,
-            rotate=rotate,
-            turn_speed=turn_speed,
-            stretch_motion_to_reservation_ticks=stretch_motion,
-            created_at=now,
-            updated_at=now,
-        )
-
-    def _float_payload(self, payload: dict[str, Any], keys: tuple[str, ...], default: float = 0.0) -> float:
-        for key in keys:
-            if key not in payload:
-                continue
-            try:
-                return float(payload.get(key) or default)
-            except (TypeError, ValueError):
-                return default
-        return default
-
-    def _bool_payload(self, payload: dict[str, Any], keys: tuple[str, ...], default: bool = False) -> bool:
-        for key in keys:
-            if key not in payload:
-                continue
-            value = payload.get(key)
-            if isinstance(value, str):
-                return value.strip().lower() in {"1", "true", "yes", "on"}
-            return bool(value)
-        return default
+        return self._order_admission_service.build(payload)
 
     def _target_lms_from_payload(self, payload: dict[str, Any]) -> list[str]:
-        targets: list[str] = []
-        for key in ORDER_SEQUENCE_KEYS:
-            raw_sequence = payload.get(key)
-            if not isinstance(raw_sequence, list):
-                continue
-            for item in raw_sequence:
-                target_lm = self._target_lm_from_payload_item(item)
-                if target_lm:
-                    targets.append(target_lm)
-            if targets:
-                return targets
-
-        target_lm = self._target_lm_from_payload_item(payload)
-        return [target_lm] if target_lm else []
-
-    def _target_lm_from_payload_item(self, item: Any) -> str:
-        if isinstance(item, dict):
-            for key in ORDER_TARGET_KEYS:
-                target_lm = str(item.get(key) or "").strip()
-                if target_lm:
-                    return target_lm
-            return ""
-        return str(item or "").strip()
+        return OrderAdmissionService.target_landmarks(payload)
 
     def _dispatch_orders(
         self,
@@ -1061,6 +1113,3 @@ class OrderAdmissionMixin:
         if start is None or goal is None:
             return float("inf")
         return math.hypot(goal.x - start.x, goal.y - start.y)
-
-
-__all__ = ["OrderAdmissionMixin"]

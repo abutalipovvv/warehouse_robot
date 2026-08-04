@@ -1,10 +1,10 @@
 import math
 
-from fleet_manager.core.mapf.lm_cbs import LmCBSPlanner, LmRobotRequest
+from fleet_manager.core.mapf.cbs.lm_cbs import LmCBSPlanner, LmRobotRequest
 
 
 def test_fleet_mapf_is_owned_by_fleet_manager() -> None:
-    from fleet_manager.core.mapf.lm_cbs import LmCBSPlanner as LocalPlanner
+    from fleet_manager.core.mapf.cbs.lm_cbs import LmCBSPlanner as LocalPlanner
 
     assert LocalPlanner is LmCBSPlanner
     assert LmCBSPlanner.__module__.startswith("fleet_manager.core.mapf")

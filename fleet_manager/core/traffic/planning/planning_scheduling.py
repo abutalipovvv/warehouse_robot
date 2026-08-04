@@ -11,6 +11,3 @@ class TrafficReservationSchedulingMixin(
     TrafficReservationMixin,
 ):
     """Provide the complete traffic-reservation scheduling policy."""
-
-
-__all__ = ["TrafficReservationSchedulingMixin"]

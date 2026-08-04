@@ -5,8 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import NamedTuple
 
-from fleet_manager.core.traffic.corridor_calendar import CorridorCalendar
-from fleet_manager.core.traffic.corridor_models import (
+from fleet_manager.core.traffic.corridors.scheduling.corridor_calendar import CorridorCalendar
+from fleet_manager.core.traffic.corridors.scheduling.corridor_models import (
     CorridorDecision,
     CorridorOccupancy,
     CorridorRequest,
@@ -40,9 +40,3 @@ class _PlacementProposal(NamedTuple):
     rank: tuple[object, ...]
     request: CorridorRequest
     placement: tuple[float, float, int]
-
-
-__all__ = [
-    "_PlacementProposal",
-    "_PlanningContext",
-]

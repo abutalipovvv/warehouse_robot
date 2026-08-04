@@ -5,8 +5,8 @@ from __future__ import annotations
 from dataclasses import replace
 from typing import Any
 
-from fleet_manager.core.domain.models import FleetOrder, FleetRobot
-from fleet_manager.core.traffic.corridor_scheduler import (
+from fleet_manager.core.fleet.domain.models import FleetOrder, FleetRobot
+from fleet_manager.core.traffic.corridors.scheduling.corridor_scheduler import (
     CorridorRequest,
     CorridorSlot,
 )
@@ -505,5 +505,3 @@ class ControlledCorridorPrefetchGateMixin:
             "assigned_at": self._now(),
         }
         return holding_lm
-
-__all__ = ["ControlledCorridorPrefetchGateMixin"]

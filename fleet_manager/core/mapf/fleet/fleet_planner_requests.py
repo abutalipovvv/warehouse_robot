@@ -6,7 +6,7 @@ from dataclasses import dataclass
 import math
 from typing import Any
 
-from .lm_cbs import LmRobotRequest
+from ..cbs.lm_cbs import LmRobotRequest
 
 
 @dataclass(slots=True)
@@ -748,4 +748,3 @@ class PlanningRequestPreparer:
             f"from {start_lm}; off-graph approach is forbidden, "
             "replan at a landmark"
         )
-

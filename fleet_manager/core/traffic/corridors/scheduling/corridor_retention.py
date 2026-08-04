@@ -4,14 +4,14 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from fleet_manager.core.traffic.corridor_models import (
+from fleet_manager.core.traffic.corridors.scheduling.corridor_models import (
     CorridorRequest,
     CorridorResourceWindow,
     CorridorSchedule,
     CorridorSlot,
     CorridorSlotState,
 )
-from fleet_manager.core.traffic.corridor_planning_models import (
+from fleet_manager.core.traffic.corridors.scheduling.corridor_planning_models import (
     _PlanningContext,
 )
 
@@ -350,6 +350,3 @@ def _materialize_retained_slot(
         ),
         physically_observed=old_slot.physically_observed,
     )
-
-
-__all__ = ["retain_previous_slots"]

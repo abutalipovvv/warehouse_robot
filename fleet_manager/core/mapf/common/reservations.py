@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from itertools import groupby
 from typing import Iterable, Mapping
 
-from fleet_manager.core.math.intervals import TimeInterval, merge_intervals
+from fleet_manager.core.algorithms.math.intervals import TimeInterval, merge_intervals
 
 
 @dataclass(frozen=True, order=True, slots=True)

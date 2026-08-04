@@ -6,7 +6,7 @@ from dataclasses import dataclass
 import math
 from typing import Any
 
-from fleet_manager.core.domain.models import FleetRobot
+from fleet_manager.core.fleet.domain.models import FleetRobot
 
 
 @dataclass(frozen=True, slots=True)
@@ -628,6 +628,3 @@ class TrafficZoneAdmissionMixin:
                 ],
             },
         }
-
-
-__all__ = ["TrafficZoneAdmissionMixin"]

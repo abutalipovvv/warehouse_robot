@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from fleet_manager.core.domain.constants import TERMINAL_ORDER_STATUSES
-from fleet_manager.core.domain.models import FleetOrder, FleetRobot
+from fleet_manager.core.fleet.domain.constants import TERMINAL_ORDER_STATUSES
+from fleet_manager.core.fleet.domain.models import FleetOrder, FleetRobot
 
 
 class OrderLifecycleMixin:
@@ -360,6 +360,3 @@ class OrderLifecycleMixin:
             return
         order.route_nodes = list(robot.plan_nodes)
         self._advance_or_complete_order(order, robot, now)
-
-
-__all__ = ["OrderLifecycleMixin"]

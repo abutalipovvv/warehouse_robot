@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from fleet_manager.core.domain.models import FleetOrder, FleetRobot
+from fleet_manager.core.fleet.domain.models import FleetOrder, FleetRobot
 
 
 @dataclass(slots=True)
@@ -521,4 +521,3 @@ class FleetDeadlockRetreatMixin:
         robot.retreat_blocked_edges = []
         robot.retreat_blocker_signatures = []
         robot.retreat_corridor_hold = None
-__all__ = ["FleetDeadlockRetreatMixin"]

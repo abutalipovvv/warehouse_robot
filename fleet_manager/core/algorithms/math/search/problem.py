@@ -24,6 +24,9 @@ class SearchProblem(Protocol[StateT]):
     Temporal searches may also define ``dominance(state, path_cost)``.  Its
     finite, non-negative result decides whether a version of the same key was
     already expanded in a better form.  The default is ``path_cost``.
+
+    A problem may define ``tie_breaker(state) -> str`` to preserve a
+    domain-specific deterministic order for equal A* priorities.
     """
 
     @property

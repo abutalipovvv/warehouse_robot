@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from fleet_manager.core.domain.models import FleetRobot
+from fleet_manager.core.fleet.domain.models import FleetRobot
 
 
 @dataclass(frozen=True, slots=True)
@@ -37,9 +37,3 @@ class _EvacuationCandidateProbe:
     portal_blocked_edges: list[tuple[str, str]] = field(
         default_factory=list
     )
-
-
-__all__ = [
-    "_EvacuationCandidateProbe",
-    "_EvacuationSearchContext",
-]

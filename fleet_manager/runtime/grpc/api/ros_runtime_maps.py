@@ -137,5 +137,3 @@ class RosRuntimeMapTransferMixin:
             "mapDir": str(response.map_dir or ""),
             "mapId": str(response.map_id or ""),
         }
-
-__all__ = ["RosRuntimeMapTransferMixin"]

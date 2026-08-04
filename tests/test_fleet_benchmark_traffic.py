@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from time import monotonic, sleep
 
-import fleet_manager.core.manager as runtime_module
+import fleet_manager.core.fleet.management.manager as runtime_module
 import operator_app.core.fleet_manager as service_module
 
 from operator_app.core.fleet_manager import (

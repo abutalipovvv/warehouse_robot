@@ -3,8 +3,8 @@ from __future__ import annotations
 import inspect
 from typing import Any
 
-import fleet_manager.core.traffic.corridor_planner as planner_module
-from fleet_manager.core.traffic.corridor_models import (
+import fleet_manager.core.traffic.corridors.scheduling.corridor_planner as planner_module
+from fleet_manager.core.traffic.corridors.scheduling.corridor_models import (
     CorridorRequest,
     CorridorResourceWindow,
     CorridorSchedule,
@@ -12,11 +12,11 @@ from fleet_manager.core.traffic.corridor_models import (
     CorridorSlot,
     CorridorSlotState,
 )
-from fleet_manager.core.traffic.corridor_planner import (
+from fleet_manager.core.traffic.corridors.scheduling.corridor_planner import (
     CorridorScheduleBuilder,
     _PlanningContext,
 )
-from fleet_manager.core.traffic.corridor_planning_models import (
+from fleet_manager.core.traffic.corridors.scheduling.corridor_planning_models import (
     _PlanningContext as PlanningContextModel,
 )
 

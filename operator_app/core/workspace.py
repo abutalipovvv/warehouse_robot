@@ -13,7 +13,7 @@ try:
 except Exception:  # pragma: no cover - optional runtime dependency fallback
     yaml = None
 
-from fleet_manager.storage import atomic_write_json, atomic_write_text
+from fleet_manager.core.io.atomic_files import atomic_write_json, atomic_write_text
 
 from .models import KnownRobot
 

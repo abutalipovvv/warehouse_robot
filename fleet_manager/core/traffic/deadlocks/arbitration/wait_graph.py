@@ -57,6 +57,3 @@ class WaitForGraph:
             chain.append(current)
             current = self._dependencies.get(current, "")
         return WaitChain(tuple(chain), current)
-
-
-__all__ = ["WaitChain", "WaitCycle", "WaitForGraph"]

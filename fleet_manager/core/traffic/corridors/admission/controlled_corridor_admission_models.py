@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from fleet_manager.core.traffic.corridor_scheduler import (
+from fleet_manager.core.traffic.corridors.scheduling.corridor_scheduler import (
     CorridorRequest,
 )
 
@@ -51,10 +51,3 @@ class _CentralCorridorPublication:
     queues: dict[str, list[tuple[float, str]]] = field(
         default_factory=dict
     )
-
-
-__all__ = [
-    "_CentralCorridorBuild",
-    "_CentralCorridorPublication",
-    "_CentralCorridorWaitContext",
-]

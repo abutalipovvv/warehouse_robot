@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import ast
+from enum import Enum
+import logging
 import math
 from copy import deepcopy
 from pathlib import Path
@@ -16,6 +18,16 @@ DEFAULT_PARAMS_PATH = (
 )
 DEFAULT_NAV2_ROBOT_RADIUS = 0.22
 DEFAULT_NAV2_FOOTPRINT_SEGMENTS = 16
+LOGGER = logging.getLogger(__name__)
+
+
+class ConfigurationMode(str, Enum):
+    COMPATIBILITY = "compatibility"
+    STRICT = "strict"
+
+
+class ConfigurationError(ValueError):
+    """A configuration value is invalid in strict mode."""
 
 
 def _circle_footprint(radius: float, segments: int = DEFAULT_NAV2_FOOTPRINT_SEGMENTS) -> list[dict[str, float]]:
@@ -115,6 +127,7 @@ def _apply_nav2_robot_model(params: dict[str, Any], params_path: Path) -> dict[s
     return params
 
 DEFAULT_ROUTE_PARAMS: dict[str, Any] = {
+    "strict_configuration": False,
     "robot_model": {
         "source": "nav2",
         "radius": DEFAULT_NAV2_ROBOT_RADIUS,
@@ -212,11 +225,14 @@ def load_route_params(
     path: Path | None = None,
     create: bool = False,
     defaults: dict[str, Any] | None = None,
+    *,
+    strict: bool = False,
 ) -> dict[str, Any]:
     params_path = path or DEFAULT_PARAMS_PATH
     default_params = DEFAULT_ROUTE_PARAMS if defaults is None else defaults
     if not params_path.exists():
         params = deepcopy(default_params)
+        params["strict_configuration"] = bool(strict)
         params = _apply_nav2_robot_model(params, params_path)
         if create:
             save_route_params(params, params_path, defaults=default_params)
@@ -224,8 +240,22 @@ def load_route_params(
 
     loaded = yaml.safe_load(params_path.read_text(encoding="utf-8"))
     if not isinstance(loaded, dict):
+        if strict:
+            raise ConfigurationError(
+                f"configuration root: expected mapping, received {loaded!r}"
+            )
         loaded = {}
-    return _apply_nav2_robot_model(_deep_merge(deepcopy(default_params), loaded), params_path)
+    schema = _configuration_schema(default_params, include_packaged=defaults is None)
+    _validate_config_mapping(
+        loaded,
+        schema,
+        path="configuration",
+        strict=strict,
+    )
+    merged = _deep_merge(deepcopy(default_params), loaded)
+    merged["strict_configuration"] = bool(strict)
+    _validate_config_consistency(merged, strict=strict)
+    return _apply_nav2_robot_model(merged, params_path)
 
 
 def save_route_params(
@@ -250,3 +280,155 @@ def _deep_merge(defaults: dict[str, Any], overrides: dict[str, Any]) -> dict[str
         else:
             defaults[key] = value
     return defaults
+
+
+def _configuration_schema(
+    defaults: dict[str, Any],
+    *,
+    include_packaged: bool,
+) -> dict[str, Any]:
+    schema = deepcopy(defaults)
+    if not include_packaged or not DEFAULT_PARAMS_PATH.is_file():
+        return schema
+    packaged = yaml.safe_load(DEFAULT_PARAMS_PATH.read_text(encoding="utf-8"))
+    if isinstance(packaged, dict):
+        _deep_merge(schema, packaged)
+    return schema
+
+
+def _validate_config_mapping(
+    values: dict[str, Any],
+    schema: dict[str, Any],
+    *,
+    path: str,
+    strict: bool,
+) -> None:
+    for key, value in values.items():
+        value_path = f"{path}.{key}"
+        if key not in schema:
+            message = f"{value_path}: unknown key, received {value!r}"
+            if strict:
+                raise ConfigurationError(message)
+            LOGGER.warning("configuration_compatibility: %s", message)
+            continue
+        expected = schema[key]
+        if isinstance(expected, dict):
+            if not isinstance(value, dict):
+                _config_invalid(
+                    value_path,
+                    value,
+                    "mapping",
+                    strict=strict,
+                )
+                continue
+            _validate_config_mapping(
+                value,
+                expected,
+                path=value_path,
+                strict=strict,
+            )
+            continue
+        _validate_config_scalar(
+            value_path,
+            value,
+            expected,
+            strict=strict,
+        )
+
+
+def _validate_config_scalar(
+    path: str,
+    value: Any,
+    expected: Any,
+    *,
+    strict: bool,
+) -> None:
+    if expected is None:
+        return
+    if isinstance(expected, bool):
+        valid = isinstance(value, bool)
+        expected_name = "boolean"
+    elif isinstance(expected, (int, float)):
+        valid = (
+            not isinstance(value, bool)
+            and isinstance(value, (int, float))
+            and math.isfinite(float(value))
+        )
+        expected_name = "finite number"
+    elif isinstance(expected, str):
+        valid = isinstance(value, str)
+        expected_name = "string"
+    elif isinstance(expected, list):
+        valid = isinstance(value, list)
+        expected_name = "list"
+    else:
+        valid = isinstance(value, type(expected))
+        expected_name = type(expected).__name__
+    if not valid:
+        _config_invalid(
+            path,
+            value,
+            expected_name,
+            strict=strict,
+        )
+
+
+def _config_invalid(
+    path: str,
+    value: Any,
+    expected: str,
+    *,
+    strict: bool,
+) -> None:
+    message = f"{path}: expected {expected}, received {value!r}"
+    if strict:
+        raise ConfigurationError(message)
+    LOGGER.warning("configuration_compatibility: %s", message)
+
+
+def _validate_config_consistency(
+    params: dict[str, Any],
+    *,
+    strict: bool,
+) -> None:
+    if not strict:
+        return
+    fleet = params.get("fleet", {})
+    if not isinstance(fleet, dict):
+        return
+    backend = str(fleet.get("planner_backend", "cbs") or "").strip().lower()
+    allowed_backends = {
+        "cbs",
+        "rolling-sipp",
+        "rolling_sipp",
+        "sipp",
+        "hybrid",
+        "rolling_sipp+cbs",
+        "sipp+cbs",
+    }
+    if backend not in allowed_backends:
+        raise ConfigurationError(
+            "configuration.fleet.planner_backend: unknown backend, "
+            f"received {fleet.get('planner_backend')!r}"
+        )
+    positive = (
+        "reservation_time_step_sec",
+        "reservation_horizon_sec",
+        "cbs_low_level_max_time",
+        "cbs_max_high_level_nodes",
+        "cbs_max_planning_time_sec",
+    )
+    for key in positive:
+        if key in fleet and float(fleet[key]) <= 0.0:
+            raise ConfigurationError(
+                f"configuration.fleet.{key}: expected value > 0, "
+                f"received {fleet[key]!r}"
+            )
+    batch = fleet.get("controlled_corridor_max_direction_batch")
+    adaptive = fleet.get("controlled_corridor_max_adaptive_direction_batch")
+    if batch is not None and adaptive is not None and int(adaptive) < int(batch):
+        raise ConfigurationError(
+            "configuration.fleet.controlled_corridor_max_adaptive_direction_batch: "
+            "must be >= controlled_corridor_max_direction_batch, "
+            f"received {adaptive!r}"
+        )

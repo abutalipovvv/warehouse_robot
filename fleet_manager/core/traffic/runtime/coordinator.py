@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-from fleet_manager.core.traffic.deadlock_arbitration import (
+from fleet_manager.core.traffic.deadlocks.arbitration.deadlock_arbitration import (
     DeadlockArbitrationMixin,
 )
-from fleet_manager.core.traffic.deadlock_evacuation import (
+from fleet_manager.core.traffic.deadlocks.recovery.evacuation.deadlock_evacuation import (
     DeadlockEvacuationMixin,
 )
-from fleet_manager.core.traffic.runtime_conflicts import RuntimeConflictMixin
+from fleet_manager.core.traffic.runtime.runtime_conflicts import RuntimeConflictMixin
 
 
 class TrafficCoordinatorMixin(
@@ -17,6 +17,3 @@ class TrafficCoordinatorMixin(
     RuntimeConflictMixin,
 ):
     """Preserve the manager mixin API while composing focused components."""
-
-
-__all__ = ["TrafficCoordinatorMixin"]

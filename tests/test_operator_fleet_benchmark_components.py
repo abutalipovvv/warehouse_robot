@@ -4,8 +4,8 @@ import inspect
 import random
 from types import SimpleNamespace
 
-from fleet_manager.core.models import FleetOrder
-from fleet_manager.core.route_core.models import Landmark
+from fleet_manager.core.fleet.domain.models import FleetOrder
+from fleet_manager.core.mapping.maps.models import Landmark
 from operator_app.core.fleet_benchmark_commands import (
     FleetBenchmarkCommandService,
 )

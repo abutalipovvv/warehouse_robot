@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from fleet_manager.core.traffic.corridor_scheduler import (
+from fleet_manager.core.traffic.corridors.scheduling.corridor_scheduler import (
     CorridorRequest,
     CorridorResourceWindow,
     CorridorSlot,
@@ -59,11 +59,3 @@ class _CorridorPlannedPassage:
     actual_staging_at: float
     staging_clock: float
     exit_clock: float
-
-
-__all__ = [
-    "_CorridorIntentDraft",
-    "_CorridorPlannedPassage",
-    "_CorridorRouteDraft",
-    "_CorridorValidationContext",
-]

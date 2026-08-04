@@ -4,15 +4,15 @@ import heapq
 import math
 from typing import Any
 
-from fleet_manager.core.route_core.models import GraphEdge, Landmark, PlannedRoute
-from fleet_manager.core.route_core.planner import LmRoutePlanner
+from fleet_manager.core.mapping.maps.models import GraphEdge, Landmark, PlannedRoute
+from fleet_manager.core.mapping.navigation.planner import LmRoutePlanner
 
 from .fleet_planner_backends import BackendRunner, BackendSelector
 from .fleet_planner_requests import PlanningRequestPreparer
 from .fleet_planner_results import PlanningResultFormatter
 from .fleet_planner_trajectory import FleetMotionModel, TrajectoryBuilder
-from .lm_cbs import LmRobotRequest
-from .traffic_graph import TrafficGraph
+from ..cbs.lm_cbs import LmRobotRequest
+from ..graph.traffic_graph import TrafficGraph
 
 
 class FleetMapfPlanner:
@@ -25,7 +25,9 @@ class FleetMapfPlanner:
         self.landmarks = landmarks
         self.edges = edges
         self.params = params or {}
-        self._backend_selector = BackendSelector()
+        self._backend_selector = BackendSelector(
+            strict=bool(self.params.get("strict_configuration", False)),
+        )
         self.route_planner = LmRoutePlanner(landmarks, edges, params=params)
         self.graph = self._build_graph()
         self._traffic_graph_cache: dict[

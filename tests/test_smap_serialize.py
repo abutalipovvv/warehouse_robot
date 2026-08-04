@@ -5,10 +5,11 @@ from pathlib import Path
 
 import yaml
 
-from fleet_manager.map_data.smap_deserialize import deserialize_smap
-from fleet_manager.map_data.smap_serialize import serialize_smap_bundle
-from fleet_manager.core.route_core.map_loader import WarehouseMapLoader
-from fleet_manager.benchmarking.rds_dynamic_orders import MapGraph
+from fleet_manager.core.mapping.formats.smap_bundle import parse_properties
+from fleet_manager.core.mapping.formats.smap_deserialize import deserialize_smap
+from fleet_manager.core.mapping.formats.smap_serialize import serialize_smap_bundle
+from fleet_manager.core.mapping.maps.map_loader import WarehouseMapLoader
+from fleet_manager.core.mapping.maps.models import WorldPoint
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -36,17 +37,16 @@ def test_unpacked_smart_kiva_round_trips_through_single_smap(
     assert len(payload["advancedCurveList"]) == 1240
     assert len(payload["advancedAreaList"]) == 32
 
-    bundle_graph = MapGraph(SOURCE)
-    serialized_graph = MapGraph(output)
-    assert serialized_graph.points == bundle_graph.points
-    assert serialized_graph.point_properties == bundle_graph.point_properties
-    assert serialized_graph.adjacency == bundle_graph.adjacency
-    assert serialized_graph.corridors == bundle_graph.corridors
-
     unpacked = tmp_path / "roundtrip"
     deserialize_smap(output, unpacked)
-    source_map = WarehouseMapLoader(SOURCE).load()
-    roundtrip_map = WarehouseMapLoader(unpacked).load()
+    source_map = WarehouseMapLoader(
+        SOURCE,
+        compile_traffic_policies=False,
+    ).load()
+    roundtrip_map = WarehouseMapLoader(
+        unpacked,
+        compile_traffic_policies=False,
+    ).load()
 
     assert roundtrip_map.map_metadata.width == source_map.map_metadata.width
     assert roundtrip_map.map_metadata.height == source_map.map_metadata.height
@@ -56,6 +56,13 @@ def test_unpacked_smart_kiva_round_trips_through_single_smap(
         for name, landmark in roundtrip_map.landmarks.items()
     } == {
         name: (round(landmark.x, 9), round(landmark.y, 9))
+        for name, landmark in source_map.landmarks.items()
+    }
+    assert {
+        name: landmark.properties
+        for name, landmark in roundtrip_map.landmarks.items()
+    } == {
+        name: landmark.properties
         for name, landmark in source_map.landmarks.items()
     }
     assert {
@@ -75,6 +82,38 @@ def test_unpacked_smart_kiva_round_trips_through_single_smap(
         )
         for edge in source_map.edges
     }
+
+    source_corridors = {}
+    for zone in source_map.traffic_zones:
+        corners = [
+            source_map.map_metadata.map_to_ros_point(WorldPoint(x=x, y=y))
+            for x, y in (
+                (zone.min_x, zone.min_y),
+                (zone.max_x, zone.min_y),
+                (zone.max_x, zone.max_y),
+                (zone.min_x, zone.max_y),
+            )
+        ]
+        source_corridors[zone.zone_id] = (
+            min(round(point.x, 9) for point in corners),
+            max(round(point.x, 9) for point in corners),
+            min(round(point.y, 9) for point in corners),
+            max(round(point.y, 9) for point in corners),
+        )
+
+    serialized_corridors = {}
+    for area in payload["advancedAreaList"]:
+        properties = parse_properties(area.get("property"))
+        if str(properties.get("kind", "")).lower() != "controlled_corridor":
+            continue
+        points = area["posGroup"]
+        serialized_corridors[str(area["instanceName"])] = (
+            min(round(float(point["x"]), 9) for point in points),
+            max(round(float(point["x"]), 9) for point in points),
+            min(round(float(point["y"]), 9) for point in points),
+            max(round(float(point["y"]), 9) for point in points),
+        )
+    assert serialized_corridors == source_corridors
 
     source_ros = yaml.safe_load(
         (SOURCE / "smart_kiva_large_w_mode.yaml").read_text(encoding="utf-8")

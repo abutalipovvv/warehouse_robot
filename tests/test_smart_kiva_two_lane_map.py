@@ -6,8 +6,8 @@ from pathlib import Path
 
 import yaml
 
-from fleet_manager.core.geometry.collision import FleetCollisionChecker
-from fleet_manager.core.route_core.map_loader import WarehouseMapLoader
+from fleet_manager.core.fleet.safety.collision import FleetCollisionChecker
+from fleet_manager.core.mapping.maps.map_loader import WarehouseMapLoader
 
 
 ROOT = Path(__file__).resolve().parents[1]

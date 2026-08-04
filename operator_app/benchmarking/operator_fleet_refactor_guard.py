@@ -23,9 +23,9 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-import fleet_manager.core.manager as manager_module
-import fleet_manager.core.models as models_module
-from fleet_manager.core.models import FleetOrder
+import fleet_manager.core.fleet.management.manager as manager_module
+import fleet_manager.core.fleet.domain.models as models_module
+from fleet_manager.core.fleet.domain.models import FleetOrder
 import operator_app.core.fleet_benchmark_commands as command_service_module
 import operator_app.core.fleet_dynamic_benchmark as dynamic_service_module
 from operator_app.core.fleet_manager import (

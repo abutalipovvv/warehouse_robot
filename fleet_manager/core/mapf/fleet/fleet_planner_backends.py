@@ -3,10 +3,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import logging
 from typing import Any
 
-from .lm_cbs import LmCBSPlanner, LmRobotRequest
-from .rolling_sipp import RollingSippPlanner
+from ..cbs.lm_cbs import LmCBSPlanner, LmRobotRequest
+from ..rolling.rolling_sipp import RollingSippPlanner
+
+
+LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(slots=True)
@@ -30,12 +34,28 @@ class _BackendRequest:
 class BackendSelector:
     """Normalize configuration and request-level backend aliases."""
 
-    def normalize(self, value: Any) -> str:
+    def __init__(self, *, strict: bool = False) -> None:
+        self.strict = bool(strict)
+
+    def normalize(
+        self,
+        value: Any,
+        *,
+        path: str = "fleet.planner_backend",
+    ) -> str:
         backend = str(value or "cbs").strip().lower()
         if backend in {"rolling-sipp", "rolling_sipp", "sipp"}:
             return "rolling_sipp"
         if backend in {"hybrid", "rolling_sipp+cbs", "sipp+cbs"}:
             return "hybrid"
+        if backend != "cbs":
+            message = f"{path}: unknown backend, received {value!r}"
+            if self.strict:
+                raise ValueError(message)
+            LOGGER.warning(
+                "configuration_compatibility: %s; using cbs",
+                message,
+            )
         return "cbs"
 
     def from_fleet_params(self, fleet_params: dict[str, Any]) -> str:
@@ -43,7 +63,8 @@ class BackendSelector:
             fleet_params.get("planner_backend")
             or fleet_params.get("plannerBackend")
             or fleet_params.get("mapf_backend")
-            or "cbs"
+            or "cbs",
+            path="fleet.planner_backend",
         )
 
     def from_payload(
@@ -56,7 +77,11 @@ class BackendSelector:
             payload.get("plannerBackend")
             or payload.get("planner_backend")
         )
-        return default if override is None else self.normalize(override)
+        return (
+            default
+            if override is None
+            else self.normalize(override, path="payload.plannerBackend")
+        )
 
 
 class BackendRunner:

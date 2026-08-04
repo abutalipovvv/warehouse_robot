@@ -9,8 +9,8 @@ from typing import Any
 
 import yaml
 
-from fleet_manager.core.route_core.map_loader import WarehouseMapLoader
-from fleet_manager.core.route_core.models import LoadedMapData
+from fleet_manager.core.mapping.maps.map_loader import WarehouseMapLoader
+from fleet_manager.core.mapping.maps.models import LoadedMapData
 
 
 MAP_SUPPORT_YAML_FILES = {

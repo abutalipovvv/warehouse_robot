@@ -4,8 +4,8 @@ import math
 
 import pytest
 
-from fleet_manager.core.models import FleetRobot
-from fleet_manager.core.route_core.models import GraphEdge, Landmark, WorldPoint
+from fleet_manager.core.fleet.domain.models import FleetRobot
+from fleet_manager.core.mapping.maps.models import GraphEdge, Landmark, WorldPoint
 from fleet_manager.runtime.simulation.manager import FleetManagerSim
 
 

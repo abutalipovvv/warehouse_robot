@@ -5,7 +5,7 @@ from __future__ import annotations
 import math
 from typing import Any
 
-from fleet_manager.core.domain.models import FleetOrder, FleetRobot
+from fleet_manager.core.fleet.domain.models import FleetOrder, FleetRobot
 
 
 class RuntimeConflictMixin:
@@ -818,6 +818,3 @@ class RuntimeConflictMixin:
         robot.wait_for_robot = ""
         robot.wait_resource = ""
         robot.wait_release_at = 0.0
-
-
-__all__ = ["RuntimeConflictMixin"]

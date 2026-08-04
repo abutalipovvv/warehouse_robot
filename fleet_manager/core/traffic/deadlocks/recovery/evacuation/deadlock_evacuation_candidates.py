@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from fleet_manager.core.domain.models import FleetRobot
-from fleet_manager.core.traffic.deadlock_evacuation_candidate_models import (
+from fleet_manager.core.fleet.domain.models import FleetRobot
+from fleet_manager.core.traffic.deadlocks.recovery.evacuation.deadlock_evacuation_candidate_models import (
     _EvacuationCandidateProbe,
     _EvacuationSearchContext,
 )
-from fleet_manager.core.traffic.deadlock_evacuation_models import (
+from fleet_manager.core.traffic.deadlocks.recovery.evacuation.deadlock_evacuation_models import (
     _EvacuationCandidate,
 )
 
@@ -332,5 +332,3 @@ class EvacuationCandidateMixin:
                 probe.graph_escape_route,
             )
         )
-
-__all__ = ["EvacuationCandidateMixin"]

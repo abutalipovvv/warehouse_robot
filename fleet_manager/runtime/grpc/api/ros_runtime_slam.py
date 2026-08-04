@@ -15,7 +15,7 @@ from typing import Any
 
 import yaml
 
-from fleet_manager.map_data.pgm import read_pgm_size
+from fleet_manager.core.mapping.formats.pgm import read_pgm_size
 from fleet_manager.core.io.atomic_files import atomic_write_bytes, atomic_write_text
 
 from .ros_runtime_lifecycle import _clean_node_suffix
@@ -454,5 +454,3 @@ class RosRuntimeSlamMixin:
         self._slam_temp_dir = None
         if temp_dir is not None:
             shutil.rmtree(temp_dir, ignore_errors=True)
-
-__all__ = ["RosRuntimeSlamMixin"]

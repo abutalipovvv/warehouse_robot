@@ -7,11 +7,11 @@ from types import SimpleNamespace
 
 import pytest
 
-import fleet_manager.core.manager as runtime_module
-from fleet_manager.core.constants import FLEET_CONTROL_OWNER_ID
-from fleet_manager.core.models import FleetOrder, FleetRobot
-from fleet_manager.core.route_core.models import GraphEdge, Landmark, WorldPoint
-from fleet_manager.core.traffic.corridor_scheduler import (
+import fleet_manager.core.fleet.management.manager as runtime_module
+from fleet_manager.core.fleet.domain.constants import FLEET_CONTROL_OWNER_ID
+from fleet_manager.core.fleet.domain.models import FleetOrder, FleetRobot
+from fleet_manager.core.mapping.maps.models import GraphEdge, Landmark, WorldPoint
+from fleet_manager.core.traffic.corridors.scheduling.corridor_scheduler import (
     CentralCorridorScheduler,
 )
 from fleet_manager.runtime.grpc.manager import FleetManagerROS

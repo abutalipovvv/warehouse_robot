@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from .map_loader import WarehouseMapLoader
-from .planner import LmRoutePlanner
+from ..navigation.planner import LmRoutePlanner
 
 
 DEFAULT_ROUTE_CATALOG_MAX_PAIRS = 20000

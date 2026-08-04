@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from fleet_manager.core.traffic.corridor_scheduler import (
+from fleet_manager.core.traffic.corridors.scheduling.corridor_scheduler import (
     CorridorOccupancy,
     CorridorResourceWindow,
     CorridorSlotState,
@@ -271,5 +271,3 @@ class ControlledCorridorRuntimePublicationMixin:
                     region_id,
                     [],
                 ).append((interval_entry, slot.robot_id))
-
-__all__ = ["ControlledCorridorRuntimePublicationMixin"]

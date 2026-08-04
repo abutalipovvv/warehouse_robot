@@ -4,16 +4,20 @@ from __future__ import annotations
 
 from typing import Any
 
-from fleet_manager.core.domain.models import FleetOrder, FleetRobot
+from fleet_manager.core.fleet.domain.models import FleetOrder, FleetRobot
+
+from .state import runtime_command
 
 
 class FleetManagerSnapshotMixin:
     """Serialize stable API snapshots without changing field order."""
 
+    @runtime_command
     def state(self, include_trajectories: bool = True) -> dict[str, Any]:
         self._advance_runtime()
         return self._state_snapshot(include_trajectories=include_trajectories)
 
+    @runtime_command
     def advance_runtime(self) -> None:
         self._advance_runtime()
 
@@ -109,10 +113,12 @@ class FleetManagerSnapshotMixin:
             payload["targetLm"] = target_lm
         return payload
 
+    @runtime_command
     def tick(self, payload: dict[str, Any] | None = None) -> dict[str, Any]:
         self._advance_runtime()
         return self.stream_tick()
 
+    @runtime_command
     def stream_tick(
         self,
         route_revisions: dict[str, int] | None = None,
@@ -161,10 +167,13 @@ class FleetManagerSnapshotMixin:
         robot = self.robots.get(robot_name)
         return bool(robot is not None and self._robot_enabled(robot))
 
+    @runtime_command
     def update_world(self, payload: dict[str, Any]) -> dict[str, Any]:
         obstacles = payload.get("obstacles", [])
         areas = payload.get("obstacleAreas", [])
-        previous_counts = (len(self.obstacles), len(self.obstacle_areas))
+        previous_obstacles = list(self.obstacles)
+        previous_areas = list(self.obstacle_areas)
+        previous_params = self.params
         if isinstance(obstacles, list):
             self.obstacles = [
                 self._clean_obstacle(item)
@@ -184,7 +193,17 @@ class FleetManagerSnapshotMixin:
             if self._external_remote_adapter is None:
                 self._configure_robot_gateway()
         counts = (len(self.obstacles), len(self.obstacle_areas))
-        if counts != previous_counts:
+        world_changed = bool(
+            self.obstacles != previous_obstacles
+            or self.obstacle_areas != previous_areas
+            or self.params is not previous_params
+        )
+        if world_changed:
+            self._advance_planning_revision("world or planning params changed")
+        if (
+            len(self.obstacles) != len(previous_obstacles)
+            or len(self.obstacle_areas) != len(previous_areas)
+        ):
             self._event(
                 "info",
                 f"world synced: obstacles={counts[0]}, areas={counts[1]}",
@@ -209,4 +228,3 @@ class FleetManagerSnapshotMixin:
             "x2": float(item.get("x2", 0.0) or 0.0),
             "y2": float(item.get("y2", 0.0) or 0.0),
         }
-__all__ = ["FleetManagerSnapshotMixin"]

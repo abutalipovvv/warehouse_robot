@@ -9,7 +9,7 @@ from typing import Any
 import pytest
 import yaml
 
-from fleet_manager.map_data.pgm import PgmImage
+from fleet_manager.core.mapping.formats.pgm import PgmImage
 from fleet_manager.runtime.grpc.api import ros_runtime_control
 from fleet_manager.runtime.grpc.api import ros_runtime_params
 from fleet_manager.runtime.grpc.api import ros_runtime_slam
@@ -32,10 +32,10 @@ from fleet_manager.runtime.grpc.api.ros_runtime_ros_helpers import (
 from fleet_manager.runtime.grpc.api.ros_runtime_slam import (
     RosRuntimeSlamMixin,
 )
-from fleet_manager.storage import (
+from fleet_manager.core.io.atomic_files import (
     atomic_write_bytes as real_atomic_write_bytes,
 )
-from fleet_manager.storage import (
+from fleet_manager.core.io.atomic_files import (
     atomic_write_text as real_atomic_write_text,
 )
 

@@ -106,6 +106,3 @@ class FleetSettings:
     def section(self, name: str) -> SettingsSection:
         value = self._root.get(name)
         return SettingsSection(value if isinstance(value, dict) else {})
-
-
-__all__ = ["FleetSettings", "SettingsSection"]

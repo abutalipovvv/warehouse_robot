@@ -5,8 +5,8 @@ from __future__ import annotations
 from dataclasses import replace
 from typing import Any
 
-from fleet_manager.core.domain.models import FleetRobot
-from fleet_manager.core.traffic.corridor_scheduler import (
+from fleet_manager.core.fleet.domain.models import FleetRobot
+from fleet_manager.core.traffic.corridors.scheduling.corridor_scheduler import (
     CorridorRequest,
     CorridorResourceWindow,
     CorridorSlotState,
@@ -371,7 +371,6 @@ class ControlledCorridorRequestCollectionMixin:
         self,
         context: _CentralCorridorBuild,
     ) -> None:
-        now = context.now
         old_schedule = context.old_schedule
         physical_by_robot = context.physical_by_robot
         active_wait_keys = context.active_wait_keys
@@ -423,5 +422,3 @@ class ControlledCorridorRequestCollectionMixin:
             )
             if blocker:
                 downstream_blockers[robot_name] = blocker
-
-__all__ = ["ControlledCorridorRequestCollectionMixin"]

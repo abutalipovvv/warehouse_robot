@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from fleet_manager.core.domain.constants import TERMINAL_ORDER_STATUSES
-from fleet_manager.core.domain.models import FleetOrder, FleetRobot
-from fleet_manager.core.traffic.corridor_scheduler import (
+from fleet_manager.core.fleet.domain.constants import TERMINAL_ORDER_STATUSES
+from fleet_manager.core.fleet.domain.models import FleetOrder, FleetRobot
+from fleet_manager.core.traffic.corridors.scheduling.corridor_scheduler import (
     CorridorRequest,
     CorridorResourceWindow,
 )
@@ -353,5 +353,3 @@ class ControlledCorridorPrefetchIntentMixin:
             and order.status in {"QUEUED", "PLANNING"}
             and self._safe_replan_start_lm(robot) == start_lm
         )
-
-__all__ = ["ControlledCorridorPrefetchIntentMixin"]

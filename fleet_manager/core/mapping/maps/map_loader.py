@@ -7,8 +7,8 @@ from pathlib import Path
 
 import yaml
 
-from fleet_manager.core.traffic.corridors import compile_controlled_corridor_zones
-from fleet_manager.map_data.pgm import PgmImage
+from fleet_manager.core.traffic.corridors.corridors import compile_controlled_corridor_zones
+from fleet_manager.core.mapping.formats.pgm import PgmImage
 
 from .models import (
     EdgeGeometry,

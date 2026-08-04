@@ -5,10 +5,10 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from fleet_manager.core.route_core.map_loader import WarehouseMapLoader
-from fleet_manager.core.route_core.models import MapMetadata
-from fleet_manager.core.math.geometry import Pose2D, Vector2
-from fleet_manager.core.math.polygons import Polygon2D, distance_to_segment
+from fleet_manager.core.mapping.maps.map_loader import WarehouseMapLoader
+from fleet_manager.core.mapping.maps.models import MapMetadata
+from fleet_manager.core.algorithms.math.geometry import Pose2D, Vector2
+from fleet_manager.core.algorithms.math.polygons import Polygon2D, distance_to_segment
 
 
 class FleetCollisionChecker:

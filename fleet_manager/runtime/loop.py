@@ -1,19 +1,20 @@
 """A small, owned execution loop for Fleet Manager runtime work.
 
 The loop deliberately knows nothing about robots, maps, or planning.  Its only
-job is to call one ``step`` function from one dedicated thread at a predictable
-rate.  This keeps mutable runtime state under a single owner and makes the
+job is to call one ``step`` function and explicit commands from one dedicated
+thread. This keeps mutable runtime state under a single owner and makes the
 component reusable by both real and simulated fleet runtimes.
 """
 
 from __future__ import annotations
 
+from collections import deque
 from dataclasses import dataclass
 from enum import Enum
 from math import isfinite
-from threading import Condition, Thread, current_thread
+from threading import Condition, Event, Thread, current_thread
 from time import monotonic
-from typing import Callable
+from typing import Any, Callable, Generic, TypeVar
 
 
 class RuntimeLoopState(str, Enum):
@@ -39,6 +40,16 @@ class RuntimeLoopFailure:
 RuntimeStep = Callable[[], None]
 RuntimeErrorHandler = Callable[[RuntimeLoopFailure], None]
 RuntimeIntervalProvider = Callable[[], float]
+CommandResultT = TypeVar("CommandResultT")
+
+
+@dataclass(slots=True)
+class _RuntimeCommand(Generic[CommandResultT]):
+    callback: Callable[[], CommandResultT]
+    completed: Event
+    started: bool = False
+    result: CommandResultT | None = None
+    error: BaseException | None = None
 
 
 class RuntimeLoop:
@@ -96,6 +107,8 @@ class RuntimeLoop:
         self._successful_step_count = 0
         self._failure_count = 0
         self._last_failure: RuntimeLoopFailure | None = None
+        self._commands: deque[_RuntimeCommand[Any]] = deque()
+        self._owner_thread: Thread | None = None
 
     @property
     def name(self) -> str:
@@ -188,6 +201,55 @@ class RuntimeLoop:
 
         return self.request_step()
 
+    def execute(
+        self,
+        command: Callable[[], CommandResultT],
+        *,
+        timeout: float | None = None,
+    ) -> CommandResultT:
+        """Run a state mutation on the owner thread and return its result."""
+
+        if not callable(command):
+            raise TypeError("command must be callable")
+        wait_seconds = self._validated_timeout(timeout)
+        with self._condition:
+            if self._owner_thread is current_thread():
+                run_here = True
+            elif self._state is RuntimeLoopState.STOPPED:
+                run_here = True
+            elif self._state is RuntimeLoopState.RUNNING:
+                run_here = False
+            else:
+                raise RuntimeError("runtime loop is not accepting commands")
+            if not run_here:
+                pending = _RuntimeCommand(
+                    callback=command,
+                    completed=Event(),
+                )
+                self._commands.append(pending)
+                self._condition.notify_all()
+
+        if run_here:
+            return command()
+        if not pending.completed.wait(wait_seconds):
+            with self._condition:
+                if not pending.started:
+                    try:
+                        self._commands.remove(pending)
+                    except ValueError:
+                        pass
+                    else:
+                        raise TimeoutError(
+                            "runtime command did not start in time"
+                        )
+            # Once execution has started, returning early would leave the
+            # caller unsure whether its mutation was applied.  Wait for the
+            # owner to finish and return the real outcome instead.
+            pending.completed.wait()
+        if pending.error is not None:
+            raise pending.error
+        return pending.result  # type: ignore[return-value]
+
     def stop(self, timeout: float | None = None) -> bool:
         """Stop the worker and wait for its current step to finish.
 
@@ -207,6 +269,7 @@ class RuntimeLoop:
             self._stop_requested = True
             self._state = RuntimeLoopState.STOPPING
             worker = self._thread
+            self._reject_pending_commands_locked()
             self._condition.notify_all()
 
         if worker is None:
@@ -239,6 +302,7 @@ class RuntimeLoop:
             self._stop_requested = True
             self._state = RuntimeLoopState.STOPPING
             worker = self._thread
+            self._reject_pending_commands_locked()
             self._condition.notify_all()
 
         if worker is None:
@@ -251,6 +315,7 @@ class RuntimeLoop:
 
     def _run(self) -> None:
         next_step_at = monotonic()
+        self._owner_thread = current_thread()
         try:
             while True:
                 with self._condition:
@@ -261,11 +326,17 @@ class RuntimeLoop:
                         now = monotonic()
                         scheduled_step = now >= next_step_at
                         requested_step = self._step_requested
-                        if scheduled_step or requested_step:
+                        commands_waiting = bool(self._commands)
+                        if scheduled_step or requested_step or commands_waiting:
                             self._step_requested = False
                             break
 
                         self._condition.wait(next_step_at - now)
+
+                self._execute_pending_commands()
+                should_step = scheduled_step or requested_step
+                if not should_step:
+                    continue
 
                 self._execute_step()
 
@@ -287,12 +358,34 @@ class RuntimeLoop:
             with self._condition:
                 if self._thread is current_thread():
                     self._thread = None
+                    self._owner_thread = None
                     self._state = (
                         RuntimeLoopState.CLOSED
                         if self._close_requested
                         else RuntimeLoopState.STOPPED
                     )
+                    self._reject_pending_commands_locked()
                     self._condition.notify_all()
+
+    def _execute_pending_commands(self) -> None:
+        while True:
+            with self._condition:
+                if not self._commands:
+                    return
+                pending = self._commands.popleft()
+                pending.started = True
+            try:
+                pending.result = pending.callback()
+            except BaseException as exc:
+                pending.error = exc
+            finally:
+                pending.completed.set()
+
+    def _reject_pending_commands_locked(self) -> None:
+        while self._commands:
+            pending = self._commands.popleft()
+            pending.error = RuntimeError("runtime loop stopped before command")
+            pending.completed.set()
 
     def _execute_step(self) -> None:
         with self._condition:
@@ -370,13 +463,3 @@ class RuntimeLoop:
                 f"{field_name} must be a finite positive number"
             )
         return interval
-
-
-__all__ = [
-    "RuntimeErrorHandler",
-    "RuntimeIntervalProvider",
-    "RuntimeLoop",
-    "RuntimeLoopFailure",
-    "RuntimeLoopState",
-    "RuntimeStep",
-]

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from fleet_manager.core.domain.models import FleetRobot
+from fleet_manager.core.fleet.domain.models import FleetRobot
 
 
 class EvacuationLatchMixin:
@@ -150,6 +150,3 @@ class EvacuationLatchMixin:
     ) -> None:
         if key is not None and victim_name:
             self._controlled_corridor_recovery_latches[key] = victim_name
-
-
-__all__ = ['EvacuationLatchMixin']

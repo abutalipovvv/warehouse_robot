@@ -4,13 +4,16 @@ from __future__ import annotations
 
 from typing import Any
 
-from fleet_manager.core.domain.constants import TERMINAL_ORDER_STATUSES
-from fleet_manager.core.domain.models import FleetRobot
+from fleet_manager.core.fleet.domain.constants import TERMINAL_ORDER_STATUSES
+from fleet_manager.core.fleet.domain.models import FleetRobot
+
+from .state import runtime_command
 
 
 class FleetManagerRobotLifecycleMixin:
     """Create, update and retire fleet robots and their local state."""
 
+    @runtime_command
     def add_robot(self, payload: dict[str, Any]) -> dict[str, Any]:
         mode = self._robot_mode_from_payload(payload)
         requested_name = self._robot_name_from_payload(payload)
@@ -102,8 +105,10 @@ class FleetManagerRobotLifecycleMixin:
             if remote_status is not None:
                 self._apply_remote_status(robot, remote_status, self._now())
             self._event("info", f"robot updated: {name}@{current_lm}" + (f" remote={base_url}" if robot.is_remote() else ""))
+        self._advance_planning_revision(f"robot registered: {name}")
         return {"ok": True, "robot": robot.to_dict(), "state": self.state()}
 
+    @runtime_command
     def remove_robot(self, payload: dict[str, Any]) -> dict[str, Any]:
         name = str(payload.get("name", "")).strip()
         if not name:
@@ -114,8 +119,10 @@ class FleetManagerRobotLifecycleMixin:
             self._cancel_active_order_for_robot(removed, "robot removed")
             self._cancel_orders_for_robot(name, "robot removed")
             self._event("warn", f"robot removed: {name}")
+            self._advance_planning_revision(f"robot removed: {name}")
         return {"ok": True, "removed": removed is not None, "state": self.state()}
 
+    @runtime_command
     def stop_robot(
         self,
         payload: dict[str, Any],
@@ -137,6 +144,9 @@ class FleetManagerRobotLifecycleMixin:
                 self._stop_robot(robot)
             self._cancel_all_orders("fleet stopped")
             self._event("warn", "fleet stopped")
+        self._advance_planning_revision(
+            f"robot stopped: {name}" if name else "fleet stopped"
+        )
         return {
             "ok": True,
             "robot": stopped_robot.to_dict() if stopped_robot is not None else None,
@@ -144,13 +154,16 @@ class FleetManagerRobotLifecycleMixin:
         }
 
 
+    @runtime_command
     def reset_robot(self, payload: dict[str, Any]) -> dict[str, Any]:
         name = str(payload.get("name", "")).strip()
         target_names = [name] if name else [robot.name for robot in self._runtime_robots()]
+        reset_count = 0
         for robot_name in target_names:
             robot = self.robots.get(robot_name)
             if robot is None:
                 continue
+            reset_count += 1
             self._cancel_active_order_for_robot(robot, "robot reset")
             spawn_lm = str(payload.get("spawnLm") or robot.current_lm or "").strip()
             if spawn_lm in self.landmarks:
@@ -171,8 +184,11 @@ class FleetManagerRobotLifecycleMixin:
             self._clear_remote_route_metadata(robot)
             robot.updated_at = self._now()
             self._event("warn", f"robot reset: {robot.name}@{robot.current_lm}")
+        if reset_count:
+            self._advance_planning_revision("robot state reset")
         return {"ok": True, "state": self.state()}
 
+    @runtime_command
     def update_robot(
         self,
         payload: dict[str, Any],
@@ -182,6 +198,7 @@ class FleetManagerRobotLifecycleMixin:
         name = str(payload.get("name", "")).strip()
         if not name:
             raise ValueError("robot name is required")
+        planning_before = self._planning_state_fingerprint()
         robot = self.robots.get(name)
         if robot is None:
             current_lm = str(payload.get("currentLm") or "").strip()
@@ -224,6 +241,8 @@ class FleetManagerRobotLifecycleMixin:
             robot.trajectory_dirty = True
             self._clear_remote_route_metadata(robot)
         robot.updated_at = self._now()
+        if self._planning_state_fingerprint() != planning_before:
+            self._advance_planning_revision(f"robot state updated: {name}")
         return {
             "ok": True,
             "robot": robot.to_dict(),
@@ -275,8 +294,3 @@ class FleetManagerRobotLifecycleMixin:
             robot.last_reason = reason
             robot.updated_at = self._now()
         self._event("error", f"{name} blocked: {reason}")
-
-
-
-__all__ = ["FleetManagerRobotLifecycleMixin"]
-

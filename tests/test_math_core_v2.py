@@ -5,16 +5,20 @@ import math
 
 import pytest
 
-from fleet_manager.math import (
+from fleet_manager.core.algorithms.math.geometry import (
     Pose2D,
-    Polygon2D,
-    TimeInterval,
     Vector2,
-    distance_to_segment,
-    merge_intervals,
     normalize_angle,
     shortest_angular_distance,
+)
+from fleet_manager.core.algorithms.math.intervals import (
+    TimeInterval,
+    merge_intervals,
     subtract_intervals,
+)
+from fleet_manager.core.algorithms.math.polygons import (
+    Polygon2D,
+    distance_to_segment,
 )
 
 

@@ -1,13 +1,54 @@
 from __future__ import annotations
 
-import heapq
+from collections.abc import Callable, Iterable
 import math
 
-from fleet_manager.core.math.curves import cubic_bezier_derivative
-from fleet_manager.core.math.geometry import Vector2
+from fleet_manager.core.algorithms.math.curves import cubic_bezier_derivative
+from fleet_manager.core.algorithms.math.geometry import Vector2
+from fleet_manager.core.algorithms.math.search.astar import AStarSolver
 
-from .models import GraphEdge, Landmark, PlannedRoute, WorldPoint
+from ..maps.models import GraphEdge, Landmark, PlannedRoute, WorldPoint
 from .params import load_route_params
+
+
+class _LandmarkRouteProblem:
+    """Adapt landmark routing policies to the shared A* search loop."""
+
+    def __init__(
+        self,
+        planner: LmRoutePlanner,
+        start: str,
+        goal: str,
+        blocked_edges: set[tuple[str, str]],
+        edge_penalties: dict[tuple[str, str], float],
+    ) -> None:
+        self._planner = planner
+        self.start_state = start
+        self._goal = goal
+        self._blocked_edges = blocked_edges
+        self._edge_penalties = edge_penalties
+
+    def is_goal(self, state: str) -> bool:
+        return state == self._goal
+
+    def neighbors(self, state: str) -> Iterable[tuple[str, float]]:
+        for edge in self._planner._adjacency.get(state, []):
+            key = (edge.from_name, edge.to_name)
+            if key in self._blocked_edges:
+                continue
+            penalty = max(0.0, float(self._edge_penalties.get(key, 0.0)))
+            yield edge.to_name, float(edge.length) + penalty
+
+    def heuristic(self, state: str) -> float:
+        return self._planner._world_distance(
+            self._planner.landmarks[state],
+            self._planner.landmarks[self._goal],
+        )
+
+    @staticmethod
+    def tie_breaker(state: str) -> str:
+        # The previous spatial heap used ``(f_score, landmark_name)``.
+        return state
 
 
 class LmRoutePlanner:
@@ -46,6 +87,9 @@ class LmRoutePlanner:
         goal: str,
         blocked_edges: set[tuple[str, str]] | None = None,
         edge_penalties: dict[tuple[str, str], float] | None = None,
+        *,
+        should_cancel: Callable[[], bool] | None = None,
+        max_expansions: int | None = None,
     ) -> PlannedRoute:
         if start not in self.landmarks:
             raise ValueError(f"Unknown start LM: {start}")
@@ -56,46 +100,56 @@ class LmRoutePlanner:
 
         blocked_edges = blocked_edges or set()
         edge_penalties = edge_penalties or {}
-        open_heap: list[tuple[float, str]] = [(0.0, start)]
-        came_from: dict[str, tuple[str, GraphEdge]] = {}
-        g_score: dict[str, float] = {start: 0.0}
-
-        while open_heap:
-            _, current = heapq.heappop(open_heap)
-            if current == goal:
-                ordered_edges: list[GraphEdge] = []
-                while current in came_from:
-                    previous, edge = came_from[current]
-                    ordered_edges.append(edge)
-                    current = previous
-                ordered_edges.reverse()
-                nodes = [start] + [edge.to_name for edge in ordered_edges]
-                return PlannedRoute(
-                    nodes=nodes,
-                    edges=ordered_edges,
-                    length=sum(float(edge.length) for edge in ordered_edges),
+        problem = _LandmarkRouteProblem(
+            self,
+            start,
+            goal,
+            blocked_edges,
+            edge_penalties,
+        )
+        result = AStarSolver[str](max_expansions=max_expansions).solve(
+            problem,
+            should_cancel=should_cancel,
+            cancellation_reason="cancelled",
+        )
+        if not result.found:
+            if result.failure_reason == "cancelled":
+                raise ValueError(f"Route search cancelled from {start} to {goal}")
+            if result.failure_reason == "expansion_limit":
+                raise ValueError(
+                    f"Route search expansion limit reached from {start} to {goal}"
                 )
+            raise ValueError(f"No route found from {start} to {goal}")
 
-            for edge in self._adjacency.get(current, []):
-                if (edge.from_name, edge.to_name) in blocked_edges:
-                    continue
-                tentative = (
-                    g_score[current]
-                    + edge.length
-                    + max(
-                        0.0,
-                        float(edge_penalties.get((edge.from_name, edge.to_name), 0.0)),
-                    )
-                )
-                if tentative >= g_score.get(edge.to_name, math.inf):
-                    continue
+        nodes = list(result.path)
+        ordered_edges = [
+            self._route_edge(src, dst, edge_penalties)
+            for src, dst in zip(nodes, nodes[1:])
+        ]
+        return PlannedRoute(
+            nodes=nodes,
+            edges=ordered_edges,
+            length=sum(float(edge.length) for edge in ordered_edges),
+        )
 
-                came_from[edge.to_name] = (current, edge)
-                g_score[edge.to_name] = tentative
-                heuristic = self._world_distance(self.landmarks[edge.to_name], self.landmarks[goal])
-                heapq.heappush(open_heap, (tentative + heuristic, edge.to_name))
-
-        raise ValueError(f"No route found from {start} to {goal}")
+    def _route_edge(
+        self,
+        source: str,
+        target: str,
+        edge_penalties: dict[tuple[str, str], float],
+    ) -> GraphEdge:
+        candidates = [
+            edge
+            for edge in self._adjacency.get(source, [])
+            if edge.to_name == target
+        ]
+        if not candidates:
+            raise RuntimeError(f"route edge disappeared: {source}->{target}")
+        penalty = max(
+            0.0,
+            float(edge_penalties.get((source, target), 0.0)),
+        )
+        return min(candidates, key=lambda edge: float(edge.length) + penalty)
 
     def build_route_catalog(self) -> dict[str, dict[str, object]]:
         names = sorted(self.landmarks)

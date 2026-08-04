@@ -99,5 +99,3 @@ class RosRuntimeMessageServiceMixin:
             },
         }
         return payload
-
-__all__ = ["RosRuntimeMessageServiceMixin"]

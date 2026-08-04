@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from random import Random
 
-from fleet_manager.core.mapf.reservations import (
+from fleet_manager.core.mapf.common.reservations import (
     ReservationInterval,
     ReservationTable,
     ResourceId,

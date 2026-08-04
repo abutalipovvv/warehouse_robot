@@ -132,6 +132,3 @@ def _binary_payload_start(data: bytes, index: int) -> int:
     if data[index:index + 2] == b"\r\n":
         return index + 2
     return index + 1
-
-
-__all__ = ["PgmImage", "read_pgm_size"]

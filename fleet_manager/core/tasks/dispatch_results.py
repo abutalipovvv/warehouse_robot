@@ -2,11 +2,19 @@
 
 from __future__ import annotations
 
+from copy import deepcopy
+from dataclasses import dataclass
 import math
 from typing import Any
 
-from fleet_manager.core.domain.constants import TERMINAL_ORDER_STATUSES
-from fleet_manager.core.domain.models import FleetOrder, FleetRobot
+from fleet_manager.core.fleet.domain.constants import TERMINAL_ORDER_STATUSES
+from fleet_manager.core.fleet.domain.models import FleetOrder, FleetRobot
+from fleet_manager.core.planning_models import (
+    PlanCandidate,
+    PlanningJob,
+    PlanningJobStatus,
+)
+from fleet_manager.core.planning_scheduler import PlanCommitStatus
 
 
 RollingPrefetchResultEntry = tuple[
@@ -29,6 +37,23 @@ AcceptedSimulatedDispatchEntry = tuple[
     str,
     dict[str, Any],
 ]
+
+
+@dataclass(slots=True)
+class _PlanCommitCheckpoint:
+    """Small rollback image for one runtime-owned plan transaction."""
+
+    robot_state: list[tuple[FleetRobot, dict[str, Any]]]
+    order_state: list[tuple[FleetOrder, dict[str, Any]]]
+    events: list[Any]
+    traffic_values: dict[str, Any]
+    planning_values: dict[str, Any]
+    recovery_values: dict[str, Any]
+    revision_value: int
+    revision_reason: str
+    route_revision_sequence: int
+    scheduler_state: Any
+    job_statuses: list[tuple[PlanningJob, PlanningJobStatus]]
 
 
 class DispatchResultMixin:
@@ -414,6 +439,7 @@ class DispatchResultMixin:
         return 1
 
     def _finish_async_simulated_dispatch(self) -> int:
+        self._collect_completed_planning_candidates()
         with self._dispatch_job_lock:
             job = self._dispatch_job
             if job is None or not bool(job.get("done")):
@@ -424,6 +450,7 @@ class DispatchResultMixin:
         # tiny completion/finalizer window.
         if not self._planning_worker.join():
             return 0
+        self._collect_completed_planning_candidates()
         with self._dispatch_job_lock:
             if self._dispatch_job is not job:
                 return 0
@@ -437,7 +464,88 @@ class DispatchResultMixin:
         if bool(job.get("discard")):
             self._release_controlled_corridor_gate_pins(gate_pins)
             self._last_async_job_kind = ""
+            self._forget_planning_job(job)
             return 0
+        candidate = job.get("candidate")
+        if isinstance(candidate, PlanCandidate):
+            if not self._planning_candidate_is_current(job, candidate):
+                self._release_controlled_corridor_gate_pins(gate_pins)
+                self._reject_stale_planning_candidate(job, candidate)
+                return 0
+            try:
+                outcome = self._plan_commit_service.commit(
+                    candidate,
+                    validate=lambda: self._validate_candidate_commit(
+                        job,
+                        candidate,
+                    ),
+                    capture=self._capture_plan_commit_state,
+                    apply=lambda: self._finish_planning_candidate(
+                        job,
+                        candidate,
+                        gate_pins,
+                    ),
+                    restore=self._restore_plan_commit_state,
+                )
+            except BaseException as exc:
+                self._release_controlled_corridor_gate_pins(gate_pins)
+                planning_job = job.get("planning_job")
+                if (
+                    isinstance(planning_job, PlanningJob)
+                    and planning_job.status is PlanningJobStatus.COMPLETED
+                ):
+                    planning_job.transition(PlanningJobStatus.FAILED)
+                self._event(
+                    "error",
+                    f"planning_job_failed job_id={candidate.job_id} "
+                    f"during_commit={type(exc).__name__}: {exc}",
+                )
+                self.planning_state.record_event("planning_job_failed")
+                self._forget_planning_job(job)
+                raise
+            if outcome.status is PlanCommitStatus.STALE:
+                self._release_controlled_corridor_gate_pins(gate_pins)
+                self._reject_stale_planning_candidate(job, candidate)
+                return 0
+            return int(outcome.value or 0)
+
+        return self._finish_planning_result(job, gate_pins)
+
+    def _finish_planning_candidate(
+        self,
+        job: dict[str, Any],
+        candidate: PlanCandidate,
+        gate_pins: dict[str, dict[str, Any]] | None,
+    ) -> int:
+        planning_job = job.get("planning_job")
+        if not isinstance(planning_job, PlanningJob):
+            raise RuntimeError("planning candidate has no matching job")
+        job["result"] = self._finalize_planning_candidate(
+            planning_job.snapshot,
+            candidate,
+        )
+        debug = job["result"].get("debug", {})
+        if isinstance(debug, dict) and (
+            "hybrid_cbs_fallback" in str(debug.get("reason") or "")
+            or str(debug.get("reservedFallbackReason") or "").startswith(
+                "rolling_sipp:"
+            )
+        ):
+            self.planning_state.record_event("sipp_fallback_to_cbs")
+            self._event(
+                "warn",
+                f"sipp_fallback_to_cbs job_id={candidate.job_id} "
+                f"robots={','.join(planning_job.robot_ids)}",
+            )
+        return self._finish_planning_result(job, gate_pins)
+
+    def _finish_planning_result(
+        self,
+        job: dict[str, Any],
+        gate_pins: dict[str, dict[str, Any]] | None,
+    ) -> int:
+        """Apply an already validated solver result on the runtime owner."""
+
         self._last_async_job_kind = str(job.get("kind") or "dispatch")
 
         if job.get("kind") in {
@@ -445,17 +553,23 @@ class DispatchResultMixin:
             "prefetch_batch",
         }:
             try:
-                return self._finish_async_rolling_prefetch(job)
+                committed = self._finish_async_rolling_prefetch(job)
+                self._finish_planning_job_status(job, committed > 0)
+                return committed
             finally:
                 self._release_controlled_corridor_gate_pins(gate_pins)
         if job.get("kind") == "runtime_replan":
             try:
-                return self._finish_async_runtime_replan(job)
+                committed = self._finish_async_runtime_replan(job)
+                self._finish_planning_job_status(job, committed > 0)
+                return committed
             finally:
                 self._release_controlled_corridor_gate_pins(gate_pins)
         if job.get("kind") == "coupled_replan":
             try:
-                return self._finish_async_coupled_replan(job)
+                committed = self._finish_async_coupled_replan(job)
+                self._finish_planning_job_status(job, committed > 0)
+                return committed
             finally:
                 self._release_controlled_corridor_gate_pins(gate_pins)
 
@@ -466,6 +580,7 @@ class DispatchResultMixin:
         ]
         if not entries:
             self._release_controlled_corridor_gate_pins(gate_pins)
+            self._finish_planning_job_status(job, False)
             return 0
         result = job.get("result")
         if not isinstance(result, dict):
@@ -480,9 +595,283 @@ class DispatchResultMixin:
                 result,
                 corridor_gates=gate_pins,
             )
+            self._finish_planning_job_status(job, dispatched > 0)
             return dispatched
         finally:
             self._release_controlled_corridor_gate_pins(gate_pins)
+
+    def _validate_candidate_commit(
+        self,
+        job: dict[str, Any],
+        candidate: PlanCandidate,
+    ) -> None:
+        if not self._planning_candidate_is_current(job, candidate):
+            raise RuntimeError("planning candidate changed before commit")
+
+    def _capture_plan_commit_state(self) -> _PlanCommitCheckpoint:
+        """Capture only mutable data touched by route commit code."""
+
+        traffic_fields = (
+            "temporal_reservations",
+            "stationary_blockers",
+            "controlled_corridor_schedule",
+            "controlled_corridor_leases",
+            "controlled_corridor_passages",
+            "controlled_corridor_prefetch_intents",
+            "controlled_corridor_approach_holds",
+            "controlled_corridor_winners",
+            "controlled_corridor_occupancy",
+            "controlled_corridor_queues",
+            "controlled_corridor_blockers",
+            "traffic_zone_leases",
+            "traffic_zone_phase",
+            "traffic_zone_winners",
+            "traffic_zone_demand",
+            "traffic_zone_occupancy",
+            "traffic_zone_queues",
+        )
+        planning_fields = (
+            "last_async_job_kind",
+            "runtime_replans",
+            "rolling_prefetch_retry_at",
+            "rolling_prefetch_eligible_since",
+            "rolling_prefetch_last_attempt_at",
+            "stationary_order_retry_state",
+            "dispatch_conflict_dependencies",
+            "rolling_prefetch_failures",
+            "rolling_prefetch_blockers",
+            "jobs",
+            "stale_candidates",
+            "committed_candidates",
+            "diagnostic_counts",
+        )
+        recovery_fields = (
+            "stationary_clearance_relocations",
+            "rolling_vacancy_signature",
+            "rolling_vacancy_blacklist",
+            "commanded_vacancy_signatures",
+            "commanded_vacancy_blacklist",
+            "coupled_replan_last_attempt",
+            "coupled_replan_failures",
+            "active_wait_cycles",
+            "wait_cycle_last_arbitration",
+            "wait_cycle_grant_signatures",
+            "wait_cycle_recovery_attempts",
+            "corridor_recovery_latches",
+        )
+        scheduler = self.traffic_state.controlled_corridor_scheduler
+        planning_jobs = list(self.planning_state.jobs.values())
+        return _PlanCommitCheckpoint(
+            robot_state=[
+                (robot, deepcopy(robot.__dict__))
+                for robot in self.robots.values()
+            ],
+            order_state=[
+                (order, deepcopy(order.__dict__))
+                for order in self.orders.values()
+            ],
+            events=deepcopy(self.events),
+            traffic_values=self._copy_state_values(
+                self.traffic_state,
+                traffic_fields,
+            ),
+            planning_values=self._copy_state_values(
+                self.planning_state,
+                planning_fields,
+                shallow={"jobs"},
+            ),
+            recovery_values=self._copy_state_values(
+                self.recovery_state,
+                recovery_fields,
+            ),
+            revision_value=self.fleet_state.revision.value,
+            revision_reason=self.fleet_state.revision.last_reason,
+            route_revision_sequence=self._route_revision_seq,
+            scheduler_state=(
+                scheduler.transaction_state()
+                if scheduler is not None
+                else None
+            ),
+            job_statuses=[(item, item.status) for item in planning_jobs],
+        )
+
+    def _restore_plan_commit_state(
+        self,
+        checkpoint: _PlanCommitCheckpoint,
+    ) -> None:
+        for robot, values in checkpoint.robot_state:
+            robot.__dict__.clear()
+            robot.__dict__.update(deepcopy(values))
+        for order, values in checkpoint.order_state:
+            order.__dict__.clear()
+            order.__dict__.update(deepcopy(values))
+        self.events[:] = deepcopy(checkpoint.events)
+        self._restore_state_values(
+            self.traffic_state,
+            checkpoint.traffic_values,
+        )
+        self._restore_state_values(
+            self.planning_state,
+            checkpoint.planning_values,
+        )
+        self._restore_state_values(
+            self.recovery_state,
+            checkpoint.recovery_values,
+        )
+        self.fleet_state.revision.value = checkpoint.revision_value
+        self.fleet_state.revision.last_reason = checkpoint.revision_reason
+        self._route_revision_seq = checkpoint.route_revision_sequence
+        scheduler = self.traffic_state.controlled_corridor_scheduler
+        if scheduler is not None and checkpoint.scheduler_state is not None:
+            scheduler.restore_transaction_state(checkpoint.scheduler_state)
+        for planning_job, status in checkpoint.job_statuses:
+            planning_job.status = status
+
+    @staticmethod
+    def _copy_state_values(
+        container: Any,
+        names: tuple[str, ...],
+        *,
+        shallow: set[str] | None = None,
+    ) -> dict[str, Any]:
+        shallow_names = shallow or set()
+        return {
+            name: (
+                dict(getattr(container, name))
+                if name in shallow_names
+                else deepcopy(getattr(container, name))
+            )
+            for name in names
+        }
+
+    @staticmethod
+    def _restore_state_values(
+        container: Any,
+        values: dict[str, Any],
+    ) -> None:
+        for name, saved in values.items():
+            current = getattr(container, name)
+            if isinstance(current, dict) and isinstance(saved, dict):
+                current.clear()
+                current.update(saved)
+            elif isinstance(current, list) and isinstance(saved, list):
+                current[:] = saved
+            elif isinstance(current, set) and isinstance(saved, set):
+                current.clear()
+                current.update(saved)
+            else:
+                setattr(container, name, saved)
+
+    def _planning_candidate_is_current(
+        self,
+        job: dict[str, Any],
+        candidate: PlanCandidate,
+    ) -> bool:
+        planning_job = job.get("planning_job")
+        if not isinstance(planning_job, PlanningJob):
+            return False
+        if planning_job.cancellation_token.cancelled:
+            return False
+        if candidate.expected_revision != self.planning_revision:
+            return False
+        deadline = planning_job.deadline
+        if deadline is not None and candidate.finished_at > deadline:
+            self.planning_state.record_event("planning_deadline_exceeded")
+            self._event(
+                "warn",
+                f"planning_deadline_exceeded job_id={candidate.job_id} "
+                f"reason={candidate.reason.value}",
+            )
+            return False
+        return True
+
+    def _reject_stale_planning_candidate(
+        self,
+        job: dict[str, Any],
+        candidate: PlanCandidate,
+    ) -> None:
+        """Discard a complete candidate without partially mutating routes."""
+
+        planning_job = job.get("planning_job")
+        if (
+            isinstance(planning_job, PlanningJob)
+            and planning_job.status is PlanningJobStatus.COMPLETED
+        ):
+            planning_job.transition(PlanningJobStatus.STALE)
+        for entry in job.get("entries", []):
+            if not isinstance(entry, tuple) or not entry:
+                continue
+            order = entry[0]
+            if isinstance(order, FleetOrder) and order.status == "PLANNING":
+                order.status = "QUEUED"
+                order.error = ""
+                order.updated_at = self._now()
+        if str(job.get("kind") or "") == "runtime_replan":
+            robot_name = str(job.get("robot_name") or "")
+            state = self._runtime_replans.get(robot_name)
+            if isinstance(state, dict) and state.get("stage") == "planning":
+                state["stage"] = "queued"
+                state["last_attempt_at"] = self._now()
+        job["stale"] = True
+        self.planning_state.stale_candidates += 1
+        self.planning_state.record_event("planning_candidate_stale")
+        robot_ids = (
+            planning_job.robot_ids
+            if isinstance(planning_job, PlanningJob)
+            else ()
+        )
+        self._event(
+            "info",
+            f"planning_candidate_stale job_id={candidate.job_id} "
+            f"reason={candidate.reason.value} "
+            f"expected_revision={candidate.expected_revision} "
+            f"current_revision={self.planning_revision} "
+            f"robots={','.join(robot_ids)} "
+            f"backend={candidate.metadata.get('backend', '')}",
+        )
+        self._forget_planning_job(job)
+
+    def _finish_planning_job_status(
+        self,
+        job: dict[str, Any],
+        committed: bool,
+    ) -> None:
+        planning_job = job.get("planning_job")
+        if (
+            committed
+            and isinstance(planning_job, PlanningJob)
+            and planning_job.status is PlanningJobStatus.COMPLETED
+        ):
+            planning_job.transition(PlanningJobStatus.COMMITTED)
+            self.planning_state.committed_candidates += 1
+            self.planning_state.record_event("planning_candidate_committed")
+            candidate = job.get("candidate")
+            backend = (
+                str(candidate.metadata.get("backend") or "")
+                if isinstance(candidate, PlanCandidate)
+                else ""
+            )
+            expansions = (
+                candidate.diagnostics.get("expandedNodes", 0)
+                if isinstance(candidate, PlanCandidate)
+                else 0
+            )
+            self._event(
+                "info",
+                f"planning_candidate_committed job_id={planning_job.job_id} "
+                f"reason={planning_job.reason.value} "
+                f"expected_revision={planning_job.snapshot.revision} "
+                f"current_revision={self.planning_revision} "
+                f"robots={','.join(planning_job.robot_ids)} "
+                f"planning_duration_sec={max(0.0, (planning_job.finished_at or self._now()) - (planning_job.started_at or planning_job.submitted_at)):.6f} "
+                f"backend={backend} expansions={expansions}",
+            )
+        self._forget_planning_job(job)
+
+    def _forget_planning_job(self, job: dict[str, Any]) -> None:
+        job_id = str(job.get("job_id") or "")
+        if job_id:
+            self.planning_state.jobs.pop(job_id, None)
 
     def _plan_for_robot(self, result: dict[str, Any], robot_name: str) -> dict[str, Any] | None:
         """Return one robot's plan from a shared MAPF planning result."""
@@ -948,6 +1337,3 @@ class DispatchResultMixin:
             "warn",
             f"local CBS pending for wait cycle {', '.join(cycle_key)}: {reason}",
         )
-
-
-__all__ = ["DispatchResultMixin"]

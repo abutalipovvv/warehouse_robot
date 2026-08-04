@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from fleet_manager.core.mapf.cbs_conflicts import (
+from fleet_manager.core.mapf.cbs.cbs_conflicts import (
     CbsConflictAnalyzer,
 )
-from fleet_manager.core.mapf.cbs_low_level import (
+from fleet_manager.core.mapf.cbs.cbs_low_level import (
     LmCBSEnvironment,
 )
-from fleet_manager.core.mapf.cbs_models import (
+from fleet_manager.core.mapf.cbs.cbs_models import (
     Conflict,
     Constraints,
     EdgeIntervalConstraint,
@@ -16,11 +16,11 @@ from fleet_manager.core.mapf.cbs_models import (
     VertexConstraint,
     VertexIntervalConstraint,
 )
-from fleet_manager.core.mapf.lm_cbs import (
+from fleet_manager.core.mapf.cbs.lm_cbs import (
     LmCBSEnvironment as PublicEnvironment,
     State as PublicState,
 )
-from fleet_manager.core.mapf.reservations import ResourceId
+from fleet_manager.core.mapf.common.reservations import ResourceId
 
 
 def _analyzer(

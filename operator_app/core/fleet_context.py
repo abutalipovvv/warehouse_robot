@@ -5,8 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from fleet_manager.core.route_core.map_loader import WarehouseMapLoader
-from fleet_manager.core.route_core.params import (
+from fleet_manager.core.mapping.maps.map_loader import WarehouseMapLoader
+from fleet_manager.core.mapping.navigation.params import (
     load_route_params,
     save_route_params,
 )
@@ -168,6 +168,9 @@ class FleetContextService:
             remote_adapter=owner.remote_adapter,
         )
         owner.manager = manager
+        executor = getattr(owner, "_runtime_command_executor", None)
+        if executor is not None:
+            manager.set_runtime_command_executor(executor)
         previous_close = getattr(
             previous_manager,
             "close",

@@ -1,16 +1,16 @@
 from __future__ import annotations
 
-from fleet_manager.core.mapf.traffic_graph import (
+from fleet_manager.core.mapf.graph.traffic_graph import (
     TrafficGraph,
     TrafficLane,
     TrafficVertex,
     lane_id,
 )
-from fleet_manager.core.mapf.traffic_graph_builder import TrafficGraphBuilder
-from fleet_manager.core.mapf.traffic_graph_models import (
+from fleet_manager.core.mapf.graph.traffic_graph_builder import TrafficGraphBuilder
+from fleet_manager.core.mapf.graph.traffic_graph_models import (
     TrafficGraph as TrafficGraphModel,
 )
-from fleet_manager.core.route_core.models import (
+from fleet_manager.core.mapping.maps.models import (
     EdgeGeometry,
     GraphEdge,
     Landmark,

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from fleet_manager.core.endpoints import (
+from fleet_manager.core.transport.endpoints import (
     EndpointError,
     RobotEndpoint,
     build_grpc_endpoint,

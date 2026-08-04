@@ -6,14 +6,14 @@ from pathlib import Path
 import pytest
 import yaml
 
-from fleet_manager.map_data.smap_bundle import (
+from fleet_manager.core.mapping.formats.smap_bundle import (
     GraphEdgeBuilder,
     SmapBundleWriter,
     SmapDocumentParser,
     parse_properties,
 )
-from fleet_manager.map_data.smap_deserialize import deserialize_smap
-from fleet_manager.map_data.smap_raster import OccupancyRaster, SmapHeader
+from fleet_manager.core.mapping.formats.smap_deserialize import deserialize_smap
+from fleet_manager.core.mapping.formats.smap_raster import OccupancyRaster, SmapHeader
 
 
 def _document() -> dict[str, object]:
@@ -146,6 +146,16 @@ def test_property_parser_prefers_typed_values() -> None:
             }
         ]
     ) == {"capacity": 2}
+
+    assert parse_properties(
+        [
+            {
+                "key": "smartCell",
+                "stringValue": "e",
+                "value": "ZQ==",
+            }
+        ]
+    ) == {"smartCell": "e"}
 
 
 def test_deserializer_rejects_non_object_root(tmp_path: Path) -> None:

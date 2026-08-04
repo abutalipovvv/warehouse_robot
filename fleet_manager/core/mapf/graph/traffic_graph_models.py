@@ -6,10 +6,10 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from .reservations import ResourceId
+from ..common.reservations import ResourceId
 
 if TYPE_CHECKING:
-    from fleet_manager.core.route_core.models import GraphEdge, Landmark
+    from fleet_manager.core.mapping.maps.models import GraphEdge, Landmark
 
 
 def lane_id(from_lm: str, to_lm: str) -> str:

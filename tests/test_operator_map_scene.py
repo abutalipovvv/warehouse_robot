@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from fleet_manager.core.route_core.models import LoadedMapData, MapMetadata
+from fleet_manager.core.mapping.maps.models import LoadedMapData, MapMetadata
 from operator_app.core.map_scene import MapSceneBuilder, horizontal_runs
 
 

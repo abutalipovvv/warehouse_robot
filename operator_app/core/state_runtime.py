@@ -96,6 +96,19 @@ class RuntimeOwnershipMixin:
                 ),
             ),
         )
+        for manager, runtime_loop in zip(
+            (self.fleet_manager, self.fleet_manager_sim),
+            self._fleet_runtime_loops,
+        ):
+            attach = getattr(manager, "set_runtime_command_executor", None)
+            if not callable(attach):
+                attach = getattr(
+                    getattr(manager, "manager", None),
+                    "set_runtime_command_executor",
+                    None,
+                )
+            if callable(attach):
+                attach(runtime_loop.execute)
         for runtime_loop in self._fleet_runtime_loops:
             runtime_loop.start()
 

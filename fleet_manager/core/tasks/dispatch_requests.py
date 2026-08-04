@@ -6,11 +6,11 @@ from dataclasses import dataclass, field
 import math
 from typing import Any
 
-from fleet_manager.core.domain.constants import (
+from fleet_manager.core.fleet.domain.constants import (
     TERMINAL_ORDER_STATUSES,
 )
-from fleet_manager.core.domain.models import FleetOrder, FleetRobot
-from fleet_manager.core.traffic.corridor_scheduler import (
+from fleet_manager.core.fleet.domain.models import FleetOrder, FleetRobot
+from fleet_manager.core.traffic.corridors.scheduling.corridor_scheduler import (
     CorridorRequest,
     CorridorSlot,
 )
@@ -1370,6 +1370,3 @@ class DispatchRequestBatchMixin:
             guard_ticks = math.ceil(guard_sec / self._reservation_time_step())
             ticks = max(ticks, reservation_ticks + corridor_ticks + guard_ticks)
         return max(8, min(configured_max, int(ticks)))
-
-
-__all__ = ["DispatchRequestBatchMixin"]

@@ -3,10 +3,10 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-from fleet_manager.core.manager import FleetManagerCore
-from fleet_manager.core.models import FleetOrder
-from fleet_manager.core.models import FleetRobot
-from fleet_manager.core.route_core.models import GraphEdge, Landmark, WorldPoint
+from fleet_manager.core.fleet.management.manager import FleetManagerCore
+from fleet_manager.core.fleet.domain.models import FleetOrder
+from fleet_manager.core.fleet.domain.models import FleetRobot
+from fleet_manager.core.mapping.maps.models import GraphEdge, Landmark, WorldPoint
 from fleet_manager.runtime.grpc.manager import FleetManagerGrpc, FleetManagerROS
 from fleet_manager.runtime.simulation.manager import FleetManagerSim
 

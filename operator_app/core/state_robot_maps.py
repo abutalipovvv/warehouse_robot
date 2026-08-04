@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from fleet_manager.core.route_core.map_exchange import build_editable_map_bundle_payload
+from fleet_manager.core.mapping.maps.map_exchange import build_editable_map_bundle_payload
 
 
 class RobotMapSyncMixin:

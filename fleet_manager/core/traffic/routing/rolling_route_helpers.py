@@ -5,8 +5,8 @@ from __future__ import annotations
 import math
 from typing import Any
 
-from fleet_manager.core.domain.models import FleetOrder
-from fleet_manager.core.traffic.corridor_scheduler import CorridorRequest
+from fleet_manager.core.fleet.domain.models import FleetOrder
+from fleet_manager.core.traffic.corridors.scheduling.corridor_scheduler import CorridorRequest
 
 
 class RollingRouteMixin:
@@ -770,6 +770,3 @@ class RollingRouteMixin:
         # sample.  Callers retain the complete trajectory and the metadata
         # guard normalises its real terminal LM.
         return None
-
-
-__all__ = ["RollingRouteMixin"]

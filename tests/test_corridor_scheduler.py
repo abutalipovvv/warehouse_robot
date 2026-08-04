@@ -5,7 +5,7 @@ from itertools import permutations
 
 import pytest
 
-from fleet_manager.core.traffic.corridor_scheduler import (
+from fleet_manager.core.traffic.corridors.scheduling.corridor_scheduler import (
     CentralCorridorScheduler,
     CorridorDecisionStatus,
     CorridorOccupancy,

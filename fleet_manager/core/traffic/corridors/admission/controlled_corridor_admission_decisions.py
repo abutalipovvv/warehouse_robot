@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from fleet_manager.core.domain.models import FleetRobot
-from fleet_manager.core.traffic.corridor_scheduler import (
+from fleet_manager.core.fleet.domain.models import FleetRobot
+from fleet_manager.core.traffic.corridors.scheduling.corridor_scheduler import (
     CorridorDecisionStatus,
     CorridorSlotState,
 )
@@ -607,5 +607,3 @@ class ControlledCorridorAdmissionDecisionMixin:
         if robot.last_reason != reason:
             self.traffic_metrics["corridorAdmissionWaits"] += 1
         return reason
-
-__all__ = ["ControlledCorridorAdmissionDecisionMixin"]

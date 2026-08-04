@@ -7,7 +7,7 @@ import math
 from time import time
 from typing import Any
 
-from fleet_manager.core.domain.models import FleetRobot
+from fleet_manager.core.fleet.domain.models import FleetRobot
 
 
 @dataclass(slots=True)
@@ -616,4 +616,3 @@ class FleetMotionSafetyMixin:
             if self.collision.footprints_overlap(first_pose, second_pose):
                 return True
         return False
-__all__ = ["FleetMotionSafetyMixin"]

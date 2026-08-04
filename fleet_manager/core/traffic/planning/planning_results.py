@@ -15,6 +15,7 @@ class TrafficPlanResultMixin:
         order_id: str | None = None,
     ) -> None:
         now = now or self._now()
+        applied = False
         for plan in result.get("plans", []):
             if not isinstance(plan, dict):
                 continue
@@ -22,6 +23,7 @@ class TrafficPlanResultMixin:
             robot = self.robots.get(name)
             if robot is None:
                 continue
+            applied = True
             trajectory = [
                 item for item in plan.get("trajectory", [])
                 if isinstance(item, dict)
@@ -51,6 +53,14 @@ class TrafficPlanResultMixin:
             if order_id is not None:
                 robot.active_order_id = order_id
             robot.updated_at = now
+        if applied:
+            advance_revision = getattr(
+                self,
+                "_advance_planning_revision",
+                None,
+            )
+            if callable(advance_revision):
+                advance_revision("planner result committed")
 
     def _plan_note(self, result: dict[str, Any]) -> str:
         debug = result.get("debug", {})
@@ -94,4 +104,3 @@ class TrafficPlanResultMixin:
             detail = str(debug.get("deadlockReason") or "").strip()
             return f"deadlock: {detail or 'planner could not resolve robot traffic; robots hold position'}"
         return str(debug.get("reason") or "planner rejected")
-__all__ = ["TrafficPlanResultMixin"]

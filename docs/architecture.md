@@ -1,5 +1,9 @@
 # Architecture
 
+Подробная модель владения live state, immutable planning snapshot, revisioned
+commit и bounded planning scheduler описана в
+[`architecture/state_ownership_and_planning.md`](architecture/state_ownership_and_planning.md).
+
 The project is split into four dependency layers. Dependencies point
 downwards; the transport-neutral core must not import runtime adapters.
 
@@ -20,23 +24,25 @@ Math, search, map models, endpoint and gateway contracts
 
 For the planning algorithms, start here:
 
-1. `fleet_manager/math` — vectors, poses, polygons and half-open intervals.
-2. `fleet_manager/search` — the generic search problem and deterministic A*.
-3. `fleet_manager/core/mapf/traffic_graph.py` — stable graph facade;
+1. `fleet_manager/core/algorithms/math` — vectors, poses, polygons and
+   half-open intervals.
+2. `fleet_manager/core/algorithms/math/search` — the generic search problem
+   and deterministic A*.
+3. `fleet_manager/core/mapf/graph/traffic_graph.py` — traffic graph;
    `traffic_graph_models.py`, `traffic_graph_builder.py`, and
    `traffic_graph_properties.py` contain the model, construction math, and
    legacy-map parsing.
-4. `fleet_manager/core/mapf/reservations.py` — capacity-aware calendars.
-5. `fleet_manager/core/mapf/sipp.py` — the public single-robot planner facade.
-6. `fleet_manager/core/mapf/sipp_problem.py` — SIPP state transitions.
-7. `fleet_manager/core/mapf/rolling_sipp.py` — multi-robot facade;
+4. `fleet_manager/core/mapf/common/reservations.py` — capacity-aware calendars.
+5. `fleet_manager/core/mapf/sipp/sipp.py` — the single-robot planner.
+6. `fleet_manager/core/mapf/sipp/sipp_problem.py` — SIPP state transitions.
+7. `fleet_manager/core/mapf/rolling/rolling_sipp.py` — multi-robot planner;
    `prioritized_planning.py` and `rolling_reservations.py` contain the policy
    and reservation writing.
-8. `fleet_manager/core/mapf/lm_cbs.py` — compatibility facade over
+8. `fleet_manager/core/mapf/cbs/lm_cbs.py` — local CBS composition over
    `cbs_models.py`, `cbs_conflicts.py`, `cbs_low_level.py`, and
    `cbs_high_level.py`. Request normalization lives in `cbs_setup.py`; the
    high-level constraint tree lives in `cbs_tree.py`.
-9. `fleet_manager/core/mapf/fleet_planner.py` — stable public planner facade;
+9. `fleet_manager/core/mapf/fleet/fleet_planner.py` — fleet planner composition;
    request preparation, backend selection, results, and trajectory generation
    live in the adjacent `fleet_planner_*` modules.
 
@@ -53,10 +59,9 @@ For application execution, start here:
    `socket_handlers.py` owns complete WebSocket sessions and `websocket.py`
    contains the protocol codec.
 5. `fleet_manager/runtime/loop.py` — independently owned real/sim loops.
-6. `fleet_manager/core/manager.py` — transport-neutral composition root;
-   `manager_state.py`, `manager_snapshots.py`, `manager_commands.py`,
-   `manager_robots.py`, `manager_remote.py`, and `manager_routes.py` own the
-   individual capabilities.
+6. `fleet_manager/core/fleet/management/manager.py` — transport-neutral
+   composition root; adjacent modules own state, snapshots, commands, robot
+   lifecycle, remote control and route metadata.
 7. `fleet_manager/runtime/grpc` and `fleet_manager/runtime/simulation` —
    concrete execution adapters.
 
@@ -86,12 +91,13 @@ global solver to do every job:
 Each layer should expose a small input/output model. It should not reach into
 UI state or a concrete gRPC client.
 
-The large compatibility surfaces are composition facades:
+The larger orchestration classes are composition modules:
 
-- `core/motion.py` composes step, kinematics, safety, retreat and replanning;
-- `core/traffic/routing.py` composes spatial detours, traffic-zone admission,
+- `core/fleet/movement/motion.py` composes step, kinematics, safety, retreat
+  and replanning;
+- `core/traffic/routing/routing.py` composes spatial detours, traffic-zone admission,
   controlled-corridor admission/prefetch/passage and rolling-route helpers;
-- `core/traffic/coordinator.py` composes wait detection, priority, leases,
+- `core/traffic/runtime/coordinator.py` composes wait detection, priority, leases,
   evacuation, escape installation and wait-cycle recovery;
 - `core/tasks/dispatch.py` composes order admission, planning jobs, request
   construction, continuations, recovery and result commit;
@@ -157,9 +163,11 @@ Application shutdown follows the reverse ownership order:
 
 Do not add runtime cache copies under `operator_app/operator_data`.
 
-## Compatibility during migration
+## Migration discipline
 
-Public imports and network payloads remain stable while internals are split.
+Core modules import their real package paths directly. Compatibility and
+namespace-router packages are not used. Network payloads remain stable while
+internals are split.
 For an algorithm replacement:
 
 1. keep the old public facade;

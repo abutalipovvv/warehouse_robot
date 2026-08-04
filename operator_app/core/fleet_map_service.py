@@ -5,15 +5,15 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from fleet_manager.core.route_core.map_exchange import (
+from fleet_manager.core.mapping.maps.map_exchange import (
     build_editable_map_bundle_payload,
     build_editable_map_payload,
     list_editable_maps,
 )
-from fleet_manager.core.route_core.map_writer import (
+from fleet_manager.core.mapping.maps.map_writer import (
     save_editable_map,
 )
-from fleet_manager.core.route_core.params import load_route_params
+from fleet_manager.core.mapping.navigation.params import load_route_params
 
 
 class FleetMapService:

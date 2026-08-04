@@ -5,7 +5,7 @@ from __future__ import annotations
 from itertools import combinations
 from typing import Callable
 
-from fleet_manager.core.math.intervals import closed_intervals_overlap
+from fleet_manager.core.algorithms.math.intervals import closed_intervals_overlap
 
 from .cbs_models import (
     Conflict,

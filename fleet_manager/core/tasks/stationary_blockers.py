@@ -7,11 +7,11 @@ from heapq import heappop, heappush
 import math
 from typing import Any
 
-from fleet_manager.core.domain.constants import (
+from fleet_manager.core.fleet.domain.constants import (
     FLEET_CONTROL_OWNER_ID,
     TERMINAL_ORDER_STATUSES,
 )
-from fleet_manager.core.domain.models import FleetOrder, FleetRobot
+from fleet_manager.core.fleet.domain.models import FleetOrder, FleetRobot
 
 
 CommandedVacancyCandidate = tuple[
@@ -1282,6 +1282,3 @@ class StationaryBlockerRecoveryMixin:
             )
             waiter.updated_at = now
         return True
-
-
-__all__ = ["StationaryBlockerRecoveryMixin"]

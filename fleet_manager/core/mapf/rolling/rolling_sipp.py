@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Callable
 
-from .lm_cbs import (
+from ..cbs.lm_cbs import (
     LmRobotPlan,
     LmRobotRequest,
     NodeName,
@@ -14,7 +14,7 @@ from .prioritized_planning import (
     BlockerResolver,
     PrioritizedSippCoordinator,
 )
-from .reservations import ReservationTable
+from ..common.reservations import ReservationTable
 from .rolling_models import (
     EdgeConstraintInput,
     EdgeIntervalInput,
@@ -28,7 +28,7 @@ from .rolling_reservations import (
     ResourceReservationWriter,
     RollingPlanValidator,
 )
-from .traffic_graph import TrafficGraph
+from ..graph.traffic_graph import TrafficGraph
 
 
 class RollingSippPlanner:

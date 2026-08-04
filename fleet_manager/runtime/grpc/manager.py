@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from fleet_manager.core.manager import FleetManagerCore
+from fleet_manager.core.fleet.management.manager import FleetManagerCore
 from ..gateways.grpc import GrpcRobotGateway
 from .mixin import GrpcRobotRuntimeMixin
 
@@ -32,5 +32,3 @@ class FleetManagerROS(GrpcRobotRuntimeMixin, FleetManagerCore):
 # Technical alias: FleetManagerROS communicates through gRPC; it does not
 # publish ROS topics directly from the operator process.
 FleetManagerGrpc = FleetManagerROS
-
-__all__ = ["FleetManagerGrpc", "FleetManagerROS"]

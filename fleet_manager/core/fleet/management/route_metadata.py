@@ -5,8 +5,8 @@ from __future__ import annotations
 import math
 from typing import Any
 
-from fleet_manager.core.domain.constants import TERMINAL_ORDER_STATUSES
-from fleet_manager.core.domain.models import FleetOrder, FleetRobot
+from fleet_manager.core.fleet.domain.constants import TERMINAL_ORDER_STATUSES
+from fleet_manager.core.fleet.domain.models import FleetOrder, FleetRobot
 
 
 class FleetManagerRouteMetadataMixin:
@@ -411,8 +411,3 @@ class FleetManagerRouteMetadataMixin:
     def _interpolate_angle(self, start: float, goal: float, ratio: float) -> float:
         delta = (goal - start + math.pi) % (2.0 * math.pi) - math.pi
         return start + (delta * ratio)
-
-
-
-__all__ = ["FleetManagerRouteMetadataMixin"]
-

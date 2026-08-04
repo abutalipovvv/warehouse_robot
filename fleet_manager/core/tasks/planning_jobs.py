@@ -2,11 +2,21 @@
 
 from __future__ import annotations
 
+from copy import deepcopy
 from dataclasses import dataclass, field
+from time import monotonic
 from typing import Any
 
-from fleet_manager.core.domain.models import FleetOrder, FleetRobot
-from fleet_manager.core.traffic.corridor_scheduler import CorridorSlot
+from fleet_manager.core.fleet.domain.models import FleetOrder, FleetRobot
+from fleet_manager.core.planning_models import (
+    PlanCandidate,
+    PlanningJob,
+    PlanningJobStatus,
+    PlanningPriority,
+    PlanningReason,
+)
+from fleet_manager.core.planning_models import FrozenMapping
+from fleet_manager.core.traffic.corridors.scheduling.corridor_scheduler import CorridorSlot
 
 
 RollingPrefetchEntry = tuple[
@@ -57,6 +67,14 @@ class _CoupledReplanContext:
     job: dict[str, Any] = field(default_factory=dict)
 
 
+@dataclass(frozen=True, slots=True)
+class _LegacyPlanningResult:
+    """Compatibility hook output published back to the runtime owner."""
+
+    job_token: int
+    result: FrozenMapping
+
+
 class AsyncPlanningJobMixin:
     """Own asynchronous planner job submission and start transitions."""
 
@@ -73,21 +91,247 @@ class AsyncPlanningJobMixin:
         failure_reason: str,
         thread_name: str,
     ) -> bool:
-        """Run one finite MAPF call and publish only to its current job."""
+        """Submit immutable solver input and publish only to the runtime."""
+
+        if (
+            "_plan_valid_requests" in self.__dict__
+            or not hasattr(self, "_planning_snapshot_factory")
+        ):
+            return self._submit_legacy_planning_hook(
+                job,
+                requests,
+                payload,
+                failure_reason=failure_reason,
+                thread_name=thread_name,
+            )
+
+        try:
+            planning_job = self._build_planning_job(
+                job,
+                requests,
+                payload,
+            )
+        except Exception as exc:
+            with self._dispatch_job_lock:
+                if self._dispatch_job is job:
+                    self._dispatch_job = None
+            self.planning_state.record_event("planning_job_failed")
+            self._event(
+                "error",
+                f"planning_job_failed preparation: {type(exc).__name__}: {exc}",
+            )
+            return False
+
+        if self._planning_worker.submit_job(
+            planning_job,
+            self._planning_solver_service.solve,
+        ):
+            return True
+
+        self.planning_state.jobs.pop(planning_job.job_id, None)
+        with self._dispatch_job_lock:
+            if self._dispatch_job is job:
+                self._dispatch_job = None
+        return False
+
+    def _build_planning_job(
+        self,
+        live_job: dict[str, Any],
+        requests: list[dict[str, Any]],
+        payload: dict[str, Any],
+    ) -> PlanningJob:
+        snapshot = self._planning_snapshot_for(requests, payload)
+        self.planning_state.submission_sequence += 1
+        sequence = self.planning_state.submission_sequence
+        kind = str(live_job.get("kind") or "dispatch")
+        reason = PlanningReason.from_job_kind(kind)
+        robot_ids = tuple(
+            sorted(
+                str(request.get("name") or "")
+                for request in requests
+                if str(request.get("name") or "")
+            )
+        )
+        job_id = f"{kind}-{sequence}"
+        submitted_at = monotonic()
+        deadline_seconds = self._planning_deadline_seconds(payload)
+        planning_job = PlanningJob(
+            job_id=job_id,
+            reason=reason,
+            priority=PlanningPriority.for_reason(reason),
+            snapshot=snapshot,
+            submitted_at=submitted_at,
+            deadline=(
+                submitted_at + deadline_seconds
+                if deadline_seconds is not None
+                else None
+            ),
+            coalescing_key=f"{kind}:{','.join(robot_ids)}",
+            robot_ids=robot_ids,
+            conflict_component_ids=(
+                tuple(str(item) for item in live_job.get("cycle", ()))
+                if kind == "coupled_replan"
+                else ()
+            ),
+        )
+        live_job["job_id"] = job_id
+        live_job["expected_revision"] = snapshot.revision
+        live_job["planning_job"] = planning_job
+        self.planning_state.jobs[job_id] = planning_job
+        self.planning_state.record_event("planning_job_submitted")
+        self._event(
+            "info",
+            f"planning_job_submitted job_id={job_id} reason={reason.value} "
+            f"priority={int(planning_job.priority)} "
+            f"expected_revision={snapshot.revision} "
+            f"robots={','.join(robot_ids)}",
+        )
+        if reason is PlanningReason.SAFETY_REPLAN:
+            self.planning_state.record_event("safety_replan_requested")
+            self._event(
+                "warn",
+                f"safety_replan_requested job_id={job_id} "
+                f"robots={','.join(robot_ids)}",
+            )
+        elif reason is PlanningReason.DEADLOCK_RECOVERY:
+            self.planning_state.record_event("deadlock_recovery_requested")
+            self._event(
+                "warn",
+                f"deadlock_recovery_requested job_id={job_id} "
+                f"robots={','.join(robot_ids)}",
+            )
+        return planning_job
+
+    @staticmethod
+    def _planning_deadline_seconds(
+        payload: dict[str, Any],
+    ) -> float | None:
+        raw_value = payload.get("planningDeadlineSec")
+        if raw_value is None:
+            return None
+        try:
+            value = float(raw_value)
+        except (TypeError, ValueError):
+            return None
+        return value if value > 0.0 else None
+
+    def _collect_completed_planning_candidates(self) -> None:
+        """Move worker output into live planning state on the runtime thread."""
+
+        for update in self._planning_worker.take_job_events():
+            planning_job = self.planning_state.jobs.get(update.job_id)
+            if not isinstance(planning_job, PlanningJob):
+                continue
+            if update.status is PlanningJobStatus.RUNNING:
+                if planning_job.status is PlanningJobStatus.QUEUED:
+                    planning_job.transition(PlanningJobStatus.RUNNING)
+                planning_job.started_at = update.occurred_at
+                self.planning_state.record_event("planning_job_started")
+                self._event(
+                    "info",
+                    f"planning_job_started job_id={planning_job.job_id} "
+                    f"reason={planning_job.reason.value} "
+                    f"priority={int(planning_job.priority)} "
+                    f"expected_revision={planning_job.snapshot.revision} "
+                    f"queue_wait_sec={max(0.0, update.occurred_at - planning_job.submitted_at):.6f}",
+                )
+                continue
+            if (
+                planning_job.status is PlanningJobStatus.QUEUED
+                and update.status is PlanningJobStatus.CANCELLED
+            ):
+                planning_job.transition(PlanningJobStatus.CANCELLED)
+            elif planning_job.status is PlanningJobStatus.QUEUED:
+                planning_job.transition(PlanningJobStatus.RUNNING)
+            if planning_job.status is PlanningJobStatus.RUNNING:
+                planning_job.transition(update.status)
+            planning_job.finished_at = update.occurred_at
+            if update.status is PlanningJobStatus.CANCELLED:
+                event_name = (
+                    "planning_deadline_exceeded"
+                    if "deadline" in update.message
+                    else "planning_job_cancelled"
+                )
+                self.planning_state.record_event(event_name)
+                self._event(
+                    "warn",
+                    f"{event_name} job_id={planning_job.job_id} "
+                    f"reason={planning_job.reason.value} "
+                    f"expected_revision={planning_job.snapshot.revision} "
+                    f"detail={update.message}",
+                )
+            elif update.status is PlanningJobStatus.FAILED:
+                self.planning_state.record_event("planning_job_failed")
+                self._event(
+                    "error",
+                    f"planning_job_failed job_id={planning_job.job_id} "
+                    f"reason={planning_job.reason.value} "
+                    f"detail={update.message}",
+                )
+
+        for candidate in self._planning_worker.take_completed_results():
+            if isinstance(candidate, _LegacyPlanningResult):
+                with self._dispatch_job_lock:
+                    live_job = self._dispatch_job
+                    if (
+                        live_job is not None
+                        and id(live_job) == candidate.job_token
+                    ):
+                        live_job["result"] = candidate.result.to_dict()
+                        live_job["done"] = True
+                continue
+            if not isinstance(candidate, PlanCandidate):
+                continue
+            with self._dispatch_job_lock:
+                live_job = self._dispatch_job
+                if (
+                    live_job is None
+                    or str(live_job.get("job_id") or "")
+                    != candidate.job_id
+                ):
+                    continue
+                live_job["candidate"] = candidate
+                live_job["done"] = True
+
+    def _submit_legacy_planning_hook(
+        self,
+        job: dict[str, Any],
+        requests: list[dict[str, Any]],
+        payload: dict[str, Any],
+        *,
+        failure_reason: str,
+        thread_name: str,
+    ) -> bool:
+        """Preserve explicit test/extension hooks during the migration."""
+
+        job_token = id(job)
+        frozen_requests = deepcopy(requests)
+        frozen_payload = deepcopy(payload)
 
         def plan_and_publish() -> None:
             try:
-                result = self._plan_valid_requests(requests, payload)
+                result = self._plan_valid_requests(
+                    frozen_requests,
+                    frozen_payload,
+                )
             except Exception as exc:  # pragma: no cover - worker safety net
                 result = {
                     "ok": False,
                     "plans": [],
                     "debug": {"reason": f"{failure_reason}: {exc}"},
                 }
-            with self._dispatch_job_lock:
-                if self._dispatch_job is job:
-                    job["result"] = result
-                    job["done"] = True
+            publish = getattr(
+                self._planning_worker,
+                "publish_result",
+                None,
+            )
+            if callable(publish):
+                publish(
+                    _LegacyPlanningResult(
+                        job_token=job_token,
+                        result=FrozenMapping.from_mapping(result),
+                    )
+                )
 
         if self._planning_worker.submit(
             plan_and_publish,
@@ -918,6 +1162,3 @@ class AsyncPlanningJobMixin:
             f"{', '.join(context.cycle_key)}",
         )
         return True
-
-
-__all__ = ["AsyncPlanningJobMixin"]

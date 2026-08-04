@@ -6,9 +6,9 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 import math
 
-from fleet_manager.core.math.curves import bezier_point
-from fleet_manager.core.math.geometry import Vector2
-from fleet_manager.core.route_core.models import GraphEdge, Landmark
+from fleet_manager.core.algorithms.math.curves import bezier_point
+from fleet_manager.core.algorithms.math.geometry import Vector2
+from fleet_manager.core.mapping.maps.models import GraphEdge, Landmark
 
 from .traffic_graph_models import (
     TrafficGraph,

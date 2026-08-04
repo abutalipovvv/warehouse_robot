@@ -12,9 +12,9 @@ from time import monotonic
 from types import FrameType
 from typing import Any
 
-from fleet_manager.core.route_core.paths import MAPS_OUT_ROOT
-from fleet_manager.core.route_core.map_loader import WarehouseMapLoader
-from fleet_manager.core.route_core.params import load_route_params
+from fleet_manager.core.mapping.maps.paths import MAPS_OUT_ROOT
+from fleet_manager.core.mapping.maps.map_loader import WarehouseMapLoader
+from fleet_manager.core.mapping.navigation.params import load_route_params
 from fleet_manager.runtime.grpc.manager import FleetManagerROS
 from fleet_manager.runtime.loop import RuntimeLoop, RuntimeLoopFailure
 from fleet_manager.runtime.simulation.manager import FleetManagerSim
@@ -69,7 +69,7 @@ class FleetManagerApplication:
 
         map_dir = resolve_map_dir(self.options.map_value)
         loaded_map = WarehouseMapLoader(map_dir).load()
-        params = load_route_params(self.options.params_path)
+        params = load_route_params(self.options.params_path, strict=True)
         manager_type = (
             FleetManagerSim
             if self.options.mode == "simulation"
@@ -93,6 +93,7 @@ class FleetManagerApplication:
                 name=f"fleet-manager-{self.options.mode}",
                 on_error=self._report_runtime_failure,
             )
+            manager.set_runtime_command_executor(runtime_loop.execute)
             self.manager = manager
             self.map_dir = loaded_map.map_dir
             self.runtime_loop = runtime_loop

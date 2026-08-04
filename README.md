@@ -18,11 +18,11 @@ Main runtime split:
 
 Map/planning ownership:
 
-- `fleet_manager/core/route_core` owns Fleet Manager map loading/edit exchange for `fleet_manager/map_data`.
+- `fleet_manager/core/mapping` owns Fleet Manager map loading/edit exchange for `fleet_manager/map_data`.
 - `fleet_manager/core/mapf` owns Fleet Manager MAPF and space-time planning.
-- `fleet_manager/math` and `fleet_manager/search` contain reusable mathematical
+- `fleet_manager/core/algorithms/math` contains reusable mathematical
   primitives and graph-search algorithms.
-- `fleet_manager/map_data/smap_bundle.py` and `smap_raster.py` separate SMAP
+- `fleet_manager/core/mapping/formats/smap_bundle.py` and `smap_raster.py` separate SMAP
   parsing, graph reconstruction, raster math, and durable output.
 - `sim_robot/ws/src/robot_planner/robot_planner/route_core` owns robot-side map/route loading.
 - Operator App stores its local editable map cache independently and only synchronizes by push/pull.

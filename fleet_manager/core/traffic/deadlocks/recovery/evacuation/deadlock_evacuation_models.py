@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from fleet_manager.core.domain.models import FleetRobot
+from fleet_manager.core.fleet.domain.models import FleetRobot
 
 
 @dataclass(frozen=True, order=True, slots=True)
@@ -20,6 +20,3 @@ class _EvacuationCandidate:
     retreat_is_noop_at_current_lm: bool = field(compare=False)
     graph_escape_route: list[str] = field(compare=False)
     portal_blocked_edges: list[tuple[str, str]] = field(compare=False)
-
-
-__all__ = ["_EvacuationCandidate"]

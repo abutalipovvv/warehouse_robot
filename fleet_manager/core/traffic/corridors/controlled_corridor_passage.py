@@ -6,8 +6,8 @@ from dataclasses import dataclass, field
 import math
 from typing import Any
 
-from fleet_manager.core.domain.models import FleetRobot
-from fleet_manager.core.traffic.corridor_scheduler import (
+from fleet_manager.core.fleet.domain.models import FleetRobot
+from fleet_manager.core.traffic.corridors.scheduling.corridor_scheduler import (
     CorridorOccupancy,
     CorridorResourceWindow,
     CorridorSlot,
@@ -1064,6 +1064,3 @@ class ControlledCorridorPassageMixin:
                 )
             )
         return tuple(live_windows)
-
-
-__all__ = ["ControlledCorridorPassageMixin"]

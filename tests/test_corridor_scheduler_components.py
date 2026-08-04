@@ -5,12 +5,12 @@ from itertools import permutations
 
 import pytest
 
-from fleet_manager.core.traffic import corridor_models
-from fleet_manager.core.traffic.corridor_calendar import CorridorCalendar
-from fleet_manager.core.traffic.corridor_planner import (
+import fleet_manager.core.traffic.corridors.scheduling.corridor_models as corridor_models
+from fleet_manager.core.traffic.corridors.scheduling.corridor_calendar import CorridorCalendar
+from fleet_manager.core.traffic.corridors.scheduling.corridor_planner import (
     CorridorScheduleBuilder,
 )
-from fleet_manager.core.traffic.corridor_scheduler import (
+from fleet_manager.core.traffic.corridors.scheduling.corridor_scheduler import (
     CorridorRequest,
     CorridorResourceWindow,
     CorridorSchedulerConfig,

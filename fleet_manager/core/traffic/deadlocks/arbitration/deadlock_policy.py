@@ -156,6 +156,3 @@ class DeadlockPolicyMixin:
             )
         except (TypeError, ValueError):
             return 0.20
-
-
-__all__ = ['DeadlockPolicyMixin']

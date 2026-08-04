@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pytest
 
-from fleet_manager.core.models import FleetOrder, FleetRobot
-from fleet_manager.core.route_core.models import GraphEdge, Landmark, WorldPoint
+from fleet_manager.core.fleet.domain.models import FleetOrder, FleetRobot
+from fleet_manager.core.mapping.maps.models import GraphEdge, Landmark, WorldPoint
 from fleet_manager.runtime.simulation.manager import FleetManagerSim
 
 

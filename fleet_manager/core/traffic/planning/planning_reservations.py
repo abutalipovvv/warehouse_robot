@@ -5,8 +5,8 @@ from __future__ import annotations
 import math
 from typing import Any
 
-from fleet_manager.core.domain.models import FleetRobot
-from fleet_manager.core.route_core.models import PlannedRoute
+from fleet_manager.core.fleet.domain.models import FleetRobot
+from fleet_manager.core.mapping.maps.models import PlannedRoute
 
 
 class TrafficReservationMixin:
@@ -728,4 +728,3 @@ class TrafficReservationMixin:
         if robot.current_lm in self.landmarks:
             return robot.current_lm
         return self._nearest_lm_for_robot(robot)
-__all__ = ["TrafficReservationMixin"]

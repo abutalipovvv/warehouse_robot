@@ -5,12 +5,12 @@ from time import monotonic, sleep
 
 import pytest
 
-from fleet_manager.core.manager import FleetManagerCore
-from fleet_manager.core.planning_worker import (
+from fleet_manager.core.fleet.management.manager import FleetManagerCore
+from fleet_manager.core.planning_scheduler import (
     PlanningWorker,
     PlanningWorkerState,
 )
-from fleet_manager.core.route_core.models import (
+from fleet_manager.core.mapping.maps.models import (
     GraphEdge,
     Landmark,
     WorldPoint,

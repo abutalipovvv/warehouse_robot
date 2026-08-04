@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Iterable, Mapping
 
-from fleet_manager.core.traffic.corridor_models import (
+from fleet_manager.core.traffic.corridors.scheduling.corridor_models import (
     CorridorRequest,
     CorridorResourceWindow,
     CorridorSchedulerConfig,
@@ -379,10 +379,3 @@ class CorridorCalendar:
 
 slot_interval_fits = _slot_interval_fits
 request_entry_after_slot = _request_entry_after_slot
-
-
-__all__ = [
-    "CorridorCalendar",
-    "request_entry_after_slot",
-    "slot_interval_fits",
-]

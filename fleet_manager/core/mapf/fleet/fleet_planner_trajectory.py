@@ -6,7 +6,7 @@ from dataclasses import dataclass
 import math
 from typing import Any
 
-from fleet_manager.core.route_core.models import GraphEdge, PlannedRoute
+from fleet_manager.core.mapping.maps.models import GraphEdge, PlannedRoute
 
 
 class FleetMotionModel:

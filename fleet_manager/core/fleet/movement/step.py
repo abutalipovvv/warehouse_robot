@@ -5,8 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 import math
 
-from fleet_manager.core.domain.constants import TERMINAL_ORDER_STATUSES
-from fleet_manager.core.domain.models import FleetRobot
+from fleet_manager.core.fleet.domain.constants import TERMINAL_ORDER_STATUSES
+from fleet_manager.core.fleet.domain.models import FleetRobot
 
 
 @dataclass(frozen=True, slots=True)
@@ -22,6 +22,7 @@ class FleetMotionStepMixin:
     """Advance local and remote robots through one runtime tick."""
 
     def _advance_runtime(self) -> None:
+        self._synchronize_planning_revision()
         # Commit a completed background result before deadlock arbitration.
         # Otherwise dispatch immediately occupies the single worker again and
         # a waiting coupled component can starve forever without a CBS slot.
@@ -44,6 +45,7 @@ class FleetMotionStepMixin:
         self._runtime_tick_route_clocks = {}
         self._resolve_runtime_wait_cycles(now)
         self._dispatch_orders(async_simulated=True)
+        self._synchronize_planning_revision()
 
     def _advance_runtime_robot(
         self,
@@ -616,4 +618,3 @@ class FleetMotionStepMixin:
         self._clear_wait_dependency(robot)
         self._clear_remote_route_metadata(robot)
         self._event("info", f"{robot.name} arrived at {robot.current_lm}")
-__all__ = ["FleetMotionStepMixin"]

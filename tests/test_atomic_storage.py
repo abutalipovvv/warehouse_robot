@@ -6,7 +6,7 @@ from stat import S_IMODE
 
 import pytest
 
-from fleet_manager import storage
+import fleet_manager.core.io.atomic_files as storage
 
 
 def test_atomic_write_text_creates_parent_and_file(tmp_path: Path) -> None:

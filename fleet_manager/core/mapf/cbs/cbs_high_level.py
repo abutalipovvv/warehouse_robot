@@ -418,6 +418,3 @@ class LmCBSPlanner:
                 )
             expanded.append((end, "move"))
         return expanded
-
-
-__all__ = ["LmCBSPlanner"]

@@ -468,17 +468,3 @@ class CorridorSchedule:
             (slot for slot in self.slots if slot.robot_id == robot_id),
             None,
         )
-
-
-__all__ = [
-    "CorridorDecision",
-    "CorridorDecisionStatus",
-    "CorridorOccupancy",
-    "CorridorRequest",
-    "CorridorResourceWindow",
-    "CorridorSchedule",
-    "CorridorSchedulerConfig",
-    "CorridorSlot",
-    "CorridorSlotState",
-    "RouteRevision",
-]

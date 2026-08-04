@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fleet_manager.core.domain.models import FleetRobot
+from fleet_manager.core.fleet.domain.models import FleetRobot
 
 
 class DeadlockPriorityMixin:
@@ -392,6 +392,3 @@ class DeadlockPriorityMixin:
                 for robot in robots
             )
         )
-
-
-__all__ = ['DeadlockPriorityMixin']

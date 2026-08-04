@@ -4,9 +4,9 @@ import math
 
 import pytest
 
-from fleet_manager.core.mapf.fleet_planner import FleetMapfPlanner
-from fleet_manager.core.mapf.fleet_planner_backends import BackendSelector
-from fleet_manager.core.route_core.models import GraphEdge, Landmark, WorldPoint
+from fleet_manager.core.mapf.fleet.fleet_planner import FleetMapfPlanner
+from fleet_manager.core.mapf.fleet.fleet_planner_backends import BackendSelector
+from fleet_manager.core.mapping.maps.models import GraphEdge, Landmark, WorldPoint
 
 
 def test_backend_selector_normalizes_config_and_request_aliases() -> None:

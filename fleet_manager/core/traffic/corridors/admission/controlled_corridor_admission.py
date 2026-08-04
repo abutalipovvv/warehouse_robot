@@ -19,6 +19,3 @@ class ControlledCorridorAdmissionMixin(
     ControlledCorridorAdmissionDecisionMixin,
 ):
     """Compose request collection, admission decisions and publication."""
-
-
-__all__ = ["ControlledCorridorAdmissionMixin"]

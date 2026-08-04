@@ -6,5 +6,3 @@ from .traffic_graph_models import (
     TrafficVertex,
     lane_id,
 )
-
-__all__ = ["TrafficVertex", "TrafficLane", "TrafficGraph", "lane_id"]

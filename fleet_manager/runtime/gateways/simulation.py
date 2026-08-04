@@ -35,6 +35,3 @@ class SimulationRobotGateway:
 
     def stop_robot(self, payload: dict[str, Any]) -> dict[str, Any]:
         return self.manager.stop_robot(payload)
-
-
-__all__ = ["SimulationRobotGateway"]

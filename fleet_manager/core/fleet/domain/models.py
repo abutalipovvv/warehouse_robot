@@ -247,6 +247,3 @@ class FleetEvent:
             "level": self.level,
             "message": self.message,
         }
-
-
-__all__ = ["FleetEvent", "FleetOrder", "FleetRobot"]

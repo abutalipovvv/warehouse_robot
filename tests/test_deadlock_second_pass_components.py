@@ -3,17 +3,17 @@ from __future__ import annotations
 import inspect
 from types import SimpleNamespace
 
-from fleet_manager.core.models import FleetRobot
-from fleet_manager.core.traffic.deadlock_cycle_recovery import (
+from fleet_manager.core.fleet.domain.models import FleetRobot
+from fleet_manager.core.traffic.deadlocks.recovery.cycles.deadlock_cycle_recovery import (
     WaitCycleRecoveryMixin,
 )
-from fleet_manager.core.traffic.deadlock_cycle_recovery_models import (
+from fleet_manager.core.traffic.deadlocks.recovery.cycles.deadlock_cycle_recovery_models import (
     _WaitCycleDecisionContext,
 )
-from fleet_manager.core.traffic.deadlock_evacuation_candidate_models import (
+from fleet_manager.core.traffic.deadlocks.recovery.evacuation.deadlock_evacuation_candidate_models import (
     _EvacuationSearchContext,
 )
-from fleet_manager.core.traffic.deadlock_evacuation_candidates import (
+from fleet_manager.core.traffic.deadlocks.recovery.evacuation.deadlock_evacuation_candidates import (
     EvacuationCandidateMixin,
 )
 

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable
 
-from fleet_manager.core.traffic.corridor_models import (
+from fleet_manager.core.traffic.corridors.scheduling.corridor_models import (
     CorridorDecision,
     CorridorDecisionStatus,
     CorridorRequest,
@@ -12,7 +12,7 @@ from fleet_manager.core.traffic.corridor_models import (
     CorridorSlot,
     CorridorSlotState,
 )
-from fleet_manager.core.traffic.corridor_planning_models import (
+from fleet_manager.core.traffic.corridors.scheduling.corridor_planning_models import (
     _PlacementProposal,
     _PlanningContext,
 )
@@ -259,6 +259,3 @@ def _grant_proposal(
         ),
         slot=slot,
     )
-
-
-__all__ = ["schedule_pending"]

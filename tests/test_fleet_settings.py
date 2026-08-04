@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import math
 
-from fleet_manager.core.settings import FleetSettings, SettingsSection
+from fleet_manager.core.fleet.domain.settings import FleetSettings, SettingsSection
 
 
 def test_numeric_settings_validate_and_clamp_values() -> None:

@@ -4,14 +4,17 @@ from __future__ import annotations
 
 from typing import Any
 
-from fleet_manager.core.domain.constants import TERMINAL_ORDER_STATUSES
-from fleet_manager.core.management.state import _manager_wall_time
-from fleet_manager.core.domain.models import FleetEvent, FleetRobot
+from fleet_manager.core.fleet.domain.constants import TERMINAL_ORDER_STATUSES
+from fleet_manager.core.fleet.management.state import _manager_wall_time
+from fleet_manager.core.fleet.domain.models import FleetEvent, FleetRobot
+
+from .state import runtime_command
 
 
 class FleetManagerCommandMixin:
     """Execute order and planner commands against the shared runtime."""
 
+    @runtime_command
     def check_path(self, payload: dict[str, Any]) -> dict[str, Any]:
         self._advance_runtime()
         name = str(payload.get("name", "")).strip()
@@ -55,6 +58,7 @@ class FleetManagerCommandMixin:
                     }
         return {"ok": True, "blocked": False, "reason": ""}
 
+    @runtime_command
     def orders_payload(self) -> dict[str, Any]:
         self._advance_runtime()
         return {
@@ -63,6 +67,7 @@ class FleetManagerCommandMixin:
             "state": self.state(),
         }
 
+    @runtime_command
     def set_order(
         self,
         payload: dict[str, Any],
@@ -102,6 +107,7 @@ class FleetManagerCommandMixin:
                 "info",
                 f"order queued: {order.order_id} {order.vehicle or 'auto'}->{order.target_lm}",
             )
+        self._advance_planning_revision("order queued")
         if dispatch:
             self._dispatch_orders()
         if len(orders[0].targets or []) > 1:
@@ -122,6 +128,7 @@ class FleetManagerCommandMixin:
             ),
         }
 
+    @runtime_command
     def dispatch_orders(self, payload: dict[str, Any] | None = None) -> dict[str, Any]:
         dispatched = self._dispatch_orders(force=True)
         return {
@@ -131,6 +138,7 @@ class FleetManagerCommandMixin:
             "state": self.state(),
         }
 
+    @runtime_command
     def cancel_order(self, payload: dict[str, Any]) -> dict[str, Any]:
         order_id = str(payload.get("id") or payload.get("orderId") or "").strip()
         if not order_id:
@@ -139,6 +147,7 @@ class FleetManagerCommandMixin:
         if order is None:
             raise ValueError(f"unknown order: {order_id}")
         self._cancel_order(order, "canceled by operator")
+        self._advance_planning_revision(f"order canceled: {order_id}")
         return {
             "ok": True,
             "order": order.to_dict(),
@@ -146,6 +155,7 @@ class FleetManagerCommandMixin:
             "state": self.state(),
         }
 
+    @runtime_command
     def pause_order(self, payload: dict[str, Any]) -> dict[str, Any]:
         order_id = str(payload.get("id") or payload.get("orderId") or "").strip()
         if not order_id:
@@ -156,6 +166,7 @@ class FleetManagerCommandMixin:
         if order.status in TERMINAL_ORDER_STATUSES:
             raise ValueError(f"cannot pause terminal order: {order_id}")
         self._pause_order(order, "paused by operator")
+        self._advance_planning_revision(f"order paused: {order_id}")
         return {
             "ok": True,
             "order": order.to_dict(),
@@ -163,6 +174,7 @@ class FleetManagerCommandMixin:
             "state": self.state(),
         }
 
+    @runtime_command
     def resume_order(self, payload: dict[str, Any]) -> dict[str, Any]:
         order_id = str(payload.get("id") or payload.get("orderId") or "").strip()
         if not order_id:
@@ -176,6 +188,7 @@ class FleetManagerCommandMixin:
         order.error = ""
         order.updated_at = self._now()
         self._event("info", f"order resumed: {order.order_id}")
+        self._advance_planning_revision(f"order resumed: {order_id}")
         dispatched = self._dispatch_orders(force=True)
         return {
             "ok": True,
@@ -185,6 +198,7 @@ class FleetManagerCommandMixin:
             "state": self.state(),
         }
 
+    @runtime_command
     def clear_orders(self, payload: dict[str, Any] | None = None) -> dict[str, Any]:
         payload = payload or {}
         include_active = bool(payload.get("includeActive", False))
@@ -197,6 +211,7 @@ class FleetManagerCommandMixin:
                 canceled += 1
         if canceled:
             self._event("warn", f"orders cleared: {canceled}")
+            self._advance_planning_revision("orders cleared")
         return {
             "ok": True,
             "canceled": canceled,
@@ -205,6 +220,7 @@ class FleetManagerCommandMixin:
         }
 
 
+    @runtime_command
     def plan(self, payload: dict[str, Any]) -> dict[str, Any]:
         """Plan one or more orders.
 
@@ -416,7 +432,3 @@ class FleetManagerCommandMixin:
             )
         )
         self.events = self.events[-200:]
-
-
-
-__all__ = ["FleetManagerCommandMixin"]
