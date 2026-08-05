@@ -13,7 +13,7 @@ from fleet_manager.robot.model import FleetRobot
 
 
 FrozenValue = Any
-PlannerCall = Callable[[dict[str, Any]], dict[str, Any]]
+PlannerCall = Callable[..., dict[str, Any]]
 CommitValueT = TypeVar("CommitValueT")
 CheckpointT = TypeVar("CheckpointT")
 
@@ -221,6 +221,7 @@ class PlanningJobStatus(str, Enum):
     RUNNING = "running"
     COMPLETED = "completed"
     CANCELLED = "cancelled"
+    DEADLINE_EXCEEDED = "deadline_exceeded"
     STALE = "stale"
     FAILED = "failed"
     COMMITTED = "committed"
@@ -230,11 +231,13 @@ _ALLOWED_JOB_TRANSITIONS = {
     PlanningJobStatus.QUEUED: {
         PlanningJobStatus.RUNNING,
         PlanningJobStatus.CANCELLED,
+        PlanningJobStatus.DEADLINE_EXCEEDED,
         PlanningJobStatus.STALE,
     },
     PlanningJobStatus.RUNNING: {
         PlanningJobStatus.COMPLETED,
         PlanningJobStatus.CANCELLED,
+        PlanningJobStatus.DEADLINE_EXCEEDED,
         PlanningJobStatus.STALE,
         PlanningJobStatus.FAILED,
     },
@@ -244,6 +247,7 @@ _ALLOWED_JOB_TRANSITIONS = {
         PlanningJobStatus.STALE,
     },
     PlanningJobStatus.CANCELLED: set(),
+    PlanningJobStatus.DEADLINE_EXCEEDED: set(),
     PlanningJobStatus.STALE: set(),
     PlanningJobStatus.FAILED: set(),
     PlanningJobStatus.COMMITTED: set(),
@@ -266,8 +270,40 @@ class CancellationToken:
         self._event.set()
 
 
-@dataclass(slots=True)
+class PlanningCancelledError(RuntimeError):
+    """A planning job was cancelled by its owner."""
+
+
+class PlanningDeadlineExceededError(RuntimeError):
+    """A planning job exceeded its explicit deadline."""
+
+
+@dataclass(frozen=True, slots=True)
+class PlanningControl:
+    """Small cooperative control passed into long-running algorithms."""
+
+    cancellation_token: CancellationToken
+    deadline: float | None = None
+    clock: Callable[[], float] = monotonic
+
+    def check(self) -> None:
+        if self.deadline is not None and self.clock() > self.deadline:
+            self.cancellation_token.cancel()
+            raise PlanningDeadlineExceededError("planning deadline exceeded")
+        if self.cancellation_token.cancelled:
+            raise PlanningCancelledError("planning job cancelled")
+
+    def should_cancel(self) -> bool:
+        """Raise on cancellation so nested algorithms stop immediately."""
+
+        self.check()
+        return False
+
+
+@dataclass(frozen=True, slots=True)
 class PlanningJob:
+    """Immutable request accepted by the planning scheduler."""
+
     job_id: str
     reason: PlanningReason
     priority: PlanningPriority
@@ -280,11 +316,42 @@ class PlanningJob:
     coalescing_key: str = ""
     robot_ids: tuple[str, ...] = ()
     conflict_component_ids: tuple[str, ...] = ()
+
+
+@dataclass(slots=True)
+class PlanningJobRecord:
+    """Mutable owner-thread state around one immutable planning request."""
+
+    job: PlanningJob | None = None
     status: PlanningJobStatus = PlanningJobStatus.QUEUED
     started_at: float | None = None
     finished_at: float | None = None
+    candidate: PlanCandidate | None = None
+    error: str | None = None
+    kind: str = "dispatch"
+    entries: list[Any] = field(default_factory=list)
+    requests: list[dict[str, Any]] = field(default_factory=list)
+    payload: dict[str, Any] = field(default_factory=dict)
+    result: dict[str, Any] | None = None
+    done: bool = False
+    discard: bool = False
+    stale: bool = False
+    expected_revision: int | None = None
+    corridor_gates: dict[str, dict[str, Any]] = field(default_factory=dict)
+    cycle: tuple[str, ...] = ()
+    order_id: str = ""
+    robot_name: str = ""
+    generation: int = 0
+    route_revision: int = 0
+    route_clock: float = 0.0
+    route_revisions: dict[str, int] = field(default_factory=dict)
+    start_lm: str = ""
+    final_goal: str = ""
+    escape_goal: str = ""
+    request: dict[str, Any] | None = None
+    vacancy_recovery_signature: tuple[tuple[str, str, int], ...] = ()
 
-    def transition(self, next_status: PlanningJobStatus) -> None:
+    def transition_to(self, next_status: PlanningJobStatus) -> None:
         if next_status is self.status:
             return
         allowed = _ALLOWED_JOB_TRANSITIONS[self.status]
@@ -295,6 +362,10 @@ class PlanningJob:
             )
         self.status = next_status
 
+    @property
+    def job_id(self) -> str:
+        return self.job.job_id if self.job is not None else ""
+
 
 @dataclass(frozen=True, slots=True)
 class PlanCandidate:
@@ -304,6 +375,7 @@ class PlanCandidate:
     created_at: float
     finished_at: float
     result: FrozenMapping
+    backend_used: str = ""
     plans: tuple[FrozenMapping, ...] = ()
     reservations: tuple[FrozenMapping, ...] = ()
     metadata: FrozenMapping = field(default_factory=FrozenMapping)
@@ -317,6 +389,7 @@ class PlanCandidate:
         *,
         finished_at: float,
         metadata: dict[str, Any] | None = None,
+        backend_used: str = "",
     ) -> PlanCandidate:
         plans = tuple(
             FrozenMapping.from_mapping(plan)
@@ -337,6 +410,7 @@ class PlanCandidate:
             created_at=job.snapshot.created_at,
             finished_at=float(finished_at),
             result=FrozenMapping.from_mapping(result),
+            backend_used=str(backend_used),
             plans=plans,
             reservations=reservations,
             metadata=FrozenMapping.from_mapping(metadata),
@@ -347,55 +421,80 @@ class PlanCandidate:
 class PlanningSolverService:
     """Run the planner using only immutable data from a planning job."""
 
-    def __init__(self, planner_call: PlannerCall, planner_lock: Lock) -> None:
+    def __init__(
+        self,
+        planner_call: PlannerCall,
+        planner_lock: Lock,
+        *,
+        accepts_control: bool = False,
+    ) -> None:
         if not callable(planner_call):
             raise TypeError("planner_call must be callable")
         self._planner_call = planner_call
         self._planner_lock = planner_lock
+        self._accepts_control = bool(accepts_control)
 
     def solve(self, job: PlanningJob) -> PlanCandidate:
-        token = job.cancellation_token
-        if token.cancelled:
-            return self._cancelled_candidate(job)
+        control = PlanningControl(
+            cancellation_token=job.cancellation_token,
+            deadline=job.deadline,
+        )
+        control.check()
 
         with self._planner_lock:
-            primary_result = self._planner_call(
-                job.snapshot.primary_payload_dict()
+            control.check()
+            primary_result = self._call_planner(
+                job.snapshot.primary_payload_dict(),
+                control,
             )
             fallback_result: dict[str, Any] | None = None
             fallback_payload = job.snapshot.fallback_payload_dict()
             if (
                 not primary_result.get("ok")
                 and fallback_payload is not None
-                and not token.cancelled
             ):
-                fallback_result = self._planner_call(fallback_payload)
+                control.check()
+                fallback_result = self._call_planner(
+                    fallback_payload,
+                    control,
+                )
 
-        if token.cancelled:
-            return self._cancelled_candidate(job)
+        control.check()
+        selected_result = primary_result
+        selected_source = "primary"
+        if (
+            fallback_result is not None
+            and fallback_result.get("ok")
+            and not job.snapshot.strict_stationary_avoidance
+        ):
+            selected_result = fallback_result
+            selected_source = "fallback"
+        backend_used = self._backend_name(selected_result)
         metadata = {
+            "primaryResult": primary_result,
             "fallbackResult": fallback_result,
-            "backend": self._backend_name(primary_result),
+            "selectedSource": selected_source,
+            "backend": backend_used,
         }
         return PlanCandidate.from_result(
             job,
-            primary_result,
+            selected_result,
             finished_at=monotonic(),
             metadata=metadata,
+            backend_used=backend_used,
         )
 
-    @staticmethod
-    def _cancelled_candidate(job: PlanningJob) -> PlanCandidate:
-        return PlanCandidate.from_result(
-            job,
-            {
-                "ok": False,
-                "plans": [],
-                "debug": {"reason": "planning job cancelled"},
-            },
-            finished_at=monotonic(),
-            metadata={"cancelled": True},
-        )
+    def _call_planner(
+        self,
+        payload: dict[str, Any],
+        control: PlanningControl,
+    ) -> dict[str, Any]:
+        if self._accepts_control:
+            return self._planner_call(
+                payload,
+                should_cancel=control.should_cancel,
+            )
+        return self._planner_call(payload)
 
     @staticmethod
     def _backend_name(result: dict[str, Any]) -> str:

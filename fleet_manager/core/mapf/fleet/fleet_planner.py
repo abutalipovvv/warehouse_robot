@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import heapq
 import math
-from typing import Any
+from typing import Any, Callable
 
 from fleet_manager.core.mapping.maps.models import GraphEdge, Landmark, PlannedRoute
 from fleet_manager.core.mapping.navigation.planner import LmRoutePlanner
@@ -145,7 +145,14 @@ class FleetMapfPlanner:
         self._motion_model = FleetMotionModel(self)
         self._trajectory_builder = TrajectoryBuilder(self)
 
-    def plan(self, payload: dict[str, Any]) -> dict[str, Any]:
+    def plan(
+        self,
+        payload: dict[str, Any],
+        *,
+        should_cancel: Callable[[], bool] | None = None,
+    ) -> dict[str, Any]:
+        if should_cancel is not None and should_cancel():
+            raise InterruptedError("planning cancelled")
         prepared = self._request_preparer.prepare(payload)
         (
             result,
@@ -171,7 +178,10 @@ class FleetMapfPlanner:
             rotate_enabled=prepared.rotate_enabled,
             turn_speed=prepared.turn_speed,
             selected_backend=prepared.selected_backend,
+            should_cancel=should_cancel,
         )
+        if should_cancel is not None and should_cancel():
+            raise InterruptedError("planning cancelled")
         return self._result_formatter.format(
             prepared,
             result,
@@ -210,6 +220,7 @@ class FleetMapfPlanner:
         rotate_enabled: bool,
         turn_speed: float,
         selected_backend: str,
+        should_cancel: Callable[[], bool] | None = None,
     ):
         return self._backend_runner.run_selected(
             requests,
@@ -228,6 +239,7 @@ class FleetMapfPlanner:
             rotate_enabled=rotate_enabled,
             turn_speed=turn_speed,
             selected_backend=selected_backend,
+            should_cancel=should_cancel,
         )
 
     def _run_cbs_with_reserved_detour(
@@ -246,6 +258,7 @@ class FleetMapfPlanner:
         low_level_max_time: int,
         rotate_enabled: bool,
         turn_speed: float,
+        should_cancel: Callable[[], bool] | None = None,
     ):
         return self._backend_runner.run_cbs_with_reserved_detour(
             requests,
@@ -262,6 +275,7 @@ class FleetMapfPlanner:
             low_level_max_time=low_level_max_time,
             rotate_enabled=rotate_enabled,
             turn_speed=turn_speed,
+            should_cancel=should_cancel,
         )
 
     def _run_cbs(
@@ -278,6 +292,7 @@ class FleetMapfPlanner:
         low_level_max_time: int,
         rotate_enabled: bool,
         turn_speed: float,
+        should_cancel: Callable[[], bool] | None = None,
     ):
         return self._backend_runner.run_cbs(
             requests,
@@ -292,6 +307,7 @@ class FleetMapfPlanner:
             low_level_max_time=low_level_max_time,
             rotate_enabled=rotate_enabled,
             turn_speed=turn_speed,
+            should_cancel=should_cancel,
         )
 
     def _run_rolling_sipp(
@@ -308,6 +324,7 @@ class FleetMapfPlanner:
         low_level_max_time: int,
         rotate_enabled: bool,
         turn_speed: float,
+        should_cancel: Callable[[], bool] | None = None,
     ):
         return self._backend_runner.run_rolling_sipp(
             requests,
@@ -322,6 +339,7 @@ class FleetMapfPlanner:
             low_level_max_time=low_level_max_time,
             rotate_enabled=rotate_enabled,
             turn_speed=turn_speed,
+            should_cancel=should_cancel,
         )
 
     def _payload_low_level_max_time(self, payload: dict[str, Any]) -> int:

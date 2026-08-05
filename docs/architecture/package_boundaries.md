@@ -71,15 +71,36 @@ longer require live manager state.
 - `scheduler.py` contains the bounded priority worker;
 - `tasks` contains order admission, dispatch, rolling continuation,
   replanning, lifecycle and recovery;
-- `traffic` contains live corridor/zone admission, reservations, deadlock
-  recovery and planning preparation;
+- `coordination` contains live corridor/zone admission, reservations,
+  deadlock recovery and planning preparation;
 - `ports.py` describes robot gateway operations needed by manager policy.
 
 `OrderAdmissionService`, `RollingContinuationService` and
 `ReplanningService` receive explicit state containers and callables. They do
-not receive the complete manager. Existing mixins still compose older traffic
-and motion policy; when a method is migrated, its old entry point should become
-a short adapter to a service rather than retain a second implementation.
+not receive the complete manager. Admission validation and deterministic robot
+selection, rolling candidate selection/request construction, and replan
+transaction/retry recording now live in these services. Existing mixins still
+compose older traffic and motion policy; migrated entry points are short
+adapters and do not retain a second implementation.
+
+`manager/coordination` is shallow by domain:
+
+```text
+coordination/
+    coordinator.py
+    runtime_conflicts.py
+    zones.py
+    corridors/     # admission, requests, prefetch, intent, validation
+    deadlocks/     # detection, priority, recovery, evacuation
+    planning/      # preparation, continuous waits, reservations, results
+    routing/       # spatial and rolling route helpers
+```
+
+The corridor and deadlock subpackages no longer contain nested `admission`,
+`prefetch`, `arbitration`, `cycles` or `evacuation` packages. Small value
+objects are grouped in one `models.py` per domain. The three high-level mixins
+remain temporary composition boundaries; lower composition-only mixins were
+removed.
 
 Map parsing and serialization are pure core operations. Active-map changes are
 currently orchestrated by manager snapshot/update methods and the Operator
@@ -112,6 +133,8 @@ PlanningWorker.submit_job
     |
     v
 Rolling SIPP / traffic planner
+    |
+    | cooperative cancellation and deadline checks
     |
     | local CBS only for a coupled fallback
     v
@@ -149,3 +172,10 @@ candidate changes neither routes nor reservations.
 These boundaries do not change the system design: Fleet Manager remains
 centralized, Nav2 stays on each robot, Rolling SIPP is the main temporal
 planner, local CBS is a fallback, and gRPC remains the robot boundary.
+
+To add a planning backend, implement it inside `core/mapf`, normalize its name
+in the existing backend selector, pass cancellation into every expensive loop,
+and return the existing planner result shape. Do not let a backend import
+manager state. To add a manager service, place it in the owning manager module,
+inject state containers and the few required callables in `manager.py`, and
+keep the old entry point as a short adapter until its callers are migrated.

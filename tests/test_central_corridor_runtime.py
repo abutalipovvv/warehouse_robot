@@ -4,7 +4,10 @@ from dataclasses import replace
 from threading import Event
 
 from fleet_manager.manager.tasks.models import FleetOrder
-from fleet_manager.manager.planning import PlanningSolverService
+from fleet_manager.manager.planning import (
+    PlanningJobRecord,
+    PlanningSolverService,
+)
 from fleet_manager.robot.model import FleetRobot
 from fleet_manager.core.mapping.maps.models import GraphEdge, Landmark
 from fleet_manager.core.traffic.corridors.scheduling.corridor_models import (
@@ -867,8 +870,8 @@ def test_live_prefetch_passes_central_slot_to_sipp(monkeypatch) -> None:
     assert captured[0]["departureNotBefore"][0]["node"] == "A"
     assert captured[0]["authorizedControlledRegions"] == [REGION]
     job = manager._dispatch_job
-    assert isinstance(job, dict)
-    assert robot.name in job["corridor_gates"]
+    assert isinstance(job, PlanningJobRecord)
+    assert robot.name in job.corridor_gates
 
 
 def test_initial_dispatch_uses_the_same_central_corridor_gate(
@@ -929,7 +932,9 @@ def test_initial_dispatch_uses_the_same_central_corridor_gate(
     assert planned.wait(1.0)
     assert captured[0]["departureNotBefore"][0]["node"] == "A"
     assert captured[0]["authorizedControlledRegions"] == [REGION]
-    assert robot.name in manager._dispatch_job["corridor_gates"]
+    job = manager._dispatch_job
+    assert isinstance(job, PlanningJobRecord)
+    assert robot.name in job.corridor_gates
 
 
 def test_dispatch_continuous_failure_is_attributed_only_to_requester() -> None:

@@ -91,6 +91,8 @@ class CbsHighLevelSearch:
         )
 
     def _limit_reason(self, expanded_nodes: int) -> str:
+        if self._limits.cancel_requested():
+            return "planning_cancelled"
         if self._limits.timed_out():
             return self._limits.timeout_reason
         if expanded_nodes >= self._limits.high_level_max_nodes:

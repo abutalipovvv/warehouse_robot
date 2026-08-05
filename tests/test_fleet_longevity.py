@@ -5,6 +5,7 @@ from typing import Any
 import pytest
 
 from fleet_manager.manager.tasks.models import FleetOrder
+from fleet_manager.manager.planning import PlanningJobRecord
 from fleet_manager.robot.model import FleetRobot
 from fleet_manager.core.mapping.maps.models import GraphEdge, Landmark, WorldPoint
 from fleet_manager.manager.tasks.manager import FleetTaskManager
@@ -103,10 +104,10 @@ def test_reset_discards_inflight_planner_result_and_clears_prefetch_state() -> N
     manager._rolling_prefetch_last_attempt_at[robot.name] = 110.0
     robot.rolling_boundary_since = 90.0
     manager._last_async_job_kind = "prefetch"
-    stale_job: dict[str, Any] = {
-        "kind": "prefetch",
-        "done": False,
-        "result": {
+    stale_job = PlanningJobRecord(
+        kind="prefetch",
+        done=False,
+        result={
             "ok": True,
             "plans": [
                 {
@@ -118,13 +119,13 @@ def test_reset_discards_inflight_planner_result_and_clears_prefetch_state() -> N
                 }
             ],
         },
-    }
+    )
     with manager._dispatch_job_lock:
         manager._dispatch_job = stale_job
 
     manager.reset_planning_runtime_state()
 
-    assert stale_job["discard"] is True
+    assert stale_job.discard is True
     assert manager._dispatch_job is stale_job
     assert manager._rolling_prefetch_retry_at == {}
     assert manager._rolling_prefetch_failures == {}
@@ -135,7 +136,7 @@ def test_reset_discards_inflight_planner_result_and_clears_prefetch_state() -> N
 
     # Model the worker finishing after a benchmark reset. Its valid-looking
     # result must only release the worker slot, never mutate the fresh state.
-    stale_job["done"] = True
+    stale_job.done = True
     assert manager._finish_async_simulated_dispatch() == 0
     assert manager._dispatch_job is None
     assert manager._last_async_job_kind == ""
@@ -508,18 +509,20 @@ def test_external_prefetch_blocker_escalates_every_affected_member() -> None:
         pose=_pose(2),
     )
 
-    manager._finish_async_rolling_prefetch({
-        "kind": "prefetch_batch",
-        "entries": entries,
-        "route_revisions": revisions,
-        "result": {
-            "ok": False,
-            "plans": [],
-            "debug": {
-                "reason": "no_low_level_path:external-blocker",
+    manager._finish_async_rolling_prefetch(
+        PlanningJobRecord(
+            kind="prefetch_batch",
+            entries=entries,
+            route_revisions=revisions,
+            result={
+                "ok": False,
+                "plans": [],
+                "debug": {
+                    "reason": "no_low_level_path:external-blocker",
+                },
             },
-        },
-    })
+        )
+    )
 
     assert manager._rolling_prefetch_failures == {
         "robot-1": 1,

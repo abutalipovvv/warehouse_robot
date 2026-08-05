@@ -10,7 +10,7 @@ from fleet_manager.manager.events import FleetEvent
 from fleet_manager.robot.model import FleetRobot
 from fleet_manager.manager.planning import (
     FrozenMapping,
-    PlanningJob,
+    PlanningJobRecord,
     PlanningSnapshot,
     ReservationSnapshot,
     RobotPlanningState,
@@ -18,6 +18,25 @@ from fleet_manager.manager.planning import (
     TrafficResourceSnapshot,
 )
 from fleet_manager.manager.tasks.manager import FleetTaskManager
+
+
+def default_traffic_metrics() -> dict[str, int]:
+    """Return independent counters for one manager instance."""
+
+    return {
+        "waitCyclesDetected": 0,
+        "waitCyclesResolved": 0,
+        "cycleReplans": 0,
+        "coupledReplansStarted": 0,
+        "coupledReplansSucceeded": 0,
+        "coupledReplansFailed": 0,
+        "priorityGrants": 0,
+        "runtimeSafetyRollbacks": 0,
+        "corridorAdmissionWaits": 0,
+        "corridorAdmissionsGranted": 0,
+        "zoneAdmissionWaits": 0,
+        "zoneAdmissionsGranted": 0,
+    }
 
 
 @dataclass(slots=True)
@@ -111,7 +130,7 @@ class TrafficState:
     traffic_zone_queues: dict[str, list[str]] = field(default_factory=dict)
     traffic_zone_tick_now: float = 0.0
 
-    metrics: dict[str, int] = field(default_factory=dict)
+    metrics: dict[str, int] = field(default_factory=default_traffic_metrics)
     last_runtime_safety_rollback: dict[str, Any] | None = None
 
 
@@ -119,7 +138,7 @@ class TrafficState:
 class PlanningState:
     """Planning jobs, replans and rolling-continuation latches."""
 
-    active_job: dict[str, Any] | None = None
+    active_job: PlanningJobRecord | None = None
     last_async_job_kind: str = ""
     runtime_replans: dict[str, dict[str, Any]] = field(default_factory=dict)
     rolling_prefetch_retry_at: dict[str, float] = field(default_factory=dict)
@@ -139,7 +158,7 @@ class PlanningState:
     rolling_prefetch_blockers: dict[str, dict[str, Any]] = field(
         default_factory=dict
     )
-    jobs: dict[str, PlanningJob] = field(default_factory=dict)
+    jobs: dict[str, PlanningJobRecord] = field(default_factory=dict)
     stale_candidates: int = 0
     committed_candidates: int = 0
     submission_sequence: int = 0

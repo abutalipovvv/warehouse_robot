@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 
+from fleet_manager.manager.planning import PlanningJobRecord
 from fleet_manager.manager.tasks.models import FleetOrder
 from fleet_manager.robot.model import FleetRobot
 from fleet_manager.core.mapping.maps.models import GraphEdge, Landmark, WorldPoint
@@ -314,11 +315,11 @@ def test_planning_reset_requeues_discarded_dispatch_and_clears_ephemeral_state()
         {"name": robot.name, "startLm": "A", "goalLm": "B"},
         "B",
     )
-    stale_job = {
-        "kind": "dispatch",
-        "entries": [entry],
-        "done": True,
-        "result": {
+    stale_job = PlanningJobRecord(
+        kind="dispatch",
+        entries=[entry],
+        done=True,
+        result={
             "ok": True,
             "plans": [
                 {
@@ -330,7 +331,7 @@ def test_planning_reset_requeues_discarded_dispatch_and_clears_ephemeral_state()
                 }
             ],
         },
-    }
+    )
     manager._dispatch_job = stale_job
     manager._last_async_job_kind = "prefetch"
     manager._rolling_prefetch_retry_at[robot.name] = 100.0
@@ -348,7 +349,7 @@ def test_planning_reset_requeues_discarded_dispatch_and_clears_ephemeral_state()
 
     manager.reset_planning_runtime_state()
 
-    assert stale_job["discard"]
+    assert stale_job.discard
     assert manager._last_async_job_kind == ""
     assert manager._rolling_prefetch_retry_at == {}
     assert manager._rolling_prefetch_failures == {}

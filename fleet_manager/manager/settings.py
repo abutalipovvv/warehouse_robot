@@ -3,8 +3,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import logging
 import math
 from typing import Any, Mapping
+
+from fleet_manager.core.mapping.navigation.params import ConfigurationError
+
+
+LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -12,6 +18,30 @@ class SettingsSection:
     """Read one configuration section with consistent numeric validation."""
 
     values: Mapping[str, Any]
+    path: str = "configuration"
+    strict: bool = False
+
+    def _corrected(
+        self,
+        name: str,
+        raw: Any,
+        corrected: Any,
+        reason: str,
+    ) -> Any:
+        full_path = f"{self.path}.{name}"
+        if self.strict:
+            raise ConfigurationError(
+                f"{full_path}: {reason}; received {raw!r}"
+            )
+        LOGGER.warning(
+            "configuration compatibility correction: %s received=%r "
+            "using=%r (%s)",
+            full_path,
+            raw,
+            corrected,
+            reason,
+        )
+        return corrected
 
     def number(
         self,
@@ -24,17 +54,66 @@ class SettingsSection:
     ) -> float:
         raw = self.values.get(name, default)
         if raw is None or (default_if_falsy and not raw):
-            raw = default
+            if name in self.values:
+                raw = self._corrected(
+                    name,
+                    raw,
+                    default,
+                    "expected a finite number",
+                )
+            else:
+                raw = default
         try:
             value = float(raw)
         except (TypeError, ValueError, OverflowError):
-            value = float(default)
+            value = float(
+                self._corrected(
+                    name,
+                    raw,
+                    default,
+                    "expected a finite number",
+                )
+            )
+        else:
+            if name in self.values and (
+                isinstance(raw, bool)
+                or not isinstance(raw, (int, float))
+            ):
+                value = float(
+                    self._corrected(
+                        name,
+                        raw,
+                        value,
+                        "expected a number",
+                    )
+                )
         if not math.isfinite(value):
-            value = float(default)
-        if minimum is not None:
-            value = max(float(minimum), value)
-        if maximum is not None:
-            value = min(float(maximum), value)
+            value = float(
+                self._corrected(
+                    name,
+                    raw,
+                    default,
+                    "expected a finite number",
+                )
+            )
+        if minimum is not None and value < float(minimum):
+            value = float(
+                self._corrected(
+                    name,
+                    raw,
+                    minimum,
+                    f"must be >= {minimum}",
+                )
+            )
+        if maximum is not None and value > float(maximum):
+            value = float(
+                self._corrected(
+                    name,
+                    raw,
+                    maximum,
+                    f"must be <= {maximum}",
+                )
+            )
         return value
 
     def integer(
@@ -48,40 +127,126 @@ class SettingsSection:
     ) -> int:
         raw = self.values.get(name, default)
         if raw is None or (default_if_falsy and not raw):
-            raw = default
+            if name in self.values:
+                raw = self._corrected(
+                    name,
+                    raw,
+                    default,
+                    "expected an integer",
+                )
+            else:
+                raw = default
         try:
             value = int(raw)
         except (TypeError, ValueError, OverflowError):
-            value = int(default)
-        if minimum is not None:
-            value = max(int(minimum), value)
-        if maximum is not None:
-            value = min(int(maximum), value)
+            value = int(
+                self._corrected(
+                    name,
+                    raw,
+                    default,
+                    "expected an integer",
+                )
+            )
+        else:
+            if name in self.values and (
+                isinstance(raw, bool) or not isinstance(raw, int)
+            ):
+                value = int(
+                    self._corrected(
+                        name,
+                        raw,
+                        value,
+                        "expected an integer",
+                    )
+                )
+        if minimum is not None and value < int(minimum):
+            value = int(
+                self._corrected(
+                    name,
+                    raw,
+                    minimum,
+                    f"must be >= {minimum}",
+                )
+            )
+        if maximum is not None and value > int(maximum):
+            value = int(
+                self._corrected(
+                    name,
+                    raw,
+                    maximum,
+                    f"must be <= {maximum}",
+                )
+            )
         return value
 
     def flag(self, name: str, default: bool = False) -> bool:
         raw = self.values.get(name, default)
+        if isinstance(raw, bool):
+            return raw
         if isinstance(raw, str):
             normalized = raw.strip().lower()
             if normalized in {"1", "true", "yes", "on"}:
-                return True
+                return bool(
+                    self._corrected(
+                        name,
+                        raw,
+                        True,
+                        "expected a boolean",
+                    )
+                )
             if normalized in {"0", "false", "no", "off", ""}:
-                return False
+                return bool(
+                    self._corrected(
+                        name,
+                        raw,
+                        False,
+                        "expected a boolean",
+                    )
+                )
+        if name not in self.values:
             return bool(default)
-        return bool(raw)
+        return bool(
+            self._corrected(
+                name,
+                raw,
+                default,
+                "expected a boolean",
+            )
+        )
 
     def text(self, name: str, default: str = "") -> str:
         raw = self.values.get(name, default)
-        return str(default if raw is None else raw)
+        if isinstance(raw, str):
+            return raw
+        if name not in self.values:
+            return str(default)
+        return str(
+            self._corrected(
+                name,
+                raw,
+                default,
+                "expected text",
+            )
+        )
 
 
 class FleetSettings:
     """Live section access that remains valid when callers mutate ``params``."""
 
-    __slots__ = ("_root",)
+    __slots__ = ("_root", "_strict")
 
-    def __init__(self, root: Mapping[str, Any]) -> None:
+    def __init__(
+        self,
+        root: Mapping[str, Any],
+        *,
+        strict: bool | None = None,
+    ) -> None:
         self._root = root
+        self._strict = (
+            bool(root.get("strict_configuration", False))
+            if strict is None
+            else bool(strict)
+        )
 
     @property
     def fleet(self) -> SettingsSection:
@@ -105,4 +270,22 @@ class FleetSettings:
 
     def section(self, name: str) -> SettingsSection:
         value = self._root.get(name)
-        return SettingsSection(value if isinstance(value, dict) else {})
+        if not isinstance(value, dict):
+            if value is not None:
+                section = SettingsSection(
+                    {},
+                    path="configuration",
+                    strict=self._strict,
+                )
+                section._corrected(
+                    name,
+                    value,
+                    {},
+                    "expected a mapping",
+                )
+            value = {}
+        return SettingsSection(
+            value,
+            path=f"configuration.{name}",
+            strict=self._strict,
+        )

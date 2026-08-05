@@ -12,7 +12,7 @@ from fleet_manager.core.traffic.corridors.scheduling.corridor_models import (
     CorridorSlotState,
 )
 
-from .controlled_corridor_admission_models import _CentralCorridorBuild
+from .models import _CentralCorridorBuild
 
 
 class ControlledCorridorRequestCollectionMixin:

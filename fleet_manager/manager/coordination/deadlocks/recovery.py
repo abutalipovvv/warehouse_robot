@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from fleet_manager.robot.model import FleetRobot
-from fleet_manager.manager.coordination.deadlocks.recovery.cycles.deadlock_cycle_recovery_models import (
+from fleet_manager.manager.coordination.deadlocks.models import (
     _WaitCycleDecisionContext,
 )
 

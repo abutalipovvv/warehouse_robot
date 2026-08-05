@@ -67,6 +67,7 @@ def _terminal_statuses(
     terminal = {
         PlanningJobStatus.COMPLETED,
         PlanningJobStatus.CANCELLED,
+        PlanningJobStatus.DEADLINE_EXCEEDED,
         PlanningJobStatus.FAILED,
     }
     return {
@@ -203,8 +204,71 @@ def test_cancel_queued_job_and_deadline_handling() -> None:
 
     statuses = _terminal_statuses(worker.take_job_events())
     assert statuses["cancelled"] is PlanningJobStatus.CANCELLED
-    assert statuses["expired"] is PlanningJobStatus.CANCELLED
+    assert statuses["expired"] is PlanningJobStatus.DEADLINE_EXCEEDED
     assert executed == ["active"]
+    assert worker.close()
+
+
+def test_coalescing_stress_keeps_physical_heap_bounded() -> None:
+    worker = PlanningWorker(max_queue_size=2)
+    active_started = Event()
+    release_active = Event()
+    executed: list[str] = []
+
+    def solver(job: PlanningJob) -> PlanCandidate:
+        executed.append(job.job_id)
+        if job.job_id == "active":
+            active_started.set()
+            release_active.wait(2.0)
+        return _candidate(job)
+
+    assert worker.submit_job(_job("active", PlanningPriority.ORDER_DISPATCH), solver)
+    assert active_started.wait(1.0)
+    latest = ""
+    for index in range(1000):
+        latest = f"rolling-{index}"
+        assert worker.submit_job(
+            _job(
+                latest,
+                PlanningPriority.ROLLING_CONTINUATION,
+                key="rolling:r1",
+            ),
+            solver,
+        )
+        stats = worker.stats()
+        assert stats.queued_jobs <= 1
+        assert stats.heap_entries <= 1
+
+    release_active.set()
+    assert worker.join(2.0)
+    assert executed == ["active", latest]
+    assert worker.stats().heap_entries == 0
+    assert worker.close()
+
+
+def test_cancelled_queued_jobs_do_not_leave_heap_entries() -> None:
+    worker = PlanningWorker(max_queue_size=2)
+    active_started = Event()
+    release_active = Event()
+
+    def solver(job: PlanningJob) -> PlanCandidate:
+        if job.job_id == "active":
+            active_started.set()
+            release_active.wait(1.0)
+        return _candidate(job)
+
+    assert worker.submit_job(_job("active", PlanningPriority.ORDER_DISPATCH), solver)
+    assert active_started.wait(1.0)
+    for index in range(100):
+        queued = _job(f"cancel-{index}", PlanningPriority.ORDER_DISPATCH)
+        assert worker.submit_job(queued, solver)
+        assert worker.cancel_job(queued.job_id)
+        stats = worker.stats()
+        assert stats.queued_jobs == 0
+        assert stats.heap_entries == 0
+
+    release_active.set()
+    assert worker.join(1.0)
     assert worker.close()
 
 

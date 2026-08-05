@@ -724,6 +724,25 @@ def test_rolling_sipp_observes_the_runtime_planning_deadline() -> None:
     assert result.debug.reason == "rolling_sipp:planning_timeout"
 
 
+def test_fleet_planner_honors_boolean_cancellation_callback() -> None:
+    landmarks = _landmarks("A", "B")
+    planner = FleetMapfPlanner(
+        landmarks,
+        [_edge(landmarks, "A", "B")],
+        params=_rolling_params(),
+    )
+
+    with pytest.raises(InterruptedError, match="planning cancelled"):
+        planner.plan(
+            {
+                "robots": [
+                    {"name": "r1", "startLm": "A", "goalLm": "B"}
+                ]
+            },
+            should_cancel=lambda: True,
+        )
+
+
 def test_rolling_sipp_backend_waits_for_reserved_vertex_interval() -> None:
     planner = FleetMapfPlanner(
         _landmarks("A", "B", "C"),

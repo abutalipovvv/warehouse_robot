@@ -14,7 +14,8 @@ mutable runtime objects.
 
 ## Контейнеры состояния
 
-`FleetManagerCore` является composition root и создаёт четыре контейнера:
+`FleetManagerCore` в `manager.py` является composition root и явно создаёт
+четыре контейнера:
 
 - `FleetState` — robots, task store, operator events, world obstacles и общий
   `RevisionClock`;
@@ -25,7 +26,10 @@ mutable runtime objects.
 - `RecoveryState` — wait cycles, recovery attempts, quarantine и cooldowns.
 
 Контейнеры собраны в одном модуле `fleet_manager/manager/state.py`.
-Immutable snapshot/job/result модели находятся в
+Там же явно создаются `FleetMapfPlanner`, robot gateway,
+`PlanningSnapshotFactory`, `PlanningSolverService`, bounded
+`PlanningWorker`, `PlanCommitService` и три task service. Immutable
+snapshot/job/result модели находятся в
 `fleet_manager/manager/planning.py`, включая границы solver/commit. Bounded
 worker находится в `fleet_manager/manager/scheduler.py`. Отдельного
 package с одним state-классом на файл нет.
@@ -88,9 +92,11 @@ Lifecycle job проходит состояния:
 
 `QUEUED → RUNNING → COMPLETED → COMMITTED`
 
-Терминальные альтернативы: `CANCELLED`, `STALE`, `FAILED`. Переходы проверяет
-`PlanningJob.transition()`. Worker публикует immutable lifecycle events;
-`PlanningState` и `PlanningJob.status` меняет runtime owner при сборе событий.
+Терминальные альтернативы: `CANCELLED`, `DEADLINE_EXCEEDED`, `STALE`,
+`FAILED`. Immutable `PlanningJob` описывает запрос, а mutable
+`PlanningJobRecord` хранит lifecycle. Его `transition_to()` проверяет
+разрешённые переходы. Worker публикует immutable lifecycle events; record в
+`PlanningState` меняет только runtime owner при сборе событий.
 
 ## Revisioned и atomic commit
 
@@ -119,19 +125,45 @@ Scheduler использует один solver thread и ограниченну�
 более приоритетная job может вытеснить худшую queued job; обычный dispatch не
 вытесняет safety work. Одинаковый `coalescing_key` заменяет ещё не запущенную
 job. Запущенная устаревающая job получает cooperative cancellation token.
-Deadline, exception и shutdown завершаются явным terminal status. Unbounded
-queue отсутствует.
+После coalescing, queued cancellation и eviction scheduler пересобирает heap из
+актуального словаря queued jobs. Поэтому bounded является не только логическое
+число jobs, но и физическое число heap entries. `stats()` возвращает только
+числа и не раскрывает mutable collections.
+
+Cancellation token и deadline проходят через `FleetMapfPlanner`, Rolling SIPP,
+CBS, SIPP и общий A*. Проверки выполняются между robot/window/CBS-node этапами
+и в search expansion loops. Cooperative cancellation имеет статус
+`CANCELLED`, deadline — `DEADLINE_EXCEEDED`, неожиданное исключение — `FAILED`.
+Ни один из них не маскируется как обычный solver failure. Unbounded queue
+отсутствует.
+
+## Primary и fallback result
+
+`PlanningSolverService` сначала запускает primary payload. При обычном
+неуспешном результате он может запустить подготовленный fallback payload.
+`PlanCandidate.result` всегда содержит реально выбранный результат, а
+`backend_used` — его backend. Диагностика обоих запусков остаётся в metadata.
+
+При `strict_stationary_avoidance=True` успешный relaxed fallback остаётся
+только диагностикой: применять маршрут, нарушающий этот safety policy, нельзя.
+При обычном разрешённом fallback успешный fallback становится candidate result
+и проходит тот же revision check и atomic commit. Исключение primary сохраняет
+прежнюю policy: fallback не запускается, ошибка остаётся `FAILED`.
 
 ## Явные services
 
 - `PlanningSolverService` получает только immutable `PlanningJob` и planner
   callable;
 - `PlanCommitService` владеет revision check и rollback transaction;
-- `OrderAdmissionService` получает `FleetState`, landmarks и clock;
-- `RollingContinuationService` получает `FleetState`, `PlanningState`, clock и
-  retry policy;
+- `OrderAdmissionService` получает `FleetState`, landmarks, clock и явные
+  robot availability callbacks; он валидирует order и детерминированно выбирает
+  допустимого робота;
+- `RollingContinuationService` получает `FleetState`, `PlanningState`, clock,
+  retry policy и узкие route callbacks; он выбирает кандидатов и строит rolling
+  planning requests;
 - `ReplanningService` получает `FleetState`, `PlanningState`, `RecoveryState`,
-  безопасный выбор start LM и clock.
+  безопасный выбор start LM, retry policy и clock; он создаёт transaction state,
+  deduplicate/coupled state и записывает bounded failure retry.
 
 Ни один из этих сервисов не получает весь `FleetManagerCore`. Spatial routing
 использует общий `AStarSolver` через `_LandmarkRouteProblem`; landmark neighbors,
@@ -141,8 +173,16 @@ edge costs, congestion penalties, forbidden edges, heuristic и tie-breaking
 ## Постепенная миграция mixin
 
 Mixin-архитектура остаётся для motion, corridor admission, traffic zones,
-recovery orchestration и части dispatch commit. Это намеренный постепенный
-переход: публичные entry points и safety checks не переписаны big-bang способом.
+recovery orchestration и части dispatch commit. После удаления пяти
+composition-only прослоек MRO `FleetManagerCore` всё ещё содержит 53 класса с
+суффиксом `Mixin`. Это намеренный постепенный переход: публичные entry points и
+safety checks не переписаны big-bang способом.
+
+`runtime_state.py` больше не создаёт контейнеры, planner, scheduler, services,
+corridor graph или traffic-zone index. Он содержит compatibility properties,
+revision fingerprint, runtime cleanup/reset, clock и lifecycle helpers.
+Map-derived traffic state создаётся видимым методом `_create_runtime_state()` в
+composition root.
 
 Следующий модуль переносится так:
 

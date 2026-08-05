@@ -12,6 +12,15 @@ from fleet_manager.robot.model import FleetRobot
 from fleet_manager.manager.state import FleetState, PlanningState
 
 
+RollingPrefetchEntry = tuple[
+    FleetOrder,
+    FleetRobot,
+    dict[str, Any],
+    str,
+    float,
+]
+
+
 class RollingContinuationService:
     """Calculate continuation priorities from explicit planning state."""
 
@@ -21,11 +30,176 @@ class RollingContinuationService:
         planning_state: PlanningState,
         retry_interval: Callable[[FleetOrder], float],
         clock: Callable[[], float],
+        *,
+        robot_enabled: Callable[[FleetRobot], bool] | None = None,
+        active_order_target: Callable[[FleetOrder], str] | None = None,
+        planning_goal: Callable[[str, str, FleetOrder], str] | None = None,
+        pose_at_trajectory: Callable[
+            [list[dict[str, Any]], float],
+            dict[str, float] | None,
+        ]
+        | None = None,
+        pose_at_landmark: Callable[[str], dict[str, float] | None]
+        | None = None,
+        attach_spatial_route: Callable[
+            [dict[str, Any], FleetOrder, str, str, str],
+            None,
+        ]
+        | None = None,
+        valid_blockers: Callable[[str], list[str]] | None = None,
+        waits_at_boundary: Callable[[FleetRobot], bool] | None = None,
+        prefetch_lead: Callable[[], float] | None = None,
     ) -> None:
         self._fleet = fleet_state
         self._state = planning_state
         self._retry_interval = retry_interval
         self._clock = clock
+        self._robot_enabled = robot_enabled or (lambda _robot: True)
+        self._active_order_target = active_order_target
+        self._planning_goal = planning_goal
+        self._pose_at_trajectory = pose_at_trajectory
+        self._pose_at_landmark = pose_at_landmark
+        self._attach_spatial_route = attach_spatial_route
+        self._valid_blockers = valid_blockers
+        self._waits_at_boundary = waits_at_boundary
+        self._prefetch_lead = prefetch_lead
+
+    def select_candidates(self) -> list[RollingPrefetchEntry]:
+        """Build deterministic rolling requests from explicit dependencies."""
+
+        if any(
+            dependency is None
+            for dependency in (
+                self._active_order_target,
+                self._planning_goal,
+                self._pose_at_trajectory,
+                self._pose_at_landmark,
+                self._attach_spatial_route,
+                self._valid_blockers,
+                self._waits_at_boundary,
+                self._prefetch_lead,
+            )
+        ):
+            raise RuntimeError(
+                "rolling continuation routing dependencies are not configured"
+            )
+
+        active_order_target = self._active_order_target
+        planning_goal_for = self._planning_goal
+        pose_at_trajectory = self._pose_at_trajectory
+        pose_at_landmark = self._pose_at_landmark
+        attach_spatial_route = self._attach_spatial_route
+        valid_blockers = self._valid_blockers
+        waits_at_boundary = self._waits_at_boundary
+        prefetch_lead = self._prefetch_lead
+        assert active_order_target is not None
+        assert planning_goal_for is not None
+        assert pose_at_trajectory is not None
+        assert pose_at_landmark is not None
+        assert attach_spatial_route is not None
+        assert valid_blockers is not None
+        assert waits_at_boundary is not None
+        assert prefetch_lead is not None
+
+        now = float(self._clock())
+        required_stopped_blockers: set[str] = set()
+        for requester_name in list(self._state.rolling_prefetch_blockers):
+            for blocker_name in valid_blockers(requester_name):
+                blocker = self._fleet.robots.get(blocker_name)
+                if blocker is not None and waits_at_boundary(blocker):
+                    required_stopped_blockers.add(blocker_name)
+
+        candidates: list[
+            tuple[
+                tuple[float, float, float, str],
+                RollingPrefetchEntry,
+            ]
+        ] = []
+        for robot in self._fleet.robots.values():
+            if not self._robot_enabled(robot):
+                continue
+            if (
+                robot.is_remote()
+                or robot.pending_route is not None
+                or robot.status not in {"MOVING", "WAITING"}
+                or not robot.active_order_id
+                or not robot.route_chunk_goal_lm
+                or not robot.trajectory
+            ):
+                continue
+            order = self._fleet.task_manager.orders.get(robot.active_order_id)
+            if order is None or order.status in TERMINAL_ORDER_STATUSES:
+                continue
+            final_goal = active_order_target(order)
+            if not final_goal or robot.route_chunk_goal_lm == final_goal:
+                continue
+            final_time = float(robot.trajectory[-1].get("t", 0.0) or 0.0)
+            remaining = max(0.0, final_time - robot.route_clock)
+            if remaining > prefetch_lead():
+                continue
+            self.mark_eligible(order, robot, remaining, now)
+            if not self.retry_is_due(
+                robot.name,
+                now=now,
+                required_blocker=robot.name in required_stopped_blockers,
+            ):
+                continue
+
+            start_lm = robot.route_chunk_goal_lm
+            try:
+                planning_goal = planning_goal_for(
+                    start_lm,
+                    final_goal,
+                    order,
+                )
+                handoff_pose = pose_at_trajectory(
+                    robot.trajectory,
+                    final_time,
+                ) or pose_at_landmark(start_lm)
+                request: dict[str, Any] = {
+                    "name": robot.name,
+                    "startLm": start_lm,
+                    "goalLm": planning_goal,
+                    "startPose": handoff_pose,
+                }
+                attach_spatial_route(
+                    request,
+                    order,
+                    start_lm,
+                    planning_goal,
+                    final_goal,
+                )
+            except ValueError as exc:
+                if order.internal_kind != "traffic_clearance":
+                    raise
+                self.defer_invalid_clearance(
+                    order,
+                    robot,
+                    exc,
+                    now=now,
+                )
+                continue
+            candidates.append(
+                (
+                    self.candidate_priority(
+                        order,
+                        robot,
+                        remaining,
+                        now,
+                    ),
+                    (
+                        order,
+                        robot,
+                        request,
+                        final_goal,
+                        remaining,
+                    ),
+                )
+            )
+        return [
+            entry
+            for _, entry in sorted(candidates, key=lambda item: item[0])
+        ]
 
     def mark_eligible(
         self,
@@ -179,109 +353,7 @@ class RollingContinuationMixin:
     def _rolling_prefetch_candidates(
         self,
     ) -> list[tuple[FleetOrder, FleetRobot, dict[str, Any], str, float]]:
-        lead = self._rolling_prefetch_lead()
-        now = self._now()
-        required_stopped_blockers: set[str] = set()
-        for requester_name in list(self._rolling_prefetch_blockers):
-            for blocker_name in self._valid_rolling_prefetch_blockers(
-                requester_name
-            ):
-                blocker = self.robots.get(blocker_name)
-                if (
-                    blocker is not None
-                    and self._robot_waits_at_rolling_boundary(blocker)
-                ):
-                    required_stopped_blockers.add(blocker_name)
-        candidates: list[
-            tuple[
-                tuple[float, float, float, str],
-                FleetOrder,
-                FleetRobot,
-                dict[str, Any],
-                str,
-                float,
-            ]
-        ] = []
-        for robot in self._runtime_robots():
-            if (
-                robot.is_remote()
-                or robot.pending_route is not None
-                or robot.status not in {"MOVING", "WAITING"}
-                or not robot.active_order_id
-                or not robot.route_chunk_goal_lm
-                or not robot.trajectory
-            ):
-                continue
-            order = self.orders.get(robot.active_order_id)
-            if order is None or order.status in TERMINAL_ORDER_STATUSES:
-                continue
-            final_goal = self._active_order_target(order)
-            if not final_goal or robot.route_chunk_goal_lm == final_goal:
-                continue
-            final_time = float(robot.trajectory[-1].get("t", 0.0) or 0.0)
-            remaining = max(0.0, final_time - robot.route_clock)
-            if remaining > lead:
-                continue
-            self._rolling_continuation_service.mark_eligible(
-                order,
-                robot,
-                remaining,
-                now,
-            )
-            if not self._rolling_continuation_service.retry_is_due(
-                robot.name,
-                now=now,
-                required_blocker=robot.name in required_stopped_blockers,
-            ):
-                continue
-            start_lm = robot.route_chunk_goal_lm
-            try:
-                planning_goal = self._rolling_planning_goal(
-                    start_lm,
-                    final_goal,
-                    order,
-                )
-                handoff_pose = self._pose_at_trajectory(
-                    robot.trajectory,
-                    final_time,
-                ) or self._pose_at_landmark(start_lm)
-                request: dict[str, Any] = {
-                    "name": robot.name,
-                    "startLm": start_lm,
-                    "goalLm": planning_goal,
-                    # Preserve the exact arrival yaw. Resetting to the landmark's
-                    # synthetic yaw=0 made the body rotate instantaneously at the
-                    # rolling handoff and could sweep through a nearby robot.
-                    "startPose": handoff_pose,
-                }
-                self._attach_spatial_route_to_request(
-                    request,
-                    order,
-                    start_lm,
-                    planning_goal,
-                    final_goal,
-                )
-            except ValueError as exc:
-                if order.internal_kind != "traffic_clearance":
-                    raise
-                self._defer_invalid_clearance_route(order, robot, now, exc)
-                continue
-            priority = self._rolling_prefetch_candidate_priority(
-                order,
-                robot,
-                remaining,
-                now,
-            )
-            candidates.append(
-                (priority, order, robot, request, final_goal, remaining)
-            )
-        return [
-            (order, robot, request, final_goal, remaining)
-            for _, order, robot, request, final_goal, remaining in sorted(
-                candidates,
-                key=lambda item: item[0],
-            )
-        ]
+        return self._rolling_continuation_service.select_candidates()
 
     def _defer_invalid_clearance_route(
         self,

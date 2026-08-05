@@ -14,6 +14,7 @@ from fleet_manager.manager.planning import (
     FrozenMapping,
     PlanCandidate,
     PlanningJob,
+    PlanningJobRecord,
     PlanningPriority,
     PlanningReason,
     PlanningSnapshot,
@@ -221,12 +222,8 @@ def test_dispatch_completion_does_not_publish_into_replaced_job(
     manager = _manager()
     planning_started = Event()
     release_planning = Event()
-    stale_job = {"kind": "dispatch", "done": False, "result": None}
-    replacement_job = {
-        "kind": "prefetch",
-        "done": False,
-        "result": None,
-    }
+    stale_job = PlanningJobRecord(kind="dispatch")
+    replacement_job = PlanningJobRecord(kind="prefetch")
 
     def plan(_requests, _payload):
         planning_started.set()
@@ -248,15 +245,13 @@ def test_dispatch_completion_does_not_publish_into_replaced_job(
     release_planning.set()
     assert manager._planning_worker.join(timeout=1.0)
 
-    assert stale_job["kind"] == "dispatch"
-    assert stale_job["done"] is False
-    assert stale_job["result"] is None
-    assert "candidate" not in stale_job
-    assert replacement_job == {
-        "kind": "prefetch",
-        "done": False,
-        "result": None,
-    }
+    assert stale_job.kind == "dispatch"
+    assert stale_job.done is False
+    assert stale_job.result is None
+    assert stale_job.candidate is None
+    assert replacement_job.kind == "prefetch"
+    assert replacement_job.done is False
+    assert replacement_job.result is None
     with manager._dispatch_job_lock:
         manager._dispatch_job = None
     manager.close()
@@ -266,7 +261,7 @@ def test_dispatch_helper_preserves_background_failure_reason(
     monkeypatch,
 ) -> None:
     manager = _manager()
-    job = {"kind": "dispatch", "done": False, "result": None}
+    job = PlanningJobRecord(kind="dispatch")
 
     def fail(_requests, _payload):
         raise RuntimeError("no route")
@@ -281,8 +276,8 @@ def test_dispatch_helper_preserves_background_failure_reason(
     )
     assert manager._planning_worker.join(timeout=1.0)
 
-    assert job["done"] is True
-    candidate = job["candidate"]
+    assert job.done is True
+    candidate = job.candidate
     assert isinstance(candidate, PlanCandidate)
     assert candidate.result.get("ok") is False
     assert candidate.diagnostics.get("reason") == "planning solver failed: no route"
@@ -298,12 +293,10 @@ def test_manager_close_discards_current_job_and_joins_worker(
     close_finished = Event()
     corridor_gates = {"r1": {"slot": "test"}}
     released_gates: list[object] = []
-    job = {
-        "kind": "dispatch",
-        "done": False,
-        "result": None,
-        "corridor_gates": corridor_gates,
-    }
+    job = PlanningJobRecord(
+        kind="dispatch",
+        corridor_gates=corridor_gates,
+    )
 
     def plan(_requests, _payload):
         planning_started.set()
@@ -331,14 +324,14 @@ def test_manager_close_discards_current_job_and_joins_worker(
         daemon=False,
     )
     closer.start()
-    assert _wait_until(lambda: bool(job.get("discard")))
+    assert _wait_until(lambda: job.discard)
     assert not close_finished.is_set()
 
     release_planning.set()
     closer.join(1.0)
     assert not closer.is_alive()
     assert close_finished.is_set()
-    assert job["discard"] is True
+    assert job.discard is True
     assert manager._dispatch_job is None
     assert manager._planning_worker.state is PlanningWorkerState.CLOSED
     assert released_gates == [corridor_gates]

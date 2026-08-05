@@ -128,12 +128,14 @@ class LmCBSPlanner:
         low_level_max_time: int | None = None,
         max_high_level_nodes: int | None = None,
         max_planning_time_sec: float | None = None,
+        should_cancel: Callable[[], bool] | None = None,
     ) -> PlannerResult:
         debug = PlannerDebug(reason="init")
         limits = self._planning_limits(
             low_level_max_time=low_level_max_time,
             max_high_level_nodes=max_high_level_nodes,
             max_planning_time_sec=max_planning_time_sec,
+            should_cancel=should_cancel,
         )
         reservations = CbsGlobalReservations.from_raw(
             vertices=reserved_vertex_constraints or (),
@@ -197,6 +199,7 @@ class LmCBSPlanner:
         low_level_max_time: int | None,
         max_high_level_nodes: int | None,
         max_planning_time_sec: float | None,
+        should_cancel: Callable[[], bool] | None,
     ) -> CbsPlanningLimits:
         low_level_limit = (
             self.low_level_max_time
@@ -220,6 +223,7 @@ class LmCBSPlanner:
             time_budget_seconds=planning_budget,
             started_at=started_at,
             clock=py_time.monotonic,
+            should_cancel=should_cancel,
         )
 
     def _environment(
@@ -254,6 +258,7 @@ class LmCBSPlanner:
             low_level_max_time=limits.low_level_max_time,
             wait_cost=self.wait_cost,
             planning_deadline=limits.deadline,
+            should_cancel=limits.should_cancel,
         )
 
     @staticmethod

@@ -32,6 +32,7 @@ class CbsPlanningLimits:
     time_budget_seconds: float
     started_at: float
     clock: Clock
+    should_cancel: Callable[[], bool] | None = None
 
     @property
     def deadline(self) -> float:
@@ -45,6 +46,12 @@ class CbsPlanningLimits:
         return (
             self.clock() - self.started_at
             >= self.time_budget_seconds
+        )
+
+    def cancel_requested(self) -> bool:
+        return bool(
+            self.should_cancel is not None
+            and self.should_cancel()
         )
 
 

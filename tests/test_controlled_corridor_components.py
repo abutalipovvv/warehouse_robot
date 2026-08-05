@@ -5,41 +5,36 @@ from pathlib import Path
 
 import pytest
 
-from fleet_manager.manager.coordination.corridors.admission.controlled_corridor_admission import (
-    ControlledCorridorAdmissionMixin,
-)
-from fleet_manager.manager.coordination.corridors.admission.controlled_corridor_admission_decisions import (
+from fleet_manager.manager.coordination.corridors.admission import (
     ControlledCorridorAdmissionDecisionMixin,
 )
-from fleet_manager.manager.coordination.corridors.admission.controlled_corridor_admission_models import (
+from fleet_manager.manager.coordination.corridors.models import (
     _CentralCorridorBuild,
     _CentralCorridorPublication,
     _CentralCorridorWaitContext,
 )
-from fleet_manager.manager.coordination.corridors.admission.controlled_corridor_admission_requests import (
+from fleet_manager.manager.coordination.corridors.requests import (
     ControlledCorridorRequestCollectionMixin,
 )
-from fleet_manager.manager.coordination.corridors.admission.controlled_corridor_admission_runtime import (
+from fleet_manager.manager.coordination.corridors.publication import (
     ControlledCorridorRuntimePublicationMixin,
 )
-from fleet_manager.manager.coordination.corridors.prefetch.controlled_corridor_prefetch import (
-    ControlledCorridorPrefetchMixin,
-)
-from fleet_manager.manager.coordination.corridors.prefetch.controlled_corridor_prefetch_gate import (
+from fleet_manager.manager.coordination.corridors.prefetch import (
     ControlledCorridorPrefetchGateMixin,
 )
-from fleet_manager.manager.coordination.corridors.prefetch.controlled_corridor_prefetch_intent import (
+from fleet_manager.manager.coordination.corridors.intent import (
     ControlledCorridorPrefetchIntentMixin,
 )
-from fleet_manager.manager.coordination.corridors.prefetch.controlled_corridor_prefetch_models import (
+from fleet_manager.manager.coordination.corridors.models import (
     _CorridorIntentDraft,
     _CorridorPlannedPassage,
     _CorridorRouteDraft,
     _CorridorValidationContext,
 )
-from fleet_manager.manager.coordination.corridors.prefetch.controlled_corridor_prefetch_validation import (
+from fleet_manager.manager.coordination.corridors.validation import (
     ControlledCorridorPrefetchValidationMixin,
 )
+from fleet_manager.manager.coordination.routing.routing import TrafficRoutingMixin
 
 
 ADMISSION_HOOKS = {
@@ -90,28 +85,30 @@ PREFETCH_HOOKS = {
 }
 
 
-def test_admission_facade_preserves_all_runtime_hooks() -> None:
-    assert ControlledCorridorAdmissionMixin.__bases__ == (
+def test_routing_composition_preserves_all_admission_hooks() -> None:
+    admission_bases = (
         ControlledCorridorRuntimePublicationMixin,
         ControlledCorridorRequestCollectionMixin,
         ControlledCorridorAdmissionDecisionMixin,
     )
+    assert all(owner in TrafficRoutingMixin.__bases__ for owner in admission_bases)
     for owner, hook_names in ADMISSION_HOOKS.items():
         for hook_name in hook_names:
-            assert getattr(ControlledCorridorAdmissionMixin, hook_name) is (
+            assert getattr(TrafficRoutingMixin, hook_name) is (
                 getattr(owner, hook_name)
             )
 
 
-def test_prefetch_facade_preserves_all_runtime_hooks() -> None:
-    assert ControlledCorridorPrefetchMixin.__bases__ == (
+def test_routing_composition_preserves_all_prefetch_hooks() -> None:
+    prefetch_bases = (
         ControlledCorridorPrefetchGateMixin,
         ControlledCorridorPrefetchIntentMixin,
         ControlledCorridorPrefetchValidationMixin,
     )
+    assert all(owner in TrafficRoutingMixin.__bases__ for owner in prefetch_bases)
     for owner, hook_names in PREFETCH_HOOKS.items():
         for hook_name in hook_names:
-            assert getattr(ControlledCorridorPrefetchMixin, hook_name) is (
+            assert getattr(TrafficRoutingMixin, hook_name) is (
                 getattr(owner, hook_name)
             )
 
@@ -144,12 +141,12 @@ def test_snapshot_accumulators_are_explicitly_mutable(model: type[object]) -> No
 def test_controlled_corridor_stages_keep_methods_reviewable() -> None:
     traffic_dir = Path(__file__).parents[1] / "fleet_manager/manager/coordination"
     component_paths = (
-        "corridors/admission/controlled_corridor_admission_decisions.py",
-        "corridors/admission/controlled_corridor_admission_requests.py",
-        "corridors/admission/controlled_corridor_admission_runtime.py",
-        "corridors/prefetch/controlled_corridor_prefetch_intent.py",
-        "corridors/prefetch/controlled_corridor_prefetch_gate.py",
-        "corridors/prefetch/controlled_corridor_prefetch_validation.py",
+        "corridors/admission.py",
+        "corridors/requests.py",
+        "corridors/publication.py",
+        "corridors/intent.py",
+        "corridors/prefetch.py",
+        "corridors/validation.py",
     )
     oversized: dict[str, tuple[str, int]] = {}
     for component_path in component_paths:

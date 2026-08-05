@@ -12,7 +12,7 @@ from fleet_manager.core.traffic.corridors.scheduling.corridor_models import (
     CorridorResourceWindow,
 )
 
-from .controlled_corridor_prefetch_models import (
+from .models import (
     _CorridorIntentDraft,
     _CorridorRouteDraft,
 )

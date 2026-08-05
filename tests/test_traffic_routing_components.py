@@ -5,19 +5,31 @@ import random
 from types import SimpleNamespace
 from typing import Any
 
-from fleet_manager.manager.coordination.corridors.admission.controlled_corridor_admission import (
-    ControlledCorridorAdmissionMixin,
+from fleet_manager.manager.coordination.corridors.admission import (
+    ControlledCorridorAdmissionDecisionMixin,
 )
 from fleet_manager.manager.coordination.corridors.passage import (
     ControlledCorridorPassageMixin,
 )
-from fleet_manager.manager.coordination.corridors.prefetch.controlled_corridor_prefetch import (
-    ControlledCorridorPrefetchMixin,
+from fleet_manager.manager.coordination.corridors.intent import (
+    ControlledCorridorPrefetchIntentMixin,
+)
+from fleet_manager.manager.coordination.corridors.prefetch import (
+    ControlledCorridorPrefetchGateMixin,
+)
+from fleet_manager.manager.coordination.corridors.publication import (
+    ControlledCorridorRuntimePublicationMixin,
+)
+from fleet_manager.manager.coordination.corridors.requests import (
+    ControlledCorridorRequestCollectionMixin,
+)
+from fleet_manager.manager.coordination.corridors.validation import (
+    ControlledCorridorPrefetchValidationMixin,
 )
 from fleet_manager.core.traffic.corridors.scheduling.corridor_models import CorridorRequest
-from fleet_manager.manager.coordination.routing.rolling_route_helpers import RollingRouteMixin
+from fleet_manager.manager.coordination.routing.rolling import RollingRouteMixin
 from fleet_manager.manager.coordination.routing.routing import TrafficRoutingMixin
-from fleet_manager.manager.coordination.routing.spatial_detours import SpatialDetourMixin
+from fleet_manager.manager.coordination.routing.spatial import SpatialDetourMixin
 from fleet_manager.manager.coordination.zones import (
     TrafficZoneAdmissionMixin,
 )
@@ -110,8 +122,12 @@ def test_routing_facade_composes_focused_components() -> None:
     assert TrafficRoutingMixin.__bases__ == (
         SpatialDetourMixin,
         ControlledCorridorPassageMixin,
-        ControlledCorridorPrefetchMixin,
-        ControlledCorridorAdmissionMixin,
+        ControlledCorridorPrefetchGateMixin,
+        ControlledCorridorPrefetchIntentMixin,
+        ControlledCorridorPrefetchValidationMixin,
+        ControlledCorridorRuntimePublicationMixin,
+        ControlledCorridorRequestCollectionMixin,
+        ControlledCorridorAdmissionDecisionMixin,
         TrafficZoneAdmissionMixin,
         RollingRouteMixin,
     )
@@ -125,11 +141,11 @@ def test_routing_facade_composes_focused_components() -> None:
     )
     assert (
         TrafficRoutingMixin._controlled_corridor_prefetch_gate
-        is ControlledCorridorPrefetchMixin._controlled_corridor_prefetch_gate
+        is ControlledCorridorPrefetchGateMixin._controlled_corridor_prefetch_gate
     )
     assert (
         TrafficRoutingMixin._prepare_controlled_corridor_admissions
-        is ControlledCorridorAdmissionMixin._prepare_controlled_corridor_admissions
+        is ControlledCorridorRuntimePublicationMixin._prepare_controlled_corridor_admissions
     )
     assert (
         TrafficRoutingMixin._prepare_traffic_zone_admissions

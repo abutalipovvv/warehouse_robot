@@ -14,7 +14,10 @@ from fleet_manager.manager.planning import (
     PlanCommitService,
     PlanCommitStatus,
 )
-from fleet_manager.manager.tasks.order_admission import OrderAdmissionService
+from fleet_manager.manager.tasks.order_admission import (
+    AdmissionStatus,
+    OrderAdmissionService,
+)
 from fleet_manager.manager.tasks.replanning import ReplanningService
 from fleet_manager.manager.tasks.rolling_continuation import (
     RollingContinuationService,
@@ -30,6 +33,7 @@ from fleet_manager.manager.planning import (
     FrozenMapping,
     PlanCandidate,
     PlanningJob,
+    PlanningJobRecord,
     PlanningJobStatus,
     PlanningPriority,
     PlanningReason,
@@ -189,7 +193,7 @@ def test_planning_job_captures_preparation_changes_in_its_revision() -> None:
         manager.traffic_state.stationary_blockers["A"] = "r1"
 
         planning_job = manager._build_planning_job(
-            {"kind": "dispatch"},
+            PlanningJobRecord(kind="dispatch"),
             [],
             {},
         )
@@ -248,8 +252,10 @@ def test_manager_marks_old_candidate_stale_and_requeues_replan() -> None:
         priority=PlanningPriority.SAFETY_REPLAN,
         snapshot=_empty_snapshot(10),
         submitted_at=1.0,
-        status=PlanningJobStatus.COMPLETED,
     )
+    planning_record = PlanningJobRecord(planning_job)
+    planning_record.transition_to(PlanningJobStatus.RUNNING)
+    planning_record.transition_to(PlanningJobStatus.COMPLETED)
     candidate = PlanCandidate.from_result(
         planning_job,
         {
@@ -258,25 +264,21 @@ def test_manager_marks_old_candidate_stale_and_requeues_replan() -> None:
         },
         finished_at=2.0,
     )
-    manager.planning_state.jobs[planning_job.job_id] = planning_job
+    manager.planning_state.jobs[planning_job.job_id] = planning_record
     manager.planning_state.runtime_replans["r1"] = {"stage": "planning"}
-    live_job = {
-        "job_id": planning_job.job_id,
-        "kind": "runtime_replan",
-        "robot_name": "r1",
-        "planning_job": planning_job,
-        "entries": [(order, robot, {}, "B")],
-    }
+    planning_record.kind = "runtime_replan"
+    planning_record.robot_name = "r1"
+    planning_record.entries = [(order, robot, {}, "B")]
 
     try:
         manager.fleet_state.revision.value = 11
-        manager._reject_stale_planning_candidate(live_job, candidate)
+        manager._reject_stale_planning_candidate(planning_record, candidate)
 
         assert robot.trajectory == route_before
         assert manager.traffic_state.temporal_reservations == reservations_before
         assert order.status == "QUEUED"
         assert manager.planning_state.runtime_replans["r1"]["stage"] == "queued"
-        assert planning_job.status is PlanningJobStatus.STALE
+        assert planning_record.status is PlanningJobStatus.STALE
         assert manager.planning_state.stale_candidates == 1
     finally:
         manager.close()
@@ -407,12 +409,13 @@ def test_planning_job_state_machine_rejects_invalid_transition() -> None:
         snapshot=_empty_snapshot(1),
         submitted_at=1.0,
     )
-    job.transition(PlanningJobStatus.RUNNING)
-    job.transition(PlanningJobStatus.COMPLETED)
-    job.transition(PlanningJobStatus.COMMITTED)
+    record = PlanningJobRecord(job)
+    record.transition_to(PlanningJobStatus.RUNNING)
+    record.transition_to(PlanningJobStatus.COMPLETED)
+    record.transition_to(PlanningJobStatus.COMMITTED)
 
     with pytest.raises(ValueError, match="cannot transition"):
-        job.transition(PlanningJobStatus.RUNNING)
+        record.transition_to(PlanningJobStatus.RUNNING)
 
 
 def test_order_admission_service_works_without_full_manager() -> None:
@@ -439,6 +442,35 @@ def test_order_admission_service_works_without_full_manager() -> None:
     assert order.created_at == 12.5
     with pytest.raises(ValueError, match="unknown robot"):
         service.build({"targetLm": "B", "vehicle": "missing"})
+
+
+def test_order_admission_service_selects_robot_without_manager() -> None:
+    landmarks, _ = _graph()
+    fleet_state = FleetState()
+    near = FleetRobot(name="near", current_lm="A")
+    busy = FleetRobot(
+        name="busy",
+        current_lm="B",
+        active_order_id="active",
+    )
+    fleet_state.robots.update({near.name: near, busy.name: busy})
+    service = OrderAdmissionService(
+        fleet_state,
+        landmarks,
+        lambda: 1.0,
+        robot_landmark=lambda robot: robot.current_lm,
+    )
+    order = FleetOrder(order_id="o1", target_lm="B")
+
+    decision = service.admission_result(order)
+
+    assert decision.status is AdmissionStatus.ACCEPTED
+    assert decision.robot_id == near.name
+    assert service.candidate_robots(order) == [near]
+    near.status = "MOVING"
+    deferred = service.admission_result(order)
+    assert deferred.status is AdmissionStatus.DEFERRED
+    assert deferred.reason == "no available robot"
 
 
 def test_rolling_continuation_service_works_without_manager() -> None:
@@ -473,6 +505,69 @@ def test_rolling_continuation_service_works_without_manager() -> None:
     )
     assert robot.rolling_boundary_since == 4.0
     assert state.rolling_prefetch_retry_at[robot.name] == 10.5
+
+
+def test_rolling_service_builds_candidates_without_manager() -> None:
+    fleet_state = FleetState()
+    planning_state = PlanningState()
+    order = FleetOrder(
+        order_id="o1",
+        target_lm="C",
+        targets=["C"],
+        status="EXECUTING",
+    )
+    robot = FleetRobot(
+        name="r1",
+        current_lm="A",
+        status="MOVING",
+        active_order_id=order.order_id,
+        route_chunk_goal_lm="B",
+        route_clock=4.0,
+        trajectory=[
+            {"t": 0.0, "x": 0.0, "y": 0.0, "yaw": 0.0},
+            {"t": 5.0, "x": 1.0, "y": 0.0, "yaw": 0.0},
+        ],
+    )
+    fleet_state.robots[robot.name] = robot
+    fleet_state.task_manager.orders[order.order_id] = order
+
+    def attach_route(request, _order, start, goal, final) -> None:
+        request["spatialRouteNodes"] = [start, goal, final]
+
+    service = RollingContinuationService(
+        fleet_state,
+        planning_state,
+        lambda _order: 0.5,
+        lambda: 10.0,
+        active_order_target=lambda current: current.target_lm,
+        planning_goal=lambda _start, final, _order: final,
+        pose_at_trajectory=lambda trajectory, _elapsed: {
+            "x": trajectory[-1]["x"],
+            "y": trajectory[-1]["y"],
+            "yaw": trajectory[-1]["yaw"],
+        },
+        pose_at_landmark=lambda _landmark: None,
+        attach_spatial_route=attach_route,
+        valid_blockers=lambda _name: [],
+        waits_at_boundary=lambda _robot: False,
+        prefetch_lead=lambda: 2.0,
+    )
+
+    candidates = service.select_candidates()
+
+    assert len(candidates) == 1
+    _, selected_robot, request, final_goal, remaining = candidates[0]
+    assert selected_robot is robot
+    assert request == {
+        "name": "r1",
+        "startLm": "B",
+        "goalLm": "C",
+        "startPose": {"x": 1.0, "y": 0.0, "yaw": 0.0},
+        "spatialRouteNodes": ["B", "C", "C"],
+    }
+    assert final_goal == "C"
+    assert remaining == 1.0
+    assert planning_state.rolling_prefetch_eligible_since == {"r1": 10.0}
 
 
 def test_replanning_service_works_without_full_manager() -> None:
@@ -532,6 +627,42 @@ def test_replanning_service_works_without_full_manager() -> None:
 
     robot.route_revision += 1
     assert not service.state_is_current(robot, state)
+
+
+def test_replanning_service_records_retry_without_committing() -> None:
+    fleet_state = FleetState()
+    planning_state = PlanningState()
+    recovery_state = RecoveryState()
+    order = FleetOrder(order_id="o1", target_lm="B", status="PLANNING")
+    robot = FleetRobot(name="r1", current_lm="A", status="WAITING")
+    service = ReplanningService(
+        fleet_state,
+        planning_state,
+        recovery_state,
+        lambda _robot: "A",
+        lambda: 30.0,
+        lambda _order: 2.0,
+    )
+    state = {"reason": "traffic changed", "failures": 0}
+
+    failure = service.record_failure(
+        order,
+        robot,
+        state,
+        "reserved edge",
+        debug={"backend": "rolling_sipp"},
+        dynamic_conflict_signature=("r2", "A"),
+        reservation_conflict_signature=("r3", "A->B"),
+    )
+
+    assert failure.failures == 1
+    assert failure.now == 30.0
+    assert state["stage"] == "retry"
+    assert state["retry_at"] == 32.0
+    assert state["dynamic_conflict_count"] == 1
+    assert state["reservation_conflict_count"] == 1
+    assert order.dispatch_failures == 1
+    assert robot.trajectory == []
 
 
 def test_runtime_commands_execute_on_owner_thread_without_extra_step() -> None:

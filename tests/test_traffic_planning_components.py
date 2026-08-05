@@ -5,20 +5,17 @@ from types import SimpleNamespace
 from typing import Any
 
 from fleet_manager.manager.coordination.planning.planning import TrafficPlanningMixin
-from fleet_manager.manager.coordination.planning.planning_continuous import (
+from fleet_manager.manager.coordination.planning.continuous import (
     TrafficContinuousWaitSchedulingMixin,
 )
-from fleet_manager.manager.coordination.planning.planning_preparation import (
+from fleet_manager.manager.coordination.planning.preparation import (
     TrafficPlanPreparationMixin,
 )
-from fleet_manager.manager.coordination.planning.planning_reservations import (
+from fleet_manager.manager.coordination.planning.reservations import (
     TrafficReservationMixin,
 )
-from fleet_manager.manager.coordination.planning.planning_results import (
+from fleet_manager.manager.coordination.planning.results import (
     TrafficPlanResultMixin,
-)
-from fleet_manager.manager.coordination.planning.planning_scheduling import (
-    TrafficReservationSchedulingMixin,
 )
 
 
@@ -223,19 +220,12 @@ class ResultHarness(TrafficPlanResultMixin):
 
 
 def test_facade_composes_focused_planning_components() -> None:
-    assert issubclass(
-        TrafficPlanningMixin,
+    assert TrafficPlanningMixin.__bases__ == (
         TrafficPlanPreparationMixin,
-    )
-    assert issubclass(
-        TrafficReservationSchedulingMixin,
         TrafficContinuousWaitSchedulingMixin,
-    )
-    assert issubclass(
-        TrafficReservationSchedulingMixin,
         TrafficReservationMixin,
+        TrafficPlanResultMixin,
     )
-    assert issubclass(TrafficPlanningMixin, TrafficPlanResultMixin)
     assert (
         TrafficPlanningMixin._plan_valid_requests_unlocked
         is TrafficPlanPreparationMixin._plan_valid_requests_unlocked

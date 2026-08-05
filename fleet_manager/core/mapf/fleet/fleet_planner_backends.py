@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import logging
-from typing import Any
+from typing import Any, Callable
 
 from ..cbs.cbs_high_level import LmCBSPlanner
 from ..cbs.cbs_models import LmRobotRequest
@@ -30,6 +30,7 @@ class _BackendRequest:
     low_level_max_time: int
     rotate_enabled: bool
     turn_speed: float
+    should_cancel: Callable[[], bool] | None = None
 
 
 class BackendSelector:
@@ -109,6 +110,7 @@ class BackendRunner:
         rotate_enabled: bool,
         turn_speed: float,
         selected_backend: str,
+        should_cancel: Callable[[], bool] | None = None,
     ) -> tuple[Any, set[tuple[str, str]], bool, str]:
         request = _BackendRequest(
             robots=requests,
@@ -125,6 +127,7 @@ class BackendRunner:
             low_level_max_time=low_level_max_time,
             rotate_enabled=rotate_enabled,
             turn_speed=turn_speed,
+            should_cancel=should_cancel,
         )
         if selected_backend in {"rolling_sipp", "hybrid"}:
             return self._run_rolling_selection(
@@ -156,6 +159,7 @@ class BackendRunner:
             low_level_max_time=request.low_level_max_time,
             rotate_enabled=request.rotate_enabled,
             turn_speed=request.turn_speed,
+            should_cancel=request.should_cancel,
         )
         if result.plans or selected_backend == "rolling_sipp":
             if result.plans and request.reserved_interval_edges:
@@ -262,6 +266,7 @@ class BackendRunner:
             low_level_max_time=request.low_level_max_time,
             rotate_enabled=request.rotate_enabled,
             turn_speed=request.turn_speed,
+            should_cancel=request.should_cancel,
         )
 
     def run_cbs_with_reserved_detour(
@@ -280,6 +285,7 @@ class BackendRunner:
         low_level_max_time: int,
         rotate_enabled: bool,
         turn_speed: float,
+        should_cancel: Callable[[], bool] | None = None,
     ) -> tuple[Any, set[tuple[str, str]], bool, str]:
         planner = self.planner
         result = planner._run_cbs(
@@ -295,6 +301,7 @@ class BackendRunner:
             low_level_max_time=low_level_max_time,
             rotate_enabled=rotate_enabled,
             turn_speed=turn_speed,
+            should_cancel=should_cancel,
         )
         used_blocked_edges = detour_blocked_edges
         used_reserved_detour = (
@@ -321,6 +328,7 @@ class BackendRunner:
                 low_level_max_time=low_level_max_time,
                 rotate_enabled=rotate_enabled,
                 turn_speed=turn_speed,
+                should_cancel=should_cancel,
             )
             if result.plans:
                 result.debug.reason = (
@@ -354,8 +362,11 @@ class BackendRunner:
         low_level_max_time: int,
         rotate_enabled: bool,
         turn_speed: float,
+        should_cancel: Callable[[], bool] | None = None,
     ) -> Any:
         owner = self.planner
+        if should_cancel is not None and should_cancel():
+            raise InterruptedError("planning cancelled")
         motion = owner._motion_model
         graph = owner._graph_without_edges(blocked_edges)
         traffic_graph = owner._traffic_graph(speed)
@@ -428,6 +439,7 @@ class BackendRunner:
                 reserved_resources,
                 key=lambda item: (item[0], item[1], str(item[2])),
             ),
+            should_cancel=should_cancel,
         )
         if result.plans:
             validator = RollingSippPlanner(
@@ -464,6 +476,7 @@ class BackendRunner:
                     if owner.reserved_edge_hard_constraints_enabled
                     else []
                 ),
+                should_cancel=should_cancel,
             )
             if invalid_reason:
                 result.plans = {}
@@ -484,8 +497,11 @@ class BackendRunner:
         low_level_max_time: int,
         rotate_enabled: bool,
         turn_speed: float,
+        should_cancel: Callable[[], bool] | None = None,
     ) -> Any:
         owner = self.planner
+        if should_cancel is not None and should_cancel():
+            raise InterruptedError("planning cancelled")
         motion = owner._motion_model
         traffic_graph = owner._traffic_graph(speed)
         planner = RollingSippPlanner(
@@ -524,4 +540,5 @@ class BackendRunner:
                 if owner.reserved_edge_hard_constraints_enabled
                 else []
             ),
+            should_cancel=should_cancel,
         )

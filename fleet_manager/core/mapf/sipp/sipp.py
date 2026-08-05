@@ -73,7 +73,10 @@ class SippPlanner:
         blocked_nodes: set[NodeName] | None = None,
         blocked_edges: set[tuple[NodeName, NodeName]] | None = None,
         planning_deadline: float | None = None,
+        should_cancel: Callable[[], bool] | None = None,
     ) -> TimedPath | None:
+        if should_cancel is not None and should_cancel():
+            raise InterruptedError("planning cancelled")
         problem = SippSearchProblem(
             self.graph,
             request,
@@ -95,14 +98,19 @@ class SippPlanner:
             self._copy_diagnostics(problem)
             return None
 
-        should_cancel = (
-            problem.deadline_reached
-            if planning_deadline is not None
+        def search_should_cancel() -> bool:
+            if should_cancel is not None and should_cancel():
+                return True
+            return problem.deadline_reached()
+
+        search_control = (
+            search_should_cancel
+            if planning_deadline is not None or should_cancel is not None
             else None
         )
         result = AStarSolver[SippState]().solve(
             problem,
-            should_cancel=should_cancel,
+            should_cancel=search_control,
             cancellation_reason=problem.cancellation_reason,
         )
         self.expanded_nodes = result.expanded_count

@@ -12,7 +12,7 @@ from fleet_manager.core.traffic.corridors.scheduling.corridor_models import (
     CorridorSlot,
     CorridorSlotState,
 )
-from fleet_manager.manager.coordination.corridors.prefetch.controlled_corridor_prefetch_models import (
+from fleet_manager.manager.coordination.corridors.models import (
     _CorridorPlannedPassage,
     _CorridorValidationContext,
 )

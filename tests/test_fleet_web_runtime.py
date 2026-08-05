@@ -10,7 +10,10 @@ import pytest
 import fleet_manager.manager.manager as runtime_module
 from fleet_manager.manager.tasks.statuses import FLEET_CONTROL_OWNER_ID
 from fleet_manager.manager.tasks.models import FleetOrder
-from fleet_manager.manager.planning import PlanningSolverService
+from fleet_manager.manager.planning import (
+    PlanningJobRecord,
+    PlanningSolverService,
+)
 from fleet_manager.robot.model import FleetRobot
 from fleet_manager.core.mapping.maps.models import GraphEdge, Landmark, WorldPoint
 from fleet_manager.core.traffic.corridors.scheduling.corridor_scheduler import (
@@ -4790,28 +4793,30 @@ def test_transactional_runtime_replan_commits_without_idle_route_gap() -> None:
         {"t": 0.0, "x": 0.0, "y": 0.0, "yaw": 0.0, "edgeId": "A->B", "lm": "A"},
         {"t": 2.0, "x": 2.0, "y": 0.0, "yaw": 0.0, "edgeId": "A->B", "lm": "B"},
     ]
-    committed = manager._finish_async_runtime_replan({
-        "kind": "runtime_replan",
-        "order_id": order.order_id,
-        "robot_name": robot.name,
-        "generation": state["generation"],
-        "route_revision": robot.route_revision,
-        "route_clock": robot.route_clock,
-        "start_lm": "A",
-        "final_goal": "B",
-        "result": {
-            "ok": True,
-            "plans": [{
-                "robot": robot.name,
-                "startLm": "A",
-                "goalLm": "B",
-                "finalGoalLm": "B",
-                "nodes": ["A", "B"],
-                "trajectory": replacement,
-            }],
-            "debug": {"reason": "success"},
-        },
-    })
+    committed = manager._finish_async_runtime_replan(
+        PlanningJobRecord(
+            kind="runtime_replan",
+            order_id=order.order_id,
+            robot_name=robot.name,
+            generation=state["generation"],
+            route_revision=robot.route_revision,
+            route_clock=robot.route_clock,
+            start_lm="A",
+            final_goal="B",
+            result={
+                "ok": True,
+                "plans": [{
+                    "robot": robot.name,
+                    "startLm": "A",
+                    "goalLm": "B",
+                    "finalGoalLm": "B",
+                    "nodes": ["A", "B"],
+                    "trajectory": replacement,
+                }],
+                "debug": {"reason": "success"},
+            },
+        )
+    )
 
     assert committed == 1
     assert robot.active_order_id == order.order_id
@@ -4857,16 +4862,23 @@ def test_failed_transactional_runtime_replan_retains_route_with_backoff() -> Non
     state = manager._runtime_replans[robot.name]
     state["stage"] = "planning"
 
-    assert manager._finish_async_runtime_replan({
-        "order_id": order.order_id,
-        "robot_name": robot.name,
-        "generation": state["generation"],
-        "route_revision": robot.route_revision,
-        "route_clock": robot.route_clock,
-        "start_lm": "A",
-        "final_goal": "B",
-        "result": {"ok": False, "plans": [], "debug": {"reason": "no_sipp_path"}},
-    }) == 0
+    assert manager._finish_async_runtime_replan(
+        PlanningJobRecord(
+            kind="runtime_replan",
+            order_id=order.order_id,
+            robot_name=robot.name,
+            generation=state["generation"],
+            route_revision=robot.route_revision,
+            route_clock=robot.route_clock,
+            start_lm="A",
+            final_goal="B",
+            result={
+                "ok": False,
+                "plans": [],
+                "debug": {"reason": "no_sipp_path"},
+            },
+        )
+    ) == 0
 
     assert robot.active_order_id == order.order_id
     assert robot.trajectory == trajectory
@@ -6557,9 +6569,10 @@ def test_coupled_replan_result_is_rejected_after_same_route_progress(
         "_record_coupled_replan_failure",
         lambda *_args: failures.append(object()),
     )
-    job = {
-        "cycle": (robot.name,),
-        "entries": [
+    job = PlanningJobRecord(
+        kind="coupled_replan",
+        cycle=(robot.name,),
+        entries=[
             {
                 "robot": robot.name,
                 "order": order.order_id,
@@ -6569,11 +6582,11 @@ def test_coupled_replan_result_is_rejected_after_same_route_progress(
                 "routeClock": 0.0,
             }
         ],
-        "result": {
+        result={
             "ok": True,
             "plans": [{"robot": robot.name, "nodes": ["A", "B"]}],
         },
-    }
+    )
 
     assert manager._finish_async_coupled_replan(job) == 0
     assert not failures
@@ -7493,7 +7506,7 @@ def test_cyclic_rolling_collapse_uses_fixed_pocket_and_blacklists_failure(
     deadline = perf_counter() + 1.0
     while (
         manager._dispatch_job is not None
-        and not manager._dispatch_job.get("done")
+        and not manager._dispatch_job.done
         and perf_counter() < deadline
     ):
         sleep(0.001)
@@ -13596,16 +13609,17 @@ def test_runtime_replan_uses_debug_stationary_blocker_once() -> None:
             "softBlockedLms": ["B"],
         },
     }
-    job = {
-        "order_id": order.order_id,
-        "robot_name": waiter.name,
-        "generation": state["generation"],
-        "route_revision": waiter.route_revision,
-        "route_clock": waiter.route_clock,
-        "start_lm": "A",
-        "final_goal": "C",
-        "result": result,
-    }
+    job = PlanningJobRecord(
+        kind="runtime_replan",
+        order_id=order.order_id,
+        robot_name=waiter.name,
+        generation=state["generation"],
+        route_revision=waiter.route_revision,
+        route_clock=waiter.route_clock,
+        start_lm="A",
+        final_goal="C",
+        result=result,
+    )
 
     assert manager._finish_async_runtime_replan(job) == 0
     assert not any(

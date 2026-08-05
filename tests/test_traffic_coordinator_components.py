@@ -4,13 +4,13 @@ import random
 
 from fleet_manager.robot.model import FleetRobot
 from fleet_manager.manager.coordination.coordinator import TrafficCoordinatorMixin
-from fleet_manager.manager.coordination.deadlocks.arbitration.deadlock_arbitration import (
-    DeadlockArbitrationMixin,
+from fleet_manager.manager.coordination.deadlocks.detection import (
+    WaitCycleDetectionMixin,
 )
-from fleet_manager.manager.coordination.deadlocks.recovery.evacuation.deadlock_evacuation import (
-    DeadlockEvacuationMixin,
+from fleet_manager.manager.coordination.deadlocks.evacuation import (
+    EvacuationActivationMixin,
 )
-from fleet_manager.manager.coordination.deadlocks.recovery.evacuation.deadlock_evacuation_models import (
+from fleet_manager.manager.coordination.deadlocks.models import (
     _EvacuationCandidate,
 )
 from fleet_manager.manager.coordination.runtime_conflicts import RuntimeConflictMixin
@@ -88,16 +88,16 @@ def test_wait_graph_matches_seeded_legacy_traversal() -> None:
 
 
 def test_compatibility_mixin_composes_all_private_hook_components() -> None:
-    assert issubclass(TrafficCoordinatorMixin, DeadlockArbitrationMixin)
-    assert issubclass(TrafficCoordinatorMixin, DeadlockEvacuationMixin)
+    assert issubclass(TrafficCoordinatorMixin, WaitCycleDetectionMixin)
+    assert issubclass(TrafficCoordinatorMixin, EvacuationActivationMixin)
     assert issubclass(TrafficCoordinatorMixin, RuntimeConflictMixin)
     assert (
         TrafficCoordinatorMixin._resolve_runtime_wait_cycles
-        is DeadlockArbitrationMixin._resolve_runtime_wait_cycles
+        is WaitCycleDetectionMixin._resolve_runtime_wait_cycles
     )
     assert (
         TrafficCoordinatorMixin._start_deadlock_corridor_evacuation
-        is DeadlockEvacuationMixin._start_deadlock_corridor_evacuation
+        is EvacuationActivationMixin._start_deadlock_corridor_evacuation
     )
     assert (
         TrafficCoordinatorMixin._blocked_at_clock

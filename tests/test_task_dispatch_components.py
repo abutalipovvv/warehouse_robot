@@ -7,6 +7,7 @@ from typing import Any
 
 from fleet_manager.manager.tasks.statuses import ORDER_SEQUENCE_KEYS, ORDER_TARGET_KEYS
 from fleet_manager.manager.tasks.models import FleetOrder
+from fleet_manager.manager.planning import PlanningJobRecord
 from fleet_manager.manager.tasks.dispatch import FleetTaskDispatchMixin
 from fleet_manager.manager.tasks.dispatch_requests import DispatchRequestBatchMixin
 from fleet_manager.manager.tasks.dispatch_results import DispatchResultMixin
@@ -263,7 +264,7 @@ def test_async_planning_uses_only_the_explicit_job_api() -> None:
     instance._build_planning_job = (
         lambda _job, _requests, _payload: planning_job
     )
-    job = {"result": None, "done": False}
+    job = PlanningJobRecord()
     instance._dispatch_job = job
 
     assert instance._submit_async_planning_job(

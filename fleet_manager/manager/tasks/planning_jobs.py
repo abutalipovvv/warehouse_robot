@@ -10,6 +10,7 @@ from fleet_manager.manager.tasks.models import FleetOrder
 from fleet_manager.robot.model import FleetRobot
 from fleet_manager.manager.planning import (
     PlanningJob,
+    PlanningJobRecord,
     PlanningJobStatus,
     PlanningPriority,
     PlanningReason,
@@ -35,7 +36,7 @@ class _RollingPrefetchBatch:
     corridor_gates: dict[str, dict[str, Any]] = field(default_factory=dict)
     requests: list[dict[str, Any]] = field(default_factory=list)
     payload: dict[str, Any] = field(default_factory=dict)
-    job: dict[str, Any] = field(default_factory=dict)
+    job: PlanningJobRecord = field(default_factory=PlanningJobRecord)
 
 
 @dataclass(frozen=True, slots=True)
@@ -62,7 +63,7 @@ class _CoupledReplanContext:
     requests: list[dict[str, Any]] = field(default_factory=list)
     entries: list[dict[str, Any]] = field(default_factory=list)
     payload: dict[str, Any] = field(default_factory=dict)
-    job: dict[str, Any] = field(default_factory=dict)
+    job: PlanningJobRecord = field(default_factory=PlanningJobRecord)
 
 
 class AsyncPlanningJobMixin:
@@ -74,7 +75,7 @@ class AsyncPlanningJobMixin:
 
     def _submit_async_planning_job(
         self,
-        job: dict[str, Any],
+        job: PlanningJobRecord,
         requests: list[dict[str, Any]],
         payload: dict[str, Any],
     ) -> bool:
@@ -111,7 +112,7 @@ class AsyncPlanningJobMixin:
 
     def _build_planning_job(
         self,
-        live_job: dict[str, Any],
+        live_job: PlanningJobRecord,
         requests: list[dict[str, Any]],
         payload: dict[str, Any],
     ) -> PlanningJob:
@@ -123,7 +124,7 @@ class AsyncPlanningJobMixin:
         snapshot = self._planning_snapshot_for(requests, payload)
         self.planning_state.submission_sequence += 1
         sequence = self.planning_state.submission_sequence
-        kind = str(live_job.get("kind") or "dispatch")
+        kind = live_job.kind or "dispatch"
         reason = PlanningReason.from_job_kind(kind)
         robot_ids = tuple(
             sorted(
@@ -149,15 +150,14 @@ class AsyncPlanningJobMixin:
             coalescing_key=f"{kind}:{','.join(robot_ids)}",
             robot_ids=robot_ids,
             conflict_component_ids=(
-                tuple(str(item) for item in live_job.get("cycle", ()))
+                tuple(str(item) for item in live_job.cycle)
                 if kind == "coupled_replan"
                 else ()
             ),
         )
-        live_job["job_id"] = job_id
-        live_job["expected_revision"] = snapshot.revision
-        live_job["planning_job"] = planning_job
-        self.planning_state.jobs[job_id] = planning_job
+        live_job.job = planning_job
+        live_job.expected_revision = snapshot.revision
+        self.planning_state.jobs[job_id] = live_job
         self.planning_state.record_event("planning_job_submitted")
         self._event(
             "info",
@@ -199,13 +199,14 @@ class AsyncPlanningJobMixin:
         """Move worker output into live planning state on the runtime thread."""
 
         for update in self._planning_worker.take_job_events():
-            planning_job = self.planning_state.jobs.get(update.job_id)
-            if not isinstance(planning_job, PlanningJob):
+            record = self.planning_state.jobs.get(update.job_id)
+            if not isinstance(record, PlanningJobRecord):
                 continue
+            planning_job = record.job
             if update.status is PlanningJobStatus.RUNNING:
-                if planning_job.status is PlanningJobStatus.QUEUED:
-                    planning_job.transition(PlanningJobStatus.RUNNING)
-                planning_job.started_at = update.occurred_at
+                if record.status is PlanningJobStatus.QUEUED:
+                    record.transition_to(PlanningJobStatus.RUNNING)
+                record.started_at = update.occurred_at
                 self.planning_state.record_event("planning_job_started")
                 self._event(
                     "info",
@@ -217,19 +218,26 @@ class AsyncPlanningJobMixin:
                 )
                 continue
             if (
-                planning_job.status is PlanningJobStatus.QUEUED
-                and update.status is PlanningJobStatus.CANCELLED
+                record.status is PlanningJobStatus.QUEUED
+                and update.status in {
+                    PlanningJobStatus.CANCELLED,
+                    PlanningJobStatus.DEADLINE_EXCEEDED,
+                }
             ):
-                planning_job.transition(PlanningJobStatus.CANCELLED)
-            elif planning_job.status is PlanningJobStatus.QUEUED:
-                planning_job.transition(PlanningJobStatus.RUNNING)
-            if planning_job.status is PlanningJobStatus.RUNNING:
-                planning_job.transition(update.status)
-            planning_job.finished_at = update.occurred_at
-            if update.status is PlanningJobStatus.CANCELLED:
+                record.transition_to(update.status)
+            elif record.status is PlanningJobStatus.QUEUED:
+                record.transition_to(PlanningJobStatus.RUNNING)
+            if record.status is PlanningJobStatus.RUNNING:
+                record.transition_to(update.status)
+            record.finished_at = update.occurred_at
+            record.error = update.message or None
+            if update.status in {
+                PlanningJobStatus.CANCELLED,
+                PlanningJobStatus.DEADLINE_EXCEEDED,
+            }:
                 event_name = (
                     "planning_deadline_exceeded"
-                    if "deadline" in update.message
+                    if update.status is PlanningJobStatus.DEADLINE_EXCEEDED
                     else "planning_job_cancelled"
                 )
                 self.planning_state.record_event(event_name)
@@ -254,12 +262,11 @@ class AsyncPlanningJobMixin:
                 live_job = self._dispatch_job
                 if (
                     live_job is None
-                    or str(live_job.get("job_id") or "")
-                    != candidate.job_id
+                    or live_job.job_id != candidate.job_id
                 ):
                     continue
-                live_job["candidate"] = candidate
-                live_job["done"] = True
+                live_job.candidate = candidate
+                live_job.done = True
 
     def _start_async_simulated_dispatch(
         self,
@@ -347,16 +354,14 @@ class AsyncPlanningJobMixin:
         entries = runnable_entries
         requests = runnable_requests
         payload["robots"] = requests
-        job: dict[str, Any] = {
-            "kind": "dispatch",
-            "entries": list(entries),
-            "requests": requests,
-            "payload": payload,
-            "done": False,
-            "result": None,
-        }
+        job = PlanningJobRecord(
+            kind="dispatch",
+            entries=list(entries),
+            requests=requests,
+            payload=payload,
+        )
         if corridor_gates:
-            job["corridor_gates"] = corridor_gates
+            job.corridor_gates = corridor_gates
             if not self._pin_controlled_corridor_gates(corridor_gates):
                 for order, _, _, _ in entries:
                     if order.status == "PLANNING":
@@ -461,20 +466,18 @@ class AsyncPlanningJobMixin:
             )
             return False
 
-        job: dict[str, Any] = {
-            "kind": "runtime_replan",
-            "order_id": order.order_id,
-            "robot_name": robot.name,
-            "generation": int(state.get("generation", 0) or 0),
-            "route_revision": int(robot.route_revision),
-            "route_clock": float(robot.route_clock),
-            "start_lm": start_lm,
-            "final_goal": final_goal,
-            "escape_goal": planning_goal if fixed_escape else "",
-            "request": request,
-            "result": None,
-            "done": False,
-        }
+        job = PlanningJobRecord(
+            kind="runtime_replan",
+            order_id=order.order_id,
+            robot_name=robot.name,
+            generation=int(state.get("generation", 0) or 0),
+            route_revision=int(robot.route_revision),
+            route_clock=float(robot.route_clock),
+            start_lm=start_lm,
+            final_goal=final_goal,
+            escape_goal=planning_goal if fixed_escape else "",
+            request=request,
+        )
         with self._dispatch_job_lock:
             if self._dispatch_job is not None:
                 return False
@@ -743,22 +746,20 @@ class AsyncPlanningJobMixin:
                 )
             ),
         }
-        job: dict[str, Any] = {
-            "kind": "prefetch_batch" if len(prepared) > 1 else "prefetch",
-            "entries": prepared,
-            "route_revisions": {
+        job = PlanningJobRecord(
+            kind="prefetch_batch" if len(prepared) > 1 else "prefetch",
+            entries=list(prepared),
+            route_revisions={
                 robot.name: robot.route_revision
                 for _, robot, _, _, _ in prepared
             },
-            "result": None,
-            "done": False,
-        }
+        )
         if corridor_gates:
-            job["corridor_gates"] = corridor_gates
+            job.corridor_gates = corridor_gates
             if not self._pin_controlled_corridor_gates(corridor_gates):
                 return False
         if vacancy_recovery:
-            job["vacancy_recovery_signature"] = (
+            job.vacancy_recovery_signature = tuple(
                 self._rolling_vacancy_recovery_signature
             )
         batch.requests = requests
@@ -1038,14 +1039,12 @@ class AsyncPlanningJobMixin:
             "reservedEdgeDetourEnabled": False,
         }
         context.payload.pop("blocked_edges", None)
-        context.job = {
-            "kind": "coupled_replan",
-            "cycle": context.cycle_key,
-            "entries": context.entries,
-            "requests": context.requests,
-            "result": None,
-            "done": False,
-        }
+        context.job = PlanningJobRecord(
+            kind="coupled_replan",
+            cycle=context.cycle_key,
+            entries=list(context.entries),
+            requests=context.requests,
+        )
 
     def _submit_coupled_replan_job(
         self,

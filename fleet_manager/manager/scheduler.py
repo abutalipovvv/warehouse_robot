@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections import deque
 from dataclasses import dataclass
 from enum import Enum
-from heapq import heappop, heappush
+from heapq import heapify, heappop, heappush
 from math import isfinite
 from threading import Condition, Thread, current_thread
 from time import monotonic
@@ -13,6 +13,8 @@ from typing import Callable
 
 from fleet_manager.manager.planning import (
     PlanCandidate,
+    PlanningCancelledError,
+    PlanningDeadlineExceededError,
     PlanningJob,
     PlanningJobStatus,
 )
@@ -45,6 +47,16 @@ class PlanningWorkerJobEvent:
     status: PlanningJobStatus
     occurred_at: float
     message: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class PlanningWorkerStats:
+    """Read-only queue sizes for diagnostics and boundedness tests."""
+
+    queued_jobs: int
+    heap_entries: int
+    running_jobs: int
+    completed_results: int
 
 
 PlanningSolver = Callable[[PlanningJob], PlanCandidate]
@@ -128,6 +140,15 @@ class PlanningWorker:
     def max_queue_size(self) -> int:
         return self._max_queue_size
 
+    def stats(self) -> PlanningWorkerStats:
+        with self._condition:
+            return PlanningWorkerStats(
+                queued_jobs=len(self._queued_jobs),
+                heap_entries=len(self._job_queue),
+                running_jobs=int(self._active_job is not None),
+                completed_results=len(self._completed_results),
+            )
+
     def set_completion_consumer(
         self,
         consumer: PlanningCompletionConsumer | None,
@@ -150,9 +171,6 @@ class PlanningWorker:
             raise TypeError("job must be a PlanningJob")
         if not callable(solver):
             raise TypeError("solver must be callable")
-        if job.status is not PlanningJobStatus.QUEUED:
-            raise ValueError("a submitted planning job must be queued")
-
         with self._condition:
             if self._close_requested:
                 return False
@@ -193,6 +211,7 @@ class PlanningWorker:
                 except BaseException:
                     self._thread = None
                     self._queued_jobs.pop(job.job_id, None)
+                    self._rebuild_heap_locked()
                     job.cancellation_token.cancel()
                     self._state = PlanningWorkerState.IDLE
                     self._condition.notify_all()
@@ -212,6 +231,7 @@ class PlanningWorker:
             queued = self._queued_jobs.pop(clean_id, None)
             if queued is not None:
                 queued.cancellation_token.cancel()
+                self._rebuild_heap_locked()
                 self._publish_job_event_locked(
                     queued,
                     PlanningJobStatus.CANCELLED,
@@ -256,6 +276,7 @@ class PlanningWorker:
                 PlanningJobStatus.CANCELLED,
                 "planning job replaced by newer coalesced work",
             )
+        self._rebuild_heap_locked()
         active = self._active_job
         if active is not None and active.coalescing_key == key:
             active.cancellation_token.cancel()
@@ -271,12 +292,23 @@ class PlanningWorker:
             return False
         self._queued_jobs.pop(worst.job_id, None)
         worst.cancellation_token.cancel()
+        self._rebuild_heap_locked()
         self._publish_job_event_locked(
             worst,
             PlanningJobStatus.CANCELLED,
             "planning job evicted by higher-priority work",
         )
         return True
+
+    def _rebuild_heap_locked(self) -> None:
+        """Drop stale entries left by coalescing or queued cancellation."""
+
+        self._job_queue = [
+            entry
+            for entry in self._job_queue
+            if self._queued_jobs.get(entry[2]) is entry[3]
+        ]
+        heapify(self._job_queue)
 
     def _next_job_locked(
         self,
@@ -341,11 +373,26 @@ class PlanningWorker:
             message = "planning deadline exceeded"
             return (
                 self._terminal_candidate(job, message),
-                PlanningJobStatus.CANCELLED,
+                PlanningJobStatus.DEADLINE_EXCEEDED,
                 message,
             )
         try:
             candidate = solver(job)
+        except PlanningDeadlineExceededError as exc:
+            job.cancellation_token.cancel()
+            message = str(exc) or "planning deadline exceeded"
+            return (
+                self._terminal_candidate(job, message),
+                PlanningJobStatus.DEADLINE_EXCEEDED,
+                message,
+            )
+        except PlanningCancelledError as exc:
+            message = str(exc) or "planning job cancelled"
+            return (
+                self._terminal_candidate(job, message),
+                PlanningJobStatus.CANCELLED,
+                message,
+            )
         except Exception as exc:
             with self._condition:
                 self._last_failure = PlanningWorkerFailure(
@@ -366,7 +413,7 @@ class PlanningWorker:
             job.cancellation_token.cancel()
             return (
                 candidate,
-                PlanningJobStatus.CANCELLED,
+                PlanningJobStatus.DEADLINE_EXCEEDED,
                 "planning deadline exceeded",
             )
         return candidate, PlanningJobStatus.COMPLETED, ""
@@ -392,6 +439,7 @@ class PlanningWorker:
                 "planning worker shutdown",
             )
         self._queued_jobs.clear()
+        self._job_queue.clear()
         active = self._active_job
         if active is not None:
             active.cancellation_token.cancel()
@@ -418,6 +466,9 @@ class PlanningWorker:
         with self._condition:
             worker = self._thread
         if worker is None:
+            consumer = self._completion_consumer
+            if consumer is not None:
+                consumer()
             return True
         if worker is current_thread():
             return False

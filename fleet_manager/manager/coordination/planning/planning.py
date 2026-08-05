@@ -4,14 +4,16 @@ from __future__ import annotations
 
 from typing import Any
 
-from .planning_preparation import TrafficPlanPreparationMixin
-from .planning_results import TrafficPlanResultMixin
-from .planning_scheduling import TrafficReservationSchedulingMixin
+from .continuous import TrafficContinuousWaitSchedulingMixin
+from .preparation import TrafficPlanPreparationMixin
+from .reservations import TrafficReservationMixin
+from .results import TrafficPlanResultMixin
 
 
 class TrafficPlanningMixin(
     TrafficPlanPreparationMixin,
-    TrafficReservationSchedulingMixin,
+    TrafficContinuousWaitSchedulingMixin,
+    TrafficReservationMixin,
     TrafficPlanResultMixin,
 ):
     """Serialize access to the reusable fleet planner."""

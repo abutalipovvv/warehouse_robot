@@ -118,8 +118,11 @@ class RollingSippPlanner:
         reserved_edge_intervals: list[
             EdgeIntervalInput
         ] | None = None,
+        should_cancel: Callable[[], bool] | None = None,
     ) -> str:
-        return self._validator.validate(
+        if should_cancel is not None and should_cancel():
+            raise InterruptedError("planning cancelled")
+        result = self._validator.validate(
             robot_requests,
             plans,
             self._static_reservations(
@@ -129,6 +132,9 @@ class RollingSippPlanner:
                 reserved_edge_intervals,
             ),
         )
+        if should_cancel is not None and should_cancel():
+            raise InterruptedError("planning cancelled")
+        return result
 
     def plan_for_robots(
         self,
@@ -150,6 +156,7 @@ class RollingSippPlanner:
         reserved_edge_intervals: list[
             EdgeIntervalInput
         ] | None = None,
+        should_cancel: Callable[[], bool] | None = None,
     ) -> PlannerResult:
         return self._coordinator.plan(
             robot_requests,
@@ -161,6 +168,7 @@ class RollingSippPlanner:
                 reserved_vertex_intervals,
                 reserved_edge_intervals,
             ),
+            should_cancel=should_cancel,
         )
 
     def _blocking_plan_owners(

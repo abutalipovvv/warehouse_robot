@@ -14,6 +14,7 @@ from fleet_manager.manager.planning import (
     PlanCandidate,
     PlanCommitStatus,
     PlanningJob,
+    PlanningJobRecord,
     PlanningJobStatus,
 )
 
@@ -54,7 +55,7 @@ class _PlanCommitCheckpoint:
     revision_reason: str
     route_revision_sequence: int
     scheduler_state: Any
-    job_statuses: list[tuple[PlanningJob, PlanningJobStatus]]
+    job_statuses: list[tuple[PlanningJobRecord, PlanningJobStatus]]
 
 
 class DispatchResultMixin:
@@ -351,10 +352,10 @@ class DispatchResultMixin:
             and actual == requested[:len(actual)]
         )
 
-    def _finish_async_runtime_replan(self, job: dict[str, Any]) -> int:
-        robot_name = str(job.get("robot_name") or "")
+    def _finish_async_runtime_replan(self, job: PlanningJobRecord) -> int:
+        robot_name = job.robot_name
         robot = self.robots.get(robot_name)
-        order = self.orders.get(str(job.get("order_id") or ""))
+        order = self.orders.get(job.order_id)
         state = self._runtime_replans.get(robot_name)
         if (
             robot is None
@@ -364,18 +365,18 @@ class DispatchResultMixin:
             or order.internal_kind == "traffic_clearance"
             or robot.active_order_id != order.order_id
             or int(state.get("generation", -1))
-            != int(job.get("generation", -2))
-            or int(robot.route_revision) != int(job.get("route_revision", -1))
-            or abs(float(robot.route_clock) - float(job.get("route_clock", 0.0)))
+            != job.generation
+            or int(robot.route_revision) != job.route_revision
+            or abs(float(robot.route_clock) - job.route_clock)
             > 0.000001
             or self._safe_replan_start_lm(robot)
-            != str(job.get("start_lm") or "")
+            != job.start_lm
         ):
             if isinstance(state, dict) and str(state.get("stage") or "") == "planning":
                 self._runtime_replans.pop(robot_name, None)
             return 0
 
-        result = job.get("result")
+        result = job.result
         if not isinstance(result, dict) or not result.get("ok") or not result.get("plans"):
             reason = (
                 self._planner_failure_reason(result)
@@ -392,7 +393,7 @@ class DispatchResultMixin:
             )
             return 0
 
-        final_goal = str(job.get("final_goal") or self._active_order_target(order))
+        final_goal = job.final_goal or self._active_order_target(order)
         result = self._rolling_result(result, {robot.name: final_goal})
         plan = self._plan_for_robot(result, robot.name)
         if plan is None or self._wait_only_rolling_plan(plan, final_goal):
@@ -426,7 +427,7 @@ class DispatchResultMixin:
             order,
             "EXECUTING",
             robot=robot,
-            start_lm=str(job.get("start_lm") or ""),
+            start_lm=job.start_lm,
         )
         order.traffic_detour_edges = []
         robot.last_reason = "runtime route replan committed"
@@ -435,7 +436,7 @@ class DispatchResultMixin:
         self._event(
             "info",
             f"transactional runtime replan committed: {order.order_id} "
-            f"{robot.name}@{job.get('start_lm')}->{final_goal}",
+            f"{robot.name}@{job.start_lm}->{final_goal}",
         )
         return 1
 
@@ -443,7 +444,7 @@ class DispatchResultMixin:
         self._collect_completed_planning_candidates()
         with self._dispatch_job_lock:
             job = self._dispatch_job
-            if job is None or not bool(job.get("done")):
+            if job is None or not job.done:
                 return 0
         # The result is already published, so joining only reaps the final
         # instructions of this finite worker thread. Keep the job slot occupied
@@ -456,23 +457,35 @@ class DispatchResultMixin:
             if self._dispatch_job is not job:
                 return 0
             self._dispatch_job = None
-        corridor_gates = job.get("corridor_gates")
-        gate_pins = (
-            corridor_gates
-            if isinstance(corridor_gates, dict)
-            else None
-        )
-        if bool(job.get("discard")):
+        gate_pins = job.corridor_gates or None
+        if job.discard:
             self._release_controlled_corridor_gate_pins(gate_pins)
             self._last_async_job_kind = ""
             self._forget_planning_job(job)
             return 0
-        candidate = job.get("candidate")
+        candidate = job.candidate
         if isinstance(candidate, PlanCandidate):
+            record = self.planning_state.jobs.get(candidate.job_id)
+            if (
+                isinstance(record, PlanningJobRecord)
+                and record.status in {
+                    PlanningJobStatus.CANCELLED,
+                    PlanningJobStatus.DEADLINE_EXCEEDED,
+                }
+            ):
+                self._release_controlled_corridor_gate_pins(gate_pins)
+                self._discard_terminal_planning_candidate(job)
+                return 0
             if not self._planning_candidate_is_current(job, candidate):
                 self._release_controlled_corridor_gate_pins(gate_pins)
                 self._reject_stale_planning_candidate(job, candidate)
                 return 0
+            if not candidate.result.get("ok"):
+                return self._finish_planning_candidate(
+                    job,
+                    candidate,
+                    gate_pins,
+                )
             try:
                 outcome = self._plan_commit_service.commit(
                     candidate,
@@ -490,12 +503,12 @@ class DispatchResultMixin:
                 )
             except BaseException as exc:
                 self._release_controlled_corridor_gate_pins(gate_pins)
-                planning_job = job.get("planning_job")
+                record = self.planning_state.jobs.get(candidate.job_id)
                 if (
-                    isinstance(planning_job, PlanningJob)
-                    and planning_job.status is PlanningJobStatus.COMPLETED
+                    isinstance(record, PlanningJobRecord)
+                    and record.status is PlanningJobStatus.COMPLETED
                 ):
-                    planning_job.transition(PlanningJobStatus.FAILED)
+                    record.transition_to(PlanningJobStatus.FAILED)
                 self._event(
                     "error",
                     f"planning_job_failed job_id={candidate.job_id} "
@@ -512,20 +525,42 @@ class DispatchResultMixin:
 
         return self._finish_planning_result(job, gate_pins)
 
+    def _discard_terminal_planning_candidate(
+        self,
+        job: PlanningJobRecord,
+    ) -> None:
+        """Requeue owner state after cancellation without calling it stale."""
+
+        for entry in job.entries:
+            if not isinstance(entry, tuple) or not entry:
+                continue
+            order = entry[0]
+            if isinstance(order, FleetOrder) and order.status == "PLANNING":
+                order.status = "QUEUED"
+                order.error = ""
+                order.updated_at = self._now()
+        if job.kind == "runtime_replan":
+            state = self._runtime_replans.get(job.robot_name)
+            if isinstance(state, dict) and state.get("stage") == "planning":
+                state["stage"] = "queued"
+                state["last_attempt_at"] = self._now()
+        self._last_async_job_kind = ""
+        self._forget_planning_job(job)
+
     def _finish_planning_candidate(
         self,
-        job: dict[str, Any],
+        job: PlanningJobRecord,
         candidate: PlanCandidate,
         gate_pins: dict[str, dict[str, Any]] | None,
     ) -> int:
-        planning_job = job.get("planning_job")
+        planning_job = job.job
         if not isinstance(planning_job, PlanningJob):
             raise RuntimeError("planning candidate has no matching job")
-        job["result"] = self._finalize_planning_candidate(
+        job.result = self._finalize_planning_candidate(
             planning_job.snapshot,
             candidate,
         )
-        debug = job["result"].get("debug", {})
+        debug = job.result.get("debug", {})
         if isinstance(debug, dict) and (
             "hybrid_cbs_fallback" in str(debug.get("reason") or "")
             or str(debug.get("reservedFallbackReason") or "").startswith(
@@ -542,14 +577,14 @@ class DispatchResultMixin:
 
     def _finish_planning_result(
         self,
-        job: dict[str, Any],
+        job: PlanningJobRecord,
         gate_pins: dict[str, dict[str, Any]] | None,
     ) -> int:
         """Apply an already validated solver result on the runtime owner."""
 
-        self._last_async_job_kind = str(job.get("kind") or "dispatch")
+        self._last_async_job_kind = job.kind or "dispatch"
 
-        if job.get("kind") in {
+        if job.kind in {
             "prefetch",
             "prefetch_batch",
         }:
@@ -559,14 +594,14 @@ class DispatchResultMixin:
                 return committed
             finally:
                 self._release_controlled_corridor_gate_pins(gate_pins)
-        if job.get("kind") == "runtime_replan":
+        if job.kind == "runtime_replan":
             try:
                 committed = self._finish_async_runtime_replan(job)
                 self._finish_planning_job_status(job, committed > 0)
                 return committed
             finally:
                 self._release_controlled_corridor_gate_pins(gate_pins)
-        if job.get("kind") == "coupled_replan":
+        if job.kind == "coupled_replan":
             try:
                 committed = self._finish_async_coupled_replan(job)
                 self._finish_planning_job_status(job, committed > 0)
@@ -576,14 +611,14 @@ class DispatchResultMixin:
 
         entries = [
             entry
-            for entry in job.get("entries", [])
+            for entry in job.entries
             if self._async_dispatch_entry_is_current(entry)
         ]
         if not entries:
             self._release_controlled_corridor_gate_pins(gate_pins)
             self._finish_planning_job_status(job, False)
             return 0
-        result = job.get("result")
+        result = job.result
         if not isinstance(result, dict):
             result = {
                 "ok": False,
@@ -603,7 +638,7 @@ class DispatchResultMixin:
 
     def _validate_candidate_commit(
         self,
-        job: dict[str, Any],
+        job: PlanningJobRecord,
         candidate: PlanCandidate,
     ) -> None:
         if not self._planning_candidate_is_current(job, candidate):
@@ -725,8 +760,8 @@ class DispatchResultMixin:
         scheduler = self.traffic_state.controlled_corridor_scheduler
         if scheduler is not None and checkpoint.scheduler_state is not None:
             scheduler.restore_transaction_state(checkpoint.scheduler_state)
-        for planning_job, status in checkpoint.job_statuses:
-            planning_job.status = status
+        for record, status in checkpoint.job_statuses:
+            record.status = status
 
     @staticmethod
     def _copy_state_values(
@@ -765,10 +800,10 @@ class DispatchResultMixin:
 
     def _planning_candidate_is_current(
         self,
-        job: dict[str, Any],
+        job: PlanningJobRecord,
         candidate: PlanCandidate,
     ) -> bool:
-        planning_job = job.get("planning_job")
+        planning_job = job.job
         if not isinstance(planning_job, PlanningJob):
             return False
         if planning_job.cancellation_token.cancelled:
@@ -788,18 +823,19 @@ class DispatchResultMixin:
 
     def _reject_stale_planning_candidate(
         self,
-        job: dict[str, Any],
+        job: PlanningJobRecord,
         candidate: PlanCandidate,
     ) -> None:
         """Discard a complete candidate without partially mutating routes."""
 
-        planning_job = job.get("planning_job")
+        planning_job = job.job
+        record = self.planning_state.jobs.get(candidate.job_id)
         if (
-            isinstance(planning_job, PlanningJob)
-            and planning_job.status is PlanningJobStatus.COMPLETED
+            isinstance(record, PlanningJobRecord)
+            and record.status is PlanningJobStatus.COMPLETED
         ):
-            planning_job.transition(PlanningJobStatus.STALE)
-        for entry in job.get("entries", []):
+            record.transition_to(PlanningJobStatus.STALE)
+        for entry in job.entries:
             if not isinstance(entry, tuple) or not entry:
                 continue
             order = entry[0]
@@ -807,13 +843,13 @@ class DispatchResultMixin:
                 order.status = "QUEUED"
                 order.error = ""
                 order.updated_at = self._now()
-        if str(job.get("kind") or "") == "runtime_replan":
-            robot_name = str(job.get("robot_name") or "")
+        if job.kind == "runtime_replan":
+            robot_name = job.robot_name
             state = self._runtime_replans.get(robot_name)
             if isinstance(state, dict) and state.get("stage") == "planning":
                 state["stage"] = "queued"
                 state["last_attempt_at"] = self._now()
-        job["stale"] = True
+        job.stale = True
         self.planning_state.stale_candidates += 1
         self.planning_state.record_event("planning_candidate_stale")
         robot_ids = (
@@ -834,19 +870,25 @@ class DispatchResultMixin:
 
     def _finish_planning_job_status(
         self,
-        job: dict[str, Any],
+        job: PlanningJobRecord,
         committed: bool,
     ) -> None:
-        planning_job = job.get("planning_job")
+        planning_job = job.job
+        record = (
+            self.planning_state.jobs.get(planning_job.job_id)
+            if isinstance(planning_job, PlanningJob)
+            else None
+        )
         if (
             committed
             and isinstance(planning_job, PlanningJob)
-            and planning_job.status is PlanningJobStatus.COMPLETED
+            and isinstance(record, PlanningJobRecord)
+            and record.status is PlanningJobStatus.COMPLETED
         ):
-            planning_job.transition(PlanningJobStatus.COMMITTED)
+            record.transition_to(PlanningJobStatus.COMMITTED)
             self.planning_state.committed_candidates += 1
             self.planning_state.record_event("planning_candidate_committed")
-            candidate = job.get("candidate")
+            candidate = job.candidate
             backend = (
                 str(candidate.metadata.get("backend") or "")
                 if isinstance(candidate, PlanCandidate)
@@ -864,13 +906,13 @@ class DispatchResultMixin:
                 f"expected_revision={planning_job.snapshot.revision} "
                 f"current_revision={self.planning_revision} "
                 f"robots={','.join(planning_job.robot_ids)} "
-                f"planning_duration_sec={max(0.0, (planning_job.finished_at or self._now()) - (planning_job.started_at or planning_job.submitted_at)):.6f} "
+                f"planning_duration_sec={max(0.0, (record.finished_at or self._now()) - (record.started_at or planning_job.submitted_at)):.6f} "
                 f"backend={backend} expansions={expansions}",
             )
         self._forget_planning_job(job)
 
-    def _forget_planning_job(self, job: dict[str, Any]) -> None:
-        job_id = str(job.get("job_id") or "")
+    def _forget_planning_job(self, job: PlanningJobRecord) -> None:
+        job_id = job.job_id
         if job_id:
             self.planning_state.jobs.pop(job_id, None)
 
@@ -883,14 +925,14 @@ class DispatchResultMixin:
 
     def _blacklist_failed_rolling_vacancy(
         self,
-        job: dict[str, Any],
+        job: PlanningJobRecord,
         robot: FleetRobot,
         request: dict[str, Any],
     ) -> None:
         """Remember a failed pocket only while the collapse is unchanged."""
         if not request.get("vacancyRecovery"):
             return
-        raw_signature = job.get("vacancy_recovery_signature")
+        raw_signature = job.vacancy_recovery_signature
         if not isinstance(raw_signature, tuple) or not raw_signature:
             return
         signature = tuple(
@@ -921,11 +963,11 @@ class DispatchResultMixin:
             (signature, robot.name, pocket_lm)
         )
 
-    def _finish_async_rolling_prefetch(self, job: dict[str, Any]) -> int:
+    def _finish_async_rolling_prefetch(self, job: PlanningJobRecord) -> int:
         entries = self._current_rolling_prefetch_entries(job)
         if not entries:
             return 0
-        result = job.get("result")
+        result = job.result
         if (
             not isinstance(result, dict)
             or not result.get("ok")
@@ -933,9 +975,7 @@ class DispatchResultMixin:
         ):
             self._finish_failed_rolling_prefetch(job, entries, result)
             return 0
-        corridor_gates = job.get("corridor_gates", {})
-        if not isinstance(corridor_gates, dict):
-            corridor_gates = {}
+        corridor_gates = job.corridor_gates
         result = self._rolling_result(
             result,
             {robot.name: final_goal for _, robot, _, final_goal, _ in entries},
@@ -954,12 +994,12 @@ class DispatchResultMixin:
 
     def _current_rolling_prefetch_entries(
         self,
-        job: dict[str, Any],
+        job: PlanningJobRecord,
     ) -> list[RollingPrefetchResultEntry]:
-        raw_entries = job.get("entries", [])
+        raw_entries = job.entries
         if not isinstance(raw_entries, list):
             return []
-        route_revisions = job.get("route_revisions", {})
+        route_revisions = job.route_revisions
         return [
             entry
             for entry in raw_entries
@@ -977,7 +1017,7 @@ class DispatchResultMixin:
 
     def _finish_failed_rolling_prefetch(
         self,
-        job: dict[str, Any],
+        job: PlanningJobRecord,
         entries: list[RollingPrefetchResultEntry],
         result: object,
     ) -> None:
@@ -1044,7 +1084,7 @@ class DispatchResultMixin:
 
     def _commit_rolling_prefetch_entry(
         self,
-        job: dict[str, Any],
+        job: PlanningJobRecord,
         entry: RollingPrefetchResultEntry,
         result: dict[str, Any],
         *,
@@ -1168,7 +1208,7 @@ class DispatchResultMixin:
 
     def _defer_failed_rolling_plan(
         self,
-        job: dict[str, Any],
+        job: PlanningJobRecord,
         entry: RollingPrefetchResultEntry,
         result: dict[str, Any],
     ) -> None:
@@ -1239,9 +1279,9 @@ class DispatchResultMixin:
                 return lm_name
         return ""
 
-    def _finish_async_coupled_replan(self, job: dict[str, Any]) -> int:
-        cycle_key = tuple(str(name) for name in job.get("cycle", ()))
-        entries = [entry for entry in job.get("entries", []) if isinstance(entry, dict)]
+    def _finish_async_coupled_replan(self, job: PlanningJobRecord) -> int:
+        cycle_key = tuple(str(name) for name in job.cycle)
+        entries = [entry for entry in job.entries if isinstance(entry, dict)]
         current: list[tuple[FleetRobot, FleetOrder, dict[str, Any]]] = []
         for entry in entries:
             robot = self.robots.get(str(entry.get("robot") or ""))
@@ -1263,7 +1303,7 @@ class DispatchResultMixin:
                 return 0
             current.append((robot, order, entry))
 
-        result = job.get("result")
+        result = job.result
         if not isinstance(result, dict) or not result.get("ok") or not result.get("plans"):
             self._record_coupled_replan_failure(cycle_key, result)
             return 0

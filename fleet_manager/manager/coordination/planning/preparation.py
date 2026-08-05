@@ -91,7 +91,30 @@ class TrafficPlanPreparationMixin:
         soft_blocked_lms = set(snapshot.soft_blocked_lms)
         if not soft_blocked_lms:
             if result.get("ok"):
-                return self._apply_planning_continuous_waits(result, context)
+                return self._apply_continuous_waits(result, context)
+            return result
+
+        if candidate.metadata.get("selectedSource") == "fallback":
+            primary = candidate.metadata.get("primaryResult")
+            primary_result = primary if isinstance(primary, dict) else {}
+            primary_debug = primary_result.get("debug")
+            failed_reason = (
+                primary_debug.get("reason", "unknown")
+                if isinstance(primary_debug, dict)
+                else "unknown"
+            )
+            debug = result.setdefault("debug", {})
+            debug["reason"] = (
+                f"{debug.get('reason', 'success')}:fallback_wait"
+            )
+            debug["softBlockedLms"] = sorted(soft_blocked_lms)
+            debug["softBlockFailure"] = failed_reason
+            result = self._apply_continuous_waits(result, context)
+            self._event(
+                "warn",
+                "planner found no detour; using original route and "
+                "runtime waiting",
+            )
             return result
 
         if result.get("ok"):
@@ -100,7 +123,7 @@ class TrafficPlanPreparationMixin:
                 f"{debug.get('reason', 'success')}:detour_soft_blocks"
             )
             debug["softBlockedLms"] = sorted(soft_blocked_lms)
-            result = self._apply_planning_continuous_waits(result, context)
+            result = self._apply_continuous_waits(result, context)
             self._event(
                 "info",
                 "planner detour around occupied LM(s): "
@@ -127,7 +150,7 @@ class TrafficPlanPreparationMixin:
             )
             debug["softBlockedLms"] = sorted(soft_blocked_lms)
             debug["softBlockFailure"] = failed_reason
-            fallback_result = self._apply_planning_continuous_waits(
+            fallback_result = self._apply_continuous_waits(
                 fallback_result,
                 context,
             )
@@ -178,7 +201,7 @@ class TrafficPlanPreparationMixin:
                 request_names=request_names,
             )
             if not blocker_names:
-                diagnostic = self._apply_planning_continuous_waits(
+                diagnostic = self._apply_continuous_waits(
                     diagnostic,
                     context,
                 )
@@ -248,7 +271,7 @@ class TrafficPlanPreparationMixin:
             }
         )
         if result.get("ok"):
-            result = self._apply_planning_continuous_waits(
+            result = self._apply_continuous_waits(
                 result,
                 context,
             )
@@ -365,7 +388,7 @@ class TrafficPlanPreparationMixin:
                 f"{debug.get('reason', 'success')}:detour_soft_blocks"
             )
             debug["softBlockedLms"] = sorted(soft_blocked_lms)
-            result = self._apply_planning_continuous_waits(result, context)
+            result = self._apply_continuous_waits(result, context)
             self._event(
                 "info",
                 "planner detour around occupied LM(s): "
@@ -433,7 +456,7 @@ class TrafficPlanPreparationMixin:
                 request_names=request_names,
             )
             if not blocker_names:
-                diagnostic = self._apply_planning_continuous_waits(
+                diagnostic = self._apply_continuous_waits(
                     diagnostic,
                     context,
                 )
@@ -491,7 +514,7 @@ class TrafficPlanPreparationMixin:
             )
             debug["softBlockedLms"] = sorted(soft_blocked_lms)
             debug["softBlockFailure"] = failed_reason
-            result = self._apply_planning_continuous_waits(result, context)
+            result = self._apply_continuous_waits(result, context)
             self._event(
                 "warn",
                 "planner found no detour; using original route and "
@@ -499,7 +522,7 @@ class TrafficPlanPreparationMixin:
             )
         return result
 
-    def _apply_planning_continuous_waits(
+    def _apply_continuous_waits(
         self,
         result: dict[str, Any],
         context: _TrafficPlanningContext,

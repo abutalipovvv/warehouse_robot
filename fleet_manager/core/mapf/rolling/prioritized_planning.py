@@ -373,6 +373,7 @@ class PrioritizedSippCoordinator:
         blocked_nodes: set[NodeName],
         blocked_edges: set[tuple[NodeName, NodeName]],
         static: StaticReservations,
+        should_cancel: Callable[[], bool] | None = None,
     ) -> PlannerResult:
         debug = PlannerDebug(reason="rolling_sipp:init")
         planning_deadline = (
@@ -395,6 +396,8 @@ class PrioritizedSippCoordinator:
         priority = PriorityOrderManager(robot_requests)
 
         while True:
+            if should_cancel is not None and should_cancel():
+                raise InterruptedError("planning cancelled")
             if monotonic() >= planning_deadline:
                 return self._timeout_result(
                     debug,
@@ -410,6 +413,8 @@ class PrioritizedSippCoordinator:
             retry_with_new_order = False
 
             for request in priority.ordered_requests:
+                if should_cancel is not None and should_cancel():
+                    raise InterruptedError("planning cancelled")
                 if monotonic() >= planning_deadline:
                     return self._timeout_result(
                         debug,
@@ -425,6 +430,7 @@ class PrioritizedSippCoordinator:
                     blocked_edges,
                     planning_deadline,
                     metrics,
+                    should_cancel,
                 )
                 if path is None:
                     result, retry_with_new_order = (
@@ -533,6 +539,7 @@ class PrioritizedSippCoordinator:
         blocked_edges: set[tuple[NodeName, NodeName]],
         planning_deadline: float,
         metrics: RollingPlanningMetrics,
+        should_cancel: Callable[[], bool] | None,
     ) -> TimedPath | None:
         initial_departure = max(
             0,
@@ -541,6 +548,8 @@ class PrioritizedSippCoordinator:
         staging_attempts = 0
 
         while True:
+            if should_cancel is not None and should_cancel():
+                raise InterruptedError("planning cancelled")
             path = sipp.plan(
                 SippRobotRequest(
                     robot_name=request.robot_name,
@@ -563,6 +572,7 @@ class PrioritizedSippCoordinator:
                 blocked_nodes=blocked_nodes,
                 blocked_edges=blocked_edges,
                 planning_deadline=planning_deadline,
+                should_cancel=should_cancel,
             )
             metrics.expanded_nodes += sipp.expanded_nodes
             if path is not None:

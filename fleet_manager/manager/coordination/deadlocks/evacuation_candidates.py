@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 from fleet_manager.robot.model import FleetRobot
-from fleet_manager.manager.coordination.deadlocks.recovery.evacuation.deadlock_evacuation_candidate_models import (
+from fleet_manager.manager.coordination.deadlocks.models import (
     _EvacuationCandidateProbe,
     _EvacuationSearchContext,
 )
-from fleet_manager.manager.coordination.deadlocks.recovery.evacuation.deadlock_evacuation_models import (
+from fleet_manager.manager.coordination.deadlocks.models import (
     _EvacuationCandidate,
 )
 

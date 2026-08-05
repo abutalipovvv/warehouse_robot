@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
+from enum import Enum
 import math
 from typing import Any
 
@@ -18,6 +19,23 @@ from fleet_manager.robot.model import FleetRobot
 from fleet_manager.manager.state import FleetState
 
 
+class AdmissionStatus(str, Enum):
+    """Outcome of choosing a robot for a validated order."""
+
+    ACCEPTED = "accepted"
+    REJECTED = "rejected"
+    DEFERRED = "deferred"
+
+
+@dataclass(frozen=True, slots=True)
+class OrderAdmissionResult:
+    """Explicit admission decision used before dispatch planning."""
+
+    status: AdmissionStatus
+    robot_id: str | None
+    reason: str = ""
+
+
 class OrderAdmissionService:
     """Validate payloads and build orders from explicit dependencies."""
 
@@ -26,10 +44,21 @@ class OrderAdmissionService:
         fleet_state: FleetState,
         landmarks: Mapping[str, Any],
         clock: Callable[[], float],
+        *,
+        robot_enabled: Callable[[FleetRobot], bool] | None = None,
+        refresh_remote: Callable[[FleetRobot], None] | None = None,
+        remote_owner: Callable[[FleetRobot], str] | None = None,
+        robot_landmark: Callable[[FleetRobot], str] | None = None,
     ) -> None:
         self._fleet_state = fleet_state
         self._landmarks = landmarks
         self._clock = clock
+        self._robot_enabled = robot_enabled or (lambda _robot: True)
+        self._refresh_remote = refresh_remote or (lambda _robot: None)
+        self._remote_owner = remote_owner or (lambda _robot: "")
+        self._robot_landmark = robot_landmark or (
+            lambda robot: robot.current_lm
+        )
 
     def build(self, payload: Mapping[str, Any]) -> FleetOrder:
         order_id = str(
@@ -164,6 +193,79 @@ class OrderAdmissionService:
                 return value.strip().lower() in {"1", "true", "yes", "on"}
             return bool(value)
         return default
+
+    def admission_result(self, order: FleetOrder) -> OrderAdmissionResult:
+        """Choose the best available robot without starting a planner."""
+
+        candidates = self.candidate_robots(order)
+        if not candidates:
+            return OrderAdmissionResult(
+                status=AdmissionStatus.DEFERRED,
+                robot_id=None,
+                reason="no available robot",
+            )
+        return OrderAdmissionResult(
+            status=AdmissionStatus.ACCEPTED,
+            robot_id=candidates[0].name,
+        )
+
+    def candidate_robots(self, order: FleetOrder) -> list[FleetRobot]:
+        """Return deterministic candidates for one validated order."""
+
+        if order.vehicle:
+            robot = self._fleet_state.robots.get(order.vehicle)
+            if robot is None:
+                return []
+            if self.can_accept(robot, explicit=True):
+                return [robot]
+            return []
+
+        candidates = [
+            robot
+            for robot in self._fleet_state.robots.values()
+            if self.can_accept(robot, explicit=False)
+        ]
+        candidates.sort(
+            key=lambda robot: (
+                self.landmark_distance(
+                    self._robot_landmark(robot),
+                    order.target_lm,
+                ),
+                robot.name,
+            )
+        )
+        return candidates
+
+    def can_accept(self, robot: FleetRobot, *, explicit: bool) -> bool:
+        """Check order ownership and remote-control availability."""
+
+        if not self._robot_enabled(robot):
+            return False
+        if robot.is_remote():
+            self._refresh_remote(robot)
+            if not robot.remote_online:
+                return False
+            owner_id = self._remote_owner(robot)
+            if owner_id and owner_id != FLEET_CONTROL_OWNER_ID:
+                return False
+            if robot.status in {"LOCALIZING", "OFFLINE", "ERROR"}:
+                return False
+        if robot.active_order_id or robot.target_lm or robot.trajectory:
+            return False
+        if robot.status in {"MOVING", "WAITING", "PLANNING", "BLOCKED"}:
+            return False
+        if robot.status in {"STOPPED", "MANUAL"} and not explicit:
+            return False
+        return True
+
+    def landmark_distance(self, start_lm: str, goal_lm: str) -> float:
+        """Return Euclidean landmark distance for stable candidate ordering."""
+
+        start = self._landmarks.get(start_lm)
+        goal = self._landmarks.get(goal_lm)
+        if start is None or goal is None:
+            return float("inf")
+        return math.hypot(goal.x - start.x, goal.y - start.y)
 
 
 DispatchEntry = tuple[FleetOrder, FleetRobot, dict[str, Any], str]
@@ -1066,51 +1168,16 @@ class OrderAdmissionMixin:
         return reason, stationary_failure_debug
 
     def _candidate_robots_for_order(self, order: FleetOrder) -> list[FleetRobot]:
-        if order.vehicle:
-            robot = self.robots.get(order.vehicle)
-            if robot is None:
-                return []
-            return [robot] if self._robot_can_accept_order(robot, explicit=True) else []
-
-        candidates = [
-            robot for robot in self._runtime_robots()
-            if self._robot_can_accept_order(robot, explicit=False)
-        ]
-        candidates.sort(
-            key=lambda robot: (
-                self._lm_distance(self._nearest_lm_for_robot(robot), order.target_lm),
-                robot.name,
-            )
-        )
-        return candidates
+        return self._order_admission_service.candidate_robots(order)
 
     def _robot_can_accept_order(self, robot: FleetRobot, explicit: bool = False) -> bool:
-        if not self._robot_enabled(robot):
-            return False
-        if robot.is_remote():
-            self._sync_remote_robot(robot, self._now(), force=False)
-            if not robot.remote_online:
-                return False
-            owner_id, _ = self._remote_control_owner(robot)
-            if owner_id and owner_id != FLEET_CONTROL_OWNER_ID:
-                return False
-            if robot.status in {"LOCALIZING", "OFFLINE", "ERROR"}:
-                return False
-        if robot.active_order_id:
-            return False
-        if robot.target_lm or robot.trajectory:
-            return False
-        if robot.status == "STOPPED" and not explicit:
-            return False
-        if robot.status == "MANUAL" and not explicit:
-            return False
-        if robot.status in {"MOVING", "WAITING", "PLANNING", "BLOCKED"}:
-            return False
-        return True
+        return self._order_admission_service.can_accept(
+            robot,
+            explicit=explicit,
+        )
 
     def _lm_distance(self, start_lm: str, goal_lm: str) -> float:
-        start = self.landmarks.get(start_lm)
-        goal = self.landmarks.get(goal_lm)
-        if start is None or goal is None:
-            return float("inf")
-        return math.hypot(goal.x - start.x, goal.y - start.y)
+        return self._order_admission_service.landmark_distance(
+            start_lm,
+            goal_lm,
+        )

@@ -22,12 +22,14 @@ class ReplanningService:
         recovery_state: RecoveryState,
         safe_start_lm: Callable[[FleetRobot], str],
         clock: Callable[[], float],
+        retry_interval: Callable[[FleetOrder], float] | None = None,
     ) -> None:
         self._fleet = fleet_state
         self._planning = planning_state
         self._recovery = recovery_state
         self._safe_start_lm = safe_start_lm
         self._clock = clock
+        self._retry_interval = retry_interval or (lambda _order: 0.5)
 
     def state_is_current(
         self,
@@ -128,6 +130,79 @@ class ReplanningService:
         robot.last_reason = f"replanning route while holding: {reason}"
         robot.updated_at = now
         return state
+
+    def record_failure(
+        self,
+        order: FleetOrder,
+        robot: FleetRobot,
+        state: dict[str, Any],
+        reason: str,
+        *,
+        debug: dict[str, Any] | None,
+        dynamic_conflict_signature: tuple[Any, ...],
+        reservation_conflict_signature: tuple[Any, ...],
+    ) -> _RuntimeReplanFailure:
+        """Record one bounded retry without committing a replacement plan."""
+
+        now = float(self._clock())
+        failures = int(state.get("failures", 0) or 0) + 1
+        failure_text = str(reason or "")
+        identical_failures = (
+            int(state.get("identical_failure_count", 0) or 0) + 1
+            if str(state.get("last_failure_reason") or "") == failure_text
+            else 1
+        )
+        state["failures"] = failures
+        state["identical_failure_count"] = identical_failures
+        state["stage"] = "retry"
+        state["last_failure_reason"] = failure_text
+        state["last_failure_at"] = now
+        order.dispatch_failures += 1
+        state["retry_at"] = now + self._retry_interval(order)
+        self._record_conflict_signature(
+            state,
+            "dynamic_conflict",
+            dynamic_conflict_signature,
+        )
+        self._record_conflict_signature(
+            state,
+            "reservation_conflict",
+            reservation_conflict_signature,
+        )
+        return _RuntimeReplanFailure(
+            order=order,
+            robot=robot,
+            state=state,
+            reason=reason,
+            now=now,
+            failures=failures,
+            failure_text=failure_text,
+            identical_failures=identical_failures,
+            original_reason=str(state.get("reason") or ""),
+            stationary_debug=dict(debug) if isinstance(debug, dict) else {},
+            dynamic_conflict_signature=dynamic_conflict_signature,
+            reservation_conflict_signature=reservation_conflict_signature,
+        )
+
+    @staticmethod
+    def _record_conflict_signature(
+        state: dict[str, Any],
+        name: str,
+        signature: tuple[Any, ...],
+    ) -> None:
+        signature_key = f"{name}_signature"
+        count_key = f"{name}_count"
+        if not signature:
+            state.pop(signature_key, None)
+            state.pop(count_key, None)
+            return
+        previous_signature = state.get(signature_key)
+        state[signature_key] = signature
+        state[count_key] = (
+            int(state.get(count_key, 0) or 0) + 1
+            if previous_signature == signature
+            else 1
+        )
 
     def coupled_failure_count(self, robot_names: Collection[str]) -> int:
         members = {str(name) for name in robot_names if str(name)}
@@ -401,22 +476,6 @@ class RuntimeReplanMixin:
         *,
         debug: dict[str, Any] | None,
     ) -> _RuntimeReplanFailure:
-        now = self._now()
-        failures = int(state.get("failures", 0) or 0) + 1
-        failure_text = str(reason or "")
-        identical_failures = (
-            int(state.get("identical_failure_count", 0) or 0) + 1
-            if str(state.get("last_failure_reason") or "") == failure_text
-            else 1
-        )
-        state["failures"] = failures
-        state["identical_failure_count"] = identical_failures
-        state["stage"] = "retry"
-        state["last_failure_reason"] = failure_text
-        state["last_failure_at"] = now
-        order.dispatch_failures += 1
-        state["retry_at"] = now + self._order_dispatch_retry_interval(order)
-        original_reason = str(state.get("reason") or "")
         stationary_debug = dict(debug) if isinstance(debug, dict) else {}
         dynamic_conflict_signature = (
             self._runtime_replan_dynamic_conflict_signature(
@@ -424,18 +483,6 @@ class RuntimeReplanMixin:
                 stationary_debug,
             )
         )
-        if dynamic_conflict_signature:
-            previous_signature = state.get("dynamic_conflict_signature")
-            repeated_conflicts = (
-                int(state.get("dynamic_conflict_count", 0) or 0) + 1
-                if previous_signature == dynamic_conflict_signature
-                else 1
-            )
-            state["dynamic_conflict_signature"] = dynamic_conflict_signature
-            state["dynamic_conflict_count"] = repeated_conflicts
-        else:
-            state.pop("dynamic_conflict_signature", None)
-            state.pop("dynamic_conflict_count", None)
         reservation_conflict_signature = (
             self._runtime_replan_reservation_conflict_signature(
                 robot,
@@ -443,33 +490,12 @@ class RuntimeReplanMixin:
                 stationary_debug,
             )
         )
-        if reservation_conflict_signature:
-            previous_signature = state.get(
-                "reservation_conflict_signature"
-            )
-            repeated_conflicts = (
-                int(state.get("reservation_conflict_count", 0) or 0) + 1
-                if previous_signature == reservation_conflict_signature
-                else 1
-            )
-            state["reservation_conflict_signature"] = (
-                reservation_conflict_signature
-            )
-            state["reservation_conflict_count"] = repeated_conflicts
-        else:
-            state.pop("reservation_conflict_signature", None)
-            state.pop("reservation_conflict_count", None)
-        return _RuntimeReplanFailure(
-            order=order,
-            robot=robot,
-            state=state,
-            reason=reason,
-            now=now,
-            failures=failures,
-            failure_text=failure_text,
-            identical_failures=identical_failures,
-            original_reason=original_reason,
-            stationary_debug=stationary_debug,
+        return self._replanning_service.record_failure(
+            order,
+            robot,
+            state,
+            reason,
+            debug=debug,
             dynamic_conflict_signature=dynamic_conflict_signature,
             reservation_conflict_signature=reservation_conflict_signature,
         )

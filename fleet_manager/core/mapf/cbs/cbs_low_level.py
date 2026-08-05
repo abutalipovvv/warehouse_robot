@@ -85,6 +85,7 @@ class LmCBSEnvironment:
         low_level_max_time: int = 128,
         wait_cost: int = 6,
         planning_deadline: float | None = None,
+        should_cancel: Callable[[], bool] | None = None,
     ) -> None:
         self.graph = graph
         self.agent_requests = agent_requests
@@ -135,6 +136,7 @@ class LmCBSEnvironment:
         )
         self.wait_cost = max(1, int(wait_cost))
         self.planning_deadline = planning_deadline
+        self.should_cancel = should_cancel
 
         self.agent_dict: dict[
             str,
@@ -852,15 +854,23 @@ class LmCBSEnvironment:
         expansions = 0
         while open_heap:
             expansions += 1
-            if (
-                expansions == 1
-                or expansions % 128 == 0
-            ) and (
-                self.planning_deadline is not None
-                and py_time.monotonic()
-                >= self.planning_deadline
-            ):
-                self.last_failure = "planning_timeout"
+            check_limits = expansions == 1 or expansions % 128 == 0
+            cancelled = bool(
+                check_limits
+                and self.should_cancel is not None
+                and self.should_cancel()
+            )
+            timed_out = bool(
+                check_limits
+                and self.planning_deadline is not None
+                and py_time.monotonic() >= self.planning_deadline
+            )
+            if cancelled or timed_out:
+                self.last_failure = (
+                    "planning_cancelled"
+                    if cancelled
+                    else "planning_timeout"
+                )
                 return None
 
             _, _, current = heappop(open_heap)
