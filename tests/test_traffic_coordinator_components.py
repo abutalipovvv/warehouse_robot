@@ -3,17 +3,17 @@ from __future__ import annotations
 import random
 
 from fleet_manager.robot.model import FleetRobot
-from fleet_manager.manager.traffic.coordinator import TrafficCoordinatorMixin
-from fleet_manager.manager.traffic.deadlocks.arbitration.deadlock_arbitration import (
+from fleet_manager.manager.coordination.coordinator import TrafficCoordinatorMixin
+from fleet_manager.manager.coordination.deadlocks.arbitration.deadlock_arbitration import (
     DeadlockArbitrationMixin,
 )
-from fleet_manager.manager.traffic.deadlocks.recovery.evacuation.deadlock_evacuation import (
+from fleet_manager.manager.coordination.deadlocks.recovery.evacuation.deadlock_evacuation import (
     DeadlockEvacuationMixin,
 )
-from fleet_manager.manager.traffic.deadlocks.recovery.evacuation.deadlock_evacuation_models import (
+from fleet_manager.manager.coordination.deadlocks.recovery.evacuation.deadlock_evacuation_models import (
     _EvacuationCandidate,
 )
-from fleet_manager.manager.traffic.runtime_conflicts import RuntimeConflictMixin
+from fleet_manager.manager.coordination.runtime_conflicts import RuntimeConflictMixin
 from fleet_manager.core.traffic.deadlocks.wait_graph import WaitForGraph
 
 

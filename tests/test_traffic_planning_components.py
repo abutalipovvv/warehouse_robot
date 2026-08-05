@@ -4,20 +4,20 @@ from contextlib import AbstractContextManager
 from types import SimpleNamespace
 from typing import Any
 
-from fleet_manager.manager.traffic.planning.planning import TrafficPlanningMixin
-from fleet_manager.manager.traffic.planning.planning_continuous import (
+from fleet_manager.manager.coordination.planning.planning import TrafficPlanningMixin
+from fleet_manager.manager.coordination.planning.planning_continuous import (
     TrafficContinuousWaitSchedulingMixin,
 )
-from fleet_manager.manager.traffic.planning.planning_preparation import (
+from fleet_manager.manager.coordination.planning.planning_preparation import (
     TrafficPlanPreparationMixin,
 )
-from fleet_manager.manager.traffic.planning.planning_reservations import (
+from fleet_manager.manager.coordination.planning.planning_reservations import (
     TrafficReservationMixin,
 )
-from fleet_manager.manager.traffic.planning.planning_results import (
+from fleet_manager.manager.coordination.planning.planning_results import (
     TrafficPlanResultMixin,
 )
-from fleet_manager.manager.traffic.planning.planning_scheduling import (
+from fleet_manager.manager.coordination.planning.planning_scheduling import (
     TrafficReservationSchedulingMixin,
 )
 

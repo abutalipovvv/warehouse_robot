@@ -5,20 +5,20 @@ import random
 from types import SimpleNamespace
 from typing import Any
 
-from fleet_manager.manager.traffic.corridors.admission.controlled_corridor_admission import (
+from fleet_manager.manager.coordination.corridors.admission.controlled_corridor_admission import (
     ControlledCorridorAdmissionMixin,
 )
-from fleet_manager.manager.traffic.corridors.passage import (
+from fleet_manager.manager.coordination.corridors.passage import (
     ControlledCorridorPassageMixin,
 )
-from fleet_manager.manager.traffic.corridors.prefetch.controlled_corridor_prefetch import (
+from fleet_manager.manager.coordination.corridors.prefetch.controlled_corridor_prefetch import (
     ControlledCorridorPrefetchMixin,
 )
 from fleet_manager.core.traffic.corridors.scheduling.corridor_models import CorridorRequest
-from fleet_manager.manager.traffic.routing.rolling_route_helpers import RollingRouteMixin
-from fleet_manager.manager.traffic.routing.routing import TrafficRoutingMixin
-from fleet_manager.manager.traffic.routing.spatial_detours import SpatialDetourMixin
-from fleet_manager.manager.traffic.zones import (
+from fleet_manager.manager.coordination.routing.rolling_route_helpers import RollingRouteMixin
+from fleet_manager.manager.coordination.routing.routing import TrafficRoutingMixin
+from fleet_manager.manager.coordination.routing.spatial_detours import SpatialDetourMixin
+from fleet_manager.manager.coordination.zones import (
     TrafficZoneAdmissionMixin,
 )
 

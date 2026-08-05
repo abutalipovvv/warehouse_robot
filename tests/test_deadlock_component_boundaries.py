@@ -3,42 +3,42 @@ from __future__ import annotations
 import inspect
 
 from fleet_manager.robot.model import FleetRobot
-from fleet_manager.manager.traffic.deadlocks.arbitration.deadlock_arbitration import (
+from fleet_manager.manager.coordination.deadlocks.arbitration.deadlock_arbitration import (
     DeadlockArbitrationMixin,
 )
-from fleet_manager.manager.traffic.deadlocks.arbitration.deadlock_corridor_ownership import (
+from fleet_manager.manager.coordination.deadlocks.arbitration.deadlock_corridor_ownership import (
     CorridorOwnershipMixin,
 )
-from fleet_manager.manager.traffic.deadlocks.recovery.cycles.deadlock_cycle_recovery import (
+from fleet_manager.manager.coordination.deadlocks.recovery.cycles.deadlock_cycle_recovery import (
     WaitCycleRecoveryMixin,
 )
-from fleet_manager.manager.traffic.deadlocks.recovery.evacuation.deadlock_escape_install import (
+from fleet_manager.manager.coordination.deadlocks.recovery.evacuation.deadlock_escape_install import (
     GraphEscapeInstallMixin,
 )
-from fleet_manager.manager.traffic.deadlocks.recovery.evacuation.deadlock_evacuation import (
+from fleet_manager.manager.coordination.deadlocks.recovery.evacuation.deadlock_evacuation import (
     DeadlockEvacuationMixin,
 )
-from fleet_manager.manager.traffic.deadlocks.recovery.evacuation.deadlock_evacuation_activation import (
+from fleet_manager.manager.coordination.deadlocks.recovery.evacuation.deadlock_evacuation_activation import (
     EvacuationActivationMixin,
 )
-from fleet_manager.manager.traffic.deadlocks.recovery.evacuation.deadlock_evacuation_candidates import (
+from fleet_manager.manager.coordination.deadlocks.recovery.evacuation.deadlock_evacuation_candidates import (
     EvacuationCandidateMixin,
 )
-from fleet_manager.manager.traffic.deadlocks.recovery.evacuation.deadlock_evacuation_geometry import (
+from fleet_manager.manager.coordination.deadlocks.recovery.evacuation.deadlock_evacuation_geometry import (
     EvacuationGeometryMixin,
 )
-from fleet_manager.manager.traffic.deadlocks.recovery.evacuation.deadlock_evacuation_latches import (
+from fleet_manager.manager.coordination.deadlocks.recovery.evacuation.deadlock_evacuation_latches import (
     EvacuationLatchMixin,
 )
-from fleet_manager.manager.traffic.deadlocks.recovery.evacuation.deadlock_evacuation_models import (
+from fleet_manager.manager.coordination.deadlocks.recovery.evacuation.deadlock_evacuation_models import (
     _EvacuationCandidate as EvacuationCandidateModel,
 )
-from fleet_manager.manager.traffic.deadlocks.arbitration.deadlock_leases import DeadlockLeaseMixin
-from fleet_manager.manager.traffic.deadlocks.arbitration.deadlock_policy import DeadlockPolicyMixin
-from fleet_manager.manager.traffic.deadlocks.arbitration.deadlock_priority import (
+from fleet_manager.manager.coordination.deadlocks.arbitration.deadlock_leases import DeadlockLeaseMixin
+from fleet_manager.manager.coordination.deadlocks.arbitration.deadlock_policy import DeadlockPolicyMixin
+from fleet_manager.manager.coordination.deadlocks.arbitration.deadlock_priority import (
     DeadlockPriorityMixin,
 )
-from fleet_manager.manager.traffic.deadlocks.arbitration.deadlock_wait_detection import (
+from fleet_manager.manager.coordination.deadlocks.arbitration.deadlock_wait_detection import (
     WaitCycleDetectionMixin,
     _RuntimeWaitSnapshot as RuntimeWaitSnapshotModel,
 )

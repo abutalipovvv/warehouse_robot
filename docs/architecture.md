@@ -97,9 +97,9 @@ The larger orchestration classes are composition modules:
 
 - `manager/movement/motion.py` composes step, kinematics, safety, retreat
   and replanning;
-- `manager/traffic/routing/routing.py` composes spatial detours, traffic-zone admission,
+- `manager/coordination/routing/routing.py` composes spatial detours, traffic-zone admission,
   controlled-corridor admission/prefetch/passage and rolling-route helpers;
-- `manager/traffic/coordinator.py` composes wait detection, priority, leases,
+- `manager/coordination/coordinator.py` composes wait detection, priority, leases,
   evacuation, escape installation and wait-cycle recovery;
 - `manager/tasks/dispatch.py` composes order admission, planning jobs, request
   construction, continuations, recovery and result commit;

@@ -18,9 +18,9 @@ from fleet_manager.manager.snapshots import FleetManagerSnapshotMixin
 from fleet_manager.manager.runtime_state import FleetManagerRuntimeStateMixin
 from fleet_manager.manager.movement.motion import FleetMotionRuntimeMixin
 from fleet_manager.manager.tasks.dispatch import FleetTaskDispatchMixin
-from fleet_manager.manager.traffic.coordinator import TrafficCoordinatorMixin
-from fleet_manager.manager.traffic.planning.planning import TrafficPlanningMixin
-from fleet_manager.manager.traffic.routing.routing import TrafficRoutingMixin
+from fleet_manager.manager.coordination.coordinator import TrafficCoordinatorMixin
+from fleet_manager.manager.coordination.planning.planning import TrafficPlanningMixin
+from fleet_manager.manager.coordination.routing.routing import TrafficRoutingMixin
 
 
 # Tests and embedded runtimes may replace this clock before manager creation.

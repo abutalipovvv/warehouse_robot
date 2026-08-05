@@ -31,11 +31,11 @@ from fleet_manager.core.mapping.maps.models import (
     Landmark,
     WorldPoint,
 )
-from fleet_manager.manager.traffic.coordinator import (
+from fleet_manager.manager.coordination.coordinator import (
     TrafficCoordinatorMixin,
 )
-from fleet_manager.manager.traffic.planning.planning import TrafficPlanningMixin
-from fleet_manager.manager.traffic.routing.routing import TrafficRoutingMixin
+from fleet_manager.manager.coordination.planning.planning import TrafficPlanningMixin
+from fleet_manager.manager.coordination.routing.routing import TrafficRoutingMixin
 from fleet_manager.manager.tasks.dispatch import FleetTaskDispatchMixin
 
 

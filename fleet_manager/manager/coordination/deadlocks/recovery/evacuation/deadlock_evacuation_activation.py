@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from fleet_manager.manager.tasks.statuses import TERMINAL_ORDER_STATUSES
 from fleet_manager.robot.model import FleetRobot
-from fleet_manager.manager.traffic.deadlocks.recovery.evacuation.deadlock_evacuation_models import (
+from fleet_manager.manager.coordination.deadlocks.recovery.evacuation.deadlock_evacuation_models import (
     _EvacuationCandidate,
 )
 

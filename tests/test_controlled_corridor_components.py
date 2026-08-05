@@ -5,39 +5,39 @@ from pathlib import Path
 
 import pytest
 
-from fleet_manager.manager.traffic.corridors.admission.controlled_corridor_admission import (
+from fleet_manager.manager.coordination.corridors.admission.controlled_corridor_admission import (
     ControlledCorridorAdmissionMixin,
 )
-from fleet_manager.manager.traffic.corridors.admission.controlled_corridor_admission_decisions import (
+from fleet_manager.manager.coordination.corridors.admission.controlled_corridor_admission_decisions import (
     ControlledCorridorAdmissionDecisionMixin,
 )
-from fleet_manager.manager.traffic.corridors.admission.controlled_corridor_admission_models import (
+from fleet_manager.manager.coordination.corridors.admission.controlled_corridor_admission_models import (
     _CentralCorridorBuild,
     _CentralCorridorPublication,
     _CentralCorridorWaitContext,
 )
-from fleet_manager.manager.traffic.corridors.admission.controlled_corridor_admission_requests import (
+from fleet_manager.manager.coordination.corridors.admission.controlled_corridor_admission_requests import (
     ControlledCorridorRequestCollectionMixin,
 )
-from fleet_manager.manager.traffic.corridors.admission.controlled_corridor_admission_runtime import (
+from fleet_manager.manager.coordination.corridors.admission.controlled_corridor_admission_runtime import (
     ControlledCorridorRuntimePublicationMixin,
 )
-from fleet_manager.manager.traffic.corridors.prefetch.controlled_corridor_prefetch import (
+from fleet_manager.manager.coordination.corridors.prefetch.controlled_corridor_prefetch import (
     ControlledCorridorPrefetchMixin,
 )
-from fleet_manager.manager.traffic.corridors.prefetch.controlled_corridor_prefetch_gate import (
+from fleet_manager.manager.coordination.corridors.prefetch.controlled_corridor_prefetch_gate import (
     ControlledCorridorPrefetchGateMixin,
 )
-from fleet_manager.manager.traffic.corridors.prefetch.controlled_corridor_prefetch_intent import (
+from fleet_manager.manager.coordination.corridors.prefetch.controlled_corridor_prefetch_intent import (
     ControlledCorridorPrefetchIntentMixin,
 )
-from fleet_manager.manager.traffic.corridors.prefetch.controlled_corridor_prefetch_models import (
+from fleet_manager.manager.coordination.corridors.prefetch.controlled_corridor_prefetch_models import (
     _CorridorIntentDraft,
     _CorridorPlannedPassage,
     _CorridorRouteDraft,
     _CorridorValidationContext,
 )
-from fleet_manager.manager.traffic.corridors.prefetch.controlled_corridor_prefetch_validation import (
+from fleet_manager.manager.coordination.corridors.prefetch.controlled_corridor_prefetch_validation import (
     ControlledCorridorPrefetchValidationMixin,
 )
 
@@ -142,7 +142,7 @@ def test_snapshot_accumulators_are_explicitly_mutable(model: type[object]) -> No
 
 
 def test_controlled_corridor_stages_keep_methods_reviewable() -> None:
-    traffic_dir = Path(__file__).parents[1] / "fleet_manager/manager/traffic"
+    traffic_dir = Path(__file__).parents[1] / "fleet_manager/manager/coordination"
     component_paths = (
         "corridors/admission/controlled_corridor_admission_decisions.py",
         "corridors/admission/controlled_corridor_admission_requests.py",

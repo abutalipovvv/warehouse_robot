@@ -4,16 +4,16 @@ import inspect
 from types import SimpleNamespace
 
 from fleet_manager.robot.model import FleetRobot
-from fleet_manager.manager.traffic.deadlocks.recovery.cycles.deadlock_cycle_recovery import (
+from fleet_manager.manager.coordination.deadlocks.recovery.cycles.deadlock_cycle_recovery import (
     WaitCycleRecoveryMixin,
 )
-from fleet_manager.manager.traffic.deadlocks.recovery.cycles.deadlock_cycle_recovery_models import (
+from fleet_manager.manager.coordination.deadlocks.recovery.cycles.deadlock_cycle_recovery_models import (
     _WaitCycleDecisionContext,
 )
-from fleet_manager.manager.traffic.deadlocks.recovery.evacuation.deadlock_evacuation_candidate_models import (
+from fleet_manager.manager.coordination.deadlocks.recovery.evacuation.deadlock_evacuation_candidate_models import (
     _EvacuationSearchContext,
 )
-from fleet_manager.manager.traffic.deadlocks.recovery.evacuation.deadlock_evacuation_candidates import (
+from fleet_manager.manager.coordination.deadlocks.recovery.evacuation.deadlock_evacuation_candidates import (
     EvacuationCandidateMixin,
 )
 

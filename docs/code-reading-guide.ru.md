@@ -182,7 +182,7 @@ parameters и ROS helpers. Роботный пакет
 - Новый общий алгоритм поиска — `core/search`.
 - Изменение SIPP/CBS/MAPF — соответствующий компонент в `core/mapf`.
 - Чистая геометрия коридоров, collision math и wait graph — `core/traffic`.
-- Live-политика очередей, коридоров и восстановления — `manager/traffic`.
+- Live-политика очередей, коридоров и восстановления — `manager/coordination`.
 - Команда флота или жизненный цикл робота — `manager` или
   `manager/tasks`.
 - ROS/gRPC-преобразование — `fleet_manager/runtime`.

@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-from fleet_manager.manager.traffic.deadlocks.arbitration.deadlock_arbitration import (
+from fleet_manager.manager.coordination.deadlocks.arbitration.deadlock_arbitration import (
     DeadlockArbitrationMixin,
 )
-from fleet_manager.manager.traffic.deadlocks.recovery.evacuation.deadlock_evacuation import (
+from fleet_manager.manager.coordination.deadlocks.recovery.evacuation.deadlock_evacuation import (
     DeadlockEvacuationMixin,
 )
-from fleet_manager.manager.traffic.runtime_conflicts import RuntimeConflictMixin
+from fleet_manager.manager.coordination.runtime_conflicts import RuntimeConflictMixin
 
 
 class TrafficCoordinatorMixin(
