@@ -389,10 +389,16 @@ class FleetManagerRouteMetadataMixin:
         goal_t = float(goal.get("t", 0.0) or 0.0)
         span = max(0.0001, goal_t - start_t)
         ratio = (elapsed - start_t) / span
+        edge_id = str(goal.get("edgeId") or start.get("edgeId") or "")
+        yaw_ratio = ratio
+        if edge_id.startswith("WAIT@ROTATE:"):
+            # A smoothstep keeps angular velocity at zero at both ends of an
+            # in-place turn. Translation keeps its reservation-time profile.
+            yaw_ratio = ratio * ratio * (3.0 - (2.0 * ratio))
         yaw = self._interpolate_angle(
             float(start.get("yaw", 0.0) or 0.0),
             float(goal.get("yaw", 0.0) or 0.0),
-            ratio,
+            yaw_ratio,
         )
         return {
             "x": float(start.get("x", 0.0) or 0.0)

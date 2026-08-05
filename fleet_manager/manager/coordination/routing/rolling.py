@@ -44,6 +44,25 @@ class RollingRouteMixin:
             return
         goal_index = suffix.index(planning_goal_lm)
         route_nodes = suffix[:goal_index + 1]
+        start_pose = request.get("startPose")
+        start_yaw = (
+            float(start_pose.get("yaw", 0.0) or 0.0)
+            if isinstance(start_pose, dict)
+            else 0.0
+        )
+        rotate_enabled = bool(self.planner._rotate_enabled(request))
+        if not self.planner.route_rotations_are_allowed(
+            route_nodes,
+            start_yaw,
+            rotate_enabled=rotate_enabled,
+        ):
+            if order.internal_kind == "traffic_clearance":
+                raise ValueError(
+                    "traffic clearance route requires a blocked in-place turn"
+                )
+            # Keep the spatial waypoint, but let SIPP find a turn-safe detour
+            # instead of forcing a route that runtime collision must stop.
+            return
         if len(route_nodes) >= 2:
             request["routeNodes"] = route_nodes
         elif order.internal_kind == "traffic_clearance":

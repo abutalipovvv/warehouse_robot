@@ -135,6 +135,27 @@ class FleetManagerCore(
             map_dir=map_dir,
             map_metadata=map_metadata,
         )
+        collision = self.collision
+        planning_landmarks = self.landmarks
+
+        def rotation_is_clear(
+            node: str,
+            from_yaw: float,
+            to_yaw: float,
+        ) -> bool:
+            landmark = planning_landmarks.get(node)
+            if landmark is None:
+                return False
+            return collision.rotation_is_clear(
+                {
+                    "x": landmark.x,
+                    "y": landmark.y,
+                    "yaw": from_yaw,
+                },
+                to_yaw,
+            )
+
+        self.planner.set_rotation_validator(rotation_is_clear)
         self.robots: dict[str, FleetRobot] = {}
         self.task_manager = FleetTaskManager()
         self.events: list[FleetEvent] = []

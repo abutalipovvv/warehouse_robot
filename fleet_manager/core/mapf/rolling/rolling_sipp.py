@@ -45,6 +45,9 @@ class RollingSippPlanner:
             Callable[[NodeName, NodeName], tuple[float, ...]] | None
         ) = None,
         turn_cost_fn: Callable[[float, float], int] | None = None,
+        rotation_allowed_fn: (
+            Callable[[NodeName, float, float], bool] | None
+        ) = None,
         low_level_max_time: int = 160,
         wait_cost: int = 6,
         max_planning_time_sec: float = 5.0,
@@ -55,6 +58,7 @@ class RollingSippPlanner:
         self.heading_fn = heading_fn
         self.heading_options_fn = heading_options_fn
         self.turn_cost_fn = turn_cost_fn
+        self.rotation_allowed_fn = rotation_allowed_fn
         self.low_level_max_time = max(
             1,
             int(low_level_max_time),
@@ -96,6 +100,7 @@ class RollingSippPlanner:
             heading_fn=heading_fn,
             heading_options_fn=heading_options_fn,
             turn_cost_fn=turn_cost_fn,
+            rotation_allowed_fn=rotation_allowed_fn,
             low_level_max_time=self.low_level_max_time,
             wait_cost=self.wait_cost,
             max_planning_time_sec=self.max_planning_time_sec,

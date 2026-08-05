@@ -270,6 +270,25 @@ class FleetManagerRuntimeStateMixin(FleetManagerStateCompatibilityMixin):
     def _planning_state_fingerprint(self) -> tuple[Any, ...]:
         """Compact deterministic identity of inputs that can stale a plan."""
 
+        corridor_lease_owners = tuple(sorted(
+            (
+                str(region_id),
+                str(lease[0]),
+            )
+            for region_id, lease in (
+                self.traffic_state.controlled_corridor_leases.items()
+            )
+            if isinstance(lease, tuple) and lease
+        ))
+        zone_lease_owners = tuple(sorted(
+            (
+                str(zone_id),
+                str(robot_name),
+            )
+            for zone_id, robot_name in (
+                self.traffic_state.traffic_zone_leases.keys()
+            )
+        ))
         robot_values = tuple(
             self._robot_planning_fingerprint(robot)
             for robot in sorted(self.robots.values(), key=lambda item: item.name)
@@ -308,8 +327,12 @@ class FleetManagerRuntimeStateMixin(FleetManagerStateCompatibilityMixin):
             tuple(sorted(str(item) for item in self.obstacles)),
             tuple(sorted(str(item) for item in self.obstacle_areas)),
             tuple(sorted(self.traffic_state.stationary_blockers.items())),
-            tuple(sorted(self.traffic_state.controlled_corridor_leases.items())),
-            tuple(sorted(self.traffic_state.traffic_zone_leases.items())),
+            # Lease expiry is a runtime heartbeat, not a new ownership
+            # decision. Including the renewed timestamp here invalidated every
+            # background result in a busy fleet. Creation, removal and owner
+            # handoff still change these owner-only signatures.
+            corridor_lease_owners,
+            zone_lease_owners,
             tuple(getattr(schedule, "slots", ()) or ()),
         )
 

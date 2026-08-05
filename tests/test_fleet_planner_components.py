@@ -134,6 +134,47 @@ def test_motion_model_and_trajectory_builder_share_timing_math() -> None:
     assert trajectory[-1]["t"] == pytest.approx(2.0)
 
 
+def test_route_rotation_check_keeps_safe_reverse_option() -> None:
+    landmarks = {
+        "A": Landmark(name="A", x=0.0, y=0.0),
+        "B": Landmark(name="B", x=1.0, y=0.0),
+    }
+    edge = GraphEdge(
+        from_name="A",
+        to_name="B",
+        length=1.0,
+        kind="line",
+        edge_type="FeatureLine",
+        world_points=(WorldPoint(0.0, 0.0), WorldPoint(1.0, 0.0)),
+        properties={"direction": 2},
+    )
+    planner = FleetMapfPlanner(landmarks, [edge])
+    planner.set_rotation_validator(
+        lambda _node, _from_yaw, _to_yaw: False
+    )
+
+    assert planner.route_rotations_are_allowed(
+        ["A", "B"],
+        math.pi,
+        rotate_enabled=True,
+    )
+    assert planner.turn_safe_reachable_nodes(
+        "A",
+        math.pi,
+        rotate_enabled=True,
+    ) == {"A", "B"}
+    assert not planner.route_rotations_are_allowed(
+        ["A", "B"],
+        math.pi / 2.0,
+        rotate_enabled=True,
+    )
+    assert planner.turn_safe_reachable_nodes(
+        "A",
+        math.pi / 2.0,
+        rotate_enabled=True,
+    ) == {"A"}
+
+
 def test_result_formatter_builds_stable_timed_segment_contract() -> None:
     planner = _planner(
         params={"fleet": {"reservation_time_step_sec": 0.5}}

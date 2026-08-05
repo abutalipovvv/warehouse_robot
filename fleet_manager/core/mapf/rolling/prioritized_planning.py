@@ -345,6 +345,9 @@ class PrioritizedSippCoordinator:
             Callable[[NodeName, NodeName], tuple[float, ...]] | None
         ),
         turn_cost_fn: Callable[[float, float], int] | None,
+        rotation_allowed_fn: (
+            Callable[[NodeName, float, float], bool] | None
+        ),
         low_level_max_time: int,
         wait_cost: int,
         max_planning_time_sec: float,
@@ -358,6 +361,7 @@ class PrioritizedSippCoordinator:
         self.heading_fn = heading_fn
         self.heading_options_fn = heading_options_fn
         self.turn_cost_fn = turn_cost_fn
+        self.rotation_allowed_fn = rotation_allowed_fn
         self.low_level_max_time = low_level_max_time
         self.wait_cost = wait_cost
         self.max_planning_time_sec = max_planning_time_sec
@@ -526,6 +530,7 @@ class PrioritizedSippCoordinator:
             heading_fn=self.heading_fn,
             heading_options_fn=self.heading_options_fn,
             turn_cost_fn=self.turn_cost_fn,
+            rotation_allowed_fn=self.rotation_allowed_fn,
             low_level_max_time=self.low_level_max_time,
             wait_cost=self.wait_cost,
         )

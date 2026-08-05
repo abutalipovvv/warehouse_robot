@@ -670,6 +670,11 @@ class FleetBenchmarkCommandService:
                 used_goals,
                 start_lms if avoid_start_goals else set(),
                 random.Random(seed + (index * 1009)),
+                start_yaw=(
+                    float(robot.pose.get("yaw", 0.0) or 0.0)
+                    if isinstance(robot.pose, dict)
+                    else 0.0
+                ),
                 **self.owner._traffic_goal_window(
                     stress,
                     stress_profile,
@@ -677,22 +682,19 @@ class FleetBenchmarkCommandService:
                 ),
             )
             if not candidates:
-                candidates = [
-                    name
-                    for name in names
-                    if name != start_lm
-                    and name not in used_goals
-                    and self.owner._lm_is_separated_from(name, used_goals)
-                    and (
-                        not self.owner._benchmark_corridor_region(name)
-                        or self.owner._benchmark_corridor_region(name)
-                        not in {
-                            self.owner._benchmark_corridor_region(goal)
-                            for goal in used_goals
-                            if self.owner._benchmark_corridor_region(goal)
-                        }
-                    )
-                ]
+                candidates = self.owner._forward_benchmark_goals(
+                    start_lm,
+                    used_goals,
+                    start_lms if avoid_start_goals else set(),
+                    random.Random(seed + (index * 1009)),
+                    min_hops=1,
+                    max_hops=len(names),
+                    start_yaw=(
+                        float(robot.pose.get("yaw", 0.0) or 0.0)
+                        if isinstance(robot.pose, dict)
+                        else 0.0
+                    ),
+                )
             if not candidates:
                 raise ValueError(f"no target LM available for {robot.name}")
             if stress:

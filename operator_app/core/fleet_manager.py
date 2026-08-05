@@ -595,6 +595,7 @@ class OperatorFleetManager:
         *,
         min_hops: int = 3,
         max_hops: int = 15,
+        start_yaw: float = 0.0,
     ) -> list[str]:
         return self._benchmark_topology._forward_benchmark_goals(
             start_lm,
@@ -603,6 +604,7 @@ class OperatorFleetManager:
             rng,
             min_hops=min_hops,
             max_hops=max_hops,
+            start_yaw=start_yaw,
         )
 
     def _lm_is_separated_from(self, candidate: str, selected: set[str] | list[str]) -> bool:

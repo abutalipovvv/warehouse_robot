@@ -1493,6 +1493,66 @@ def test_unspecified_motion_keeps_yaw_and_drives_backward_without_rotation() -> 
         str(sample.get("edgeId", "")).startswith("WAIT@ROTATE")
         for sample in plan["trajectory"]
     )
+
+
+def test_rolling_sipp_rejects_turn_blocked_by_static_footprint() -> None:
+    landmarks = _landmarks("A", "B")
+    planner = FleetMapfPlanner(
+        landmarks,
+        [_edge(landmarks, "A", "B", direction=0)],
+        params=_rolling_params(),
+    )
+    planner.set_rotation_validator(
+        lambda _node, _from_yaw, _to_yaw: False
+    )
+
+    result = planner.plan(
+        {
+            "robots": [
+                {
+                    "name": "r1",
+                    "startLm": "A",
+                    "goalLm": "B",
+                    "startPose": {"x": 0.0, "y": 0.0, "yaw": math.pi},
+                }
+            ],
+            "rotate": True,
+        }
+    )
+
+    assert not result["ok"]
+    assert "rotation_blocked:A" in result["debug"]["reason"]
+
+
+def test_rolling_sipp_uses_reverse_heading_when_turn_is_blocked() -> None:
+    landmarks = _landmarks("A", "B")
+    planner = FleetMapfPlanner(
+        landmarks,
+        [_edge(landmarks, "A", "B", direction=2)],
+        params=_rolling_params(),
+    )
+    planner.set_rotation_validator(
+        lambda _node, _from_yaw, _to_yaw: False
+    )
+
+    result = planner.plan(
+        {
+            "robots": [
+                {
+                    "name": "r1",
+                    "startLm": "A",
+                    "goalLm": "B",
+                    "startPose": {"x": 0.0, "y": 0.0, "yaw": math.pi},
+                }
+            ],
+            "rotate": True,
+        }
+    )
+
+    assert result["ok"]
+    plan = result["plans"][0]
+    assert "rotate" not in plan["actions"]
+    assert plan["yaws"][-1] == pytest.approx(math.pi)
     moving = [
         sample
         for sample in plan["trajectory"]

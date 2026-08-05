@@ -92,6 +92,7 @@ class BenchmarkTopologyService:
                 self.owner._dynamic_rng,
                 min_hops=min_hops,
                 max_hops=max_hops,
+                start_yaw=self._robot_yaw_at_origin(robot, origin),
             )
             candidates = [
                 name
@@ -112,6 +113,7 @@ class BenchmarkTopologyService:
                     self.owner._dynamic_rng,
                     min_hops=2,
                     max_hops=min(300, max(max_hops, len(self.owner.loaded_map.landmarks))),
+                    start_yaw=self._robot_yaw_at_origin(robot, origin),
                 )
                 candidates = [
                     name
@@ -253,7 +255,24 @@ class BenchmarkTopologyService:
             )
         rng = random.Random(seed + 7919)
         shuffled = self.owner._corridor_safe_benchmark_lms(names, rng)
-        spaced = self.owner._spatially_separated_lms(shuffled, count)
+        planner = self.owner.manager.planner
+        rotate_enabled = bool(planner._rotate_enabled({}))
+        minimum_component = min(8, len(planner.graph))
+        spaced: list[str] = []
+        for name in shuffled:
+            if len(
+                planner.turn_safe_reachable_nodes(
+                    name,
+                    0.0,
+                    rotate_enabled=rotate_enabled,
+                )
+            ) < max(2, minimum_component):
+                continue
+            if not self.owner._lm_is_separated_from(name, spaced):
+                continue
+            spaced.append(name)
+            if len(spaced) >= count:
+                break
         if len(spaced) < count:
             raise ValueError(
                 f"map can safely place only {len(spaced)} of {count} robots "
@@ -265,7 +284,7 @@ class BenchmarkTopologyService:
         landmark = self.owner.loaded_map.landmarks.get(name)
         if landmark is None:
             return False
-        return not self.owner.manager.collision.blocked_reason(
+        if self.owner.manager.collision.blocked_reason(
             {
                 "x": float(landmark.x),
                 "y": float(landmark.y),
@@ -273,6 +292,18 @@ class BenchmarkTopologyService:
             },
             self.owner.manager.obstacles,
             self.owner.manager.obstacle_areas,
+        ):
+            return False
+        planner = self.owner.manager.planner
+        rotate_enabled = bool(planner._rotate_enabled({}))
+        motion = planner._motion_model
+        return any(
+            (
+                not rotate_enabled
+                or motion.rotation_is_allowed(name, 0.0, target_yaw)
+            )
+            for target in planner.graph.get(name, ())
+            for target_yaw in motion.edge_heading_options(name, target)
         )
 
     def _benchmark_corridor_region(self, name: str) -> str:
@@ -389,6 +420,7 @@ class BenchmarkTopologyService:
         *,
         min_hops: int = 3,
         max_hops: int = 15,
+        start_yaw: float = 0.0,
     ) -> list[str]:
         owner = self.owner
         loaded_map = owner.loaded_map
@@ -451,6 +483,12 @@ class BenchmarkTopologyService:
         }
         sequence = 0
         start = landmarks[start_lm]
+        planner = owner.manager.planner
+        turn_safe_nodes = planner.turn_safe_reachable_nodes(
+            start_lm,
+            start_yaw,
+            rotate_enabled=bool(planner._rotate_enabled({})),
+        )
         while queue:
             node, hops, occupied_starts = queue.pop(0)
             if best_path.get(node) != (hops, occupied_starts):
@@ -459,6 +497,7 @@ class BenchmarkTopologyService:
                 hops >= min_hops
                 and node not in used_goals
                 and node not in excluded_goals
+                and node in turn_safe_nodes
                 and goal_is_safe(node)
                 and is_separated(node, used_goals)
                 and (
@@ -476,6 +515,8 @@ class BenchmarkTopologyService:
             neighbors = list(adjacency.get(node, ()))
             rng.shuffle(neighbors)
             for neighbor in neighbors:
+                if neighbor not in turn_safe_nodes:
+                    continue
                 next_hops = hops + 1
                 next_occupied = occupied_starts + int(
                     neighbor in excluded_goals and neighbor != start_lm
@@ -487,6 +528,15 @@ class BenchmarkTopologyService:
                 queue.append((neighbor, next_hops, next_occupied))
         candidates.sort()
         return [item[4] for item in candidates]
+
+    @staticmethod
+    def _robot_yaw_at_origin(robot: Any, origin: str) -> float:
+        if str(getattr(robot, "current_lm", "")) != str(origin):
+            return 0.0
+        pose = getattr(robot, "pose", None)
+        if not isinstance(pose, dict):
+            return 0.0
+        return float(pose.get("yaw", 0.0) or 0.0)
 
     def _lm_is_separated_from(self, candidate: str, selected: set[str] | list[str]) -> bool:
         minimum = self.owner.__dict__.get(

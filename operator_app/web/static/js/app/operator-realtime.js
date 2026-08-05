@@ -1387,7 +1387,10 @@ export const withRealtime = (Base) => class OperatorAppRealtime extends Base {
       const trajectory = Array.isArray(robot?.trajectory) ? robot.trajectory : [];
       if (
         trajectory.length >= 2
-        && (status === "MOVING" || this.fleetVisualClockIsSettling(robot))
+        && (
+          status === "MOVING"
+          || ["WAITING", "BLOCKED", "PLANNING"].includes(status)
+        )
       ) {
         activeKeys.add(this.fleetVisualRouteKey(robot));
       }
@@ -1441,7 +1444,25 @@ export const withRealtime = (Base) => class OperatorAppRealtime extends Base {
         && Math.max(0, Number(prior.clock || 0)) + 0.0001 < baseClock
       );
       if (!canSettle) {
-        this.clearFleetVisualClock(robot);
+        if (["WAITING", "BLOCKED", "PLANNING"].includes(status)) {
+          this.fleetVisualClocks.set(key, {
+            clock: baseClock,
+            serverClock: baseClock,
+            serverSampleAt: now,
+            samplePeriodSec: Math.max(
+              0.04,
+              Math.min(0.50, Number(prior?.samplePeriodSec || 0.10)),
+            ),
+            observedRate: Math.max(
+              0.05 * timeScale,
+              Number(prior?.observedRate || timeScale),
+            ),
+            visualRate: 0,
+            updatedAt: now,
+          });
+        } else {
+          this.clearFleetVisualClock(robot);
+        }
         return baseClock;
       }
       const priorClock = Math.max(0, Number(prior.clock || 0));
@@ -1472,7 +1493,14 @@ export const withRealtime = (Base) => class OperatorAppRealtime extends Base {
         priorClock + (visualRate * frameDt),
       );
       if (baseClock - settledClock <= 0.0001) {
-        this.clearFleetVisualClock(robot);
+        this.fleetVisualClocks.set(key, {
+          ...prior,
+          clock: baseClock,
+          serverClock: baseClock,
+          observedRate,
+          visualRate: 0,
+          updatedAt: now,
+        });
         return baseClock;
       }
       this.fleetVisualClocks.set(key, {
@@ -1491,7 +1519,9 @@ export const withRealtime = (Base) => class OperatorAppRealtime extends Base {
     );
     let visualClock = Math.max(0, baseClock - (minimumDelay * timeScale));
     let observedRate = timeScale;
-    let visualRate = timeScale;
+    // A newly dispatched route starts from rest. A retained WAITING clock also
+    // has zero rate, so both first departure and resume use the same ramp.
+    let visualRate = 0;
     let serverSampleAt = now;
     let samplePeriodSec = 0.10;
 
@@ -1525,18 +1555,23 @@ export const withRealtime = (Base) => class OperatorAppRealtime extends Base {
           0,
           Math.min(1.15 * timeScale, serverDelta / rawPeriod),
         );
-        // A slow EMA follows sustained backend load without copying one late
-        // packet's apparent catch-up speed into the visual motion.
+        // A slow EMA follows sustained backend speed without copying one late
+        // packet's apparent catch-up rate into the visual motion.
         observedRate = (observedRate * 0.75) + (rawRate * 0.25);
-        samplePeriodSec = (samplePeriodSec * 0.75)
-          + (Math.min(0.50, rawPeriod) * 0.25);
+        const boundedPeriod = Math.min(0.50, rawPeriod);
+        // Grow the buffer quickly when delivery is late, then shrink it
+        // slowly after the stream recovers. A symmetric slow EMA made every
+        // robot brake at the same authoritative ceiling for several packets.
+        const periodWeight = boundedPeriod > samplePeriodSec ? 0.65 : 0.15;
+        samplePeriodSec = (samplePeriodSec * (1 - periodWeight))
+          + (boundedPeriod * periodWeight);
         serverSampleAt = now;
       }
 
       const sampleAgeSec = Math.max(0, (now - serverSampleAt) / 1000);
       const interpolationDelaySec = Math.max(
         minimumDelay,
-        Math.min(0.30, samplePeriodSec * 1.25),
+        Math.min(0.60, samplePeriodSec * 2.0),
       );
       // Reconstruct a clock slightly behind the newest authoritative sample.
       // With regular 10 Hz samples this ceiling is continuous across packets:

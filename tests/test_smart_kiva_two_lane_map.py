@@ -292,6 +292,27 @@ def test_smart_kiva_every_turn_capable_lm_clears_the_robot_footprint() -> None:
     assert checked > 0
 
 
+def test_rotation_sweep_checks_intermediate_body_orientations(monkeypatch) -> None:
+    collision = FleetCollisionChecker({}, None, None)
+    collision.map_pixels = b"loaded"
+    collision.map_metadata = object()
+    checked_yaws: list[float] = []
+
+    def blocked_reason(pose, _obstacles, _areas):
+        yaw = float(pose["yaw"])
+        checked_yaws.append(yaw)
+        return "occupied" if math.radians(25) < yaw < math.radians(35) else ""
+
+    monkeypatch.setattr(collision, "blocked_reason", blocked_reason)
+    pose = {"x": 1.0, "y": 2.0, "yaw": 0.0}
+
+    assert not collision.rotation_is_clear(pose, math.pi / 3.0)
+    checked_count = len(checked_yaws)
+    assert checked_count > 2
+    assert not collision.rotation_is_clear(pose, math.pi / 3.0)
+    assert len(checked_yaws) == checked_count
+
+
 def test_smart_kiva_adjacent_lms_clear_two_turning_robot_footprints() -> None:
     loaded = WarehouseMapLoader(MAP_DIR).load()
     params = yaml.safe_load(PARAMS_PATH.read_text(encoding="utf-8"))

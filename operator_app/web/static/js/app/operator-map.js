@@ -476,11 +476,15 @@ export const withMapView = (Base) => class OperatorAppMapView extends Base {
     const t0 = Number(start.t ?? low);
     const t1 = Number(goal.t ?? high);
     const ratio = (targetTime - t0) / Math.max(0.000001, t1 - t0);
+    const edgeId = String(goal.edgeId || start.edgeId || "");
+    const yawRatio = edgeId.startsWith("WAIT@ROTATE:")
+      ? ratio * ratio * (3 - (2 * ratio))
+      : ratio;
     return {
       ...start,
       x: Number(start.x || 0) + ((Number(goal.x || 0) - Number(start.x || 0)) * ratio),
       y: Number(start.y || 0) + ((Number(goal.y || 0) - Number(start.y || 0)) * ratio),
-      yaw: this.interpolateAngle(Number(start.yaw || 0), Number(goal.yaw || 0), ratio),
+      yaw: this.interpolateAngle(Number(start.yaw || 0), Number(goal.yaw || 0), yawRatio),
       t: targetTime,
     };
   }

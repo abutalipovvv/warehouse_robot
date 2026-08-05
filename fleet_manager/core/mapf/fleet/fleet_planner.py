@@ -145,6 +145,40 @@ class FleetMapfPlanner:
         self._motion_model = FleetMotionModel(self)
         self._trajectory_builder = TrajectoryBuilder(self)
 
+    def set_rotation_validator(
+        self,
+        validator: Callable[[str, float, float], bool] | None,
+    ) -> None:
+        """Install static turn geometry without giving planners live state."""
+
+        self._motion_model.rotation_validator = validator
+
+    def route_rotations_are_allowed(
+        self,
+        nodes: list[str],
+        start_yaw: float,
+        *,
+        rotate_enabled: bool,
+    ) -> bool:
+        return self._motion_model.route_rotations_are_allowed(
+            nodes,
+            start_yaw,
+            rotate_enabled=rotate_enabled,
+        )
+
+    def turn_safe_reachable_nodes(
+        self,
+        start_node: str,
+        start_yaw: float,
+        *,
+        rotate_enabled: bool,
+    ) -> set[str]:
+        return self._motion_model.turn_safe_reachable_nodes(
+            start_node,
+            start_yaw,
+            rotate_enabled=rotate_enabled,
+        )
+
     def plan(
         self,
         payload: dict[str, Any],

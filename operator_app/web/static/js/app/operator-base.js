@@ -115,7 +115,9 @@ export class OperatorAppBase {
     // buffer.  The old clock predicted 0.4 s ahead while the simulation can
     // commit at most 0.2 s after a delayed physics tick.  Under planner load
     // that made the picture alternate between prediction and a hard hold.
-    this.fleetNavigationInterpolationMinSec = 0.12;
+    // Two authoritative 10 Hz samples keep one delayed packet from making
+    // every rendered robot hit the same clock ceiling at once.
+    this.fleetNavigationInterpolationMinSec = 0.20;
     this.fleetNavigationClockAcceleration = 6;
     this.fleetRobotSvgEntries = new Map();
     this.fleetWaitDependencyLine = null;

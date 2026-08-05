@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from threading import Event
+from threading import Event, Thread
 from time import monotonic, sleep
 
 from fleet_manager.manager.scheduler import (
@@ -292,6 +292,58 @@ def test_exception_is_reported_and_next_job_still_runs() -> None:
     assert worker.last_failure is not None
     assert worker.last_failure.exception_type == "ValueError"
     assert len(worker.take_completed_results()) == 2
+    assert worker.close()
+
+
+def test_submit_during_atomic_worker_retirement_starts_replacement() -> None:
+    class PausingRetirementWorker(PlanningWorker):
+        def __init__(self) -> None:
+            super().__init__()
+            self.retirement_started = Event()
+            self.allow_retirement = Event()
+            self._pause_once = True
+
+        def _retire_current_thread_locked(self) -> None:
+            if self._pause_once and not self._close_requested:
+                self._pause_once = False
+                self.retirement_started.set()
+                self.allow_retirement.wait(1.0)
+            super()._retire_current_thread_locked()
+
+    worker = PausingRetirementWorker()
+    executed: list[str] = []
+
+    def solver(job: PlanningJob) -> PlanCandidate:
+        executed.append(job.job_id)
+        return _candidate(job)
+
+    assert worker.submit_job(
+        _job("first", PlanningPriority.ORDER_DISPATCH),
+        solver,
+    )
+    assert worker.retirement_started.wait(1.0)
+
+    submitted = Event()
+
+    def submit_second() -> None:
+        assert worker.submit_job(
+            _job("second", PlanningPriority.SAFETY_REPLAN),
+            solver,
+        )
+        submitted.set()
+
+    submitter = Thread(target=submit_second)
+    submitter.start()
+    # Retirement still owns the condition, so submission cannot observe the
+    # old live thread between the empty decision and ownership release.
+    assert not submitted.wait(0.02)
+    worker.allow_retirement.set()
+    submitter.join(1.0)
+
+    assert submitted.is_set()
+    assert worker.join(1.0)
+    assert executed == ["first", "second"]
+    assert worker.stats().queued_jobs == 0
     assert worker.close()
 
 

@@ -47,6 +47,9 @@ class LmCBSPlanner:
         turn_cost_fn: (
             Callable[[float, float], int] | None
         ) = None,
+        rotation_allowed_fn: (
+            Callable[[NodeName, float, float], bool] | None
+        ) = None,
         vertex_resources_fn: (
             Callable[[NodeName], tuple[object, ...]] | None
         ) = None,
@@ -74,6 +77,7 @@ class LmCBSPlanner:
         self.heading_fn = heading_fn
         self.heading_options_fn = heading_options_fn
         self.turn_cost_fn = turn_cost_fn
+        self.rotation_allowed_fn = rotation_allowed_fn
         self.vertex_resources_fn = vertex_resources_fn
         self.rotation_resources_fn = (
             rotation_resources_fn or vertex_resources_fn
@@ -251,6 +255,7 @@ class LmCBSPlanner:
             heading_fn=self.heading_fn,
             heading_options_fn=self.heading_options_fn,
             turn_cost_fn=self.turn_cost_fn,
+            rotation_allowed_fn=self.rotation_allowed_fn,
             vertex_resources_fn=self.vertex_resources_fn,
             rotation_resources_fn=self.rotation_resources_fn,
             lane_resources_fn=self.lane_resources_fn,

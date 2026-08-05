@@ -432,3 +432,29 @@ def test_pose_sampling_interpolates_shortest_yaw(
     assert pose["x"] == 1.0
     assert pose["y"] == 2.0
     assert abs(abs(pose["yaw"]) - math.pi) < 1e-9
+
+
+def test_pose_sampling_eases_in_place_rotation(
+    manager: FleetManagerCore,
+) -> None:
+    trajectory = [
+        {
+            "t": 0.0,
+            "x": 0.0,
+            "y": 0.0,
+            "yaw": 0.0,
+            "edgeId": "WAIT@ROTATE:A",
+        },
+        {
+            "t": 2.0,
+            "x": 0.0,
+            "y": 0.0,
+            "yaw": math.pi / 2.0,
+            "edgeId": "WAIT@ROTATE:A",
+        },
+    ]
+
+    pose = manager._pose_at_trajectory(trajectory, 0.5)
+
+    assert pose is not None
+    assert pose["yaw"] == pytest.approx((math.pi / 2.0) * 0.15625)

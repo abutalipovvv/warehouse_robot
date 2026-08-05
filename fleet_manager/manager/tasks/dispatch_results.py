@@ -863,6 +863,7 @@ class DispatchResultMixin:
             f"reason={candidate.reason.value} "
             f"expected_revision={candidate.expected_revision} "
             f"current_revision={self.planning_revision} "
+            f"revision_reason={self.fleet_state.revision.last_reason!r} "
             f"robots={','.join(robot_ids)} "
             f"backend={candidate.metadata.get('backend', '')}",
         )

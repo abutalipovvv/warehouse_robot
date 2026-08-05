@@ -175,6 +175,7 @@ def test_dynamic_runtime_keeps_robots_collision_free_and_wait_graph_acyclic(
         for index, robot in enumerate(robots):
             if robot.pose is None:
                 continue
+            assert "map occupancy under footprint" not in robot.last_reason
             for other in robots[index + 1:]:
                 if other.pose is not None:
                     assert not service.manager.collision.footprints_overlap(

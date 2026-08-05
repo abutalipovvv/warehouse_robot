@@ -66,6 +66,9 @@ class LmCBSEnvironment:
         turn_cost_fn: (
             Callable[[float, float], int] | None
         ) = None,
+        rotation_allowed_fn: (
+            Callable[[NodeName, float, float], bool] | None
+        ) = None,
         vertex_resources_fn: (
             Callable[[NodeName], tuple[object, ...]] | None
         ) = None,
@@ -121,6 +124,10 @@ class LmCBSEnvironment:
         self.turn_cost_fn = (
             turn_cost_fn
             or (lambda _from_yaw, _to_yaw: 0)
+        )
+        self.rotation_allowed_fn = (
+            rotation_allowed_fn
+            or (lambda _node, _from_yaw, _to_yaw: True)
         )
         self.vertex_resources_fn = vertex_resources_fn
         self.rotation_resources_fn = (
@@ -344,6 +351,16 @@ class LmCBSEnvironment:
             state_2,
         )
         move_start = state_1.time + turn_ticks
+        if (
+            turn_ticks > 0
+            and not self.rotation_allowed_fn(
+                state_1.node,
+                state_1.yaw,
+                state_2.yaw,
+            )
+        ):
+            self.last_failure = f"rotation_blocked:{state_1.node}"
+            return False
         if (
             state_1.node == state_2.node
             and self.vertex_resources_fn is not None

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import math
-from typing import Any
+from typing import Any, Callable
 
 from fleet_manager.core.mapping.maps.models import GraphEdge, PlannedRoute
 
@@ -14,6 +14,9 @@ class FleetMotionModel:
 
     def __init__(self, planner: Any) -> None:
         self.planner = planner
+        self.rotation_validator: (
+            Callable[[str, float, float], bool] | None
+        ) = None
 
     def edge_tick_cost(
         self,
@@ -201,6 +204,96 @@ class FleetMotionModel:
             heading,
             self.normalize_angle(heading + math.pi),
         )
+
+    def rotation_is_allowed(
+        self,
+        node: str,
+        from_yaw: float,
+        to_yaw: float,
+    ) -> bool:
+        if self.rotation_duration(from_yaw, to_yaw, 1.0) <= 0.0:
+            return True
+        if self.rotation_validator is None:
+            return True
+        return bool(self.rotation_validator(node, from_yaw, to_yaw))
+
+    def route_rotations_are_allowed(
+        self,
+        nodes: list[str],
+        start_yaw: float,
+        *,
+        rotate_enabled: bool,
+    ) -> bool:
+        """Check whether some legal orientation sequence can follow a route."""
+
+        if not rotate_enabled or len(nodes) < 2:
+            return True
+        current_yaws = (self.normalize_angle(float(start_yaw)),)
+        for source, target in zip(nodes, nodes[1:]):
+            if (source, target) not in self.planner.edge_by_key:
+                return False
+            next_yaws: dict[int, float] = {}
+            for target_yaw in self.edge_heading_options(source, target):
+                normalized_target = self.normalize_angle(target_yaw)
+                if any(
+                    self.rotation_is_allowed(
+                        source,
+                        current_yaw,
+                        normalized_target,
+                    )
+                    for current_yaw in current_yaws
+                ):
+                    next_yaws[int(round(normalized_target * 1_000_000))] = (
+                        normalized_target
+                    )
+            if not next_yaws:
+                return False
+            current_yaws = tuple(next_yaws.values())
+        return True
+
+    def turn_safe_reachable_nodes(
+        self,
+        start_node: str,
+        start_yaw: float,
+        *,
+        rotate_enabled: bool,
+    ) -> set[str]:
+        """Return graph nodes reachable without an impossible static turn."""
+
+        if start_node not in self.planner.graph:
+            return set()
+        normalized_start = self.normalize_angle(float(start_yaw))
+        pending = [(start_node, normalized_start)]
+        visited = {
+            (start_node, int(round(normalized_start * 1_000_000)))
+        }
+        reachable = {start_node}
+        index = 0
+        while index < len(pending):
+            node, current_yaw = pending[index]
+            index += 1
+            for target in self.planner.graph.get(node, ()):
+                for target_yaw in self.edge_heading_options(node, target):
+                    normalized_target = self.normalize_angle(target_yaw)
+                    if (
+                        rotate_enabled
+                        and not self.rotation_is_allowed(
+                            node,
+                            current_yaw,
+                            normalized_target,
+                        )
+                    ):
+                        continue
+                    state = (
+                        target,
+                        int(round(normalized_target * 1_000_000)),
+                    )
+                    if state in visited:
+                        continue
+                    visited.add(state)
+                    reachable.add(target)
+                    pending.append((target, normalized_target))
+        return reachable
 
     @staticmethod
     def normalize_angle(value: float) -> float:

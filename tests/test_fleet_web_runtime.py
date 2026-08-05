@@ -15010,7 +15010,9 @@ def test_simulation_time_scale_accelerates_motion_and_rotation(monkeypatch) -> N
     manager.advance_runtime()
 
     assert robot.route_clock == pytest.approx(0.4)
-    assert robot.pose["yaw"] == pytest.approx(math.pi * 0.1)
+    turn_ratio = 0.2
+    eased_ratio = turn_ratio * turn_ratio * (3.0 - (2.0 * turn_ratio))
+    assert robot.pose["yaw"] == pytest.approx((math.pi / 2.0) * eased_ratio)
     state = manager.snapshot()
     assert state["simulationTimeScale"] == 4.0
     assert state["simulationTimeScaleMax"] == 4.0

@@ -329,6 +329,12 @@ class PlanningWorker:
                         self._cancel_queued_jobs_locked()
                     next_job = self._next_job_locked()
                     if next_job is None:
+                        # Relinquish scheduler ownership while the empty-queue
+                        # decision is still protected by the same condition.
+                        # A submitter can now observe either this worker or
+                        # ``None``, never a live thread that has already
+                        # decided to exit.
+                        self._retire_current_thread_locked()
                         return
                     job, solver = next_job
                     self._active_job = job
@@ -352,16 +358,25 @@ class PlanningWorker:
                     self._condition.notify_all()
         finally:
             with self._condition:
-                if self._thread is current_thread():
-                    self._thread = None
-                    self._active_job = None
-                    self._active_submission = 0
-                    self._state = (
-                        PlanningWorkerState.CLOSED
-                        if self._close_requested
-                        else PlanningWorkerState.IDLE
-                    )
-                    self._condition.notify_all()
+                # Unexpected failures still release ownership. After the
+                # normal empty-queue path this is intentionally a no-op, and
+                # it cannot overwrite a replacement worker started meanwhile.
+                self._retire_current_thread_locked()
+
+    def _retire_current_thread_locked(self) -> None:
+        """Atomically release ownership held by the calling worker thread."""
+
+        if self._thread is not current_thread():
+            return
+        self._thread = None
+        self._active_job = None
+        self._active_submission = 0
+        self._state = (
+            PlanningWorkerState.CLOSED
+            if self._close_requested
+            else PlanningWorkerState.IDLE
+        )
+        self._condition.notify_all()
 
     def _run_scheduled_job(
         self,

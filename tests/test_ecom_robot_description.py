@@ -244,7 +244,7 @@ def test_stage_launch_uses_ecom_description_and_keeps_stage_hardware_contract() 
     assert "generation !== this.fleetSimManualGeneration" in web_app
     assert "this.fleetStreamIntervalMs = 100;" in web_app
     assert "this.fleetStatusFreshTimeoutMs = 1500;" in web_app
-    assert "this.fleetNavigationInterpolationMinSec = 0.12;" in web_app
+    assert "this.fleetNavigationInterpolationMinSec = 0.20;" in web_app
     assert "this.fleetNavigationClockAcceleration = 6;" in web_app
     assert "drawFleetRobotMotionLayer(robotStyle)" in web_app
     assert "while (low + 1 < high)" in web_app

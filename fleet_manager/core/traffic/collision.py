@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from pathlib import Path
 from typing import Any
 
@@ -27,6 +28,11 @@ class FleetCollisionChecker:
         self._footprint_polygon_cache: Polygon2D | None = None
         self._footprint_diameter_cache: float | None = None
         self._pose_sample_local_points_cache: list[dict[str, float]] | None = None
+        self._rotation_clear_cache: dict[
+            tuple[float, float, float, float],
+            bool,
+        ] = {}
+        self._full_rotation_clear_cache: dict[tuple[float, float], bool] = {}
         if map_dir is not None:
             self._load_map_pixels(map_dir)
 
@@ -36,6 +42,8 @@ class FleetCollisionChecker:
         self._footprint_polygon_cache = None
         self._footprint_diameter_cache = None
         self._pose_sample_local_points_cache = None
+        self._rotation_clear_cache.clear()
+        self._full_rotation_clear_cache.clear()
 
     def lookahead_time(self) -> float:
         navigation = self._dict_param("navigation")
@@ -108,6 +116,113 @@ class FleetCollisionChecker:
             if self.obstacle_hits_pose(obstacle, pose):
                 return "point obstacle hits footprint"
         return ""
+
+    def rotation_is_clear(
+        self,
+        pose: dict[str, float],
+        target_yaw: float,
+        *,
+        angular_step: float = math.radians(2.0),
+    ) -> bool:
+        """Return whether an in-place turn clears the static occupancy map.
+
+        Checking only both endpoint orientations misses the swept corners of
+        a rectangular robot. Runtime collision checks would then stop an
+        already-started turn and leave the robot blocking an aisle. Sampling
+        the same shortest angular path before planning prevents that state.
+        """
+
+        if self.map_pixels is None or self.map_metadata is None:
+            return True
+        x = float(pose.get("x", 0.0) or 0.0)
+        y = float(pose.get("y", 0.0) or 0.0)
+        start_yaw = float(pose.get("yaw", 0.0) or 0.0)
+        target_yaw = float(target_yaw or 0.0)
+        delta = math.atan2(
+            math.sin(target_yaw - start_yaw),
+            math.cos(target_yaw - start_yaw),
+        )
+        if abs(delta) < math.radians(2.0):
+            return True
+
+        key = (
+            round(x, 5),
+            round(y, 5),
+            round(start_yaw, 5),
+            round(start_yaw + delta, 5),
+        )
+        cached = self._rotation_clear_cache.get(key)
+        if cached is not None:
+            return cached
+
+        full_rotation_clear = self._full_rotation_is_clear(x, y)
+        if full_rotation_clear:
+            self._rotation_clear_cache[key] = True
+            return True
+        # A quarter-turn sweeps practically the complete circumscribed body
+        # envelope on the orthogonal warehouse graph. The disk test is
+        # conservative for the small footprint asymmetry and much cheaper
+        # than transforming hundreds of footprint samples at every angle.
+        if abs(delta) >= math.radians(89.0):
+            self._rotation_clear_cache[key] = False
+            return False
+
+        step = max(math.radians(0.5), float(angular_step))
+        sample_count = max(1, int(math.ceil(abs(delta) / step)))
+        clear = True
+        for index in range(sample_count + 1):
+            yaw = start_yaw + (delta * index / sample_count)
+            if self.blocked_reason({"x": x, "y": y, "yaw": yaw}, [], []):
+                clear = False
+                break
+        self._rotation_clear_cache[key] = clear
+        return clear
+
+    def _full_rotation_is_clear(self, x: float, y: float) -> bool:
+        if (
+            self.map_pixels is None
+            or self.map_metadata is None
+            or self.map_width <= 0
+            or self.map_height <= 0
+        ):
+            return False
+        key = (round(x, 5), round(y, 5))
+        cached = self._full_rotation_clear_cache.get(key)
+        if cached is not None:
+            return cached
+
+        resolution = max(0.001, float(self.map_metadata.resolution))
+        radius = max(
+            (
+                math.hypot(float(point["x"]), float(point["y"]))
+                for point in self.footprint()
+            ),
+            default=0.22,
+        ) + self.collision_margin()
+        center_x = round(x / resolution)
+        center_y = round(y / resolution)
+        pixel_radius = int(math.ceil(radius / resolution))
+        radius_sq = (radius + (resolution * 0.5)) ** 2
+        clear = True
+        for pixel_y in range(center_y - pixel_radius, center_y + pixel_radius + 1):
+            world_y = pixel_y * resolution
+            for pixel_x in range(center_x - pixel_radius, center_x + pixel_radius + 1):
+                world_x = pixel_x * resolution
+                if ((world_x - x) ** 2) + ((world_y - y) ** 2) > radius_sq:
+                    continue
+                if (
+                    pixel_x < 0
+                    or pixel_y < 0
+                    or pixel_x >= self.map_width
+                    or pixel_y >= self.map_height
+                    or self.map_pixels[(pixel_y * self.map_width) + pixel_x] < 82
+                ):
+                    clear = False
+                    break
+            if not clear:
+                break
+        self._full_rotation_clear_cache[key] = clear
+        return clear
 
     def footprints_overlap(self, first_pose: dict[str, float], second_pose: dict[str, float]) -> bool:
         margin = self.collision_margin()

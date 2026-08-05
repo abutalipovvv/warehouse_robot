@@ -185,6 +185,47 @@ def test_revision_changes_only_for_planning_relevant_robot_update() -> None:
         manager.close()
 
 
+def test_lease_heartbeat_does_not_stale_planning_revision() -> None:
+    landmarks, edges = _graph()
+    manager = FleetManagerCore(landmarks, edges, params={"fleet": {}})
+    try:
+        manager.traffic_state.controlled_corridor_leases["corridor-1"] = (
+            "r1",
+            10.0,
+        )
+        manager.traffic_state.traffic_zone_leases[("zone-1", "r1")] = 10.0
+        manager._synchronize_planning_revision()
+        owned_revision = manager.planning_revision
+        live_job = PlanningJobRecord(kind="dispatch")
+        planning_job = manager._build_planning_job(live_job, [], {})
+        candidate = PlanCandidate.from_result(
+            planning_job,
+            {"ok": True, "plans": []},
+            finished_at=monotonic(),
+        )
+
+        manager.traffic_state.controlled_corridor_leases["corridor-1"] = (
+            "r1",
+            11.0,
+        )
+        manager.traffic_state.traffic_zone_leases[("zone-1", "r1")] = 11.0
+        manager._synchronize_planning_revision()
+        assert manager.planning_revision == owned_revision
+        assert manager._planning_candidate_is_current(live_job, candidate)
+
+        manager.traffic_state.controlled_corridor_leases["corridor-1"] = (
+            "r2",
+            12.0,
+        )
+        manager.traffic_state.traffic_zone_leases.pop(("zone-1", "r1"))
+        manager.traffic_state.traffic_zone_leases[("zone-1", "r2")] = 12.0
+        manager._synchronize_planning_revision()
+        assert manager.planning_revision == owned_revision + 1
+        assert not manager._planning_candidate_is_current(live_job, candidate)
+    finally:
+        manager.close()
+
+
 def test_planning_job_captures_preparation_changes_in_its_revision() -> None:
     landmarks, edges = _graph()
     manager = FleetManagerCore(landmarks, edges, params={"fleet": {}})

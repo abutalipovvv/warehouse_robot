@@ -169,6 +169,24 @@ def test_cbs_reserves_rotation_before_entering_an_edge() -> None:
     assert plan.actions == ["start", "rotate", "move"]
 
 
+def test_cbs_rejects_turn_blocked_by_static_footprint() -> None:
+    planner = LmCBSPlanner(
+        {"A": ["B"], "B": []},
+        heading_fn=lambda _start, _goal: 0.0,
+        turn_cost_fn=lambda start, goal: 4 if abs(start - goal) > 1.0 else 0,
+        rotation_allowed_fn=lambda _node, _start, _goal: False,
+        low_level_max_time=10,
+        max_high_level_nodes=100,
+    )
+
+    result = planner.plan_for_robots(
+        [LmRobotRequest("r1", "A", "B", start_yaw=math.pi)]
+    )
+
+    assert not result.plans
+    assert "rotation_blocked:A" in result.debug.reason
+
+
 def test_cbs_constrains_shared_topometric_resource_directly() -> None:
     planner = LmCBSPlanner(
         {"A": ["B"], "B": [], "C": ["D"], "D": []},

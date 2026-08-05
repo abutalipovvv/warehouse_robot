@@ -40,6 +40,7 @@ class SippSearchProblem:
             Callable[[NodeName, NodeName], tuple[float, ...]] | None
         ),
         turn_cost_fn: Callable[[float, float], int],
+        rotation_allowed_fn: Callable[[NodeName, float, float], bool],
         low_level_max_time: int,
         wait_cost: int,
         planning_deadline: float | None,
@@ -54,6 +55,7 @@ class SippSearchProblem:
         self.heading_fn = heading_fn
         self.heading_options_fn = heading_options_fn
         self.turn_cost_fn = turn_cost_fn
+        self.rotation_allowed_fn = rotation_allowed_fn
         self.low_level_max_time = low_level_max_time
         self.wait_cost = wait_cost
         self.planning_deadline = planning_deadline
@@ -171,6 +173,16 @@ class SippSearchProblem:
                     0,
                     int(self.turn_cost_fn(state.yaw, lane_yaw)),
                 )
+                if (
+                    rotate_duration > 0
+                    and not self.rotation_allowed_fn(
+                        state.node,
+                        state.yaw,
+                        lane_yaw,
+                    )
+                ):
+                    self.last_failure = f"rotation_blocked:{state.node}"
+                    continue
                 for interval in self._safe_intervals_for_node(
                     lane.to_lm,
                 ):

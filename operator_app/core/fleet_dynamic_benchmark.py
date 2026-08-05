@@ -690,6 +690,9 @@ class DynamicBenchmarkRuntime:
             if item.name != robot.name and str(item.current_lm) in self.owner.loaded_map.landmarks
         }
         min_hops, max_hops = self.owner._dynamic_goal_hop_window()
+        start_yaw = 0.0
+        if str(robot.current_lm) == origin and isinstance(robot.pose, dict):
+            start_yaw = float(robot.pose.get("yaw", 0.0) or 0.0)
         candidates = self.owner._forward_benchmark_goals(
             origin,
             used_goals,
@@ -697,6 +700,7 @@ class DynamicBenchmarkRuntime:
             self.owner._dynamic_rng,
             min_hops=min_hops,
             max_hops=max_hops,
+            start_yaw=start_yaw,
         )
         if not candidates:
             candidates = self.owner._forward_benchmark_goals(
@@ -706,6 +710,7 @@ class DynamicBenchmarkRuntime:
                 self.owner._dynamic_rng,
                 min_hops=max(2, min_hops // 3),
                 max_hops=min(200, max(max_hops, len(self.owner.loaded_map.landmarks))),
+                start_yaw=start_yaw,
             )
         if not candidates:
             return None

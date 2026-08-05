@@ -30,6 +30,9 @@ class SippPlanner:
             Callable[[NodeName, NodeName], tuple[float, ...]] | None
         ) = None,
         turn_cost_fn: Callable[[float, float], int] | None = None,
+        rotation_allowed_fn: (
+            Callable[[NodeName, float, float], bool] | None
+        ) = None,
         low_level_max_time: int = 160,
         wait_cost: int = 6,
     ) -> None:
@@ -50,6 +53,10 @@ class SippPlanner:
         self.turn_cost_fn = (
             turn_cost_fn
             or (lambda _from_yaw, _to_yaw: 0)
+        )
+        self.rotation_allowed_fn = (
+            rotation_allowed_fn
+            or (lambda _node, _from_yaw, _to_yaw: True)
         )
         self.low_level_max_time = max(
             1,
@@ -88,6 +95,7 @@ class SippPlanner:
             heading_fn=self.heading_fn,
             heading_options_fn=self.heading_options_fn,
             turn_cost_fn=self.turn_cost_fn,
+            rotation_allowed_fn=self.rotation_allowed_fn,
             low_level_max_time=self.low_level_max_time,
             wait_cost=self.wait_cost,
             planning_deadline=planning_deadline,

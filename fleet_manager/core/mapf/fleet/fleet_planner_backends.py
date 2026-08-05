@@ -397,6 +397,11 @@ class BackendRunner:
                 if rotate_enabled
                 else 0
             ),
+            rotation_allowed_fn=(
+                motion.rotation_is_allowed
+                if rotate_enabled
+                else None
+            ),
             vertex_resources_fn=traffic_graph.vertex_resources,
             rotation_resources_fn=traffic_graph.rotation_resources,
             lane_resources_fn=lane_resources,
@@ -462,6 +467,11 @@ class BackendRunner:
                     if rotate_enabled
                     else 0
                 ),
+                rotation_allowed_fn=(
+                    motion.rotation_is_allowed
+                    if rotate_enabled
+                    else None
+                ),
                 low_level_max_time=low_level_max_time,
                 wait_cost=owner.wait_cost,
             )
@@ -523,6 +533,11 @@ class BackendRunner:
                 )
                 if rotate_enabled
                 else 0
+            ),
+            rotation_allowed_fn=(
+                motion.rotation_is_allowed
+                if rotate_enabled
+                else None
             ),
             low_level_max_time=low_level_max_time,
             wait_cost=owner.wait_cost,
