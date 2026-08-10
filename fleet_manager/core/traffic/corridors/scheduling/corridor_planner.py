@@ -136,28 +136,38 @@ def _slots_local_flow_match(
 def _has_pending_flow_predecessor(
     request: CorridorRequest,
     pending: Iterable[CorridorRequest],
+    flow_directions: dict[str, dict[str, str]],
 ) -> bool:
     request_regions = set(request.regions)
+    request_directions = flow_directions.get(request.robot_id, {})
     request_key = (
         request.earliest_entry,
         -request.wait_age_sec,
         -request.priority,
         request.robot_id,
     )
-    return any(
-        other.robot_id != request.robot_id
-        and other.predecessor_robot_id != request.robot_id
-        and not request_regions.isdisjoint(other.regions)
-        and _requests_local_flow_match(request, other)
-        and (
-            other.earliest_entry,
-            -other.wait_age_sec,
-            -other.priority,
-            other.robot_id,
-        )
-        < request_key
-        for other in pending
-    )
+    for other in pending:
+        if (
+            other.robot_id == request.robot_id
+            or other.predecessor_robot_id == request.robot_id
+            or request_regions.isdisjoint(other.regions)
+            or (
+                other.earliest_entry,
+                -other.wait_age_sec,
+                -other.priority,
+                other.robot_id,
+            )
+            >= request_key
+        ):
+            continue
+        other_directions = flow_directions.get(other.robot_id, {})
+        common = request_directions.keys() & other_directions.keys()
+        if common and all(
+            request_directions[region_id] == other_directions[region_id]
+            for region_id in common
+        ):
+            return True
+    return False
 
 
 def _phase_fairness_ranks(

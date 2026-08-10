@@ -111,17 +111,21 @@ def test_reset_clears_the_owned_containers_without_replacing_collections() -> No
     manager = FleetManagerCore(landmarks, edges, params={"fleet": {}})
     replans = manager.planning_state.runtime_replans
     leases = manager.traffic_state.controlled_corridor_leases
+    holds = manager.traffic_state.controlled_corridor_active_holds
     cycles = manager.recovery_state.active_wait_cycles
     replans["r1"] = {"stage": "queued"}
     leases["c1"] = ("r1", 10.0)
+    holds["r1"] = {"lm": "A", "route_revision": 1}
     cycles[("r1", "r2")] = {"winner": "r1"}
     try:
         manager.reset_planning_runtime_state()
         assert manager.planning_state.runtime_replans is replans
         assert manager.traffic_state.controlled_corridor_leases is leases
+        assert manager.traffic_state.controlled_corridor_active_holds is holds
         assert manager.recovery_state.active_wait_cycles is cycles
         assert replans == {}
         assert leases == {}
+        assert holds == {}
         assert cycles == {}
     finally:
         manager.close()
@@ -134,8 +138,16 @@ def test_planning_snapshot_has_no_mutable_link_to_live_state() -> None:
         name="r1",
         current_lm="A",
         pose={"x": 0.0, "y": 0.0, "yaw": 0.0},
+        trajectory=[{"t": 0.0}, {"t": 5.0}],
+    )
+    unrelated = FleetRobot(
+        name="r2",
+        current_lm="B",
+        pose={"x": 10.0, "y": 0.0, "yaw": 0.0},
+        trajectory=[{"t": 0.0}, {"t": 50.0}],
     )
     fleet_state.robots[robot.name] = robot
+    fleet_state.robots[unrelated.name] = unrelated
     traffic_state.controlled_corridor_leases["c1"] = ("r1", 8.0)
     snapshot = PlanningSnapshotFactory(fleet_state, traffic_state).create(
         created_at=2.0,
@@ -154,6 +166,7 @@ def test_planning_snapshot_has_no_mutable_link_to_live_state() -> None:
     request_copy[0]["name"] = "changed"
 
     assert snapshot.robots[0].pose.get("x") == 0.0
+    assert [route.robot_id for route in snapshot.active_routes] == ["r1"]
     assert snapshot.request_dicts()[0]["name"] == "r1"
     assert snapshot.reservations[0].resource == ("A",)
     assert snapshot.traffic_resources[0].resource_id == "c1"
@@ -181,6 +194,29 @@ def test_revision_changes_only_for_planning_relevant_robot_update() -> None:
         manager.traffic_state.stationary_blockers["A"] = "r1"
         manager._synchronize_planning_revision()
         assert manager.planning_revision == first_revision + 2
+    finally:
+        manager.close()
+
+
+def test_internal_order_planning_status_does_not_advance_revision() -> None:
+    landmarks, edges = _graph()
+    manager = FleetManagerCore(landmarks, edges, params={"fleet": {}})
+    order = FleetOrder(
+        order_id="pending-order",
+        target_lm="B",
+        status="QUEUED",
+    )
+    manager.orders[order.order_id] = order
+    manager._synchronize_planning_revision()
+    queued_revision = manager.planning_revision
+    try:
+        order.status = "PLANNING"
+        manager._synchronize_planning_revision()
+        assert manager.planning_revision == queued_revision
+
+        order.target_lm = "A"
+        manager._synchronize_planning_revision()
+        assert manager.planning_revision == queued_revision + 1
     finally:
         manager.close()
 
@@ -224,6 +260,110 @@ def test_lease_heartbeat_does_not_stale_planning_revision() -> None:
         assert not manager._planning_candidate_is_current(live_job, candidate)
     finally:
         manager.close()
+
+
+def test_rolling_candidate_ignores_unrelated_order_revision() -> None:
+    landmarks, edges = _graph()
+    manager = FleetManagerCore(landmarks, edges, params={"fleet": {}})
+    robot = FleetRobot(
+        name="rolling-robot",
+        current_lm="A",
+        target_lm="B",
+        active_order_id="active-order",
+        route_revision=7,
+        status="MOVING",
+        trajectory=[{"t": 0.0}, {"t": 20.0}],
+    )
+    manager.robots[robot.name] = robot
+    manager.orders["active-order"] = FleetOrder(
+        order_id="active-order",
+        target_lm="B",
+        assigned_robot=robot.name,
+        status="EXECUTING",
+    )
+    manager._synchronize_planning_revision()
+    record = PlanningJobRecord(kind="prefetch", route_revisions={robot.name: 7})
+    planning_job = manager._build_planning_job(
+        record,
+        [{"name": robot.name, "startLm": "B", "goalLm": "A"}],
+        {},
+    )
+    candidate = PlanCandidate.from_result(
+        planning_job,
+        {"ok": True, "plans": []},
+        finished_at=monotonic(),
+    )
+    try:
+        manager.orders["unrelated-order"] = FleetOrder(
+            order_id="unrelated-order",
+            target_lm="A",
+        )
+        manager._synchronize_planning_revision()
+
+        assert candidate.expected_revision != manager.planning_revision
+        assert manager._planning_candidate_is_current(record, candidate)
+        assert manager.planning_state.diagnostic_counts[
+            "planning_candidate_dependency_validated"
+        ] >= 1
+    finally:
+        manager.close()
+
+
+def test_rolling_dependency_stamp_rejects_participant_route_change() -> None:
+    landmarks, edges = _graph()
+    manager = FleetManagerCore(landmarks, edges, params={"fleet": {}})
+    robot = FleetRobot(
+        name="rolling-robot",
+        current_lm="A",
+        active_order_id="active-order",
+        route_revision=4,
+        status="MOVING",
+        trajectory=[{"t": 0.0}, {"t": 20.0}],
+    )
+    manager.robots[robot.name] = robot
+    manager._synchronize_planning_revision()
+    record = PlanningJobRecord(kind="prefetch", route_revisions={robot.name: 4})
+    planning_job = manager._build_planning_job(
+        record,
+        [{"name": robot.name, "startLm": "B", "goalLm": "A"}],
+        {},
+    )
+    candidate = PlanCandidate.from_result(
+        planning_job,
+        {"ok": True, "plans": []},
+        finished_at=monotonic(),
+    )
+    try:
+        robot.route_revision = 5
+        manager._synchronize_planning_revision()
+
+        assert not manager._planning_candidate_is_current(record, candidate)
+    finally:
+        manager.close()
+
+
+def test_dependency_aware_commit_still_checks_current_state_twice() -> None:
+    revision = 3
+    current_checks = 0
+    applied: list[str] = []
+
+    def is_current() -> bool:
+        nonlocal current_checks
+        current_checks += 1
+        return current_checks == 1
+
+    outcome = PlanCommitService(lambda: revision).commit(
+        _candidate(2),
+        validate=lambda: None,
+        capture=lambda: (),
+        apply=lambda: applied.append("route"),
+        restore=lambda checkpoint: None,
+        is_current=is_current,
+    )
+
+    assert outcome.status is PlanCommitStatus.STALE
+    assert current_checks == 2
+    assert applied == []
 
 
 def test_planning_job_captures_preparation_changes_in_its_revision() -> None:
@@ -353,6 +493,78 @@ def test_plan_commit_rolls_back_route_and_reservations_on_failure() -> None:
 
     assert routes == ["old-route"]
     assert reservations == ["old-reservation"]
+
+
+def test_manager_commit_checkpoint_copies_only_job_participants() -> None:
+    landmarks, edges = _graph()
+    manager = FleetManagerCore(landmarks, edges, params={"fleet": {}})
+    participant = FleetRobot(
+        name="participant",
+        current_lm="A",
+        active_order_id="participant-order",
+        trajectory=[{"t": 0.0}, {"t": 10.0}],
+    )
+    unrelated = FleetRobot(
+        name="unrelated",
+        current_lm="B",
+        active_order_id="unrelated-order",
+        trajectory=[{"t": 0.0}, {"t": 20.0}],
+    )
+    participant_order = FleetOrder(
+        order_id="participant-order",
+        target_lm="B",
+        assigned_robot=participant.name,
+    )
+    unrelated_order = FleetOrder(
+        order_id="unrelated-order",
+        target_lm="A",
+        assigned_robot=unrelated.name,
+    )
+    manager.robots.update({
+        participant.name: participant,
+        unrelated.name: unrelated,
+    })
+    manager.orders.update({
+        participant_order.order_id: participant_order,
+        unrelated_order.order_id: unrelated_order,
+    })
+    record = PlanningJobRecord(kind="dispatch")
+    record.entries = [
+        (participant_order, participant, {"startLm": "A"}, "B")
+    ]
+    intents = manager.traffic_state.controlled_corridor_prefetch_intents
+    intents[participant.name] = {"slot": {"epoch": 1}}
+    intents[unrelated.name] = {"slot": {"epoch": 2}}
+
+    try:
+        checkpoint = manager._capture_plan_commit_state(record)
+
+        assert [robot.name for robot, _ in checkpoint.robot_state] == [
+            participant.name
+        ]
+        assert [order.order_id for order, _ in checkpoint.order_state] == [
+            participant_order.order_id
+        ]
+        assert [name for name, _, _ in checkpoint.corridor_intent_state] == [
+            participant.name
+        ]
+
+        participant.route_clock = 8.0
+        participant_order.status = "EXECUTING"
+        unrelated.route_clock = 7.0
+        unrelated_order.status = "COMPLETED"
+        intents[participant.name]["slot"]["epoch"] = 10
+        intents[unrelated.name]["slot"]["epoch"] = 20
+        manager._restore_plan_commit_state(checkpoint)
+
+        assert participant.route_clock == 0.0
+        assert participant_order.status == "QUEUED"
+        assert unrelated.route_clock == 7.0
+        assert unrelated_order.status == "COMPLETED"
+        assert intents[participant.name]["slot"]["epoch"] == 1
+        assert intents[unrelated.name]["slot"]["epoch"] == 20
+    finally:
+        manager.close()
 
 
 def test_worker_returns_candidate_and_runtime_owner_commits_it() -> None:
@@ -547,6 +759,16 @@ def test_rolling_continuation_service_works_without_manager() -> None:
     assert robot.rolling_boundary_since == 4.0
     assert state.rolling_prefetch_retry_at[robot.name] == 10.5
 
+    service.defer_prefetch(
+        order,
+        robot,
+        boundary_waiting=False,
+        boundary_retry_interval=0.5,
+        time_scale=1.0,
+        maximum_retry_delay=0.75,
+    )
+    assert state.rolling_prefetch_retry_at[robot.name] == 10.75
+
 
 def test_rolling_service_builds_candidates_without_manager() -> None:
     fleet_state = FleetState()
@@ -603,9 +825,10 @@ def test_rolling_service_builds_candidates_without_manager() -> None:
         "name": "r1",
         "startLm": "B",
         "goalLm": "C",
-        "startPose": {"x": 1.0, "y": 0.0, "yaw": 0.0},
-        "spatialRouteNodes": ["B", "C", "C"],
-    }
+            "startPose": {"x": 1.0, "y": 0.0, "yaw": 0.0},
+            "spatialRouteNodes": ["B", "C", "C"],
+            "reservationStartTimeSec": 11.0,
+        }
     assert final_goal == "C"
     assert remaining == 1.0
     assert planning_state.rolling_prefetch_eligible_since == {"r1": 10.0}

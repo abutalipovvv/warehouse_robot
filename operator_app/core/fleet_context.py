@@ -148,6 +148,12 @@ class FleetContextService:
             owner.params_path,
             create=True,
         )
+        for section, values in owner.params_overrides.items():
+            if not isinstance(values, dict):
+                continue
+            current = params.setdefault(section, {})
+            if isinstance(current, dict):
+                current.update(values)
         owner.loaded_map = loaded_map
         owner.map_dir = loaded_map.map_dir.resolve()
         owner.maps_root = owner.map_dir.parent

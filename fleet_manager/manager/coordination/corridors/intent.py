@@ -46,6 +46,43 @@ class ControlledCorridorPrefetchIntentMixin:
                 None,
             )
             return None
+        existing = self._controlled_corridor_prefetch_intents.get(
+            robot.name
+        )
+        route_nodes = tuple(
+            str(node)
+            for node in request.get("routeNodes", ())
+            if str(node) in self.landmarks
+        )
+        intent_kind = (
+            "rolling"
+            if (
+                robot.active_order_id == order.order_id
+                and bool(robot.trajectory)
+            )
+            else "dispatch"
+        )
+        if (
+            isinstance(existing, dict)
+            and self.orders.get(order.order_id) is order
+            and self.robots.get(robot.name) is robot
+            and str(existing.get("order_id") or "") == order.order_id
+            and str(existing.get("kind") or "") == intent_kind
+            and int(existing.get("route_revision", -1))
+            == int(robot.route_revision)
+            and str(existing.get("start_lm") or "")
+            == str(request.get("startLm") or "")
+            and tuple(existing.get("trajectory_route_nodes", ()))
+            == route_nodes
+        ):
+            # The current implementation intentionally keeps the original
+            # nominal handoff time while this exact passage waits in the
+            # calendar. Avoid rebuilding its kinematic trajectory merely to
+            # rediscover the same signature on every gate probe.
+            existing["spatial_route_revision"] = int(
+                order.spatial_route_revision or 0
+            )
+            return existing
         draft = self._controlled_corridor_prefetch_draft(
             order,
             robot,
@@ -60,9 +97,6 @@ class ControlledCorridorPrefetchIntentMixin:
                 None,
             )
             return None
-        existing = self._controlled_corridor_prefetch_intents.get(
-            robot.name
-        )
         if (
             isinstance(existing, dict)
             and existing.get("signature") == draft.signature
@@ -294,6 +328,20 @@ class ControlledCorridorPrefetchIntentMixin:
             "entry": dict(draft.entry),
             "trajectory": draft.route.trajectory,
             "start_pose": draft.route.pose,
+            # This robot is a private geometry probe, never a live fleet
+            # member. Reusing it avoids allocating and copying the same
+            # nominal trajectory on every 10 Hz calendar refresh.
+            "downstream_probe": FleetRobot(
+                name=robot.name,
+                current_lm=draft.route.start_lm,
+                target_lm=draft.exit_lm,
+                status="MOVING",
+                active_order_id=order.order_id,
+                pose=dict(draft.route.pose),
+                trajectory=draft.route.trajectory,
+                route_clock=0.0,
+                route_revision=int(robot.route_revision),
+            ),
             "registered_at": now,
             "handoff_at": draft.handoff_at,
             "last_schedule_epoch": None,

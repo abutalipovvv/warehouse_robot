@@ -36,6 +36,16 @@ class FleetMotionKinematicsMixin:
     def _safe_replan_start_lm(self, robot: FleetRobot) -> str:
         if robot.pose is None:
             return robot.current_lm if robot.current_lm in self.landmarks else ""
+        # ``current_lm`` is updated from tagged trajectory samples and is the
+        # overwhelmingly common replan boundary. Check it before scanning the
+        # complete map; the configured tolerance is much smaller than graph
+        # spacing, so at most one landmark can satisfy this fast path.
+        current = self.landmarks.get(robot.current_lm)
+        if current is not None and math.hypot(
+            current.x - float(robot.pose.get("x", 0.0) or 0.0),
+            current.y - float(robot.pose.get("y", 0.0) or 0.0),
+        ) <= self._runtime_replan_lm_tolerance():
+            return robot.current_lm
         nearest_lm = self._nearest_lm_for_robot(robot)
         landmark = self.landmarks.get(nearest_lm)
         if landmark is None:

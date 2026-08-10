@@ -193,7 +193,15 @@ class FleetManagerCore(
         self._plan_commit_service = PlanCommitService(
             lambda: self.planning_revision,
         )
-        self._planning_worker = PlanningWorker(name="fleet-mapf-worker")
+        queue_size = int(self.settings.fleet.number(
+            "planning_queue_max_size",
+            2,
+            minimum=1.0,
+        ))
+        self._planning_worker = PlanningWorker(
+            name="fleet-mapf-worker",
+            max_queue_size=min(8, queue_size),
+        )
         self._planning_worker.set_completion_consumer(
             self._collect_completed_planning_candidates,
         )
@@ -244,6 +252,7 @@ class FleetManagerCore(
                 robot
             ),
             prefetch_lead=lambda: self._rolling_prefetch_lead(),
+            buffer_policy=lambda: self._rolling_buffer_policy(),
         )
         self._replanning_service = ReplanningService(
             self.fleet_state,

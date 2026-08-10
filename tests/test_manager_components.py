@@ -208,6 +208,7 @@ def test_snapshot_preserves_json_and_robot_insertion_order(
         "obstacleAreas",
         "orders",
         "traffic",
+        "rollingRefill",
         "lastRuntimeSafetyRollback",
         "trafficFlow",
     ]

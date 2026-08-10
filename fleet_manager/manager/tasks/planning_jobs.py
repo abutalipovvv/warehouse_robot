@@ -7,6 +7,9 @@ from time import monotonic
 from typing import Any
 
 from fleet_manager.manager.tasks.models import FleetOrder
+from fleet_manager.manager.tasks.rolling_continuation import (
+    RollingRefillUrgency,
+)
 from fleet_manager.robot.model import FleetRobot
 from fleet_manager.manager.planning import (
     PlanningJob,
@@ -37,6 +40,7 @@ class _RollingPrefetchBatch:
     requests: list[dict[str, Any]] = field(default_factory=list)
     payload: dict[str, Any] = field(default_factory=dict)
     job: PlanningJobRecord = field(default_factory=PlanningJobRecord)
+    conflict_component_ids: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -70,8 +74,103 @@ class AsyncPlanningJobMixin:
     """Own asynchronous planner job submission and start transitions."""
 
     def _async_simulated_dispatch_active(self) -> bool:
+        active_statuses = {
+            PlanningJobStatus.QUEUED,
+            PlanningJobStatus.RUNNING,
+            PlanningJobStatus.COMPLETED,
+        }
+        if any(
+            record.status in active_statuses
+            for record in self.planning_state.jobs.values()
+        ):
+            return True
+        # Compatibility for tests and older integrations that inject the
+        # former single-slot record directly.
         with self._dispatch_job_lock:
             return self._dispatch_job is not None
+
+    def _planning_scheduler_saturated(self) -> bool:
+        """Return whether the bounded worker queue cannot accept another job."""
+
+        stats = self._planning_worker.stats()
+        return stats.queued_jobs >= self._planning_worker.max_queue_size
+
+    def _ordinary_dispatch_planning_active(self) -> bool:
+        """Avoid queuing dispatch snapshots that the next commit will stale."""
+
+        active_statuses = {
+            PlanningJobStatus.QUEUED,
+            PlanningJobStatus.RUNNING,
+            PlanningJobStatus.COMPLETED,
+        }
+        return any(
+            record.status in active_statuses
+            and record.job is not None
+            and record.job.reason is PlanningReason.ORDER_DISPATCH
+            for record in self.planning_state.jobs.values()
+        )
+
+    def _cancel_stale_queued_planning_jobs(self, revision: int) -> None:
+        """Avoid spending the single solver on known-stale strict snapshots."""
+
+        for record in tuple(self.planning_state.jobs.values()):
+            planning_job = record.job
+            if (
+                record.status not in {
+                    PlanningJobStatus.QUEUED,
+                    PlanningJobStatus.RUNNING,
+                }
+                or planning_job is None
+                or planning_job.reason is PlanningReason.ROLLING_CONTINUATION
+                or planning_job.snapshot.revision == revision
+            ):
+                continue
+            self._planning_worker.cancel_job(planning_job.job_id)
+
+    def _planning_job_conflicts(self, robot_names: set[str]) -> bool:
+        if not robot_names:
+            return False
+        terminal = {
+            PlanningJobStatus.CANCELLED,
+            PlanningJobStatus.DEADLINE_EXCEEDED,
+            PlanningJobStatus.STALE,
+            PlanningJobStatus.FAILED,
+            PlanningJobStatus.COMMITTED,
+        }
+        for record in self.planning_state.jobs.values():
+            if record.status in terminal or record.job is None:
+                continue
+            if robot_names.intersection(record.job.robot_ids):
+                return True
+        return False
+
+    def _refresh_compatibility_active_job(self) -> None:
+        planning_state = getattr(self, "planning_state", None)
+        if planning_state is None:
+            # Small legacy integrations may exercise the explicit worker API
+            # without constructing the full composition root. Their injected
+            # compatibility slot remains authoritative for that call.
+            return
+        terminal = {
+            PlanningJobStatus.CANCELLED,
+            PlanningJobStatus.DEADLINE_EXCEEDED,
+            PlanningJobStatus.STALE,
+            PlanningJobStatus.FAILED,
+            PlanningJobStatus.COMMITTED,
+        }
+        active = [
+            record
+            for record in planning_state.jobs.values()
+            if record.status not in terminal
+        ]
+        active.sort(
+            key=lambda record: (
+                record.job.submitted_at if record.job is not None else 0.0,
+                record.job_id,
+            )
+        )
+        with self._dispatch_job_lock:
+            self._dispatch_job = active[0] if active else None
 
     def _submit_async_planning_job(
         self,
@@ -88,15 +187,14 @@ class AsyncPlanningJobMixin:
                 payload,
             )
         except Exception as exc:
-            with self._dispatch_job_lock:
-                if self._dispatch_job is job:
-                    self._dispatch_job = None
             self.planning_state.record_event("planning_job_failed")
             self._event(
                 "error",
                 f"planning_job_failed preparation: {type(exc).__name__}: {exc}",
             )
             return False
+
+        self._refresh_compatibility_active_job()
 
         if self._planning_worker.submit_job(
             planning_job,
@@ -105,9 +203,7 @@ class AsyncPlanningJobMixin:
             return True
 
         self.planning_state.jobs.pop(planning_job.job_id, None)
-        with self._dispatch_job_lock:
-            if self._dispatch_job is job:
-                self._dispatch_job = None
+        self._refresh_compatibility_active_job()
         return False
 
     def _build_planning_job(
@@ -136,10 +232,13 @@ class AsyncPlanningJobMixin:
         job_id = f"{kind}-{sequence}"
         submitted_at = monotonic()
         deadline_seconds = self._planning_deadline_seconds(payload)
+        priority = PlanningPriority.for_reason(reason)
+        if reason is PlanningReason.ROLLING_CONTINUATION:
+            priority = self._rolling_job_priority(live_job)
         planning_job = PlanningJob(
             job_id=job_id,
             reason=reason,
-            priority=PlanningPriority.for_reason(reason),
+            priority=priority,
             snapshot=snapshot,
             submitted_at=submitted_at,
             deadline=(
@@ -150,9 +249,12 @@ class AsyncPlanningJobMixin:
             coalescing_key=f"{kind}:{','.join(robot_ids)}",
             robot_ids=robot_ids,
             conflict_component_ids=(
-                tuple(str(item) for item in live_job.cycle)
-                if kind == "coupled_replan"
-                else ()
+                live_job.conflict_component_ids
+                or (
+                    tuple(str(item) for item in live_job.cycle)
+                    if kind == "coupled_replan"
+                    else ()
+                )
             ),
         )
         live_job.job = planning_job
@@ -182,6 +284,29 @@ class AsyncPlanningJobMixin:
             )
         return planning_job
 
+    def _rolling_job_priority(
+        self,
+        live_job: PlanningJobRecord,
+    ) -> PlanningPriority:
+        policy = self._rolling_buffer_policy()
+        priorities: list[PlanningPriority] = []
+        for entry in live_job.entries:
+            if not isinstance(entry, tuple) or len(entry) != 5:
+                continue
+            robot = entry[1]
+            if not isinstance(robot, FleetRobot):
+                continue
+            urgency = policy.urgency_for(
+                robot.name,
+                robot.route_buffer_seconds,
+            )
+            priorities.append({
+                "empty": PlanningPriority.ROLLING_EMERGENCY,
+                "critical": PlanningPriority.ROLLING_CRITICAL,
+                "urgent": PlanningPriority.ROLLING_URGENT,
+            }.get(urgency.value, PlanningPriority.ROLLING_NORMAL))
+        return min(priorities, default=PlanningPriority.ROLLING_NORMAL)
+
     @staticmethod
     def _planning_deadline_seconds(
         payload: dict[str, Any],
@@ -207,6 +332,12 @@ class AsyncPlanningJobMixin:
                 if record.status is PlanningJobStatus.QUEUED:
                     record.transition_to(PlanningJobStatus.RUNNING)
                 record.started_at = update.occurred_at
+                self.planning_state.rolling_metrics.queue_wait_samples.append(
+                    max(
+                        0.0,
+                        update.occurred_at - planning_job.submitted_at,
+                    )
+                )
                 self.planning_state.record_event("planning_job_started")
                 self._event(
                     "info",
@@ -231,6 +362,10 @@ class AsyncPlanningJobMixin:
                 record.transition_to(update.status)
             record.finished_at = update.occurred_at
             record.error = update.message or None
+            if record.started_at is not None:
+                self.planning_state.rolling_metrics.solver_duration_samples.append(
+                    max(0.0, update.occurred_at - record.started_at)
+                )
             if update.status in {
                 PlanningJobStatus.CANCELLED,
                 PlanningJobStatus.DEADLINE_EXCEEDED,
@@ -248,6 +383,7 @@ class AsyncPlanningJobMixin:
                     f"expected_revision={planning_job.snapshot.revision} "
                     f"detail={update.message}",
                 )
+                self._discard_terminal_planning_candidate(record)
             elif update.status is PlanningJobStatus.FAILED:
                 self.planning_state.record_event("planning_job_failed")
                 self._event(
@@ -258,15 +394,18 @@ class AsyncPlanningJobMixin:
                 )
 
         for candidate in self._planning_worker.take_completed_results():
-            with self._dispatch_job_lock:
-                live_job = self._dispatch_job
+            live_job = self.planning_state.jobs.get(candidate.job_id)
+            if not isinstance(live_job, PlanningJobRecord):
+                with self._dispatch_job_lock:
+                    compatibility_job = self._dispatch_job
                 if (
-                    live_job is None
-                    or live_job.job_id != candidate.job_id
+                    compatibility_job is None
+                    or compatibility_job.job_id != candidate.job_id
                 ):
                     continue
-                live_job.candidate = candidate
-                live_job.done = True
+                live_job = compatibility_job
+            live_job.candidate = candidate
+            live_job.done = True
 
     def _start_async_simulated_dispatch(
         self,
@@ -367,16 +506,13 @@ class AsyncPlanningJobMixin:
                     if order.status == "PLANNING":
                         order.status = "QUEUED"
                 return False
-        with self._dispatch_job_lock:
-            if self._dispatch_job is not None:
-                self._release_controlled_corridor_gate_pins(
-                    corridor_gates,
-                )
-                for order, _, _, _ in entries:
-                    if order.status == "PLANNING":
-                        order.status = "QUEUED"
-                return False
-            self._dispatch_job = job
+        robot_names = {entry[1].name for entry in entries}
+        if self._planning_job_conflicts(robot_names):
+            self._release_controlled_corridor_gate_pins(corridor_gates)
+            for order, _, _, _ in entries:
+                if order.status == "PLANNING":
+                    order.status = "QUEUED"
+            return False
 
         if not self._submit_async_planning_job(
             job,
@@ -478,12 +614,10 @@ class AsyncPlanningJobMixin:
             escape_goal=planning_goal if fixed_escape else "",
             request=request,
         )
-        with self._dispatch_job_lock:
-            if self._dispatch_job is not None:
-                return False
-            state["stage"] = "planning"
-            state["last_attempt_at"] = self._now()
-            self._dispatch_job = job
+        if self._planning_job_conflicts({robot.name}):
+            return False
+        state["stage"] = "planning"
+        state["last_attempt_at"] = self._now()
         order.status = "PLANNING"
         order.error = f"runtime replan pending: {state.get('reason', '')}"
         order.updated_at = self._now()
@@ -616,9 +750,18 @@ class AsyncPlanningJobMixin:
 
         if not prepared:
             return False
+        refill_batches = (
+            self._rolling_refill_batches(prepared)
+            if all(float(entry[-1]) > 0.000001 for entry in prepared)
+            else []
+        )
         return _RollingPrefetchBatch(
             vacancy_recovery=vacancy_recovery,
             prepared=prepared,
+            conflict_component_ids=tuple(
+                refill_batch.conflict_component_id
+                for refill_batch in refill_batches
+            ),
         )
 
     def _admit_rolling_prefetch_batch(
@@ -630,13 +773,13 @@ class AsyncPlanningJobMixin:
         runnable: list[
             tuple[FleetOrder, FleetRobot, dict[str, Any], str, float]
         ] = []
-        corridor_gate_pending: list[FleetRobot] = []
+        corridor_gate_pending: list[RollingPrefetchEntry] = []
         gate_now = self._now()
         # Register every authored-corridor intent before deciding whether this
-        # batch is ready.  The runtime-thread calendar sees all contenders on
-        # the next tick and assigns one deterministic global order.  Ordinary
-        # open-space requests return ``None`` and keep the original fast path.
-        for order, robot, request, final_goal, prediction_offset in prepared:
+        # batch is ready. Ordinary open-space requests return ``None`` and keep
+        # the original fast path.
+        for entry in prepared:
+            order, robot, request, _, prediction_offset = entry
             gate = self._controlled_corridor_prefetch_gate(
                 order,
                 robot,
@@ -644,51 +787,43 @@ class AsyncPlanningJobMixin:
                 prediction_offset=prediction_offset,
                 now=gate_now,
             )
-            if gate is None:
-                runnable.append(
-                    (order, robot, request, final_goal, prediction_offset)
-                )
-                continue
-            if bool(gate.get("approachOnly")):
-                # The assigned passage is beyond this rolling horizon. The
-                # request was reduced to a normal, safe approach chunk and
-                # therefore needs neither a corridor gate nor commit hook.
-                runnable.append(
-                    (order, robot, request, final_goal, prediction_offset)
-                )
-                continue
-            intent = gate.get("intent")
-            if not isinstance(intent, dict):
-                self._queue_controlled_corridor_exit_clearance(robot)
-                corridor_gate_pending.append(robot)
-                continue
-            if not bool(gate.get("ready")):
-                self._queue_controlled_corridor_exit_clearance(robot)
-                corridor_gate_pending.append(robot)
-                continue
-            slot = gate.get("slot")
-            signature = intent.get("signature")
-            if (
-                not isinstance(slot, CorridorSlot)
-                or not isinstance(signature, tuple)
+            if self._rolling_corridor_gate_is_ready(
+                entry,
+                gate,
+                corridor_gates,
             ):
-                corridor_gate_pending.append(robot)
-                continue
-            departure_gate = gate.get("departureNotBefore")
-            if not isinstance(departure_gate, dict):
-                corridor_gate_pending.append(robot)
-                continue
-            request["departureNotBefore"] = [dict(departure_gate)]
-            request["authorizedControlledRegions"] = list(slot.regions)
-            request["noWaitNodes"] = list(gate.get("noWaitNodes", ()))
-            runnable.append(
-                (order, robot, request, final_goal, prediction_offset)
-            )
-            corridor_gates[robot.name] = {
-                "intent": intent,
-                "signature": signature,
-                "slot": slot,
-            }
+                runnable.append(entry)
+            else:
+                corridor_gate_pending.append(entry)
+
+        if corridor_gate_pending:
+            # Intent registration and calendar publication both run on the
+            # single-writer runtime thread. Refresh once after every contender
+            # in this batch is visible, then resolve the same immutable global
+            # order immediately. Waiting for the next runtime tick can consume
+            # several seconds on a dense map and exhaust a short route buffer.
+            self._prepare_central_controlled_corridor_schedule(gate_now)
+            still_pending: list[RollingPrefetchEntry] = []
+            for entry in corridor_gate_pending:
+                order, robot, request, _, prediction_offset = entry
+                gate = self._controlled_corridor_prefetch_gate(
+                    order,
+                    robot,
+                    request,
+                    prediction_offset=prediction_offset,
+                    now=gate_now,
+                )
+                if self._rolling_corridor_gate_is_ready(
+                    entry,
+                    gate,
+                    corridor_gates,
+                ):
+                    runnable.append(entry)
+                else:
+                    self._queue_controlled_corridor_exit_clearance(robot)
+                    still_pending.append(entry)
+            corridor_gate_pending = still_pending
+
         if corridor_gate_pending:
             # No MAPF failure occurred.  Waiting one runtime tick for the
             # central calendar is cheaper and more reliable than repeatedly
@@ -698,24 +833,91 @@ class AsyncPlanningJobMixin:
             # it, the same earliest-deadline robot whose *current* passage
             # still owns a slot is selected on every tick, preventing the
             # dispatcher from registering intents for the rest of the fleet.
-            gate_retry = max(
+            normal_gate_retry = max(
                 1.0,
                 min(2.0, self._rolling_prefetch_lead() * 0.1),
             )
-            for robot in corridor_gate_pending:
-                self._rolling_prefetch_last_attempt_at[robot.name] = gate_now
-                self._rolling_prefetch_retry_at[robot.name] = max(
-                    self._rolling_prefetch_retry_at.get(
-                        robot.name,
-                        0.0,
-                    ),
-                    gate_now + gate_retry,
+            for _, robot, _, _, _ in corridor_gate_pending:
+                policy = self._rolling_buffer_policy()
+                urgency = policy.urgency_for(
+                    robot.name,
+                    robot.route_buffer_seconds,
                 )
+                gate_retry = normal_gate_retry
+                if urgency in {
+                    RollingRefillUrgency.CRITICAL,
+                    RollingRefillUrgency.EMPTY,
+                }:
+                    time_before_emergency = max(
+                        0.0,
+                        robot.route_buffer_seconds - policy.emergency_sec,
+                    )
+                    gate_retry = max(
+                        self._runtime_motion_step(),
+                        min(normal_gate_retry, time_before_emergency * 0.5),
+                    )
+                self._rolling_prefetch_last_attempt_at[robot.name] = gate_now
+                next_retry_at = gate_now + gate_retry
+                if urgency in {
+                    RollingRefillUrgency.CRITICAL,
+                    RollingRefillUrgency.EMPTY,
+                }:
+                    # An older normal retry must not survive after the live
+                    # chunk becomes critical. The calendar is refreshed on
+                    # the runtime owner; retrying one physics step later is
+                    # bounded and avoids reaching the handoff first.
+                    self._rolling_prefetch_retry_at[robot.name] = next_retry_at
+                else:
+                    self._rolling_prefetch_retry_at[robot.name] = max(
+                        self._rolling_prefetch_retry_at.get(
+                            robot.name,
+                            0.0,
+                        ),
+                        next_retry_at,
+                    )
         prepared = runnable
         if not prepared:
             return False
         batch.prepared = prepared
         batch.corridor_gates = corridor_gates
+        return True
+
+    @staticmethod
+    def _rolling_corridor_gate_is_ready(
+        entry: RollingPrefetchEntry,
+        gate: dict[str, Any] | None,
+        corridor_gates: dict[str, dict[str, Any]],
+    ) -> bool:
+        """Attach one valid central gate, or accept a corridor-free prefix."""
+
+        _, robot, request, _, _ = entry
+        if gate is None or bool(gate.get("approachOnly")):
+            return True
+        intent = gate.get("intent")
+        slot = gate.get("slot")
+        departure_gate = gate.get("departureNotBefore")
+        signature = (
+            intent.get("signature")
+            if isinstance(intent, dict)
+            else None
+        )
+        if not (
+            bool(gate.get("ready"))
+            and isinstance(intent, dict)
+            and isinstance(slot, CorridorSlot)
+            and isinstance(signature, tuple)
+            and isinstance(departure_gate, dict)
+        ):
+            return False
+
+        request["departureNotBefore"] = [dict(departure_gate)]
+        request["authorizedControlledRegions"] = list(slot.regions)
+        request["noWaitNodes"] = list(gate.get("noWaitNodes", ()))
+        corridor_gates[robot.name] = {
+            "intent": intent,
+            "signature": signature,
+            "slot": slot,
+        }
         return True
 
     def _build_rolling_prefetch_job(
@@ -725,11 +927,29 @@ class AsyncPlanningJobMixin:
         vacancy_recovery = batch.vacancy_recovery
         prepared = batch.prepared
         corridor_gates = batch.corridor_gates
-        order, _, request, _, offset = prepared[0]
+        order, _, request, _, _ = prepared[0]
+        planning_time = self._now()
+        for _, _, member_request, _, offset in prepared:
+            member_offset = max(0.0, float(offset))
+            member_request["reservationStartTimeSec"] = (
+                planning_time + member_offset
+            )
+            raw_gates = member_request.get("departureNotBefore")
+            if isinstance(raw_gates, list):
+                member_request["departureNotBefore"] = [
+                    {
+                        **gate,
+                        "timeSec": member_offset
+                        + max(0.0, float(gate.get("timeSec", 0.0) or 0.0)),
+                    }
+                    for gate in raw_gates
+                    if isinstance(gate, dict)
+                ]
         requests = [entry[2] for entry in prepared]
         payload = self._order_plan_payload(order, request) | {
             "robots": requests,
-            "reservationOffsetSec": offset,
+            "planningTimeSec": planning_time,
+            "reservationOffsetSec": 0.0,
             # Boundary holders are movable participants in this request.
             # Let hybrid SIPP use local CBS if priority ordering alone cannot
             # release their coupled starts.
@@ -739,7 +959,10 @@ class AsyncPlanningJobMixin:
             # planner for a 10-20 robot traffic wave.
             "allowCbsFallback": (
                 False
-                if vacancy_recovery
+                if (
+                    vacancy_recovery
+                    or len(batch.conflict_component_ids) != 1
+                )
                 else 1 < len(prepared) <= min(
                     4,
                     self.planner.local_cbs_max_robots,
@@ -753,6 +976,7 @@ class AsyncPlanningJobMixin:
                 robot.name: robot.route_revision
                 for _, robot, _, _, _ in prepared
             },
+            conflict_component_ids=batch.conflict_component_ids,
         )
         if corridor_gates:
             job.corridor_gates = corridor_gates
@@ -776,13 +1000,10 @@ class AsyncPlanningJobMixin:
         requests = batch.requests
         payload = batch.payload
         job = batch.job
-        with self._dispatch_job_lock:
-            if self._dispatch_job is not None:
-                self._release_controlled_corridor_gate_pins(
-                    corridor_gates,
-                )
-                return False
-            self._dispatch_job = job
+        robot_names = {entry[1].name for entry in prepared}
+        if self._planning_job_conflicts(robot_names):
+            self._release_controlled_corridor_gate_pins(corridor_gates)
+            return False
         attempt_now = self._now()
         for _, robot, _, _, offset in prepared:
             self._rolling_prefetch_last_attempt_at[robot.name] = attempt_now
@@ -1052,10 +1273,13 @@ class AsyncPlanningJobMixin:
     ) -> bool:
         """Claim the worker slot, submit local CBS and publish start metrics."""
         job = context.job
-        with self._dispatch_job_lock:
-            if self._dispatch_job is not None:
-                return False
-            self._dispatch_job = job
+        robot_names = {
+            str(request.get("name") or "")
+            for request in context.requests
+            if str(request.get("name") or "")
+        }
+        if self._planning_job_conflicts(robot_names):
+            return False
         if not self._submit_async_planning_job(
             job,
             context.requests,

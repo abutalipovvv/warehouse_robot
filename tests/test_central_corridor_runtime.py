@@ -8,6 +8,7 @@ from fleet_manager.manager.planning import (
     PlanningJobRecord,
     PlanningSolverService,
 )
+from fleet_manager.manager.tasks.planning_jobs import _RollingPrefetchBatch
 from fleet_manager.robot.model import FleetRobot
 from fleet_manager.core.mapping.maps.models import GraphEdge, Landmark
 from fleet_manager.core.traffic.corridors.scheduling.corridor_models import (
@@ -184,6 +185,44 @@ def test_runtime_calendar_backfills_near_robots_before_far_slot(
     ]
 
 
+def test_corridor_passage_geometry_is_cached_between_motion_ticks(
+    monkeypatch,
+) -> None:
+    manager = _manager()
+    robot = _robot("cached")
+    robot.route_revision = 7
+    manager.robots[robot.name] = robot
+    scans = 0
+    original_scan = manager._scan_controlled_corridor_passage
+
+    def counted_scan(*args, **kwargs):
+        nonlocal scans
+        scans += 1
+        return original_scan(*args, **kwargs)
+
+    monkeypatch.setattr(
+        manager,
+        "_scan_controlled_corridor_passage",
+        counted_scan,
+    )
+
+    first = manager._next_controlled_corridor_entry(
+        robot,
+        lookahead_sec=float("inf"),
+    )
+    robot.route_clock = 1.0
+    robot.pose = {"x": 0.05, "y": 0.0, "yaw": 0.0}
+    second = manager._next_controlled_corridor_entry(
+        robot,
+        lookahead_sec=float("inf"),
+    )
+
+    assert first is not None
+    assert second is not None
+    assert scans == 1
+    assert second["eta"] == max(0.0, first["eta"] - 1.0)
+
+
 def test_open_space_does_not_create_central_corridor_scheduler() -> None:
     manager = _manager(controlled=False)
 
@@ -328,6 +367,74 @@ def test_prefetch_intent_receives_a_global_slot_on_next_runtime_tick() -> None:
     assert second["ready"] is True
     assert second["departureNotBefore"]["node"] == "A"
     assert second["departureNotBefore"]["timeSec"] >= 0.0
+
+
+def test_rolling_admission_refreshes_new_corridor_intent_in_same_tick() -> None:
+    manager = _manager()
+    order, robot, request = _rolling_boundary_robot(
+        "same-tick",
+        start_lm="A",
+        goal_lm="B",
+    )
+    manager.orders[order.order_id] = order
+    manager.robots[robot.name] = robot
+    batch = _RollingPrefetchBatch(
+        vacancy_recovery=False,
+        prepared=[(order, robot, request, "B", 5.0)],
+    )
+
+    try:
+        assert manager._admit_rolling_prefetch_batch(batch)
+        assert [entry[1].name for entry in batch.prepared] == [robot.name]
+        assert robot.name in batch.corridor_gates
+        assert request["departureNotBefore"][0]["node"] == "A"
+    finally:
+        manager.close()
+
+
+def test_critical_corridor_gate_pending_retries_before_buffer_expires(
+    monkeypatch,
+) -> None:
+    manager = _manager()
+    order, robot, request = _rolling_boundary_robot(
+        "critical-gate",
+        start_lm="A",
+        goal_lm="B",
+    )
+    robot.route_clock = 4.8
+    manager.orders[order.order_id] = order
+    manager.robots[robot.name] = robot
+    batch = _RollingPrefetchBatch(
+        vacancy_recovery=False,
+        prepared=[(order, robot, request, "B", 0.2)],
+    )
+    monkeypatch.setattr(
+        manager,
+        "_controlled_corridor_prefetch_gate",
+        lambda *_args, **_kwargs: {"ready": False},
+    )
+    monkeypatch.setattr(
+        manager,
+        "_prepare_central_controlled_corridor_schedule",
+        lambda _now: None,
+    )
+    monkeypatch.setattr(
+        manager,
+        "_queue_controlled_corridor_exit_clearance",
+        lambda _robot: False,
+    )
+
+    try:
+        assert not manager._admit_rolling_prefetch_batch(batch)
+        attempted_at = manager._rolling_prefetch_last_attempt_at[robot.name]
+        retry_delay = (
+            manager._rolling_prefetch_retry_at[robot.name] - attempted_at
+        )
+
+        assert retry_delay + 0.000001 >= manager._runtime_motion_step()
+        assert retry_delay < robot.route_buffer_seconds
+    finally:
+        manager.close()
 
 
 def test_identical_corridor_intent_tracks_parent_spatial_route_revision() -> None:
@@ -486,7 +593,9 @@ def test_missed_corridor_slot_still_releases_safe_approach_prefix(
                 "lm": "X",
             },
         ],
-        route_clock=1.0,
+        # Floating point accumulation may stop just below the exact endpoint.
+        # This is already an empty buffer according to the runtime tolerance.
+        route_clock=1.0 - 0.0000005,
         route_revision=1,
         route_chunk_goal_lm="X",
         route_final_lm="B",
@@ -843,10 +952,6 @@ def test_live_prefetch_passes_central_slot_to_sipp(monkeypatch) -> None:
     manager.robots[robot.name] = robot
     entry = (order, robot, request, "B", 5.0)
 
-    manager._start_async_rolling_prefetch(entry)
-    assert manager._dispatch_job is None
-    manager._prepare_controlled_corridor_admissions(manager._now())
-
     captured: list[dict[str, object]] = []
     planned = Event()
 
@@ -863,7 +968,7 @@ def test_live_prefetch_passes_central_slot_to_sipp(monkeypatch) -> None:
         }
 
     _install_planning_solver(manager, capture)
-    manager._start_async_rolling_prefetch(entry)
+    assert manager._start_async_rolling_prefetch(entry)
 
     assert planned.wait(1.0)
     assert len(captured) == 1
@@ -935,6 +1040,216 @@ def test_initial_dispatch_uses_the_same_central_corridor_gate(
     job = manager._dispatch_job
     assert isinstance(job, PlanningJobRecord)
     assert robot.name in job.corridor_gates
+
+
+def test_initial_dispatch_can_move_to_safe_corridor_holding_point(
+    monkeypatch,
+) -> None:
+    manager = _manager()
+    order = FleetOrder(
+        order_id="order-short-approach",
+        target_lm="B",
+        vehicle="initial",
+        assigned_robot="initial",
+        status="QUEUED",
+    )
+    robot = FleetRobot(
+        name="initial",
+        current_lm="A",
+        status="IDLE",
+        pose={"x": 0.0, "y": 0.0, "yaw": 0.0},
+    )
+    manager.orders[order.order_id] = order
+    manager.robots[robot.name] = robot
+    entry = (
+        order,
+        robot,
+        {
+            "name": robot.name,
+            "startLm": "A",
+            "goalLm": "B",
+            "startPose": dict(robot.pose),
+        },
+        "B",
+    )
+    monkeypatch.setattr(
+        manager,
+        "_controlled_corridor_prefetch_gate",
+        lambda *_args, **_kwargs: {
+            "ready": True,
+            "approachOnly": True,
+            "holdingLm": "B",
+        },
+    )
+
+    try:
+        assert manager._start_async_simulated_dispatch([entry])
+        assert order.status == "PLANNING"
+        assert manager._dispatch_job is not None
+    finally:
+        manager.close()
+
+
+def test_corridor_approach_endpoint_is_not_a_route_buffer_underrun(
+) -> None:
+    manager = _manager()
+    order = FleetOrder(
+        order_id="order-release-approach",
+        target_lm="C",
+        vehicle="release",
+        assigned_robot="release",
+        status="EXECUTING",
+    )
+    robot = FleetRobot(
+        name="release",
+        current_lm="B",
+        target_lm="B",
+        status="MOVING",
+        pose={"x": 1.0, "y": 0.0, "yaw": 0.0},
+        trajectory=[
+            {"t": 0.0, "x": 0.0, "y": 0.0, "yaw": 0.0, "lm": "A"},
+            {"t": 1.0, "x": 1.0, "y": 0.0, "yaw": 0.0, "lm": "B"},
+        ],
+        plan_nodes=["A", "B"],
+        route_clock=1.0,
+        active_order_id=order.order_id,
+        route_revision=42,
+        route_chunk_goal_lm="B",
+        route_final_lm="C",
+    )
+    manager.orders[order.order_id] = order
+    manager.robots[robot.name] = robot
+    manager._controlled_corridor_approach_holds[robot.name] = {
+        "lm": "B",
+        "staging_lm": "B",
+        "route_revision": 1,
+        "order_id": order.order_id,
+        "intent_signature": (robot.name,),
+        "assigned_at": manager._now(),
+    }
+    manager._commit_controlled_corridor_approach_route(
+        robot,
+        {
+            "controlledCorridorApproach": {
+                "holdingLm": "B",
+                "stagingLm": "B",
+                "orderId": order.order_id,
+                "intentSignature": (robot.name,),
+            }
+        },
+    )
+
+    try:
+        assignment = manager._controlled_corridor_approach_holds[robot.name]
+        assert assignment["route_revision"] == 42
+        manager._observe_rolling_runtime(manager._now())
+        metrics = manager.planning_state.rolling_metrics
+        assert metrics.rolling_buffer_unprotected == 0
+        assert metrics.rolling_buffer_underruns == 0
+
+        manager._complete_runtime_route_if_due(robot, manager._now())
+        assert robot.route_clock == 1.0
+        assert robot.last_reason == "waiting for controlled corridor slot at B"
+        assert order.status == "WAITING_TRAFFIC"
+        manager._controlled_corridor_approach_holds.pop(robot.name, None)
+        manager._controlled_corridor_passages.pop(robot.name, None)
+        robot.last_reason = "yield to corridor-owner"
+        assert manager._robot_waits_for_controlled_corridor(robot)
+
+        manager._observe_rolling_runtime(manager._now())
+
+        assert metrics.rolling_buffer_underruns == 0
+        assert metrics.next_segment_wait_count == 0
+        assert metrics.controlled_corridor_waiting_count == 1
+        assert metrics.controlled_corridor_wait_events == 1
+
+        manager._rolling_prefetch_failures[robot.name] = 8
+        now = manager._now()
+        manager._defer_rolling_prefetch(robot, order)
+        assert manager._rolling_prefetch_retry_at[robot.name] - now >= 4.0
+    finally:
+        manager.close()
+
+
+def test_live_corridor_staging_slot_remains_a_legal_hold() -> None:
+    manager = _manager()
+    order = FleetOrder(
+        order_id="order-live-staging",
+        target_lm="C",
+        assigned_robot="live-staging",
+        status="WAITING_TRAFFIC",
+    )
+    robot = FleetRobot(
+        name="live-staging",
+        current_lm="B",
+        target_lm="B",
+        status="WAITING",
+        pose={"x": 1.0, "y": 0.0, "yaw": 0.0},
+        trajectory=[
+            {"t": 0.0, "x": 0.0, "y": 0.0, "yaw": 0.0, "lm": "A"},
+            {"t": 1.0, "x": 1.0, "y": 0.0, "yaw": 0.0, "lm": "B"},
+        ],
+        route_clock=1.0,
+        active_order_id=order.order_id,
+        route_revision=43,
+        route_chunk_goal_lm="B",
+        route_final_lm="C",
+        last_reason="waiting for controlled corridor slot at B",
+    )
+    manager.orders[order.order_id] = order
+    manager.robots[robot.name] = robot
+    manager._controlled_corridor_passages[robot.name] = {
+        "staging_lm": "B",
+        "route_revision": 43,
+        "entered": False,
+    }
+
+    try:
+        assert manager._robot_waits_for_controlled_corridor(robot)
+        manager._observe_rolling_runtime(manager._now())
+        metrics = manager.planning_state.rolling_metrics
+        assert metrics.rolling_buffer_underruns == 0
+        assert metrics.controlled_corridor_waiting_count == 1
+    finally:
+        manager.close()
+
+
+def test_deadlock_retreat_is_not_counted_as_rolling_underrun() -> None:
+    manager = _manager(controlled=False)
+    order = FleetOrder(
+        order_id="order-retreat",
+        target_lm="C",
+        assigned_robot="retreat",
+        status="EXECUTING",
+    )
+    robot = FleetRobot(
+        name="retreat",
+        current_lm="B",
+        target_lm="B",
+        status="RETREATING",
+        pose={"x": 1.0, "y": 0.0, "yaw": 0.0},
+        trajectory=[
+            {"t": 0.0, "x": 0.0, "y": 0.0, "yaw": 0.0, "lm": "A"},
+            {"t": 1.0, "x": 1.0, "y": 0.0, "yaw": 0.0, "lm": "B"},
+        ],
+        route_clock=1.0,
+        active_order_id=order.order_id,
+        route_revision=44,
+        route_chunk_goal_lm="B",
+        route_final_lm="C",
+        last_reason="deadlock portal escape to A",
+    )
+    manager.orders[order.order_id] = order
+    manager.robots[robot.name] = robot
+
+    try:
+        manager._observe_rolling_runtime(manager._now())
+        assert (
+            manager.planning_state.rolling_metrics.rolling_buffer_underruns
+            == 0
+        )
+    finally:
+        manager.close()
 
 
 def test_dispatch_continuous_failure_is_attributed_only_to_requester() -> None:
@@ -1656,6 +1971,11 @@ def test_future_terminal_body_blocks_corridor_box_before_it_arrives() -> None:
     manager = _manager()
     entrant = _robot("entrant")
     blocker = _robot("blocker")
+    far_robot = _robot("far")
+    far_robot.pose = {"x": 20.0, "y": 20.0, "yaw": 0.0}
+    far_robot.trajectory = [
+        {"t": 0.0, "x": 20.0, "y": 20.0, "yaw": 0.0, "lm": "far"},
+    ]
     blocker.pose = {"x": 0.0, "y": 0.0, "yaw": 0.0}
     blocker.route_clock = 0.0
     blocker.trajectory = [
@@ -1679,7 +1999,16 @@ def test_future_terminal_body_blocks_corridor_box_before_it_arrives() -> None:
     manager.robots = {
         entrant.name: entrant,
         blocker.name: blocker,
+        far_robot.name: far_robot,
     }
+    manager._build_controlled_corridor_downstream_index()
+
+    indexed = manager._controlled_corridor_downstream_candidates(
+        {"x": 1.0, "y": 0.0, "yaw": 0.0},
+        manager.collision.robot_broadphase_distance(),
+    )
+    assert far_robot.name not in {robot.name for robot in indexed}
+    assert blocker.name in {robot.name for robot in indexed}
 
     assert not manager.collision.robot_footprints_conflict(
         {"x": 1.0, "y": 0.0, "yaw": 0.0},

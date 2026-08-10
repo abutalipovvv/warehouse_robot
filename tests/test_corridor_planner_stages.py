@@ -29,11 +29,13 @@ def _request(
     *,
     earliest_entry: float = 0.0,
     predecessor: str | None = None,
+    region: str = REGION,
+    direction: str = "east",
 ) -> CorridorRequest:
     return CorridorRequest(
         robot_id=robot_id,
-        regions=(REGION,),
-        direction="east",
+        regions=(region,),
+        direction=direction,
         earliest_entry=earliest_entry,
         duration_sec=3.0,
         staging_lm=f"{robot_id}:staging",
@@ -198,3 +200,46 @@ def test_pending_stage_never_schedules_follower_before_predecessor() -> None:
         "follower",
     )
     assert schedule.slots[1].entry_time > schedule.slots[0].entry_time
+
+
+def test_disjoint_resource_components_match_isolated_schedules() -> None:
+    """An unrelated corridor must not change another corridor's slots."""
+
+    other_region = "corridor:other"
+    config = CorridorSchedulerConfig(
+        horizon_sec=30.0,
+        headway_sec=0.5,
+        direction_change_sec=1.0,
+    )
+    first_component = (
+        _request("main-east", region=REGION),
+        _request("main-west", region=REGION, direction="west"),
+    )
+    second_component = (
+        _request("other-west", region=other_region, direction="west"),
+        _request("other-east", region=other_region),
+    )
+    builder = CorridorScheduleBuilder(config)
+
+    combined = builder.build(
+        (*first_component, *second_component),
+        controlled_regions={REGION, other_region},
+        now=0.0,
+    )
+    isolated_first = builder.build(
+        first_component,
+        controlled_regions={REGION},
+        now=0.0,
+    )
+    isolated_second = builder.build(
+        second_component,
+        controlled_regions={other_region},
+        now=0.0,
+    )
+
+    for isolated in (isolated_first, isolated_second):
+        for expected in isolated.slots:
+            actual = combined.slot_for(expected.robot_id)
+            assert actual is not None
+            assert actual.entry_time == expected.entry_time
+            assert actual.exit_time == expected.exit_time

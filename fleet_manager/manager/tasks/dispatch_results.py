@@ -16,6 +16,12 @@ from fleet_manager.manager.planning import (
     PlanningJob,
     PlanningJobRecord,
     PlanningJobStatus,
+    PlanningReason,
+)
+from fleet_manager.manager.tasks.rolling_continuation import (
+    RollingCommitStatus,
+    RollingCommitSummary,
+    RollingRefillUrgency,
 )
 
 
@@ -49,6 +55,7 @@ class _PlanCommitCheckpoint:
     order_state: list[tuple[FleetOrder, dict[str, Any]]]
     events: list[Any]
     traffic_values: dict[str, Any]
+    corridor_intent_state: list[tuple[str, bool, Any]]
     planning_values: dict[str, Any]
     recovery_values: dict[str, Any]
     revision_value: int
@@ -305,6 +312,9 @@ class DispatchResultMixin:
                 str(item)
                 for item in plan.get("nodes", [])
             ]
+            approach = request.get("controlledCorridorApproach")
+            if isinstance(approach, dict):
+                plan["controlledCorridorApproach"] = deepcopy(approach)
             robot.active_order_id = order.order_id
             self._apply_simulated_route_metadata(
                 robot,
@@ -442,21 +452,28 @@ class DispatchResultMixin:
 
     def _finish_async_simulated_dispatch(self) -> int:
         self._collect_completed_planning_candidates()
-        with self._dispatch_job_lock:
-            job = self._dispatch_job
-            if job is None or not job.done:
+        completed = [
+            record
+            for record in self.planning_state.jobs.values()
+            if record.done and record.candidate is not None
+        ]
+        completed.sort(
+            key=lambda record: (
+                record.finished_at or 0.0,
+                record.job.submitted_at if record.job is not None else 0.0,
+                record.job_id,
+            )
+        )
+        job = completed[0] if completed else None
+        if job is None:
+            # Compatibility for an injected legacy record that is not present
+            # in PlanningState.jobs. Production candidates are always matched
+            # by job_id above.
+            with self._dispatch_job_lock:
+                compatibility_job = self._dispatch_job
+            if compatibility_job is None or not compatibility_job.done:
                 return 0
-        # The result is already published, so joining only reaps the final
-        # instructions of this finite worker thread. Keep the job slot occupied
-        # until then so another caller cannot publish a replacement into the
-        # tiny completion/finalizer window.
-        if not self._planning_worker.join():
-            return 0
-        self._collect_completed_planning_candidates()
-        with self._dispatch_job_lock:
-            if self._dispatch_job is not job:
-                return 0
-            self._dispatch_job = None
+            job = compatibility_job
         gate_pins = job.corridor_gates or None
         if job.discard:
             self._release_controlled_corridor_gate_pins(gate_pins)
@@ -493,13 +510,17 @@ class DispatchResultMixin:
                         job,
                         candidate,
                     ),
-                    capture=self._capture_plan_commit_state,
+                    capture=lambda: self._capture_plan_commit_state(job),
                     apply=lambda: self._finish_planning_candidate(
                         job,
                         candidate,
                         gate_pins,
                     ),
                     restore=self._restore_plan_commit_state,
+                    is_current=lambda: self._planning_candidate_is_current(
+                        job,
+                        candidate,
+                    ),
                 )
             except BaseException as exc:
                 self._release_controlled_corridor_gate_pins(gate_pins)
@@ -589,7 +610,8 @@ class DispatchResultMixin:
             "prefetch_batch",
         }:
             try:
-                committed = self._finish_async_rolling_prefetch(job)
+                summary = self._finish_async_rolling_prefetch(job)
+                committed = summary.committed_count
                 self._finish_planning_job_status(job, committed > 0)
                 return committed
             finally:
@@ -644,7 +666,10 @@ class DispatchResultMixin:
         if not self._planning_candidate_is_current(job, candidate):
             raise RuntimeError("planning candidate changed before commit")
 
-    def _capture_plan_commit_state(self) -> _PlanCommitCheckpoint:
+    def _capture_plan_commit_state(
+        self,
+        job: PlanningJobRecord | None = None,
+    ) -> _PlanCommitCheckpoint:
         """Capture only mutable data touched by route commit code."""
 
         traffic_fields = (
@@ -653,8 +678,8 @@ class DispatchResultMixin:
             "controlled_corridor_schedule",
             "controlled_corridor_leases",
             "controlled_corridor_passages",
-            "controlled_corridor_prefetch_intents",
             "controlled_corridor_approach_holds",
+            "controlled_corridor_active_holds",
             "controlled_corridor_winners",
             "controlled_corridor_occupancy",
             "controlled_corridor_queues",
@@ -697,20 +722,32 @@ class DispatchResultMixin:
         )
         scheduler = self.traffic_state.controlled_corridor_scheduler
         planning_jobs = list(self.planning_state.jobs.values())
+        robots, orders = self._plan_commit_entities(job)
+        corridor_intents = (
+            self.traffic_state.controlled_corridor_prefetch_intents
+        )
         return _PlanCommitCheckpoint(
             robot_state=[
                 (robot, deepcopy(robot.__dict__))
-                for robot in self.robots.values()
+                for robot in robots
             ],
             order_state=[
                 (order, deepcopy(order.__dict__))
-                for order in self.orders.values()
+                for order in orders
             ],
             events=deepcopy(self.events),
             traffic_values=self._copy_state_values(
                 self.traffic_state,
                 traffic_fields,
             ),
+            corridor_intent_state=[
+                (
+                    robot.name,
+                    robot.name in corridor_intents,
+                    deepcopy(corridor_intents.get(robot.name)),
+                )
+                for robot in robots
+            ],
             planning_values=self._copy_state_values(
                 self.planning_state,
                 planning_fields,
@@ -731,6 +768,66 @@ class DispatchResultMixin:
             job_statuses=[(item, item.status) for item in planning_jobs],
         )
 
+    def _plan_commit_entities(
+        self,
+        job: PlanningJobRecord | None,
+    ) -> tuple[list[FleetRobot], list[FleetOrder]]:
+        """Return the live entities one plan transaction can mutate.
+
+        Routes and order lifecycle are changed only for job participants.
+        Shared reservations, traffic ownership and recovery state are captured
+        separately by ``_capture_plan_commit_state``.
+        """
+
+        if job is None:
+            return list(self.robots.values()), list(self.orders.values())
+
+        robot_names: set[str] = set()
+        order_ids: set[str] = set()
+        if job.robot_name:
+            robot_names.add(job.robot_name)
+        if job.order_id:
+            order_ids.add(job.order_id)
+
+        for entry in job.entries:
+            if isinstance(entry, tuple):
+                for value in entry:
+                    if isinstance(value, FleetRobot):
+                        robot_names.add(value.name)
+                    elif isinstance(value, FleetOrder):
+                        order_ids.add(value.order_id)
+            elif isinstance(entry, dict):
+                robot_name = str(entry.get("robot") or "").strip()
+                order_id = str(entry.get("order") or "").strip()
+                if robot_name:
+                    robot_names.add(robot_name)
+                if order_id:
+                    order_ids.add(order_id)
+
+        candidate = job.candidate
+        if isinstance(candidate, PlanCandidate):
+            for plan in candidate.result.get("plans", []):
+                if not isinstance(plan, dict):
+                    continue
+                robot_name = str(plan.get("robot") or "").strip()
+                if robot_name:
+                    robot_names.add(robot_name)
+
+        robots = [
+            self.robots[name]
+            for name in sorted(robot_names)
+            if name in self.robots
+        ]
+        for robot in robots:
+            if robot.active_order_id:
+                order_ids.add(robot.active_order_id)
+        orders = [
+            self.orders[order_id]
+            for order_id in sorted(order_ids)
+            if order_id in self.orders
+        ]
+        return robots, orders
+
     def _restore_plan_commit_state(
         self,
         checkpoint: _PlanCommitCheckpoint,
@@ -746,6 +843,14 @@ class DispatchResultMixin:
             self.traffic_state,
             checkpoint.traffic_values,
         )
+        corridor_intents = (
+            self.traffic_state.controlled_corridor_prefetch_intents
+        )
+        for robot_name, existed, saved in checkpoint.corridor_intent_state:
+            if existed:
+                corridor_intents[robot_name] = deepcopy(saved)
+            else:
+                corridor_intents.pop(robot_name, None)
         self._restore_state_values(
             self.planning_state,
             checkpoint.planning_values,
@@ -809,7 +914,11 @@ class DispatchResultMixin:
         if planning_job.cancellation_token.cancelled:
             return False
         if candidate.expected_revision != self.planning_revision:
-            return False
+            if (
+                candidate.reason is not PlanningReason.ROLLING_CONTINUATION
+                or not self._rolling_dependency_stamp_is_current(candidate)
+            ):
+                return False
         deadline = planning_job.deadline
         if deadline is not None and candidate.finished_at > deadline:
             self.planning_state.record_event("planning_deadline_exceeded")
@@ -819,6 +928,54 @@ class DispatchResultMixin:
                 f"reason={candidate.reason.value}",
             )
             return False
+        return True
+
+    def _rolling_dependency_stamp_is_current(
+        self,
+        candidate: PlanCandidate,
+    ) -> bool:
+        """Allow unrelated fleet revisions without weakening rolling safety."""
+
+        stamp = candidate.dependency_stamp
+        current_graph_revision = f"{len(self.landmarks)}:{len(self.edges)}"
+        current_map_revision = (
+            str(getattr(self, "map_dir", "") or "") or None
+        )
+        if (
+            stamp.graph_revision != current_graph_revision
+            or stamp.map_revision != current_map_revision
+        ):
+            return False
+
+        current_route_revisions: list[tuple[str, int]] = []
+        for robot_name, _ in stamp.robot_route_revisions:
+            robot = self.robots.get(robot_name)
+            if robot is None:
+                return False
+            current_route_revisions.append(
+                (robot_name, int(robot.route_revision))
+            )
+        if tuple(current_route_revisions) != stamp.robot_route_revisions:
+            return False
+
+        traffic_resources = (
+            self._planning_snapshot_factory.traffic_resource_snapshots()
+        )
+        current_resource_owners = tuple(sorted(
+            (resource.kind, resource.resource_id, resource.owner)
+            for resource in traffic_resources
+        ))
+        if current_resource_owners != stamp.traffic_resource_owners:
+            return False
+        if (
+            self._planning_snapshot_factory.world_blocker_signature()
+            != stamp.world_blockers
+        ):
+            return False
+
+        self.planning_state.record_event(
+            "planning_candidate_dependency_validated"
+        )
         return True
 
     def _reject_stale_planning_candidate(
@@ -852,6 +1009,9 @@ class DispatchResultMixin:
         job.stale = True
         self.planning_state.stale_candidates += 1
         self.planning_state.record_event("planning_candidate_stale")
+        self.planning_state.record_event(
+            f"planning_candidate_stale_{candidate.reason.value}"
+        )
         robot_ids = (
             planning_job.robot_ids
             if isinstance(planning_job, PlanningJob)
@@ -916,6 +1076,10 @@ class DispatchResultMixin:
         job_id = job.job_id
         if job_id:
             self.planning_state.jobs.pop(job_id, None)
+        with self._dispatch_job_lock:
+            if self._dispatch_job is job:
+                self._dispatch_job = None
+        self._refresh_compatibility_active_job()
 
     def _plan_for_robot(self, result: dict[str, Any], robot_name: str) -> dict[str, Any] | None:
         """Return one robot's plan from a shared MAPF planning result."""
@@ -964,10 +1128,13 @@ class DispatchResultMixin:
             (signature, robot.name, pocket_lm)
         )
 
-    def _finish_async_rolling_prefetch(self, job: PlanningJobRecord) -> int:
+    def _finish_async_rolling_prefetch(
+        self,
+        job: PlanningJobRecord,
+    ) -> RollingCommitSummary:
         entries = self._current_rolling_prefetch_entries(job)
         if not entries:
-            return 0
+            return RollingCommitSummary()
         result = job.result
         if (
             not isinstance(result, dict)
@@ -975,7 +1142,7 @@ class DispatchResultMixin:
             or not result.get("plans")
         ):
             self._finish_failed_rolling_prefetch(job, entries, result)
-            return 0
+            return RollingCommitSummary(deferred=len(entries))
         corridor_gates = job.corridor_gates
         result = self._rolling_result(
             result,
@@ -983,7 +1150,7 @@ class DispatchResultMixin:
             corridor_gates=corridor_gates,
         )
         finish_now = self._now()
-        for entry in entries:
+        statuses = [
             self._commit_rolling_prefetch_entry(
                 job,
                 entry,
@@ -991,7 +1158,23 @@ class DispatchResultMixin:
                 corridor_gates=corridor_gates,
                 finish_now=finish_now,
             )
-        return 0
+            for entry in entries
+        ]
+        summary = RollingCommitSummary(
+            appended=statuses.count(RollingCommitStatus.APPENDED),
+            pending_handoff=statuses.count(
+                RollingCommitStatus.PENDING_HANDOFF
+            ),
+            deferred=statuses.count(RollingCommitStatus.DEFERRED),
+            rejected=statuses.count(RollingCommitStatus.REJECTED),
+            stale=statuses.count(RollingCommitStatus.STALE),
+        )
+        metrics = self.planning_state.rolling_metrics
+        metrics.rolling_commits_appended += summary.appended
+        metrics.rolling_commits_pending += summary.pending_handoff
+        metrics.rolling_commits_deferred += summary.deferred
+        metrics.rolling_commits_rejected += summary.rejected
+        return summary
 
     def _current_rolling_prefetch_entries(
         self,
@@ -1038,6 +1221,12 @@ class DispatchResultMixin:
         conflict_robot = self._planner_conflict_robot_name(reason)
         entry_names = {entry[1].name for entry in entries}
         isolated_member_failure = conflict_robot in entry_names
+        metrics = self.planning_state.rolling_metrics
+        metrics.rolling_planner_failures += len(entries)
+        metrics.planning_failure_reasons.append(
+            str(reason or "unknown")[:240]
+        )
+        self.planning_state.record_event("rolling_planning_failed")
         self._record_rolling_prefetch_blockers(
             entries,
             debug,
@@ -1045,10 +1234,11 @@ class DispatchResultMixin:
         )
         for order, robot, request, final_goal, _ in entries:
             self._blacklist_failed_rolling_vacancy(job, robot, request)
-            if self._stationary_failure_applies_to_robot(
+            stationary_failure = self._stationary_failure_applies_to_robot(
                 debug,
                 robot.name,
-            ):
+            )
+            if stationary_failure:
                 self._record_stationary_order_failure(order, debug)
                 turn_lm = self._stationary_turn_conflict_lm(
                     debug,
@@ -1067,8 +1257,21 @@ class DispatchResultMixin:
                 not isolated_member_failure
                 or robot.name == conflict_robot
             ):
-                self._rolling_prefetch_failures[robot.name] = (
+                failure_count = (
                     self._rolling_prefetch_failures.get(robot.name, 0) + 1
+                )
+                self._rolling_prefetch_failures[robot.name] = failure_count
+                if not stationary_failure:
+                    self._queue_critical_rolling_detour(
+                        order,
+                        robot,
+                        request,
+                        final_goal,
+                        failure_count,
+                    )
+                self._release_critical_rolling_blocker(
+                    robot,
+                    failure_count,
                 )
             self._defer_rolling_prefetch(
                 robot,
@@ -1083,6 +1286,81 @@ class DispatchResultMixin:
                 ),
             )
 
+    def _release_critical_rolling_blocker(
+        self,
+        robot: FleetRobot,
+        failure_count: int,
+    ) -> bool:
+        """Move a proven waiting blocker before the live chunk is exhausted."""
+
+        policy = self._rolling_buffer_policy()
+        buffer_sec = robot.route_buffer_seconds
+        if buffer_sec > policy.critical_sec:
+            return False
+        if failure_count < 2 and buffer_sec > policy.emergency_sec:
+            return False
+        for blocker_name in sorted(
+            self._valid_rolling_prefetch_blockers(robot.name)
+        ):
+            blocker = self.robots.get(blocker_name)
+            if (
+                blocker is None
+                or blocker.status != "WAITING"
+                or not blocker.trajectory
+                or not blocker.active_order_id
+            ):
+                continue
+            evacuated_name = self._start_deadlock_corridor_evacuation(
+                [robot, blocker],
+                robot,
+                self._now(),
+            )
+            if not evacuated_name:
+                continue
+            self._event(
+                "warn",
+                f"{evacuated_name} proactively clears critical rolling "
+                f"route for {robot.name}",
+            )
+            return True
+        return False
+
+    def _queue_critical_rolling_detour(
+        self,
+        order: FleetOrder,
+        robot: FleetRobot,
+        request: dict[str, Any],
+        final_goal: str,
+        failure_count: int,
+    ) -> bool:
+        """Change a repeated exhausted request instead of retrying it forever."""
+
+        policy = self._rolling_buffer_policy()
+        emergency_first_failure = bool(
+            failure_count == 1
+            and robot.route_buffer_seconds <= policy.emergency_sec
+        )
+        if failure_count not in {2, 8} and not emergency_first_failure:
+            return False
+        urgency = policy.urgency_for(
+            robot.name,
+            robot.route_buffer_seconds,
+        )
+        if urgency not in {
+            RollingRefillUrgency.CRITICAL,
+            RollingRefillUrgency.EMPTY,
+        }:
+            return False
+        start_lm = str(request.get("startLm") or "")
+        if not start_lm or not final_goal:
+            return False
+        return self._queue_alternate_corridor_detour(
+            order,
+            start_lm,
+            final_goal,
+            replace_existing=bool(order.traffic_detour_edges),
+        )
+
     def _commit_rolling_prefetch_entry(
         self,
         job: PlanningJobRecord,
@@ -1091,8 +1369,8 @@ class DispatchResultMixin:
         *,
         corridor_gates: dict[str, dict[str, Any]],
         finish_now: float,
-    ) -> None:
-        order, robot, request, final_goal, _ = entry
+    ) -> RollingCommitStatus:
+        order, robot, request, final_goal, prediction_offset = entry
         plan = self._plan_for_robot(result, robot.name)
         if (
             plan is not None
@@ -1108,7 +1386,7 @@ class DispatchResultMixin:
                 self._now(),
                 ValueError("planner changed the fixed route"),
             )
-            return
+            return RollingCommitStatus.REJECTED
         corridor_gate = corridor_gates.get(robot.name)
         if (
             plan is not None
@@ -1137,24 +1415,71 @@ class DispatchResultMixin:
                 finish_now,
             )
         ):
-            return
+            return RollingCommitStatus.DEFERRED
         if plan is None or self._wait_only_rolling_plan(plan, final_goal):
+            metrics = self.planning_state.rolling_metrics
+            metrics.rolling_planner_failures += 1
+            failure_kind = "missing_plan" if plan is None else "wait_only_plan"
+            if plan is not None:
+                metrics.rolling_wait_only_plans += 1
+            metrics.planning_failure_reasons.append(
+                f"{failure_kind}:{self._planner_failure_reason(result)}"[:240]
+            )
+            self.planning_state.record_event("rolling_planning_failed")
             self._defer_failed_rolling_plan(
                 job,
                 entry,
                 result,
             )
-            return
+            return RollingCommitStatus.DEFERRED
         self._rolling_prefetch_retry_at.pop(robot.name, None)
         self._rolling_prefetch_failures.pop(robot.name, None)
-        if self._append_rolling_prefetch(robot, order, plan, final_goal):
-            return
-        robot.pending_route = {
-            "order_id": order.order_id,
-            "start_lm": str(request.get("startLm") or ""),
-            "final_goal": final_goal,
-            "result": {**result, "plans": [plan]},
-        }
+        append_plan = dict(plan)
+        approach = request.get("controlledCorridorApproach")
+        if isinstance(approach, dict):
+            append_plan["controlledCorridorApproach"] = dict(approach)
+        append_plan["rollingStartOffsetSec"] = max(
+            0.0,
+            float(prediction_offset),
+        )
+        append_result = self._append_rolling_prefetch(
+            robot,
+            order,
+            append_plan,
+            final_goal,
+        )
+        robot.rolling_append_status = append_result.status.value
+        robot.rolling_append_failure_reason = append_result.detail
+        if append_result.appended:
+            return RollingCommitStatus.APPENDED
+
+        metrics = self.planning_state.rolling_metrics
+        metrics.rolling_append_failures += 1
+        self.planning_state.record_event("rolling_append_failed")
+        self._event(
+            "warn",
+            f"rolling_append_failed robot={robot.name} "
+            f"order={order.order_id} "
+            f"chunk_goal={robot.route_chunk_goal_lm} "
+            f"continuation_start={plan.get('startLm', '')} "
+            f"route_revision={robot.route_revision} "
+            f"buffer_sec={robot.route_buffer_seconds:.3f} "
+            f"status={append_result.status.value} "
+            f"detail={append_result.detail}",
+        )
+
+        policy = self._rolling_buffer_policy()
+        if robot.route_buffer_seconds <= policy.emergency_sec:
+            robot.pending_route = {
+                "order_id": order.order_id,
+                "start_lm": str(request.get("startLm") or ""),
+                "final_goal": final_goal,
+                "result": {**result, "plans": [append_plan]},
+            }
+            return RollingCommitStatus.PENDING_HANDOFF
+
+        self._defer_rolling_prefetch(robot, order)
+        return RollingCommitStatus.REJECTED
 
     def _rolling_prefetch_gate_is_current(
         self,

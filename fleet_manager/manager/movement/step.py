@@ -45,6 +45,7 @@ class FleetMotionStepMixin:
         self._runtime_tick_route_clocks = {}
         self._resolve_runtime_wait_cycles(now)
         self._dispatch_orders(async_simulated=True)
+        self._observe_rolling_runtime(now)
         self._synchronize_planning_revision()
 
     def _advance_runtime_robot(
@@ -378,8 +379,15 @@ class FleetMotionStepMixin:
         now: float,
     ) -> None:
         final_time = float(robot.trajectory[-1].get("t", 0.0) or 0.0)
-        if final_time <= 0.0 or robot.route_clock < final_time:
+        if (
+            final_time <= 0.0
+            or robot.route_clock < final_time - 0.000001
+        ):
             return
+        # Route-buffer accounting uses the same tolerance. Canonicalising the
+        # endpoint here prevents one false MOVING/empty-buffer frame before a
+        # legal rolling or controlled-corridor hold is published.
+        robot.route_clock = final_time
         self._settle_completed_trajectory_endpoint(robot, now)
         if self._activate_rolling_prefetch(robot, now):
             return

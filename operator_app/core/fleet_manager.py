@@ -62,9 +62,11 @@ class OperatorFleetManager:
         manager_id: str = FLEET_MANAGER_ID,
         display_name: str = "Fleet Manager",
         mode: str = "robots",
+        params_overrides: dict[str, dict[str, Any]] | None = None,
     ) -> None:
         self._runtime_command_executor = None
         self.params_path = Path(params_path).expanduser().resolve()
+        self.params_overrides = params_overrides or {}
         self.remote_adapter = remote_adapter
         mode = str(mode or "").strip().lower()
         if mode not in {"robots", "simulation"}:

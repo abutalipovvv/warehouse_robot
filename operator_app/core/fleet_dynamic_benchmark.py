@@ -2,12 +2,24 @@
 
 from __future__ import annotations
 
+from collections import Counter
 from collections.abc import Callable
 from dataclasses import dataclass
 import math
 import random
 from time import perf_counter, time
 from typing import Any
+
+
+def _percentile(values: list[float], ratio: float) -> float:
+    if not values:
+        return 0.0
+    ordered = sorted(float(value) for value in values)
+    index = min(
+        len(ordered) - 1,
+        max(0, int(math.ceil(len(ordered) * ratio)) - 1),
+    )
+    return ordered[index]
 
 
 @dataclass(slots=True)
@@ -928,6 +940,36 @@ class DynamicBenchmarkRuntime:
             else 0.0
         )
         waves_completed = int(config.get("wavesCompleted", 0) or 0)
+        rolling_metrics = (
+            manager.planning_state.rolling_metrics
+            if manager is not None
+            else None
+        )
+        queue_waits = (
+            list(rolling_metrics.queue_wait_samples)
+            if rolling_metrics is not None
+            else []
+        )
+        solver_durations = (
+            list(rolling_metrics.solver_duration_samples)
+            if rolling_metrics is not None
+            else []
+        )
+        route_buffers = (
+            list(rolling_metrics.route_buffer_samples)
+            if rolling_metrics is not None
+            else []
+        )
+        diagnostics = (
+            manager.planning_state.diagnostic_counts
+            if manager is not None
+            else {}
+        )
+        rolling_failure_reasons = (
+            Counter(rolling_metrics.planning_failure_reasons)
+            if rolling_metrics is not None
+            else Counter()
+        )
         return {
             "active": bool(config.get("active", False)),
             "generationMode": str(config.get("generationMode") or "continuous"),
@@ -986,6 +1028,156 @@ class DynamicBenchmarkRuntime:
                 manager.simulation_time_scale()
                 if manager is not None
                 else 1.0
+            ),
+            "routeBufferUnderruns": (
+                rolling_metrics.rolling_buffer_underruns
+                if rolling_metrics is not None
+                else 0
+            ),
+            "controlledCorridorWaiting": (
+                rolling_metrics.controlled_corridor_waiting_count
+                if rolling_metrics is not None
+                else 0
+            ),
+            "controlledCorridorWaitEvents": (
+                rolling_metrics.controlled_corridor_wait_events
+                if rolling_metrics is not None
+                else 0
+            ),
+            "nextRouteSegmentWaits": (
+                rolling_metrics.next_segment_wait_count
+                if rolling_metrics is not None
+                else 0
+            ),
+            "nextRouteSegmentWaitTotalSec": round(
+                rolling_metrics.next_segment_wait_total_sec
+                if rolling_metrics is not None
+                else 0.0,
+                3,
+            ),
+            "nextRouteSegmentWaitMaxSec": round(
+                rolling_metrics.next_segment_wait_max_sec
+                if rolling_metrics is not None
+                else 0.0,
+                3,
+            ),
+            "rollingAppendFailures": (
+                rolling_metrics.rolling_append_failures
+                if rolling_metrics is not None
+                else 0
+            ),
+            "rollingPlannerFailures": (
+                rolling_metrics.rolling_planner_failures
+                if rolling_metrics is not None
+                else 0
+            ),
+            "rollingWaitOnlyPlans": (
+                rolling_metrics.rolling_wait_only_plans
+                if rolling_metrics is not None
+                else 0
+            ),
+            "rollingDeferredCommits": (
+                rolling_metrics.rolling_commits_deferred
+                if rolling_metrics is not None
+                else 0
+            ),
+            "rollingRejectedCommits": (
+                rolling_metrics.rolling_commits_rejected
+                if rolling_metrics is not None
+                else 0
+            ),
+            "rollingUnprotected": (
+                rolling_metrics.rolling_buffer_unprotected
+                if rolling_metrics is not None
+                else 0
+            ),
+            "rollingFailureReasons": dict(
+                rolling_failure_reasons.most_common(8)
+            ),
+            "pendingRouteHandoffs": (
+                rolling_metrics.pending_route_handoffs
+                if rolling_metrics is not None
+                else 0
+            ),
+            "peakPlanningQueueSize": (
+                rolling_metrics.peak_planning_queue_size
+                if rolling_metrics is not None
+                else 0
+            ),
+            "planningWorkerUtilization": round(
+                rolling_metrics.planning_worker_utilization
+                if rolling_metrics is not None
+                else 0.0,
+                4,
+            ),
+            "p50PlanningQueueWaitSec": round(
+                _percentile(queue_waits, 0.50),
+                6,
+            ),
+            "p95PlanningQueueWaitSec": round(
+                _percentile(queue_waits, 0.95),
+                6,
+            ),
+            "p99PlanningQueueWaitSec": round(
+                _percentile(queue_waits, 0.99),
+                6,
+            ),
+            "p50SolverDurationSec": round(
+                _percentile(solver_durations, 0.50),
+                6,
+            ),
+            "p95SolverDurationSec": round(
+                _percentile(solver_durations, 0.95),
+                6,
+            ),
+            "p99SolverDurationSec": round(
+                _percentile(solver_durations, 0.99),
+                6,
+            ),
+            "minimumRouteBufferSec": round(
+                min(route_buffers) if route_buffers else 0.0,
+                3,
+            ),
+            "p50RouteBufferSec": round(
+                _percentile(route_buffers, 0.50),
+                3,
+            ),
+            "p95RouteBufferSec": round(
+                _percentile(route_buffers, 0.95),
+                3,
+            ),
+            "p99RouteBufferSec": round(
+                _percentile(route_buffers, 0.99),
+                3,
+            ),
+            "stalePlanningCandidates": (
+                manager.planning_state.stale_candidates
+                if manager is not None
+                else 0
+            ),
+            "staleRollingCandidates": int(
+                diagnostics.get(
+                    "planning_candidate_stale_rolling_continuation",
+                    0,
+                )
+            ),
+            "staleDispatchCandidates": int(
+                diagnostics.get(
+                    "planning_candidate_stale_order_dispatch",
+                    0,
+                )
+            ),
+            "dependencyValidatedCandidates": int(
+                diagnostics.get(
+                    "planning_candidate_dependency_validated",
+                    0,
+                )
+            ),
+            "cancelledPlanningJobs": int(
+                diagnostics.get("planning_job_cancelled", 0)
+            ),
+            "cbsFallbacks": int(
+                diagnostics.get("sipp_fallback_to_cbs", 0)
             ),
             **traffic,
         }

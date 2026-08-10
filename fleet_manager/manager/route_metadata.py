@@ -66,6 +66,32 @@ class FleetManagerRouteMetadataMixin:
         if first_boundary_tick:
             robot.rolling_boundary_since = now
             self._rolling_prefetch_eligible_since.setdefault(robot.name, now)
+        corridor_wait = self._controlled_corridor_approach_wait(robot)
+        if corridor_wait is not None:
+            holding_lm = str(corridor_wait.get("lm") or robot.current_lm)
+            self._controlled_corridor_active_holds[robot.name] = {
+                "lm": holding_lm,
+                "route_revision": int(robot.route_revision),
+                "order_id": robot.active_order_id,
+            }
+            reason = f"waiting for controlled corridor slot at {holding_lm}"
+            order.status = "WAITING_TRAFFIC"
+            order.error = reason
+            if first_boundary_tick:
+                order.updated_at = now
+            order.assigned_robot = robot.name
+            order.start_lm = robot.current_lm
+            order.route_nodes = list(robot.plan_nodes)
+            if robot.status != "WAITING" or robot.last_reason != reason:
+                self._event("info", f"{robot.name} {reason}")
+            robot.status = "WAITING"
+            robot.last_reason = reason
+            robot.blocked_since = None
+            robot.traffic_stall_since = None
+            self._clear_wait_dependency(robot)
+            robot.updated_at = now
+            return True
+        self._controlled_corridor_active_holds.pop(robot.name, None)
         order.status = "PLANNING"
         order.error = "rolling continuation pending"
         # Do not erase the real waiting age on every 10 Hz physics tick.
@@ -137,8 +163,13 @@ class FleetManagerRouteMetadataMixin:
         if order is None or order.status in TERMINAL_ORDER_STATUSES:
             return
         if robot.status == "WAITING":
-            if self._is_robot_conflict(robot.last_reason) or str(robot.last_reason).startswith(
-                "planned traffic wait"
+            reason = str(robot.last_reason or "")
+            if (
+                self._is_robot_conflict(reason)
+                or reason.startswith("planned traffic wait")
+                or reason.startswith(
+                    "waiting for controlled corridor slot at "
+                )
             ):
                 status = "WAITING_TRAFFIC"
             else:
@@ -255,6 +286,7 @@ class FleetManagerRouteMetadataMixin:
         robot.route_chunk_index = chunk_index
         robot.route_chunk_goal_lm = chunk_goal
         robot.route_final_lm = final_goal
+        self._commit_controlled_corridor_approach_route(robot, plan)
         self._update_route_preview(
             robot,
             robot.current_lm,

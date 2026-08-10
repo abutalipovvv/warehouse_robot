@@ -60,7 +60,10 @@ def test_plan_action_starts_continuous_random_orders_for_every_robot(monkeypatch
         service,
         lambda: any(robot.status == "MOVING" for robot in service.manager.robots.values()),
     )
-    assert 1 <= planner_calls <= 2
+    # One runtime tick may finish the first dispatch and immediately admit the
+    # next bounded batch. A soft-block fallback can add one solver call, but
+    # startup must not fan out into one call per robot.
+    assert 1 <= planner_calls <= 3
     moving = [
         robot for robot in service.manager.robots.values()
         if robot.status == "MOVING"
@@ -100,6 +103,7 @@ def test_simulated_order_replans_after_rolling_horizon_without_completing() -> N
     service.benchmark_payload(
         {"action": "add", "count": 1, "seed": 42, "reset": False}
     )
+    service.manager.params["fleet"]["rolling_target_buffer_sec"] = 3.0
     service.benchmark_payload({
         "action": "plan",
         "count": 1,
@@ -126,7 +130,12 @@ def test_simulated_order_replans_after_rolling_horizon_without_completing() -> N
     service.manager._advance_runtime()
     _pump_until(
         service,
-        lambda: service.manager.robots["bench_001"].active_order_id == order_id,
+        lambda: (
+            service.manager.robots["bench_001"].active_order_id == order_id
+            and service.manager.robots["bench_001"].route_chunk_goal_lm
+            != first_chunk
+            and service.manager.orders[order_id].status == "EXECUTING"
+        ),
     )
 
     robot = service.manager.robots["bench_001"]

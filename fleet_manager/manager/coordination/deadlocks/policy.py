@@ -139,7 +139,7 @@ class DeadlockPolicyMixin:
     def _runtime_collision_preflight_interval(self) -> float:
         fleet = self.params.get("fleet", {})
         if not isinstance(fleet, dict):
-            return 0.20
+            return 0.50
         try:
             return max(
                 0.10,
@@ -148,11 +148,11 @@ class DeadlockPolicyMixin:
                     float(
                         fleet.get(
                             "runtime_collision_preflight_interval_sec",
-                            0.20,
+                            0.50,
                         )
-                        or 0.20
+                        or 0.50
                     ),
                 ),
             )
         except (TypeError, ValueError):
-            return 0.20
+            return 0.50

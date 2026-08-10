@@ -80,8 +80,6 @@ class WaitCycleRecoveryMixin:
         cycle_started = float(self._active_wait_cycles.get(cycle_key, now))
         if now - cycle_started < self._deadlock_coupled_replan_after():
             return False
-        if self._async_simulated_dispatch_active():
-            return False
         robots = [
             robot
             for name in cycle_key
@@ -163,17 +161,54 @@ class WaitCycleRecoveryMixin:
             now,
             new_episode=new_episode,
         )
-        if context is None or not self._wait_cycle_arbitration_due(context):
+        if context is None:
+            return
+        if not self._wait_cycle_arbitration_due(context):
+            self._publish_wait_cycle_recovery_hold(context)
             return
         evacuating_name = self._escalate_wait_cycle_recovery(context)
         # Preserve the legacy evaluation point: this lease is read even when
         # evacuation makes the cycle ineligible for a direct priority grant.
         lease_until = now + self._deadlock_priority_lease()
-        self._grant_wait_cycle_priority(
+        granted = self._grant_wait_cycle_priority(
             context,
             evacuating_name,
             lease_until,
         )
+        if not granted:
+            self._publish_wait_cycle_recovery_hold(context)
+
+    def _publish_wait_cycle_recovery_hold(
+        self,
+        context: _WaitCycleDecisionContext,
+    ) -> None:
+        """Publish an acyclic safe hold while the next recovery is debounced.
+
+        A failed lease or unavailable corridor handoff must keep every robot
+        stopped. Leaving their old mutual ``yield to`` reasons untouched,
+        however, exposes a wait-for cycle to the operator for one or more
+        ticks. Point the component at one stationary recovery root instead.
+        """
+        root = context.winner
+        root.status = "WAITING"
+        root.last_reason = "deadlock recovery pending"
+        root.traffic_priority_until = 0.0
+        self._clear_wait_dependency(root)
+        root.updated_at = context.now
+        for robot in context.robots:
+            if robot.name == root.name or not robot.trajectory:
+                continue
+            robot.status = "WAITING"
+            robot.last_reason = f"yield to {root.name}"
+            robot.traffic_priority_until = 0.0
+            robot.wait_for_robot = root.name
+            robot.wait_resource = self._edge_id_at_trajectory(
+                robot.trajectory,
+                robot.route_clock,
+            )
+            robot.wait_release_at = 0.0
+            robot.blocked_since = robot.blocked_since or context.now
+            robot.updated_at = context.now
 
     def _wait_cycle_decision_context(
         self,
@@ -338,7 +373,7 @@ class WaitCycleRecoveryMixin:
         context: _WaitCycleDecisionContext,
         evacuating_name: str,
         lease_until: float,
-    ) -> None:
+    ) -> bool:
         """Select, authorize and publish one deterministic priority grant."""
         evacuating_robot = (
             self.robots.get(evacuating_name)
@@ -353,7 +388,7 @@ class WaitCycleRecoveryMixin:
             for robot in context.robots:
                 robot.traffic_priority_until = 0.0
                 robot.updated_at = context.now
-            return
+            return False
 
         active_evacuation = bool(
             evacuating_robot is not None
@@ -372,13 +407,13 @@ class WaitCycleRecoveryMixin:
         ):
             for robot in context.robots:
                 robot.traffic_priority_until = 0.0
-            return
+            return False
         if not priority_robot.trajectory:
             eligible = [
                 robot for robot in context.robots if robot.trajectory
             ]
             if not eligible:
-                return
+                return False
             priority_robot = min(
                 eligible,
                 key=lambda robot: self._wait_cycle_priority_key(
@@ -399,7 +434,7 @@ class WaitCycleRecoveryMixin:
             for robot in context.robots:
                 robot.traffic_priority_until = 0.0
                 robot.updated_at = context.now
-            return
+            return False
 
         priority_robot.traffic_priority_until = max(
             priority_robot.traffic_priority_until,
@@ -437,3 +472,4 @@ class WaitCycleRecoveryMixin:
             "traffic wait cycle arbitration: priority granted to "
             f"{priority_robot.name}",
         )
+        return True

@@ -76,6 +76,12 @@ class SpatialDetourMixin:
             for node in order.spatial_route_nodes
             if str(node) in self.landmarks
         ]
+        cursor = max(
+            0,
+            min(int(order.spatial_route_cursor), max(0, len(existing) - 1)),
+        )
+        if existing and existing[cursor] != start_lm:
+            cursor = existing.index(start_lm) if start_lm in existing else 0
         if order.internal_kind == "traffic_clearance":
             # Hidden clearance moves are created with one explicit outward
             # route.  Unlike normal order routes this is not a congestion-A*
@@ -86,19 +92,23 @@ class SpatialDetourMixin:
             # maintenance attempt without mutating it so lifecycle cleanup can
             # cancel/requeue from a safe graph LM.
             if start_lm in existing and existing[-1:] == [final_goal_lm]:
-                suffix = existing[existing.index(start_lm):]
+                suffix = existing[cursor:]
                 if len(suffix) >= 2 and all(
                     dst in self.planner.graph.get(src, [])
                     for src, dst in zip(suffix, suffix[1:])
                 ):
+                    order.spatial_route_cursor = cursor
+                    self.planning_state.record_event("spatial_route_reused")
                     return suffix
             raise ValueError("traffic clearance route is no longer valid")
         if start_lm in existing and existing and existing[-1] == final_goal_lm:
-            suffix = existing[existing.index(start_lm):]
+            suffix = existing[cursor:]
             if all(
                 dst in self.planner.graph.get(src, [])
                 for src, dst in zip(suffix, suffix[1:])
             ) and not stationary_lms.intersection(suffix):
+                order.spatial_route_cursor = cursor
+                self.planning_state.record_event("spatial_route_reused")
                 return suffix
 
         # Never leave an invalid cached route available to the next retry or
@@ -109,6 +119,7 @@ class SpatialDetourMixin:
         # again".
         if order.spatial_route_nodes:
             order.spatial_route_nodes = []
+            order.spatial_route_cursor = 0
             order.spatial_route_revision = self._next_route_revision()
 
         blocked_edges = (
@@ -160,8 +171,10 @@ class SpatialDetourMixin:
                 ),
             )
         order.spatial_route_nodes = [str(node) for node in route.nodes]
+        order.spatial_route_cursor = 0
         order.spatial_route_revision = self._next_route_revision()
         order.traffic_blocked_since = None
+        self.planning_state.record_event("spatial_route_replanned")
         return list(order.spatial_route_nodes)
 
     def _stationary_robot_blocked_lms(
@@ -202,7 +215,23 @@ class SpatialDetourMixin:
                 and not self._stationary_order_is_quarantined(pending_order)
             ):
                 continue
-            lm_name = self._nearest_lm_for_robot(robot)
+            lm_name = str(robot.current_lm or "")
+            if (
+                lm_name not in self.landmarks
+                or (
+                    not robot.trajectory
+                    and (
+                        robot.pose is None
+                        or not self._pose_is_at_lm(robot.pose, lm_name)
+                    )
+                )
+            ):
+                # ``current_lm`` is authoritative at a tagged stop.  Only a
+                # route-less body genuinely outside its tag needs the O(|V|)
+                # nearest-node fallback. A held trajectory keeps exact
+                # temporal/continuous occupancy for a mid-edge body; the
+                # spatial exclusion intentionally uses its source-side LM.
+                lm_name = self._nearest_lm_for_robot(robot)
             if lm_name in self.landmarks:
                 blocked.add(lm_name)
         return blocked

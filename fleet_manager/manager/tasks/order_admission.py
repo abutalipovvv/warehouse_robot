@@ -289,6 +289,7 @@ class _DispatchCycle:
     clearance_departure_ready: bool
     queued_dispatch_waiting: bool
     early_prefetch_entries: list[RollingPrefetchEntry] | None
+    critical_prefetch_waiting: bool
     prefetch_turn_after_dispatch: bool
     recovery_yields_dispatch_turn: bool
     live_wait_chain_sinks: set[str] = field(default_factory=set)
@@ -385,10 +386,7 @@ class OrderAdmissionMixin:
             ]
             | None
         ) = None
-        if (
-            async_simulated
-            and not self._async_simulated_dispatch_active()
-        ):
+        if async_simulated:
             early_prefetch_entries = (
                 self._ready_rolling_prefetch_entries()
             )
@@ -408,6 +406,13 @@ class OrderAdmissionMixin:
                 )
             )
         )
+        critical_prefetch_waiting = bool(
+            early_prefetch_entries
+            and self._rolling_entry_has_live_buffer_below(
+                early_prefetch_entries[0],
+                self._rolling_buffer_policy().critical_sec,
+            )
+        )
         recovery_yields_dispatch_turn = bool(
             queued_dispatch_waiting
             and self._last_async_job_kind == "runtime_replan"
@@ -420,8 +425,24 @@ class OrderAdmissionMixin:
             clearance_departure_ready=clearance_departure_ready,
             queued_dispatch_waiting=queued_dispatch_waiting,
             early_prefetch_entries=early_prefetch_entries,
+            critical_prefetch_waiting=critical_prefetch_waiting,
             prefetch_turn_after_dispatch=prefetch_turn_after_dispatch,
             recovery_yields_dispatch_turn=recovery_yields_dispatch_turn,
+        )
+
+    @staticmethod
+    def _rolling_entry_has_live_buffer_below(
+        entry: tuple[FleetOrder, FleetRobot, dict[str, Any], str, float],
+        threshold: float,
+    ) -> bool:
+        """Check urgency only for an actual executing trajectory."""
+
+        robot = entry[1]
+        return bool(
+            robot.trajectory
+            and robot.active_order_id
+            and robot.status in {"MOVING", "WAITING"}
+            and robot.route_buffer_seconds <= max(0.0, float(threshold))
         )
 
     def _start_dispatch_runtime_replan(
@@ -431,6 +452,7 @@ class OrderAdmissionMixin:
         async_simulated = cycle.async_simulated
         clearance_departure_ready = cycle.clearance_departure_ready
         recovery_yields_dispatch_turn = cycle.recovery_yields_dispatch_turn
+        critical_prefetch_waiting = cycle.critical_prefetch_waiting
         prefetch_turn_after_dispatch = cycle.prefetch_turn_after_dispatch
         dispatched = cycle.dispatched
         now = cycle.now
@@ -438,8 +460,8 @@ class OrderAdmissionMixin:
             async_simulated
             and not clearance_departure_ready
             and not recovery_yields_dispatch_turn
+            and not critical_prefetch_waiting
             and not prefetch_turn_after_dispatch
-            and not self._async_simulated_dispatch_active()
         ):
             # A queued departure can be the stationary sink of several live
             # routes.  Planning that departure alone is insufficient when an
@@ -580,7 +602,7 @@ class OrderAdmissionMixin:
         dispatched = cycle.dispatched
         early_prefetch_entries = cycle.early_prefetch_entries
         ready = cycle.ready
-        if async_simulated and not self._async_simulated_dispatch_active():
+        if async_simulated:
             prefetch_entries = (
                 early_prefetch_entries
                 if early_prefetch_entries is not None
@@ -590,6 +612,18 @@ class OrderAdmissionMixin:
             prefetch_is_urgent = bool(
                 prefetch is not None
                 and float(prefetch[-1]) <= self._rolling_prefetch_urgent_lead()
+            )
+            prefetch_is_critical = bool(
+                prefetch is not None
+                and self._rolling_entry_has_live_buffer_below(
+                    prefetch,
+                    self._rolling_buffer_policy().critical_sec,
+                )
+            )
+            moving_critical_pressure = bool(
+                prefetch_is_critical
+                and prefetch is not None
+                and prefetch[1].status == "MOVING"
             )
             prefetch_repeatedly_blocked = bool(
                 prefetch_entries
@@ -629,7 +663,8 @@ class OrderAdmissionMixin:
             # the stationary departure may be its physical blocker, then the
             # recovery prefetch receives the following turn.
             if prefetch is not None and (
-                not ready
+                prefetch_is_critical
+                or not ready
                 or (
                     not dispatch_turn_after_prefetch
                     and not dispatch_turn_after_recovery
@@ -638,9 +673,15 @@ class OrderAdmissionMixin:
                 )
                 or recovery_turn_after_dispatch
             ):
-                if self._start_async_rolling_prefetch(
-                    prefetch_entries
-                ):
+                if self._start_async_rolling_prefetch(prefetch_entries):
+                    return dispatched
+                if moving_critical_pressure:
+                    # A failed admission attempt may have registered a
+                    # corridor intent or discovered a short retry condition.
+                    # Do not spend the same runtime turn on a fresh ordinary
+                    # departure while a moving route has less than the
+                    # critical buffer left. The retry timestamp rotates the
+                    # next turn to another due refill when this one is gated.
                     return dispatched
         return None
 
@@ -713,7 +754,10 @@ class OrderAdmissionMixin:
                     ):
                         release_order.spatial_route_nodes = []
             if async_simulated:
-                if self._async_simulated_dispatch_active():
+                if (
+                    self._planning_scheduler_saturated()
+                    or self._ordinary_dispatch_planning_active()
+                ):
                     break
                 job_started = self._start_async_simulated_dispatch(group)
                 group_dispatched = 0

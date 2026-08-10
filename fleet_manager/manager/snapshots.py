@@ -59,6 +59,7 @@ class FleetManagerSnapshotMixin:
                     "obstacleAreas": self.obstacle_areas,
                     "orders": self._orders_list(),
                     "traffic": dict(self.traffic_metrics),
+                    "rollingRefill": self._rolling_runtime_metrics_payload(),
                     "lastRuntimeSafetyRollback": (
                         self._last_runtime_safety_rollback
                     ),
@@ -66,6 +67,43 @@ class FleetManagerSnapshotMixin:
                 }
             )
         return state
+
+    def _rolling_runtime_metrics_payload(self) -> dict[str, Any]:
+        metrics = self.planning_state.rolling_metrics
+        return {
+            "movingRobotCount": metrics.moving_robot_count,
+            "rollingEligibleCount": metrics.rolling_eligible_count,
+            "rollingUrgentCount": metrics.rolling_urgent_count,
+            "rollingCriticalCount": metrics.rolling_critical_count,
+            "rollingEmptyCount": metrics.rolling_empty_count,
+            "rollingJobsQueued": metrics.rolling_jobs_queued,
+            "rollingJobsRunning": metrics.rolling_jobs_running,
+            "planningQueueSize": metrics.planning_queue_size,
+            "peakPlanningQueueSize": metrics.peak_planning_queue_size,
+            "planningWorkerUtilization": round(
+                metrics.planning_worker_utilization,
+                4,
+            ),
+            "rollingBufferUnprotected": metrics.rolling_buffer_unprotected,
+            "rollingBufferUnderruns": metrics.rolling_buffer_underruns,
+            "controlledCorridorWaitingCount": (
+                metrics.controlled_corridor_waiting_count
+            ),
+            "controlledCorridorWaitEvents": (
+                metrics.controlled_corridor_wait_events
+            ),
+            "rollingAppendFailures": metrics.rolling_append_failures,
+            "pendingRouteHandoffs": metrics.pending_route_handoffs,
+            "nextSegmentWaitCount": metrics.next_segment_wait_count,
+            "nextSegmentWaitTotalSec": round(
+                metrics.next_segment_wait_total_sec,
+                3,
+            ),
+            "nextSegmentWaitMaxSec": round(
+                metrics.next_segment_wait_max_sec,
+                3,
+            ),
+        }
 
     def _robot_snapshot_payload(
         self,
@@ -75,6 +113,27 @@ class FleetManagerSnapshotMixin:
         pending_orders: list[FleetOrder] | None = None,
     ) -> dict[str, Any]:
         payload = robot.to_dict(include_trajectory=include_trajectory)
+        payload.update({
+            "rollingRefillDeadlineSec": robot.route_buffer_seconds,
+            "rollingRefillEligibleSince": (
+                self._rolling_prefetch_eligible_since.get(robot.name)
+            ),
+            "rollingRefillLastAttemptAt": (
+                self._rolling_prefetch_last_attempt_at.get(robot.name)
+            ),
+            "rollingRefillFailures": int(
+                self._rolling_prefetch_failures.get(robot.name, 0)
+            ),
+            "rollingAppendFailureReason": (
+                robot.rolling_append_failure_reason
+            ),
+            "rollingPendingRoute": robot.pending_route is not None,
+            "rollingCorridorGateStatus": (
+                "pending"
+                if robot.name in self._controlled_corridor_prefetch_intents
+                else "none"
+            ),
+        })
         if pending_orders is None:
             pending_orders = self.task_manager.pending_for_robot(robot.name)
         if not pending_orders:

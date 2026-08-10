@@ -19,7 +19,11 @@ from fleet_manager.core.traffic.corridors.scheduling.corridor_planning_models im
 
 
 _HasFlowPredecessor = Callable[
-    [CorridorRequest, Iterable[CorridorRequest]],
+    [
+        CorridorRequest,
+        Iterable[CorridorRequest],
+        dict[str, dict[str, str]],
+    ],
     bool,
 ]
 _PhaseFairnessRanks = Callable[..., tuple[int, int, int]]
@@ -33,7 +37,45 @@ def schedule_pending(
     has_flow_predecessor: _HasFlowPredecessor,
     phase_fairness_ranks: _PhaseFairnessRanks,
 ) -> None:
-    """Choose and place the best safe proposal until none can fit."""
+    """Choose and place safe proposals in independent resource components."""
+    original_order = {
+        request.robot_id: index
+        for index, request in enumerate(pending)
+    }
+    flow_directions = {
+        request.robot_id: {
+            window.region_id: window.direction
+            for window in request.resource_windows
+        }
+        for request in pending
+    }
+    remaining: list[CorridorRequest] = []
+    for component in _pending_resource_components(pending):
+        _schedule_pending_component(
+            context,
+            component,
+            preferred_entries,
+            flow_directions,
+            has_flow_predecessor=has_flow_predecessor,
+            phase_fairness_ranks=phase_fairness_ranks,
+        )
+        remaining.extend(component)
+    pending[:] = sorted(
+        remaining,
+        key=lambda request: original_order[request.robot_id],
+    )
+
+
+def _schedule_pending_component(
+    context: _PlanningContext,
+    pending: list[CorridorRequest],
+    preferred_entries: dict[str, float],
+    flow_directions: dict[str, dict[str, str]],
+    *,
+    has_flow_predecessor: _HasFlowPredecessor,
+    phase_fairness_ranks: _PhaseFairnessRanks,
+) -> None:
+    """Run the existing deterministic placement loop for one component."""
     while pending:
         pending_robot_ids = {
             request.robot_id
@@ -52,7 +94,11 @@ def schedule_pending(
                 scheduled_robot_ids,
             ):
                 continue
-            if has_flow_predecessor(request, pending):
+            if has_flow_predecessor(
+                request,
+                pending,
+                flow_directions,
+            ):
                 continue
             proposal = _build_proposal(
                 context,
@@ -69,6 +115,64 @@ def schedule_pending(
         selected = min(proposals, key=lambda proposal: proposal.rank)
         _grant_proposal(context, selected)
         pending.remove(selected.request)
+
+
+def _pending_resource_components(
+    pending: list[CorridorRequest],
+) -> list[list[CorridorRequest]]:
+    """Group requests which can influence each other's calendar placement.
+
+    Requests using disjoint authored resources cannot change one another's
+    slot, phase fairness or predecessor order. Scheduling a 100-robot fleet as
+    one global proposal loop repeated the same work for every independent
+    corridor and made the runtime tick cubic in fleet size.
+    """
+    if len(pending) < 2:
+        return [list(pending)] if pending else []
+
+    by_name = {request.robot_id: request for request in pending}
+    neighbours = {request.robot_id: set() for request in pending}
+    users_by_region: dict[str, list[str]] = {}
+    for request in pending:
+        for region_id in request.regions:
+            users_by_region.setdefault(region_id, []).append(
+                request.robot_id
+            )
+        predecessor = request.predecessor_robot_id
+        if predecessor and predecessor in by_name:
+            neighbours[request.robot_id].add(predecessor)
+            neighbours[predecessor].add(request.robot_id)
+    for users in users_by_region.values():
+        if len(users) < 2:
+            continue
+        first = users[0]
+        for other in users[1:]:
+            neighbours[first].add(other)
+            neighbours[other].add(first)
+
+    components: list[list[CorridorRequest]] = []
+    visited: set[str] = set()
+    order_index = {
+        request.robot_id: index
+        for index, request in enumerate(pending)
+    }
+    for request in pending:
+        if request.robot_id in visited:
+            continue
+        names: list[str] = []
+        queue = [request.robot_id]
+        visited.add(request.robot_id)
+        while queue:
+            name = queue.pop(0)
+            names.append(name)
+            additions = sorted(
+                neighbours[name] - visited,
+                key=order_index.get,
+            )
+            visited.update(additions)
+            queue.extend(additions)
+        components.append([by_name[name] for name in names])
+    return components
 
 
 def _direct_predecessor_is_ready(

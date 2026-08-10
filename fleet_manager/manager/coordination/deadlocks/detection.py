@@ -187,6 +187,15 @@ class WaitCycleDetectionMixin:
                 chain_members.update(chain)
                 continue
             terminal = self.robots.get(current)
+            if (
+                terminal is not None
+                and terminal.last_reason == "deadlock recovery pending"
+            ):
+                # The previous cycle arbitration deliberately converted the
+                # component into an acyclic hold. Its direct follower is a
+                # one-edge chain, not a new starvation episode.
+                chain_members.update(chain)
+                continue
             if len(chain) < 2 or terminal is None:
                 continue
             if not terminal.trajectory:

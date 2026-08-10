@@ -5,6 +5,9 @@ from typing import Any
 import pytest
 
 from fleet_manager.manager.tasks.models import FleetOrder
+from fleet_manager.manager.tasks.rolling_continuation import (
+    RollingAppendStatus,
+)
 from fleet_manager.manager.planning import PlanningJobRecord
 from fleet_manager.robot.model import FleetRobot
 from fleet_manager.core.mapping.maps.models import GraphEdge, Landmark, WorldPoint
@@ -67,7 +70,7 @@ def test_many_rolling_appends_keep_trajectory_and_plan_nodes_bounded() -> None:
             final_goal,
         )
 
-        assert appended
+        assert appended.status is RollingAppendStatus.APPENDED
         assert robot.route_clock == pytest.approx(route_clock_before_append)
         assert manager._pose_at_trajectory(
             robot.trajectory,

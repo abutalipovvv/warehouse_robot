@@ -52,6 +52,7 @@ class FleetSettingsStub:
 class KinematicsHarness(FleetMotionKinematicsMixin):
     def __init__(self) -> None:
         self.settings = SimpleNamespace(fleet=FleetSettingsStub())
+        self.nearest_lm_calls = 0
         self.landmarks = {
             "A": SimpleNamespace(name="A", x=0.0, y=0.0),
             "B": SimpleNamespace(name="B", x=1.0, y=0.0),
@@ -73,8 +74,8 @@ class KinematicsHarness(FleetMotionKinematicsMixin):
     def _continuous_collision_step() -> float:
         return 0.2
 
-    @staticmethod
-    def _nearest_lm_for_robot(robot: FleetRobot) -> str:
+    def _nearest_lm_for_robot(self, robot: FleetRobot) -> str:
+        self.nearest_lm_calls += 1
         return "A"
 
     @staticmethod
@@ -283,6 +284,22 @@ def test_kinematics_distinguishes_wait_from_rotation() -> None:
         harness._planned_wait_lm_at_trajectory(rotation, 0.5)
         == ""
     )
+
+
+def test_safe_replan_start_uses_current_landmark_before_full_scan() -> None:
+    harness = KinematicsHarness()
+    robot = FleetRobot(
+        "robot",
+        "A",
+        pose={"x": 0.02, "y": 0.0, "yaw": 0.0},
+    )
+
+    assert harness._safe_replan_start_lm(robot) == "A"
+    assert harness.nearest_lm_calls == 0
+
+    robot.current_lm = "B"
+    assert harness._safe_replan_start_lm(robot) == "A"
+    assert harness.nearest_lm_calls == 1
 
 
 def test_safety_snapshot_restores_robot_and_order_atomically() -> None:

@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-from typing import Iterable, Mapping
+from typing import Iterable
 
 from fleet_manager.core.traffic.corridors.scheduling.corridor_models import (
     CorridorRequest,
-    CorridorResourceWindow,
     CorridorSchedulerConfig,
     CorridorSlot,
 )
@@ -27,11 +26,12 @@ def _earliest_placement(
     horizon_end: float,
     config: CorridorSchedulerConfig,
 ) -> tuple[float, float, int] | None:
+    request_regions = frozenset(request.regions)
     relevant = sorted(
         (
             slot
             for slot in slots
-            if not set(request.regions).isdisjoint(slot.regions)
+            if not request_regions.isdisjoint(slot.regions)
         ),
         key=lambda slot: (slot.entry_time, slot.robot_id),
     )
@@ -74,7 +74,6 @@ def _earliest_placement(
             )
         if required_entry <= candidate_entry + 1e-9:
             previous, following = _calendar_neighbours(
-                request,
                 candidate_entry,
                 relevant,
             )
@@ -105,11 +104,12 @@ def _placement_at(
         or entry_time > horizon_end + 1e-9
     ):
         return None
+    request_regions = frozenset(request.regions)
     relevant = sorted(
         (
             slot
             for slot in slots
-            if not set(request.regions).isdisjoint(slot.regions)
+            if not request_regions.isdisjoint(slot.regions)
         ),
         key=lambda slot: (slot.entry_time, slot.robot_id),
     )
@@ -143,7 +143,6 @@ def _placement_at(
         ):
             return None
     previous, following = _calendar_neighbours(
-        request,
         entry_time,
         relevant,
     )
@@ -154,70 +153,42 @@ def _placement_at(
     )
 
 
-def _resource_window_map(
-    windows: Iterable[CorridorResourceWindow],
-    *,
-    origin: float,
-) -> dict[str, tuple[float, float, str]]:
-    return {
-        window.region_id: (
-            origin + window.entry_offset_sec,
-            origin + window.exit_offset_sec,
-            window.direction,
-        )
-        for window in windows
-    }
-
-
 def _request_slot_windows_fit(
     request: CorridorRequest,
     entry_time: float,
     slot: CorridorSlot,
     config: CorridorSchedulerConfig,
 ) -> bool:
-    return _resource_window_maps_fit(
-        _resource_window_map(
-            request.resource_windows,
-            origin=entry_time,
-        ),
-        _resource_window_map(
-            slot.resource_windows,
-            origin=slot.entry_time,
-        ),
-        config,
-    )
-
-
-def _resource_window_maps_fit(
-    first: Mapping[str, tuple[float, float, str]],
-    second: Mapping[str, tuple[float, float, str]],
-    config: CorridorSchedulerConfig,
-) -> bool:
     guard = _direction_change_guard(config)
-    for region_id in set(first).intersection(second):
-        first_entry, first_exit, first_direction = first[region_id]
-        second_entry, second_exit, second_direction = second[region_id]
-        if first_direction == second_direction:
-            first_is_after = (
-                first_entry
-                >= second_entry + config.headway_sec - 1e-9
-                and first_exit
-                >= second_exit + config.headway_sec - 1e-9
-            )
-            first_is_before = (
-                first_entry + config.headway_sec
-                <= second_entry + 1e-9
-                and first_exit + config.headway_sec
-                <= second_exit + 1e-9
-            )
-            if not first_is_after and not first_is_before:
+    for request_window in request.resource_windows:
+        for slot_window in slot.resource_windows:
+            if request_window.region_id != slot_window.region_id:
+                continue
+            first_entry = entry_time + request_window.entry_offset_sec
+            first_exit = entry_time + request_window.exit_offset_sec
+            second_entry = slot.entry_time + slot_window.entry_offset_sec
+            second_exit = slot.entry_time + slot_window.exit_offset_sec
+            if request_window.direction == slot_window.direction:
+                first_is_after = (
+                    first_entry
+                    >= second_entry + config.headway_sec - 1e-9
+                    and first_exit
+                    >= second_exit + config.headway_sec - 1e-9
+                )
+                first_is_before = (
+                    first_entry + config.headway_sec
+                    <= second_entry + 1e-9
+                    and first_exit + config.headway_sec
+                    <= second_exit + 1e-9
+                )
+                if not first_is_after and not first_is_before:
+                    return False
+            elif not (
+                first_exit + guard <= second_entry + 1e-9
+                or first_entry >= second_exit + guard - 1e-9
+            ):
                 return False
-            continue
-        if not (
-            first_exit + guard <= second_entry + 1e-9
-            or first_entry >= second_exit + guard - 1e-9
-        ):
-            return False
+            break
     return True
 
 
@@ -226,20 +197,22 @@ def _request_entry_after_slot(
     slot: CorridorSlot,
     config: CorridorSchedulerConfig,
 ) -> float:
-    request_windows = {
-        window.region_id: window
-        for window in request.resource_windows
-    }
-    slot_windows = _resource_window_map(
-        slot.resource_windows,
-        origin=slot.entry_time,
-    )
     required = float("-inf")
     guard = _direction_change_guard(config)
-    for region_id in set(request_windows).intersection(slot_windows):
-        request_window = request_windows[region_id]
-        slot_entry, slot_exit, slot_direction = slot_windows[region_id]
-        if request_window.direction == slot_direction:
+    for request_window in request.resource_windows:
+        slot_window = next(
+            (
+                window
+                for window in slot.resource_windows
+                if window.region_id == request_window.region_id
+            ),
+            None,
+        )
+        if slot_window is None:
+            continue
+        slot_entry = slot.entry_time + slot_window.entry_offset_sec
+        slot_exit = slot.entry_time + slot_window.exit_offset_sec
+        if request_window.direction == slot_window.direction:
             required = max(
                 required,
                 slot_entry
@@ -260,21 +233,12 @@ def _request_entry_after_slot(
 
 
 def _calendar_neighbours(
-    request: CorridorRequest,
     entry_time: float,
     slots: Iterable[CorridorSlot],
 ) -> tuple[CorridorSlot | None, CorridorSlot | None]:
-    relevant = sorted(
-        (
-            slot
-            for slot in slots
-            if not set(request.regions).isdisjoint(slot.regions)
-        ),
-        key=lambda slot: (slot.entry_time, slot.robot_id),
-    )
     previous: CorridorSlot | None = None
     following: CorridorSlot | None = None
-    for slot in relevant:
+    for slot in slots:
         if slot.entry_time <= entry_time + 1e-9:
             previous = slot
         elif following is None:
@@ -287,21 +251,51 @@ def _slot_interval_fits(
     slots: Iterable[CorridorSlot],
     config: CorridorSchedulerConfig,
 ) -> bool:
+    candidate_regions = frozenset(candidate.regions)
     for other in slots:
-        if set(candidate.regions).isdisjoint(other.regions):
+        if candidate_regions.isdisjoint(other.regions):
             continue
-        if not _resource_window_maps_fit(
-            _resource_window_map(
-                candidate.resource_windows,
-                origin=candidate.entry_time,
-            ),
-            _resource_window_map(
-                other.resource_windows,
-                origin=other.entry_time,
-            ),
-            config,
-        ):
+        if not _slot_windows_fit(candidate, other, config):
             return False
+    return True
+
+
+def _slot_windows_fit(
+    first: CorridorSlot,
+    second: CorridorSlot,
+    config: CorridorSchedulerConfig,
+) -> bool:
+    """Compare immutable slot windows without building temporary mappings."""
+    guard = _direction_change_guard(config)
+    for first_window in first.resource_windows:
+        for second_window in second.resource_windows:
+            if first_window.region_id != second_window.region_id:
+                continue
+            first_entry = first.entry_time + first_window.entry_offset_sec
+            first_exit = first.entry_time + first_window.exit_offset_sec
+            second_entry = second.entry_time + second_window.entry_offset_sec
+            second_exit = second.entry_time + second_window.exit_offset_sec
+            if first_window.direction == second_window.direction:
+                first_is_after = (
+                    first_entry
+                    >= second_entry + config.headway_sec - 1e-9
+                    and first_exit
+                    >= second_exit + config.headway_sec - 1e-9
+                )
+                first_is_before = (
+                    first_entry + config.headway_sec
+                    <= second_entry + 1e-9
+                    and first_exit + config.headway_sec
+                    <= second_exit + 1e-9
+                )
+                if not first_is_after and not first_is_before:
+                    return False
+            elif not (
+                first_exit + guard <= second_entry + 1e-9
+                or first_entry >= second_exit + guard - 1e-9
+            ):
+                return False
+            break
     return True
 
 

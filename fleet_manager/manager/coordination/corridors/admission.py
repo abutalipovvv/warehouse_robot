@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from typing import Any
 
 from fleet_manager.robot.model import FleetRobot
@@ -364,27 +365,35 @@ class ControlledCorridorAdmissionDecisionMixin:
                 if robot.pose is not None
                 else 0.0,
             }
-        for other in self._runtime_robots():
+        broadphase_distance = self.collision.robot_broadphase_distance()
+
+        def may_overlap(pose: dict[str, Any] | None) -> bool:
+            if pose is None:
+                return False
+            return math.hypot(
+                float(candidate_pose.get("x", 0.0) or 0.0)
+                - float(pose.get("x", 0.0) or 0.0),
+                float(candidate_pose.get("y", 0.0) or 0.0)
+                - float(pose.get("y", 0.0) or 0.0),
+            ) <= broadphase_distance + 0.000001
+
+        indexed_robots = self._controlled_corridor_downstream_candidates(
+            candidate_pose,
+            broadphase_distance,
+        )
+        for other in indexed_robots:
             if other.name == robot.name or other.pose is None:
                 continue
-            current_conflict = self.collision.robot_footprints_conflict(
-                candidate_pose,
-                other.pose,
+            current_conflict = bool(
+                may_overlap(other.pose)
+                and self.collision.robot_footprints_conflict(
+                    candidate_pose,
+                    other.pose,
+                )
             )
             prediction_offset = max(
                 0.0,
                 float(exit_clock) - float(robot.route_clock),
-            )
-            predicted_pose = self._predicted_robot_pose(
-                other,
-                prediction_offset,
-            )
-            predicted_conflict = bool(
-                predicted_pose is not None
-                and self.collision.robot_footprints_conflict(
-                    candidate_pose,
-                    predicted_pose,
-                )
             )
             predicted_at_terminal = False
             if other.trajectory:
@@ -395,6 +404,21 @@ class ControlledCorridorAdmissionDecisionMixin:
                     float(other.route_clock) + prediction_offset
                     >= final_clock - self._runtime_motion_step()
                 )
+            if not current_conflict and not predicted_at_terminal:
+                # Only terminal arrivals can become a new hard downstream
+                # blocker. Moving/moving crossings stay in temporal SIPP.
+                continue
+            predicted_pose = self._predicted_robot_pose(
+                other,
+                prediction_offset,
+            )
+            predicted_conflict = bool(
+                may_overlap(predicted_pose)
+                and self.collision.robot_footprints_conflict(
+                    candidate_pose,
+                    predicted_pose,
+                )
+            )
             if not current_conflict:
                 # Future moving/moving crossings remain SIPP's responsibility.
                 # A trajectory which *ends* in the exit pocket is different:
@@ -412,6 +436,37 @@ class ControlledCorridorAdmissionDecisionMixin:
             ):
                 return other.name
         return ""
+
+    def _controlled_corridor_downstream_candidates(
+        self,
+        candidate_pose: dict[str, Any],
+        broadphase_distance: float,
+    ) -> list[FleetRobot]:
+        """Return the exact broadphase superset near one corridor exit."""
+
+        bucket_size = (
+            self.traffic_state.controlled_corridor_downstream_bucket_size
+        )
+        buckets = self.traffic_state.controlled_corridor_downstream_buckets
+        if bucket_size <= 0.0:
+            return list(self._runtime_robots())
+        cell_x = math.floor(
+            float(candidate_pose.get("x", 0.0) or 0.0) / bucket_size
+        )
+        cell_y = math.floor(
+            float(candidate_pose.get("y", 0.0) or 0.0) / bucket_size
+        )
+        cell_radius = max(
+            1,
+            int(math.ceil(broadphase_distance / bucket_size)),
+        )
+        candidates: dict[str, FleetRobot] = {}
+        for offset_x in range(-cell_radius, cell_radius + 1):
+            for offset_y in range(-cell_radius, cell_radius + 1):
+                candidates.update(
+                    buckets.get((cell_x + offset_x, cell_y + offset_y), {})
+                )
+        return [candidates[name] for name in sorted(candidates)]
 
     def _controlled_corridor_physical_exit_time(
         self,

@@ -279,23 +279,44 @@ class ControlledCorridorPassageMixin:
             if lookahead_sec is None
             else max(0.0, float(lookahead_sec))
         )
-        cache_name, cache_key = self._controlled_corridor_entry_cache_key(
-            robot,
-            lookahead,
-        )
-        if cache_name:
-            cached = self._controlled_corridor_entry_cache.get(cache_name)
-            if (
-                cached is not None
-                and cached[0] is robot.trajectory
-                and cached[1] == cache_key
-            ):
-                return cached[2]
-
         inside = self._controlled_regions_for_robot(robot)
+        cache_name = (
+            robot.name
+            if self.robots.get(robot.name) is robot
+            else ""
+        )
+        cached = (
+            self._controlled_corridor_entry_cache.get(cache_name)
+            if cache_name
+            else None
+        )
+        if (
+            isinstance(cached, tuple)
+            and len(cached) == 3
+            and cached[0] is robot.trajectory
+            and int(cached[1]) == int(robot.route_revision)
+        ):
+            cached_entry = cached[2]
+            if cached_entry is None and not inside:
+                return None
+            if isinstance(cached_entry, dict):
+                exit_clock = float(
+                    cached_entry.get("exit_clock", 0.0) or 0.0
+                )
+                if robot.route_clock < exit_clock - 0.000001:
+                    return self._live_controlled_corridor_entry(
+                        robot,
+                        cached_entry,
+                        lookahead,
+                    )
+
+        # Passage geometry is immutable for one route revision. Scan the full
+        # suffix once, then apply the caller's moving lookahead to a small
+        # live copy. Including route_clock and pose in the old cache key made
+        # every physics tick a cache miss and starved the 100-robot runtime.
         scan = self._scan_controlled_corridor_passage(
             robot,
-            lookahead=lookahead,
+            lookahead=float("inf"),
             inside_regions=inside,
         )
         entry = (
@@ -303,35 +324,53 @@ class ControlledCorridorPassageMixin:
             if scan.occupied_passage_ended
             else self._finalize_controlled_corridor_entry(robot, scan)
         )
-        if cache_name:
+        if cache_name and (entry is not None or not inside):
             self._controlled_corridor_entry_cache[cache_name] = (
                 robot.trajectory,
-                cache_key,
+                int(robot.route_revision),
                 entry,
             )
-        return entry
+        if entry is None:
+            return None
+        return self._live_controlled_corridor_entry(
+            robot,
+            entry,
+            lookahead,
+        )
 
-    def _controlled_corridor_entry_cache_key(
+    def _live_controlled_corridor_entry(
         self,
         robot: FleetRobot,
+        template: dict[str, Any],
         lookahead: float,
-    ) -> tuple[str, tuple[Any, ...]]:
-        cache_name = (
-            robot.name
-            if self.robots.get(robot.name) is robot
-            else ""
+    ) -> dict[str, Any] | None:
+        """Refresh clock and boundary fields on cached passage geometry."""
+        entry = dict(template)
+        entry_clock = float(
+            entry.get("entry_clock", robot.route_clock)
+            or robot.route_clock
         )
-        pose = robot.pose if isinstance(robot.pose, dict) else {}
-        return cache_name, (
-            int(robot.route_revision),
-            len(robot.trajectory),
-            float(robot.route_clock),
-            str(robot.current_lm or ""),
-            float(pose.get("x", 0.0) or 0.0),
-            float(pose.get("y", 0.0) or 0.0),
-            float(pose.get("yaw", 0.0) or 0.0),
-            float(lookahead),
+        entry["eta"] = max(0.0, entry_clock - robot.route_clock)
+        if entry["eta"] > lookahead + 0.000001:
+            return None
+        staging_lm = str(entry.get("holding_lm") or "")
+        at_staging = self._controlled_corridor_pose_is_at_lm(
+            robot.pose,
+            staging_lm,
         )
+        staging_clock = float(
+            entry.get("staging_clock", entry_clock) or entry_clock
+        )
+        entry["at_boundary"] = self._controlled_corridor_pose_is_at_lm(
+            robot.pose,
+            str(entry.get("src") or ""),
+        )
+        entry["at_staging"] = at_staging
+        entry["passed_staging"] = bool(
+            robot.route_clock > staging_clock + 0.000001
+            and not at_staging
+        )
+        return entry
 
     def _scan_controlled_corridor_passage(
         self,

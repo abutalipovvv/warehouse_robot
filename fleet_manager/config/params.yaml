@@ -70,9 +70,20 @@ fleet:
   # Consecutive graph edges no longer restart acceleration, so straight motion
   # is still twice as fast as the previous stop-and-go implementation.
   reservation_time_step_sec: 1
-  reservation_horizon_sec: 10
-  # Only this graph-safe prefix is committed. The next prefix is prepared
-  # before the horizon boundary against fresh robot reservations.
+  reservation_horizon_sec: 15
+  # Hard reservations remain short. Prepared trajectories are longer and are
+  # refilled before they enter the safety-critical part of their buffer.
+  rolling_target_buffer_sec: 75
+  rolling_refill_threshold_sec: 55
+  rolling_urgent_threshold_sec: 30
+  rolling_critical_threshold_sec: 15
+  rolling_emergency_threshold_sec: 5
+  rolling_max_prepared_buffer_sec: 150
+  rolling_refill_stagger_window_sec: 8
+  rolling_normal_batch_size: 12
+  planning_queue_max_size: 2
+  # Compatibility value for older configurations. New code uses the target
+  # buffer above when it is present.
   rolling_horizon_sec: 30
   # Accelerated motion consumes simulated route time faster while MAPF still
   # runs in wall time. Preserve the planning budget by expanding only the
@@ -115,7 +126,7 @@ fleet:
   # Exact next-step collision checks still run on every physics tick. The
   # heavier full-horizon scan is refreshed independently to avoid synchronized
   # O(robots^2) CPU spikes that make the visual stream stop and catch up.
-  runtime_collision_preflight_interval_sec: 0.20
+  runtime_collision_preflight_interval_sec: 0.50
   wait_time_sec: 1
   wait_cost: 6
   order_dispatch_retry_sec: 0.5

@@ -3,11 +3,15 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import dataclass
+from enum import Enum
 import math
 from typing import Any
+from zlib import crc32
 
 from fleet_manager.manager.tasks.statuses import TERMINAL_ORDER_STATUSES
 from fleet_manager.manager.tasks.models import FleetOrder
+from fleet_manager.manager.planning import PlanningPriority
 from fleet_manager.robot.model import FleetRobot
 from fleet_manager.manager.state import FleetState, PlanningState
 
@@ -19,6 +23,122 @@ RollingPrefetchEntry = tuple[
     str,
     float,
 ]
+
+
+class RollingRefillUrgency(str, Enum):
+    HEALTHY = "healthy"
+    NORMAL = "normal"
+    URGENT = "urgent"
+    CRITICAL = "critical"
+    EMPTY = "empty"
+
+
+class RollingAppendStatus(str, Enum):
+    APPENDED = "appended"
+    INVALID_CURRENT_TRAJECTORY = "invalid_current_trajectory"
+    INVALID_CONTINUATION = "invalid_continuation"
+    START_LM_MISMATCH = "start_lm_mismatch"
+    POSITION_GAP = "position_gap"
+    NO_TIME_PROGRESS = "no_time_progress"
+    NODE_MISMATCH = "node_mismatch"
+    MISSING_GOAL = "missing_goal"
+
+
+@dataclass(frozen=True, slots=True)
+class RollingAppendResult:
+    status: RollingAppendStatus
+    detail: str = ""
+
+    @property
+    def appended(self) -> bool:
+        return self.status is RollingAppendStatus.APPENDED
+
+
+class RollingCommitStatus(str, Enum):
+    APPENDED = "appended"
+    PENDING_HANDOFF = "pending_handoff"
+    DEFERRED = "deferred"
+    REJECTED = "rejected"
+    STALE = "stale"
+
+
+@dataclass(frozen=True, slots=True)
+class RollingCommitSummary:
+    appended: int = 0
+    pending_handoff: int = 0
+    deferred: int = 0
+    rejected: int = 0
+    stale: int = 0
+
+    @property
+    def committed_count(self) -> int:
+        return self.appended + self.pending_handoff
+
+
+@dataclass(frozen=True, slots=True)
+class RollingRefillCandidate:
+    robot_id: str
+    order_id: str
+    route_buffer_sec: float
+    requested_start_time: float
+    urgency: RollingRefillUrgency
+    spatial_suffix: tuple[str, ...]
+    resource_ids: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class RollingRefillBatch:
+    batch_id: str
+    candidates: tuple[RollingRefillCandidate, ...]
+    priority: PlanningPriority
+    conflict_component_id: str
+
+
+@dataclass(frozen=True, slots=True)
+class RollingBufferPolicy:
+    """Thresholds separating prepared route health from hard reservations."""
+
+    target_sec: float
+    refill_sec: float
+    urgent_sec: float
+    critical_sec: float
+    emergency_sec: float
+    maximum_sec: float
+    stagger_window_sec: float
+
+    def urgency(self, buffer_sec: float) -> RollingRefillUrgency:
+        remaining = max(0.0, float(buffer_sec))
+        if remaining <= self.emergency_sec:
+            return RollingRefillUrgency.EMPTY
+        if remaining <= self.critical_sec:
+            return RollingRefillUrgency.CRITICAL
+        if remaining <= self.urgent_sec:
+            return RollingRefillUrgency.URGENT
+        if remaining <= self.refill_sec:
+            return RollingRefillUrgency.NORMAL
+        return RollingRefillUrgency.HEALTHY
+
+    def normal_threshold(self, robot_id: str) -> float:
+        """Spread only normal refill work using a stable robot-id offset."""
+
+        if self.stagger_window_sec <= 0.0:
+            return self.refill_sec
+        bucket = crc32(str(robot_id).encode("utf-8")) % 10_001
+        ratio = bucket / 10_000.0
+        return self.refill_sec + ratio * self.stagger_window_sec
+
+    def urgency_for(
+        self,
+        robot_id: str,
+        buffer_sec: float,
+    ) -> RollingRefillUrgency:
+        urgency = self.urgency(buffer_sec)
+        if (
+            urgency is RollingRefillUrgency.HEALTHY
+            and float(buffer_sec) <= self.normal_threshold(robot_id)
+        ):
+            return RollingRefillUrgency.NORMAL
+        return urgency
 
 
 class RollingContinuationService:
@@ -49,6 +169,7 @@ class RollingContinuationService:
         valid_blockers: Callable[[str], list[str]] | None = None,
         waits_at_boundary: Callable[[FleetRobot], bool] | None = None,
         prefetch_lead: Callable[[], float] | None = None,
+        buffer_policy: Callable[[], RollingBufferPolicy] | None = None,
     ) -> None:
         self._fleet = fleet_state
         self._state = planning_state
@@ -63,6 +184,7 @@ class RollingContinuationService:
         self._valid_blockers = valid_blockers
         self._waits_at_boundary = waits_at_boundary
         self._prefetch_lead = prefetch_lead
+        self._buffer_policy = buffer_policy
 
     def select_candidates(self) -> list[RollingPrefetchEntry]:
         """Build deterministic rolling requests from explicit dependencies."""
@@ -100,6 +222,7 @@ class RollingContinuationService:
         assert valid_blockers is not None
         assert waits_at_boundary is not None
         assert prefetch_lead is not None
+        policy = self._buffer_policy() if self._buffer_policy is not None else None
 
         now = float(self._clock())
         required_stopped_blockers: set[str] = set()
@@ -134,8 +257,16 @@ class RollingContinuationService:
             if not final_goal or robot.route_chunk_goal_lm == final_goal:
                 continue
             final_time = float(robot.trajectory[-1].get("t", 0.0) or 0.0)
-            remaining = max(0.0, final_time - robot.route_clock)
-            if remaining > prefetch_lead():
+            remaining = robot.route_buffer_seconds
+            urgency = (
+                policy.urgency_for(robot.name, remaining)
+                if policy is not None
+                else None
+            )
+            if policy is None:
+                if remaining > prefetch_lead():
+                    continue
+            elif urgency is RollingRefillUrgency.HEALTHY:
                 continue
             self.mark_eligible(order, robot, remaining, now)
             if not self.retry_is_due(
@@ -161,6 +292,7 @@ class RollingContinuationService:
                     "startLm": start_lm,
                     "goalLm": planning_goal,
                     "startPose": handoff_pose,
+                    "reservationStartTimeSec": now + remaining,
                 }
                 attach_spatial_route(
                     request,
@@ -181,11 +313,12 @@ class RollingContinuationService:
                 continue
             candidates.append(
                 (
-                    self.candidate_priority(
+                    self._selection_priority(
                         order,
                         robot,
                         remaining,
                         now,
+                        urgency=urgency,
                     ),
                     (
                         order,
@@ -200,6 +333,42 @@ class RollingContinuationService:
             entry
             for _, entry in sorted(candidates, key=lambda item: item[0])
         ]
+
+    def _selection_priority(
+        self,
+        order: FleetOrder,
+        robot: FleetRobot,
+        remaining: float,
+        now: float,
+        *,
+        urgency: RollingRefillUrgency | None,
+    ) -> tuple[float, float, float, float, float, str]:
+        urgency_rank = {
+            RollingRefillUrgency.EMPTY: 0.0,
+            RollingRefillUrgency.CRITICAL: 1.0,
+            RollingRefillUrgency.URGENT: 2.0,
+            RollingRefillUrgency.NORMAL: 3.0,
+            RollingRefillUrgency.HEALTHY: 4.0,
+            None: 3.0,
+        }[urgency]
+        old_priority = self.candidate_priority(
+            order,
+            robot,
+            remaining,
+            now,
+        )
+        last_attempt = self._state.rolling_prefetch_last_attempt_at.get(
+            robot.name,
+            0.0,
+        )
+        return (
+            urgency_rank,
+            old_priority[0],
+            old_priority[1],
+            old_priority[2],
+            float(last_attempt),
+            robot.name,
+        )
 
     def mark_eligible(
         self,
@@ -262,6 +431,7 @@ class RollingContinuationService:
         boundary_retry_interval: float,
         time_scale: float,
         retry_multiplier: float = 1.0,
+        maximum_retry_delay: float | None = None,
         now: float | None = None,
     ) -> None:
         current_time = self._clock() if now is None else float(now)
@@ -278,12 +448,18 @@ class RollingContinuationService:
                     or 0
                 ),
             )
-            retry_at = current_time + (
+            retry_delay = (
                 self._retry_interval(order)
                 * (2 ** min(3, failures - 1))
                 * max(1.0, float(time_scale))
                 * max(1.0, retry_multiplier)
             )
+            if maximum_retry_delay is not None:
+                retry_delay = min(
+                    retry_delay,
+                    max(0.0, float(maximum_retry_delay)),
+                )
+            retry_at = current_time + retry_delay
         self._state.rolling_prefetch_retry_at[robot.name] = retry_at
 
     def boundary_wait_since(
@@ -353,7 +529,263 @@ class RollingContinuationMixin:
     def _rolling_prefetch_candidates(
         self,
     ) -> list[tuple[FleetOrder, FleetRobot, dict[str, Any], str, float]]:
-        return self._rolling_continuation_service.select_candidates()
+        protected = self._rolling_protected_robot_ids()
+        candidates = [
+            entry
+            for entry in self._rolling_continuation_service.select_candidates()
+            if entry[1].name not in protected
+        ]
+        emergency_sec = self._rolling_buffer_policy().emergency_sec
+        ordered: list[RollingPrefetchEntry] = []
+        safe_holds: list[RollingPrefetchEntry] = []
+        for entry in candidates:
+            robot = entry[1]
+            if self._robot_waits_for_controlled_corridor(robot):
+                safe_holds.append(entry)
+                continue
+            moving_emergency = bool(
+                robot.status == "MOVING"
+                and robot.route_buffer_seconds <= emergency_sec
+            )
+            if moving_emergency:
+                ordered.append(entry)
+                ordered.extend(safe_holds)
+                safe_holds.clear()
+                continue
+            ordered.extend(safe_holds)
+            safe_holds.clear()
+            ordered.append(entry)
+        ordered.extend(safe_holds)
+        return ordered
+
+    def _rolling_protected_robot_ids(self) -> set[str]:
+        """Return robots already owned by a live route-changing transaction."""
+
+        protected: set[str] = set()
+        for record in self.planning_state.jobs.values():
+            status = getattr(record.status, "value", record.status)
+            planning_job = record.job
+            if (
+                status not in {"queued", "running", "completed"}
+                or planning_job is None
+            ):
+                continue
+            protected.update(str(name) for name in planning_job.robot_ids)
+        return protected
+
+    def _rolling_buffer_policy(self) -> RollingBufferPolicy:
+        fleet = self.params.get("fleet", {})
+        if not isinstance(fleet, dict):
+            fleet = {}
+
+        def number(name: str, default: float) -> float:
+            try:
+                return max(0.0, float(fleet.get(name, default) or default))
+            except (TypeError, ValueError):
+                return default
+
+        return RollingBufferPolicy(
+            target_sec=number("rolling_target_buffer_sec", 75.0),
+            refill_sec=number("rolling_refill_threshold_sec", 55.0),
+            urgent_sec=number("rolling_urgent_threshold_sec", 30.0),
+            critical_sec=number("rolling_critical_threshold_sec", 15.0),
+            emergency_sec=number("rolling_emergency_threshold_sec", 5.0),
+            maximum_sec=number("rolling_max_prepared_buffer_sec", 150.0),
+            stagger_window_sec=number("rolling_refill_stagger_window_sec", 8.0),
+        )
+
+    def _observe_rolling_runtime(self, now: float) -> None:
+        """Update bounded refill metrics and report missing route protection."""
+
+        metrics = self.planning_state.rolling_metrics
+        policy = self._rolling_buffer_policy()
+        protected: dict[str, str] = {}
+        route_transaction_robots: set[str] = set()
+        rolling_queued = 0
+        rolling_running = 0
+        for record in self.planning_state.jobs.values():
+            planning_job = record.job
+            if planning_job is None:
+                continue
+            status = record.status.value
+            if status in {"queued", "running", "completed"}:
+                route_transaction_robots.update(
+                    str(robot_id)
+                    for robot_id in planning_job.robot_ids
+                )
+            if planning_job.reason.value != "rolling_continuation":
+                continue
+            if status == "queued":
+                rolling_queued += 1
+            elif status == "running":
+                rolling_running += 1
+            if status in {"queued", "running", "completed"}:
+                for robot_id in planning_job.robot_ids:
+                    protected[str(robot_id)] = planning_job.job_id
+
+        moving = 0
+        eligible = 0
+        urgent = 0
+        critical = 0
+        empty = 0
+        live_robot_ids: set[str] = set()
+        for robot in self._runtime_robots():
+            live_robot_ids.add(robot.name)
+            if robot.status == "MOVING":
+                moving += 1
+            active_order = self.orders.get(robot.active_order_id)
+            final_goal = (
+                self._active_order_target(active_order)
+                if active_order is not None
+                else ""
+            )
+            needs_continuation = bool(
+                active_order is not None
+                and final_goal
+                and robot.route_chunk_goal_lm
+                and robot.route_chunk_goal_lm != final_goal
+            )
+            if not needs_continuation or not robot.trajectory:
+                robot.rolling_refill_status = "idle"
+                robot.rolling_refill_job_id = ""
+                metrics.unprotected_robot_ids.discard(robot.name)
+                metrics.underrun_robot_ids.discard(robot.name)
+                metrics.controlled_corridor_wait_robot_ids.discard(
+                    robot.name
+                )
+                continue
+
+            buffer_sec = robot.route_buffer_seconds
+            metrics.route_buffer_samples.append(buffer_sec)
+            urgency_value = policy.urgency_for(robot.name, buffer_sec)
+            robot.rolling_refill_status = urgency_value.value
+            robot.rolling_refill_job_id = protected.get(robot.name, "")
+            if urgency_value is not RollingRefillUrgency.HEALTHY:
+                eligible += 1
+            if urgency_value is RollingRefillUrgency.URGENT:
+                urgent += 1
+            elif urgency_value is RollingRefillUrgency.CRITICAL:
+                critical += 1
+            elif urgency_value is RollingRefillUrgency.EMPTY:
+                empty += 1
+
+            is_protected = bool(
+                robot.rolling_refill_job_id
+                or robot.pending_route is not None
+                or robot.name in route_transaction_robots
+            )
+            controlled_corridor_wait = (
+                self._robot_waits_for_controlled_corridor(robot)
+            )
+            controlled_corridor_approach = (
+                self._controlled_corridor_approach_assignment(robot)
+                is not None
+            )
+            if controlled_corridor_wait:
+                if robot.name not in metrics.controlled_corridor_wait_robot_ids:
+                    metrics.controlled_corridor_wait_robot_ids.add(robot.name)
+                    metrics.controlled_corridor_wait_events += 1
+            else:
+                metrics.controlled_corridor_wait_robot_ids.discard(robot.name)
+            if (
+                robot.status == "MOVING"
+                and buffer_sec < policy.critical_sec
+                and not is_protected
+                and not controlled_corridor_approach
+            ):
+                if robot.name not in metrics.unprotected_robot_ids:
+                    metrics.unprotected_robot_ids.add(robot.name)
+                    metrics.rolling_buffer_unprotected += 1
+                    self.planning_state.record_event(
+                        "rolling_buffer_unprotected"
+                    )
+                    self._event(
+                        "warn",
+                        f"rolling_buffer_unprotected robot={robot.name} "
+                        f"buffer_sec={buffer_sec:.3f}",
+                    )
+            else:
+                metrics.unprotected_robot_ids.discard(robot.name)
+
+            if (
+                robot.status in {"MOVING", "WAITING"}
+                and buffer_sec <= 0.000001
+                and not controlled_corridor_wait
+                and not controlled_corridor_approach
+            ):
+                if robot.name not in metrics.underrun_robot_ids:
+                    metrics.underrun_robot_ids.add(robot.name)
+                    metrics.rolling_buffer_underruns += 1
+                    metrics.underrun_events.append(
+                        f"robot={robot.name} status={robot.status} "
+                        f"chunk_goal={robot.route_chunk_goal_lm} "
+                        f"final_goal={final_goal} "
+                        f"reason={robot.last_reason}"
+                    )
+                    self.planning_state.record_event(
+                        "rolling_buffer_underrun"
+                    )
+                    self._event(
+                        "error",
+                        f"rolling_buffer_underrun robot={robot.name} "
+                        f"chunk_goal={robot.route_chunk_goal_lm} "
+                        f"final_goal={final_goal}",
+                    )
+            else:
+                metrics.underrun_robot_ids.discard(robot.name)
+
+            waiting_next = bool(
+                robot.status == "WAITING"
+                and robot.last_reason == "rolling continuation pending"
+            )
+            waiting_since = metrics.next_segment_wait_started_at.get(robot.name)
+            if waiting_next and waiting_since is None:
+                metrics.next_segment_wait_started_at[robot.name] = now
+                metrics.next_segment_wait_count += 1
+            elif not waiting_next and waiting_since is not None:
+                duration = max(0.0, now - waiting_since)
+                metrics.next_segment_wait_total_sec += duration
+                metrics.next_segment_wait_max_sec = max(
+                    metrics.next_segment_wait_max_sec,
+                    duration,
+                )
+                metrics.next_segment_wait_started_at.pop(robot.name, None)
+
+            if robot.pending_route is not None:
+                if robot.name not in metrics.pending_route_robot_ids:
+                    metrics.pending_route_robot_ids.add(robot.name)
+                    metrics.pending_route_handoffs += 1
+            else:
+                metrics.pending_route_robot_ids.discard(robot.name)
+
+        metrics.unprotected_robot_ids.intersection_update(live_robot_ids)
+        metrics.underrun_robot_ids.intersection_update(live_robot_ids)
+        metrics.controlled_corridor_wait_robot_ids.intersection_update(
+            live_robot_ids
+        )
+        metrics.pending_route_robot_ids.intersection_update(live_robot_ids)
+        metrics.moving_robot_count = moving
+        metrics.rolling_eligible_count = eligible
+        metrics.rolling_urgent_count = urgent
+        metrics.rolling_critical_count = critical
+        metrics.rolling_empty_count = empty
+        metrics.controlled_corridor_waiting_count = len(
+            metrics.controlled_corridor_wait_robot_ids
+        )
+        metrics.rolling_jobs_queued = rolling_queued
+        metrics.rolling_jobs_running = rolling_running
+        worker_stats = self._planning_worker.stats()
+        metrics.planning_queue_size = worker_stats.queued_jobs
+        metrics.peak_planning_queue_size = max(
+            metrics.peak_planning_queue_size,
+            worker_stats.queued_jobs,
+        )
+        metrics.worker_observations += 1
+        if worker_stats.running_jobs:
+            metrics.worker_busy_observations += 1
+        metrics.planning_worker_utilization = (
+            metrics.worker_busy_observations / metrics.worker_observations
+        )
 
     def _defer_invalid_clearance_route(
         self,
@@ -681,7 +1113,12 @@ class RollingContinuationMixin:
     ) -> list[tuple[FleetOrder, FleetRobot, dict[str, Any], str, float]]:
         collapse_release = self._rolling_full_collapse_release_entries()
         if collapse_release is not None:
-            return collapse_release
+            protected = self._rolling_protected_robot_ids()
+            return [
+                entry
+                for entry in collapse_release
+                if entry[1].name not in protected
+            ]
         candidates = self._rolling_prefetch_candidates()
         if not candidates:
             return []
@@ -717,9 +1154,7 @@ class RollingContinuationMixin:
 
         first = forced_release or candidates[0]
         if float(first[-1]) > 0.000001:
-            # An ahead-of-time continuation has a different prediction offset
-            # from every peer. Keep that inexpensive request independent.
-            return [first]
+            return self._rolling_ahead_prefetch_batch(candidates, first)
 
         motion_key = self._order_motion_key(first[0])
         limit = self._rolling_prefetch_recovery_batch_size()
@@ -796,6 +1231,200 @@ class RollingContinuationMixin:
             max(limit, limit * (2 ** min(4, failures))),
         )
         return endpoint_entries[:limit]
+
+    def _rolling_ahead_prefetch_batch(
+        self,
+        entries: list[RollingPrefetchEntry],
+        first: RollingPrefetchEntry,
+    ) -> list[RollingPrefetchEntry]:
+        """Combine due continuations without enabling fleet-wide CBS.
+
+        The prioritized SIPP backend can efficiently plan several independent
+        requests. We still retain explicit conflict components so a local CBS
+        fallback is allowed only when every batch member belongs to one small
+        connected component.
+        """
+
+        ahead = [entry for entry in entries if float(entry[-1]) > 0.000001]
+        if not ahead:
+            return [first]
+        first_candidate = self._rolling_refill_candidate(first)
+        if first_candidate.urgency in {
+            RollingRefillUrgency.CRITICAL,
+            RollingRefillUrgency.EMPTY,
+        }:
+            # A nearly exhausted route is a latency-sensitive repair.  Do not
+            # make its result depend on unrelated healthy refills in the same
+            # all-or-nothing SIPP call.  Existing routes and reservations stay
+            # in the immutable snapshot, so planning this robot alone does not
+            # remove the other robots from collision checks.
+            return [first]
+        components = self._rolling_conflict_components(ahead)
+        first_name = first[1].name
+        components.sort(
+            key=lambda component: (
+                first_name not in {entry[1].name for entry in component},
+                min(ahead.index(entry) for entry in component),
+            )
+        )
+        limit = self._rolling_normal_batch_size()
+        selected: list[RollingPrefetchEntry] = []
+        for component in components:
+            for entry in component:
+                if len(selected) >= limit:
+                    return selected
+                selected.append(entry)
+        return selected
+
+    def _rolling_normal_batch_size(self) -> int:
+        fleet = self.params.get("fleet", {})
+        if not isinstance(fleet, dict):
+            return 8
+        try:
+            configured = int(fleet.get("rolling_normal_batch_size", 8) or 8)
+        except (TypeError, ValueError):
+            configured = 8
+        return max(1, min(16, configured))
+
+    def _rolling_conflict_components(
+        self,
+        entries: list[RollingPrefetchEntry],
+    ) -> list[list[RollingPrefetchEntry]]:
+        """Group requests sharing future graph or authored traffic resources."""
+
+        if not entries:
+            return []
+        candidates = {
+            entry[1].name: self._rolling_refill_candidate(entry)
+            for entry in entries
+        }
+        entries_by_name = {entry[1].name: entry for entry in entries}
+        adjacency = {name: set() for name in candidates}
+        names = sorted(candidates)
+        for index, name in enumerate(names):
+            candidate = candidates[name]
+            nodes = set(candidate.spatial_suffix)
+            resources = set(candidate.resource_ids)
+            for other_name in names[index + 1:]:
+                other = candidates[other_name]
+                related = bool(
+                    nodes.intersection(other.spatial_suffix)
+                    or resources.intersection(other.resource_ids)
+                )
+                if not related:
+                    continue
+                adjacency[name].add(other_name)
+                adjacency[other_name].add(name)
+        for name in names:
+            for blocker in self._valid_rolling_prefetch_blockers(name):
+                if blocker in adjacency and blocker != name:
+                    adjacency[name].add(blocker)
+                    adjacency[blocker].add(name)
+
+        components: list[list[RollingPrefetchEntry]] = []
+        visited: set[str] = set()
+        order_index = {
+            entry[1].name: index
+            for index, entry in enumerate(entries)
+        }
+        for seed in sorted(names, key=order_index.get):
+            if seed in visited:
+                continue
+            pending = [seed]
+            visited.add(seed)
+            component_names: list[str] = []
+            while pending:
+                name = pending.pop(0)
+                component_names.append(name)
+                neighbours = sorted(
+                    adjacency[name] - visited,
+                    key=order_index.get,
+                )
+                visited.update(neighbours)
+                pending.extend(neighbours)
+            components.append(
+                [entries_by_name[name] for name in component_names]
+            )
+        return components
+
+    def _rolling_refill_candidate(
+        self,
+        entry: RollingPrefetchEntry,
+    ) -> RollingRefillCandidate:
+        order, robot, request, _, buffer_sec = entry
+        raw_nodes = request.get("routeNodes", ())
+        route_nodes = tuple(
+            str(node)
+            for node in (
+                raw_nodes if isinstance(raw_nodes, (list, tuple)) else ()
+            )
+            if str(node)
+        )
+        resources = {f"node:{node}" for node in route_nodes}
+        resources.update(
+            "edge:" + "|".join(sorted((source, target)))
+            for source, target in zip(route_nodes, route_nodes[1:])
+        )
+        try:
+            speed = self.planner._route_speed(request)
+            graph = self.planner._traffic_graph(speed)
+            for node in route_nodes:
+                resources.update(
+                    f"traffic:{resource!r}"
+                    for resource in graph.vertex_resources(node)
+                )
+            for source, target in zip(route_nodes, route_nodes[1:]):
+                lane = graph.lane_for(source, target)
+                if lane is not None:
+                    resources.update(
+                        f"traffic:{resource!r}"
+                        for resource in graph.lane_resources(lane)
+                    )
+        except (AttributeError, TypeError, ValueError):
+            pass
+        requested_start = request.get("reservationStartTimeSec")
+        try:
+            start_time = float(requested_start)
+        except (TypeError, ValueError):
+            start_time = self._now() + max(0.0, float(buffer_sec))
+        return RollingRefillCandidate(
+            robot_id=robot.name,
+            order_id=order.order_id,
+            route_buffer_sec=max(0.0, float(buffer_sec)),
+            requested_start_time=start_time,
+            urgency=self._rolling_buffer_policy().urgency_for(
+                robot.name,
+                buffer_sec,
+            ),
+            spatial_suffix=route_nodes,
+            resource_ids=tuple(sorted(resources)),
+        )
+
+    def _rolling_refill_batches(
+        self,
+        entries: list[RollingPrefetchEntry],
+    ) -> list[RollingRefillBatch]:
+        """Expose deterministic component metadata for tests and diagnostics."""
+
+        batches: list[RollingRefillBatch] = []
+        for index, component in enumerate(
+            self._rolling_conflict_components(entries),
+            start=1,
+        ):
+            candidates = tuple(
+                self._rolling_refill_candidate(entry)
+                for entry in component
+            )
+            names = ",".join(candidate.robot_id for candidate in candidates)
+            batches.append(
+                RollingRefillBatch(
+                    batch_id=f"rolling-{index}:{names}",
+                    candidates=candidates,
+                    priority=PlanningPriority.ROLLING_CONTINUATION,
+                    conflict_component_id=f"rolling-component-{index}",
+                )
+            )
+        return batches
 
     def _rolling_boundary_dependency_component(
         self,
@@ -1140,6 +1769,28 @@ class RollingContinuationMixin:
             time_scale = max(1.0, float(self.simulation_time_scale()))
         except (AttributeError, TypeError, ValueError):
             time_scale = 1.0
+        policy = self._rolling_buffer_policy()
+        urgency = policy.urgency_for(
+            robot.name,
+            robot.route_buffer_seconds,
+        )
+        maximum_retry_delay: float | None = None
+        waits_for_corridor = self._robot_waits_for_controlled_corridor(robot)
+        if (
+            not waits_for_corridor
+            and urgency in {
+                RollingRefillUrgency.CRITICAL,
+                RollingRefillUrgency.EMPTY,
+            }
+        ):
+            time_before_emergency = max(
+                0.0,
+                robot.route_buffer_seconds - policy.emergency_sec,
+            )
+            maximum_retry_delay = max(
+                self._runtime_motion_step(),
+                min(2.0, time_before_emergency * 0.5),
+            )
         self._rolling_continuation_service.defer_prefetch(
             order,
             robot,
@@ -1149,6 +1800,7 @@ class RollingContinuationMixin:
             ),
             time_scale=time_scale,
             retry_multiplier=retry_multiplier,
+            maximum_retry_delay=maximum_retry_delay,
             now=self._now(),
         )
 
@@ -1242,7 +1894,7 @@ class RollingContinuationMixin:
         order: FleetOrder,
         plan: dict[str, Any],
         final_goal: str,
-    ) -> bool:
+    ) -> RollingAppendResult:
         """Atomically append a safe future chunk without touching execution.
 
         A rolling continuation is planned from the current chunk's terminal
@@ -1255,14 +1907,35 @@ class RollingContinuationMixin:
         checking remains authoritative for every future sample.
         """
         current = self._compact_rolling_trajectory_history(robot)
-        continuation = [sample for sample in plan.get("trajectory", []) if isinstance(sample, dict)]
-        if len(current) < 2 or len(continuation) < 2:
-            return False
+        continuation = [
+            dict(sample)
+            for sample in plan.get("trajectory", [])
+            if isinstance(sample, dict)
+        ]
+        # MAPF node times are absolute planning ticks, but the public
+        # trajectory builder deliberately emits time relative to this robot's
+        # handoff. ``rollingStartOffsetSec`` has already constrained SIPP; it
+        # is not a prefix inside this trajectory. Cropping by that offset used
+        # to discard real movement and publish a chunk goal one LM beyond the
+        # executable endpoint.
+        if len(current) < 2:
+            return RollingAppendResult(
+                RollingAppendStatus.INVALID_CURRENT_TRAJECTORY,
+                f"samples={len(current)}",
+            )
+        if len(continuation) < 2:
+            return RollingAppendResult(
+                RollingAppendStatus.INVALID_CONTINUATION,
+                f"samples={len(continuation)}",
+            )
 
         expected_start = robot.route_chunk_goal_lm
         plan_start = str(plan.get("startLm") or "").strip()
         if not expected_start or plan_start != expected_start:
-            return False
+            return RollingAppendResult(
+                RollingAppendStatus.START_LM_MISMATCH,
+                f"expected={expected_start!r} actual={plan_start!r}",
+            )
         current_end = current[-1]
         continuation_start = continuation[0]
         position_gap = math.hypot(
@@ -1271,8 +1944,12 @@ class RollingContinuationMixin:
             float(current_end.get("y", 0.0) or 0.0)
             - float(continuation_start.get("y", 0.0) or 0.0),
         )
-        if position_gap > self._runtime_replan_lm_tolerance():
-            return False
+        position_tolerance = self._runtime_replan_lm_tolerance()
+        if position_gap > position_tolerance:
+            return RollingAppendResult(
+                RollingAppendStatus.POSITION_GAP,
+                f"gap={position_gap:.3f} tolerance={position_tolerance:.3f}",
+            )
 
         current_end_time = float(current_end.get("t", 0.0) or 0.0)
         continuation_start_time = float(continuation_start.get("t", 0.0) or 0.0)
@@ -1285,17 +1962,37 @@ class RollingContinuationMixin:
                 - continuation_start_time,
             )
             appended.append(shifted)
-        if float(appended[-1].get("t", 0.0) or 0.0) <= current_end_time + 0.000001:
-            return False
+        appended_end_time = float(appended[-1].get("t", 0.0) or 0.0)
+        if appended_end_time <= current_end_time + 0.000001:
+            return RollingAppendResult(
+                RollingAppendStatus.NO_TIME_PROGRESS,
+                f"current_end={current_end_time:.3f} "
+                f"appended_end={appended_end_time:.3f}",
+            )
 
         current_nodes = [str(node) for node in robot.plan_nodes]
         continuation_nodes = [str(node) for node in plan.get("nodes", [])]
-        if not current_nodes or not continuation_nodes or current_nodes[-1] != continuation_nodes[0]:
-            return False
-        combined_nodes = current_nodes + continuation_nodes[1:]
-        chunk_goal = str(plan.get("goalLm") or continuation_nodes[-1]).strip()
+        chunk_goal = str(
+            plan.get("goalLm")
+            or (continuation_nodes[-1] if continuation_nodes else "")
+        ).strip()
         if not chunk_goal:
-            return False
+            return RollingAppendResult(RollingAppendStatus.MISSING_GOAL)
+        if (
+            not current_nodes
+            or not continuation_nodes
+            or current_nodes[-1] != continuation_nodes[0]
+        ):
+            current_node = current_nodes[-1] if current_nodes else ""
+            continuation_node = (
+                continuation_nodes[0] if continuation_nodes else ""
+            )
+            return RollingAppendResult(
+                RollingAppendStatus.NODE_MISMATCH,
+                f"current_end={current_node!r} "
+                f"continuation_start={continuation_node!r}",
+            )
+        combined_nodes = current_nodes + continuation_nodes[1:]
 
         robot.trajectory = appended
         robot.trajectory_dirty = True
@@ -1305,6 +2002,7 @@ class RollingContinuationMixin:
         robot.route_chunk_index = max(0, robot.route_chunk_index + 1)
         robot.route_final_lm = str(plan.get("finalGoalLm") or final_goal).strip()
         robot.route_revision = self._next_route_revision()
+        self._commit_controlled_corridor_approach_route(robot, plan)
         robot.pending_route = None
         robot.has_executed_route = True
         robot.status = "MOVING"
@@ -1330,14 +2028,20 @@ class RollingContinuationMixin:
             f"route continuation committed without stop: {order.order_id} "
             f"{robot.name}->{chunk_goal}",
         )
-        return True
+        return RollingAppendResult(RollingAppendStatus.APPENDED)
 
     def _rolling_prefetch_lead(self) -> float:
         fleet = self.params.get("fleet", {})
         if not isinstance(fleet, dict):
             return 5.0
         try:
-            configured = float(fleet.get("rolling_prefetch_lead_sec", 5.0) or 5.0)
+            configured = float(
+                fleet.get(
+                    "rolling_refill_threshold_sec",
+                    fleet.get("rolling_prefetch_lead_sec", 5.0),
+                )
+                or 5.0
+            )
         except (TypeError, ValueError):
             configured = 5.0
         # The planner runs in wall time while route clocks run in simulation

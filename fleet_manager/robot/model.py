@@ -46,6 +46,10 @@ class FleetRobot:
     # perpetually new to the continuation scheduler.
     rolling_boundary_since: float | None = None
     pending_route: dict[str, Any] | None = None
+    rolling_refill_status: str = "idle"
+    rolling_refill_job_id: str = ""
+    rolling_append_status: str = "idle"
+    rolling_append_failure_reason: str = ""
     retreat_target_clock: float | None = None
     retreat_target_lm: str = ""
     retreat_blocked_edges: list[tuple[str, str]] = field(default_factory=list)
@@ -115,6 +119,10 @@ class FleetRobot:
                 else []
             ),
             "rollingBoundarySince": self.rolling_boundary_since,
+            "routeBufferSec": self.route_buffer_seconds,
+            "rollingRefillStatus": self.rolling_refill_status,
+            "rollingRefillJobId": self.rolling_refill_job_id,
+            "rollingAppendStatus": self.rolling_append_status,
             "trafficPriorityUntil": self.traffic_priority_until,
             "waitDependency": (
                 {
@@ -127,6 +135,15 @@ class FleetRobot:
             ),
             "trafficStallSince": self.traffic_stall_since,
         }
+
+    @property
+    def route_buffer_seconds(self) -> float:
+        """Return prepared trajectory time remaining for this robot."""
+
+        if not self.trajectory:
+            return 0.0
+        final_time = float(self.trajectory[-1].get("t", 0.0) or 0.0)
+        return max(0.0, final_time - float(self.route_clock))
 
     def is_remote(self) -> bool:
         return self.mode in {

@@ -51,6 +51,7 @@ class PlanningRequestPreparer:
         requests, start_yaws = self._robot_requests(
             robots,
             speed=speed,
+            planning_time_sec=self._planning_time_sec(payload),
         )
         blocked_edges = self.blocked_edges(payload)
         reserved_vertex_constraints = self.reserved_vertex_constraints(
@@ -121,6 +122,7 @@ class PlanningRequestPreparer:
         robots: list[object],
         *,
         speed: float,
+        planning_time_sec: float,
     ) -> tuple[list[LmRobotRequest], dict[str, float]]:
         requests: list[LmRobotRequest] = []
         start_yaws: dict[str, float] = {}
@@ -133,6 +135,7 @@ class PlanningRequestPreparer:
                 index=index,
                 speed=speed,
                 seen_names=seen_names,
+                planning_time_sec=planning_time_sec,
             )
             requests.append(request)
             start_yaws[request.robot_name] = start_yaw
@@ -145,6 +148,7 @@ class PlanningRequestPreparer:
         index: int,
         speed: float,
         seen_names: set[str],
+        planning_time_sec: float,
     ) -> tuple[LmRobotRequest, float]:
         name = str(item.get("name", "")).strip()
         start_lm = str(
@@ -214,7 +218,10 @@ class PlanningRequestPreparer:
                 goal_lm,
                 start_yaw,
                 route_nodes,
-                self._start_not_before_tick(item),
+                self._start_not_before_tick(
+                    item,
+                    planning_time_sec=planning_time_sec,
+                ),
                 departure_gates,
                 authorized_regions,
                 no_wait_nodes,
@@ -244,12 +251,34 @@ class PlanningRequestPreparer:
         )
         return clean_pose["yaw"]
 
-    def _start_not_before_tick(self, item: dict[str, Any]) -> int:
+    @staticmethod
+    def _planning_time_sec(payload: dict[str, Any]) -> float:
         try:
-            start_not_before_sec = max(
+            return max(
                 0.0,
-                float(item.get("startNotBeforeSec", 0.0) or 0.0),
+                float(payload.get("planningTimeSec", 0.0) or 0.0),
             )
+        except (TypeError, ValueError):
+            return 0.0
+
+    def _start_not_before_tick(
+        self,
+        item: dict[str, Any],
+        *,
+        planning_time_sec: float,
+    ) -> int:
+        try:
+            absolute_start = item.get("reservationStartTimeSec")
+            if absolute_start is None:
+                start_not_before_sec = max(
+                    0.0,
+                    float(item.get("startNotBeforeSec", 0.0) or 0.0),
+                )
+            else:
+                start_not_before_sec = max(
+                    0.0,
+                    float(absolute_start) - planning_time_sec,
+                )
         except (TypeError, ValueError):
             start_not_before_sec = 0.0
         return self._not_before_tick(start_not_before_sec)

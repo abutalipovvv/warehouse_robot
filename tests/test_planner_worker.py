@@ -154,6 +154,52 @@ def test_worker_can_run_a_new_job_after_previous_thread_exits() -> None:
     assert worker.close()
 
 
+def test_submit_during_empty_queue_retirement_starts_a_worker(
+    monkeypatch,
+) -> None:
+    worker = PlanningWorker()
+    retirement_entered = Event()
+    submit_started = Event()
+    second_completed = Event()
+    accepted: list[bool] = []
+    original_retire = worker._retire_current_thread_locked
+
+    def delayed_retire() -> None:
+        retirement_entered.set()
+        assert submit_started.wait(1.0)
+        original_retire()
+
+    monkeypatch.setattr(
+        worker,
+        "_retire_current_thread_locked",
+        delayed_retire,
+    )
+
+    def submit_second() -> None:
+        submit_started.set()
+
+        def solve(job: PlanningJob) -> PlanCandidate:
+            second_completed.set()
+            return _candidate(job)
+
+        accepted.append(
+            worker.submit_job(_planning_job("second"), solve)
+        )
+
+    assert worker.submit_job(_planning_job("first"), _candidate)
+    assert retirement_entered.wait(1.0)
+    submitter = Thread(target=submit_second)
+    submitter.start()
+    submitter.join(1.0)
+
+    assert not submitter.is_alive()
+    assert accepted == [True]
+    assert second_completed.wait(1.0)
+    assert worker.join(timeout=1.0)
+    assert worker.take_completed_results()[1].job_id == "second"
+    assert worker.close()
+
+
 def test_unexpected_task_exception_is_recorded_and_worker_recovers() -> None:
     worker = PlanningWorker()
 
@@ -216,7 +262,7 @@ def test_worker_rejects_invalid_join_timeout(timeout: float) -> None:
     assert worker.close()
 
 
-def test_dispatch_completion_does_not_publish_into_replaced_job(
+def test_dispatch_completion_is_matched_by_job_id_not_compatibility_slot(
     monkeypatch,
 ) -> None:
     manager = _manager()
@@ -246,9 +292,10 @@ def test_dispatch_completion_does_not_publish_into_replaced_job(
     assert manager._planning_worker.join(timeout=1.0)
 
     assert stale_job.kind == "dispatch"
-    assert stale_job.done is False
+    assert stale_job.done is True
     assert stale_job.result is None
-    assert stale_job.candidate is None
+    assert isinstance(stale_job.candidate, PlanCandidate)
+    assert stale_job.candidate.job_id == stale_job.job_id
     assert replacement_job.kind == "prefetch"
     assert replacement_job.done is False
     assert replacement_job.result is None

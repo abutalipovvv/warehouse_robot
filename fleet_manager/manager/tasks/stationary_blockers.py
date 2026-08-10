@@ -170,9 +170,6 @@ class StationaryBlockerRecoveryMixin:
 
     def _queue_commanded_sink_vacancy_replan(self, now: float) -> bool:
         """Open a safe pocket when a queued departure is boxed by its waiters."""
-        if self._async_simulated_dispatch_active():
-            return False
-
         candidates, live_episode_sinks = (
             self._commanded_sink_vacancy_candidates()
         )

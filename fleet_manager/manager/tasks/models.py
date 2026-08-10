@@ -33,6 +33,7 @@ class FleetOrder:
     traffic_detour_attempts: int = 0
     spatial_route_nodes: list[str] = field(default_factory=list)
     spatial_route_revision: int = 0
+    spatial_route_cursor: int = 0
     traffic_blocked_since: float | None = None
     # Maintenance moves use the normal task lifecycle, but operator clients
     # and benchmark counters must not expose them as user orders.
@@ -75,6 +76,7 @@ class FleetOrder:
             ],
             "spatialRouteNodes": self.spatial_route_nodes,
             "spatialRouteRevision": self.spatial_route_revision,
+            "spatialRouteCursor": self.spatial_route_cursor,
             "trafficBlockedSince": self.traffic_blocked_since,
         }
 

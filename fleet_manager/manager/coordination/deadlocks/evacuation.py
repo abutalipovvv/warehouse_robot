@@ -54,6 +54,19 @@ class EvacuationActivationMixin:
                 )
                 else ""
             )
+        search_signature = self._wait_cycle_recovery_signature(
+            "evacuation-search",
+            winner,
+            robots,
+        )
+        if not self._wait_cycle_recovery_ready(search_signature, now):
+            return ""
+        # Candidate discovery audits portal ownership, graph escapes and
+        # footprint geometry.  An unchanged failed search used to repeat on
+        # every short priority lease and consume most of a 100-robot runtime
+        # tick.  Record the graph-stable search itself; route/LM/order changes
+        # produce a different signature and are evaluated immediately.
+        self._record_wait_cycle_recovery_attempt(search_signature, now)
         component, candidates = self._build_deadlock_evacuation_candidates(
             robots,
             winner,

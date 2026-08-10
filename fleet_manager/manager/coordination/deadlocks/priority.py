@@ -196,12 +196,16 @@ class DeadlockPriorityMixin:
             self._transfer_controlled_corridor_lease(terminal, robots, now)
             return True
 
-        if str(terminal.last_reason or "").startswith(
-            ("traffic admission wait at ", "corridor admission wait at ")
+        terminal_reason = str(terminal.last_reason or "")
+        if (
+            terminal_reason == "deadlock recovery pending"
+            or terminal_reason.startswith(
+                ("traffic admission wait at ", "corridor admission wait at ")
+            )
         ):
-            # Admission control already owns this sink. Reissuing a physical
-            # priority lease cannot open the occupied region and used to
-            # count the identical upstream chain again on every physics tick.
+            # Admission control or the wait-cycle recovery debounce already
+            # owns this sink. Reissuing a physical priority lease cannot open
+            # the occupied region and would recreate the same cycle.
             return True
 
         # In an acyclic wait chain only the sink can create space. Granting an

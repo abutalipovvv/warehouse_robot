@@ -404,6 +404,83 @@ def test_future_broadphase_does_not_block_disjoint_adjacent_footprints() -> None
     assert manager._blocked_at_clock(moving, 0.5) == ""
 
 
+def test_immediate_collision_broadphase_skips_only_unreachable_peers(
+    monkeypatch,
+) -> None:
+    manager = _manager()
+    moving = FleetRobot(
+        name="moving",
+        current_lm="A",
+        status="MOVING",
+        pose={"x": 0.0, "y": 0.0, "yaw": 0.0},
+        trajectory=[
+            {"t": 0.0, "x": 0.0, "y": 0.0, "yaw": 0.0},
+            {"t": 1.0, "x": 1.0, "y": 0.0, "yaw": 0.0},
+        ],
+    )
+    peer = FleetRobot(
+        name="peer",
+        current_lm="B",
+        status="MOVING",
+        pose={"x": 100.0, "y": 0.0, "yaw": 0.0},
+        trajectory=[
+            {"t": 0.0, "x": 100.0, "y": 0.0, "yaw": 0.0},
+            {"t": 1.0, "x": 99.0, "y": 0.0, "yaw": 0.0},
+        ],
+    )
+    manager.robots = {moving.name: moving, peer.name: peer}
+    checked: list[str] = []
+
+    def exact_check(robot, other, *args, **kwargs):
+        checked.append(other.name)
+        return ""
+
+    monkeypatch.setattr(manager, "_runtime_peer_conflict_reason", exact_check)
+
+    assert manager._blocked_at_clock(moving, 0.1) == ""
+    assert checked == []
+
+    peer.pose = {"x": 0.5, "y": 0.0, "yaw": 0.0}
+    assert manager._blocked_at_clock(moving, 0.1) == ""
+    assert checked == ["peer"]
+
+
+def test_lookahead_checks_far_peer_only_when_pair_can_reach(
+    monkeypatch,
+) -> None:
+    manager = _manager()
+    manager.params["fleet"]["runtime_collision_lookahead_sec"] = 5.0
+    manager.params.setdefault("navigation", {})["route_speed"] = 1.0
+    moving = FleetRobot(
+        name="moving",
+        current_lm="A",
+        status="MOVING",
+        pose={"x": 0.0, "y": 0.0, "yaw": 0.0},
+        trajectory=[
+            {"t": 0.0, "x": 0.0, "y": 0.0, "yaw": 0.0, "lm": "A"},
+            {"t": 5.0, "x": 5.0, "y": 0.0, "yaw": 0.0, "lm": "B"},
+        ],
+    )
+    peer = FleetRobot(
+        name="peer",
+        current_lm="B",
+        status="WAITING",
+        pose={"x": 4.0, "y": 0.0, "yaw": 0.0},
+    )
+    manager.robots = {moving.name: moving, peer.name: peer}
+    checked_at: list[float] = []
+
+    def exact_check(robot, other, check_clock, *args, **kwargs):
+        checked_at.append(check_clock)
+        return ""
+
+    monkeypatch.setattr(manager, "_runtime_peer_conflict_reason", exact_check)
+
+    assert manager._blocked_ahead(moving, 0.1) == ""
+    assert checked_at
+    assert min(checked_at) > 1.0
+
+
 def test_zero_robot_clearance_allows_safe_adjacent_turns() -> None:
     manager = _manager()
     manager.params.update(
@@ -698,6 +775,14 @@ def test_failed_wait_cycle_lease_is_not_regranted_for_unchanged_snapshot(
         for robot in manager.robots.values()
     )
     assert manager.traffic_metrics["priorityGrants"] == 1
+    assert any(
+        robot.last_reason == "deadlock recovery pending"
+        for robot in manager.robots.values()
+    )
+    assert not (
+        manager.robots["r1"].wait_for_robot == "r2"
+        and manager.robots["r2"].wait_for_robot == "r1"
+    )
 
     # Merely waiting beyond the nominal lease interval is not a new physical
     # episode. Until a route clock, LM, order, or wait dependency changes, the
@@ -2811,6 +2896,46 @@ def test_internal_corridor_without_safe_retreat_keeps_executable_route() -> None
     )
     assert order.traffic_detour_attempts == 0
     assert manager.traffic_metrics["cycleReplans"] == 0
+
+
+def test_failed_evacuation_search_is_not_repeated_during_cooldown(
+    monkeypatch,
+) -> None:
+    manager = _manager()
+    now = time()
+    winner = FleetRobot(name="winner", current_lm="A", status="WAITING")
+    waiter = FleetRobot(name="waiter", current_lm="B", status="WAITING")
+    manager.robots = {winner.name: winner, waiter.name: waiter}
+    searches: list[float] = []
+
+    def no_candidates(*args, **kwargs):
+        searches.append(now)
+        return [winner, waiter], []
+
+    monkeypatch.setattr(
+        manager,
+        "_build_deadlock_evacuation_candidates",
+        no_candidates,
+    )
+
+    assert manager._start_deadlock_corridor_evacuation(
+        [winner, waiter],
+        winner,
+        now,
+    ) == ""
+    assert manager._start_deadlock_corridor_evacuation(
+        [winner, waiter],
+        winner,
+        now + 0.1,
+    ) == ""
+    assert len(searches) == 1
+
+    assert manager._start_deadlock_corridor_evacuation(
+        [winner, waiter],
+        winner,
+        now + manager._wait_cycle_recovery_cooldown() + 0.1,
+    ) == ""
+    assert len(searches) == 2
 
 
 def test_identical_deadlock_detour_is_queued_and_counted_once() -> None:
@@ -8055,6 +8180,12 @@ def test_repeated_dispatch_failure_does_not_absorb_unrelated_robots() -> None:
 
     order.dispatch_failures = 0
     assert manager._dispatch_recovery_group_limit(order, robot, 2) == 1
+    assert not manager._order_plan_payload(
+        order,
+        {"name": "r1", "startLm": "N0", "goalLm": "N1"},
+    )["allowCbsFallback"]
+
+    robot.has_executed_route = False
     assert not manager._order_plan_payload(
         order,
         {"name": "r1", "startLm": "N0", "goalLm": "N1"},
@@ -15028,6 +15159,9 @@ def test_simulation_time_scale_is_clamped_to_safe_range() -> None:
 def test_rolling_window_and_prefetch_deadline_scale_with_simulation_speed() -> None:
     manager = _manager()
     manager.params["fleet"].update({
+        "rolling_target_buffer_sec": 30.0,
+        "rolling_refill_threshold_sec": 8.0,
+        "rolling_max_prepared_buffer_sec": 120.0,
         "rolling_horizon_sec": 30.0,
         "rolling_prefetch_lead_sec": 8.0,
         "rolling_horizon_max_sec": 120.0,

@@ -177,6 +177,15 @@ DEFAULT_ROUTE_PARAMS: dict[str, Any] = {
     "fleet": {
         "reservation_time_step_sec": 1.00,
         "reservation_horizon_sec": 8.00,
+        "rolling_target_buffer_sec": 75.0,
+        "rolling_refill_threshold_sec": 55.0,
+        "rolling_urgent_threshold_sec": 30.0,
+        "rolling_critical_threshold_sec": 15.0,
+        "rolling_emergency_threshold_sec": 5.0,
+        "rolling_max_prepared_buffer_sec": 150.0,
+        "rolling_refill_stagger_window_sec": 8.0,
+        "rolling_normal_batch_size": 12,
+        "planning_queue_max_size": 2,
         "rolling_horizon_scale_with_simulation_time": True,
         "rolling_horizon_max_sec": 120.0,
         "reservation_safety_time_sec": 0.35,
@@ -417,12 +426,52 @@ def _validate_config_consistency(
         "cbs_low_level_max_time",
         "cbs_max_high_level_nodes",
         "cbs_max_planning_time_sec",
+        "rolling_target_buffer_sec",
+        "rolling_refill_threshold_sec",
+        "rolling_urgent_threshold_sec",
+        "rolling_critical_threshold_sec",
+        "rolling_emergency_threshold_sec",
+        "rolling_max_prepared_buffer_sec",
+        "planning_queue_max_size",
     )
     for key in positive:
         if key in fleet and float(fleet[key]) <= 0.0:
             raise ConfigurationError(
                 f"configuration.fleet.{key}: expected value > 0, "
                 f"received {fleet[key]!r}"
+            )
+    queue_size = fleet.get("planning_queue_max_size")
+    if queue_size is not None and (
+        float(queue_size) != int(float(queue_size))
+        or not 1 <= int(float(queue_size)) <= 8
+    ):
+        raise ConfigurationError(
+            "configuration.fleet.planning_queue_max_size: expected integer "
+            f"from 1 to 8, received {queue_size!r}"
+        )
+    rolling_keys = (
+        "rolling_emergency_threshold_sec",
+        "rolling_critical_threshold_sec",
+        "rolling_urgent_threshold_sec",
+        "rolling_refill_threshold_sec",
+        "rolling_target_buffer_sec",
+        "rolling_max_prepared_buffer_sec",
+    )
+    if all(key in fleet for key in rolling_keys):
+        rolling_values = tuple(float(fleet[key]) for key in rolling_keys)
+        ordered = all(
+            current < following
+            for current, following in zip(
+                rolling_values[:-2],
+                rolling_values[1:-1],
+            )
+        )
+        ordered = ordered and rolling_values[-2] <= rolling_values[-1]
+        if not ordered:
+            raise ConfigurationError(
+                "configuration.fleet rolling thresholds: expected "
+                "emergency < critical < urgent < refill < target <= max, "
+                f"received {rolling_values!r}"
             )
     batch = fleet.get("controlled_corridor_max_direction_batch")
     adaptive = fleet.get("controlled_corridor_max_adaptive_direction_batch")

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
+import math
 from typing import Any
 
 from fleet_manager.robot.model import FleetRobot
@@ -22,6 +23,7 @@ class ControlledCorridorRequestCollectionMixin:
         self,
         context: _CentralCorridorBuild,
     ) -> None:
+        self._build_controlled_corridor_downstream_index()
         for robot in self._runtime_robots():
             regions = self._controlled_corridor_physical_regions(
                 context,
@@ -40,6 +42,37 @@ class ControlledCorridorRequestCollectionMixin:
             for region_id, robot_names
             in context.occupancy_by_region.items()
         }
+
+    def _build_controlled_corridor_downstream_index(self) -> None:
+        """Index current and terminal poses for exact exit-blocker checks."""
+
+        bucket_size = max(
+            0.001,
+            float(self.collision.robot_broadphase_distance()),
+        )
+        buckets: dict[tuple[int, int], dict[str, FleetRobot]] = {}
+        for robot in self._runtime_robots():
+            poses: list[dict[str, Any]] = []
+            if robot.pose is not None:
+                poses.append(robot.pose)
+            if robot.trajectory:
+                terminal = robot.trajectory[-1]
+                if isinstance(terminal, dict):
+                    poses.append(terminal)
+            for pose in poses:
+                cell = (
+                    math.floor(
+                        float(pose.get("x", 0.0) or 0.0) / bucket_size
+                    ),
+                    math.floor(
+                        float(pose.get("y", 0.0) or 0.0) / bucket_size
+                    ),
+                )
+                buckets.setdefault(cell, {})[robot.name] = robot
+        self.traffic_state.controlled_corridor_downstream_bucket_size = (
+            bucket_size
+        )
+        self.traffic_state.controlled_corridor_downstream_buckets = buckets
 
     def _controlled_corridor_physical_regions(
         self,
@@ -307,27 +340,31 @@ class ControlledCorridorRequestCollectionMixin:
             intent.get("handoff_at", context.now)
             or context.now
         )
-        synthetic = FleetRobot(
-            name=robot.name,
-            current_lm=str(intent.get("start_lm") or ""),
-            target_lm=raw_request.exit_lm,
-            status="MOVING",
-            active_order_id=order.order_id,
-            pose=(
-                dict(intent["start_pose"])
-                if isinstance(intent.get("start_pose"), dict)
-                else self._pose_at_landmark(
-                    str(intent.get("start_lm") or "")
-                )
-            ),
-            trajectory=[
-                dict(sample)
-                for sample in intent.get("trajectory", ())
-                if isinstance(sample, dict)
-            ],
-            route_clock=-max(0.0, handoff_at - context.now),
-            route_revision=int(robot.route_revision),
-        )
+        synthetic = intent.get("downstream_probe")
+        if not isinstance(synthetic, FleetRobot):
+            synthetic = FleetRobot(
+                name=robot.name,
+                current_lm=str(intent.get("start_lm") or ""),
+                target_lm=raw_request.exit_lm,
+                status="MOVING",
+                active_order_id=order.order_id,
+                pose=(
+                    dict(intent["start_pose"])
+                    if isinstance(intent.get("start_pose"), dict)
+                    else self._pose_at_landmark(
+                        str(intent.get("start_lm") or "")
+                    )
+                ),
+                trajectory=[
+                    dict(sample)
+                    for sample in intent.get("trajectory", ())
+                    if isinstance(sample, dict)
+                ],
+                route_revision=int(robot.route_revision),
+            )
+            intent["downstream_probe"] = synthetic
+        synthetic.route_clock = -max(0.0, handoff_at - context.now)
+        synthetic.route_revision = int(robot.route_revision)
         blocker = self._controlled_corridor_downstream_blocker(
             synthetic,
             raw_request.exit_lm,

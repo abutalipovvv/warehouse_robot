@@ -150,6 +150,23 @@ class TrafficResourceSnapshot:
 
 
 @dataclass(frozen=True, slots=True)
+class PlanningDependencyStamp:
+    """Planning inputs whose owners can invalidate one rolling component.
+
+    A queued order changes the fleet-wide revision, but it cannot invalidate
+    a continuation that was already planned for another robot.  Route
+    revisions, authored traffic ownership and world blockers can invalidate
+    it and are therefore captured explicitly.
+    """
+
+    map_revision: int | str | None = None
+    graph_revision: int | str | None = None
+    robot_route_revisions: tuple[tuple[str, int], ...] = ()
+    traffic_resource_owners: tuple[tuple[str, str, str], ...] = ()
+    world_blockers: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
 class PlanningSnapshot:
     """Complete immutable input for one finite solver transaction."""
 
@@ -164,6 +181,9 @@ class PlanningSnapshot:
     map_revision: int | str | None
     requests: tuple[FrozenMapping, ...]
     primary_payload: FrozenMapping
+    dependency_stamp: PlanningDependencyStamp = field(
+        default_factory=PlanningDependencyStamp
+    )
     fallback_payload: FrozenMapping | None = None
     soft_blocked_lms: tuple[str, ...] = ()
     strict_stationary_avoidance: bool = True
@@ -206,8 +226,12 @@ class PlanningReason(str, Enum):
 
 class PlanningPriority(IntEnum):
     SAFETY_REPLAN = 0
-    DEADLOCK_RECOVERY = 10
-    ROLLING_CONTINUATION = 20
+    ROLLING_EMERGENCY = 5
+    ROLLING_CRITICAL = 10
+    DEADLOCK_RECOVERY = 15
+    ROLLING_URGENT = 20
+    ROLLING_CONTINUATION = 25
+    ROLLING_NORMAL = 25
     ORDER_DISPATCH = 30
     BACKGROUND_OPTIMIZATION = 40
 
@@ -350,6 +374,7 @@ class PlanningJobRecord:
     escape_goal: str = ""
     request: dict[str, Any] | None = None
     vacancy_recovery_signature: tuple[tuple[str, str, int], ...] = ()
+    conflict_component_ids: tuple[str, ...] = ()
 
     def transition_to(self, next_status: PlanningJobStatus) -> None:
         if next_status is self.status:
@@ -375,6 +400,9 @@ class PlanCandidate:
     created_at: float
     finished_at: float
     result: FrozenMapping
+    dependency_stamp: PlanningDependencyStamp = field(
+        default_factory=PlanningDependencyStamp
+    )
     backend_used: str = ""
     plans: tuple[FrozenMapping, ...] = ()
     reservations: tuple[FrozenMapping, ...] = ()
@@ -410,6 +438,7 @@ class PlanCandidate:
             created_at=job.snapshot.created_at,
             finished_at=float(finished_at),
             result=FrozenMapping.from_mapping(result),
+            dependency_stamp=job.snapshot.dependency_stamp,
             backend_used=str(backend_used),
             plans=plans,
             reservations=reservations,
@@ -531,14 +560,18 @@ class PlanCommitService:
         capture: Callable[[], CheckpointT],
         apply: Callable[[], CommitValueT],
         restore: Callable[[CheckpointT], None],
+        is_current: Callable[[], bool] | None = None,
     ) -> PlanCommitResult[CommitValueT]:
-        if candidate.expected_revision != self._current_revision():
+        current = is_current or (
+            lambda: candidate.expected_revision == self._current_revision()
+        )
+        if not current():
             return PlanCommitResult(PlanCommitStatus.STALE)
 
         validate()
         # Validation can observe external robot input, so check again before
         # taking the rollback checkpoint.
-        if candidate.expected_revision != self._current_revision():
+        if not current():
             return PlanCommitResult(PlanCommitStatus.STALE)
 
         checkpoint = capture()

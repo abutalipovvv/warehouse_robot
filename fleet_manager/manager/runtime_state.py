@@ -10,6 +10,7 @@ from fleet_manager.manager.tasks.statuses import TERMINAL_ORDER_STATUSES
 from fleet_manager.manager.tasks.models import FleetOrder
 from fleet_manager.robot.model import FleetRobot
 from fleet_manager.manager.tasks.manager import FleetTaskManager
+from fleet_manager.manager.state import RollingRuntimeMetrics
 from fleet_manager.core.traffic.corridors.scheduling.corridor_models import (
     CorridorSchedulerConfig,
 )
@@ -180,6 +181,10 @@ class FleetManagerStateCompatibilityMixin:
         "traffic_state",
         "controlled_corridor_approach_holds",
     )
+    _controlled_corridor_active_holds = _state_property(
+        "traffic_state",
+        "controlled_corridor_active_holds",
+    )
     _controlled_corridor_winners = _state_property(
         "traffic_state",
         "controlled_corridor_winners",
@@ -253,6 +258,13 @@ class FleetManagerRuntimeStateMixin(FleetManagerStateCompatibilityMixin):
             self._planning_input_fingerprint = (
                 self._planning_state_fingerprint()
             )
+        cancel_stale = getattr(
+            self,
+            "_cancel_stale_queued_planning_jobs",
+            None,
+        )
+        if callable(cancel_stale):
+            cancel_stale(revision)
         return revision
 
     def _synchronize_planning_revision(self) -> int:
@@ -263,9 +275,17 @@ class FleetManagerRuntimeStateMixin(FleetManagerStateCompatibilityMixin):
         if current == previous:
             return self.planning_revision
         self._planning_input_fingerprint = current
-        return self.fleet_state.revision.advance(
+        revision = self.fleet_state.revision.advance(
             "planning input changed during runtime step"
         )
+        cancel_stale = getattr(
+            self,
+            "_cancel_stale_queued_planning_jobs",
+            None,
+        )
+        if callable(cancel_stale):
+            cancel_stale(revision)
+        return revision
 
     def _planning_state_fingerprint(self) -> tuple[Any, ...]:
         """Compact deterministic identity of inputs that can stale a plan."""
@@ -306,7 +326,11 @@ class FleetManagerRuntimeStateMixin(FleetManagerStateCompatibilityMixin):
                     if order.order_id in active_order_ids
                     and order.status
                     not in TERMINAL_ORDER_STATUSES | {"PAUSED"}
-                    else order.status
+                    else (
+                        "PENDING"
+                        if order.status in {"QUEUED", "PLANNING"}
+                        else order.status
+                    )
                 ),
                 order.vehicle,
                 order.assigned_robot,
@@ -386,20 +410,24 @@ class FleetManagerRuntimeStateMixin(FleetManagerStateCompatibilityMixin):
             self.task_manager = FleetTaskManager(value)
 
     def close(self) -> None:
-        """Discard and join the one owned background planning job."""
+        """Discard and join all scheduler-owned planning transactions."""
 
+        jobs = list(self.planning_state.jobs.values())
         with self._dispatch_job_lock:
-            job = self._dispatch_job
-            if job is not None:
-                job.discard = True
+            compatibility_job = self._dispatch_job
+        if compatibility_job is not None and compatibility_job not in jobs:
+            jobs.append(compatibility_job)
+        for job in jobs:
+            job.discard = True
+            if job.job_id:
+                self._planning_worker.cancel_job(job.job_id)
 
         self._planning_worker.close()
 
         with self._dispatch_job_lock:
-            if self._dispatch_job is job:
-                self._dispatch_job = None
+            self._dispatch_job = None
 
-        if job is not None:
+        for job in jobs:
             corridor_gates = job.corridor_gates
             self._release_controlled_corridor_gate_pins(
                 corridor_gates or None
@@ -458,11 +486,14 @@ class FleetManagerRuntimeStateMixin(FleetManagerStateCompatibilityMixin):
         self._controlled_corridor_prefetch_intents.clear()
         self._controlled_corridor_entry_cache.clear()
         self._controlled_corridor_approach_holds.clear()
+        self._controlled_corridor_active_holds.clear()
         self._controlled_corridor_winners.clear()
         self._controlled_corridor_occupancy.clear()
         self._controlled_corridor_queues.clear()
         self._controlled_corridor_blockers.clear()
         self._controlled_corridor_tick_now = 0.0
+        self.traffic_state.controlled_corridor_downstream_bucket_size = 0.0
+        self.traffic_state.controlled_corridor_downstream_buckets.clear()
         self._traffic_zone_wait_since.clear()
         self._traffic_zone_leases.clear()
         self._traffic_zone_phase.clear()
@@ -688,6 +719,7 @@ class FleetManagerRuntimeStateMixin(FleetManagerStateCompatibilityMixin):
         self._controlled_corridor_prefetch_intents.pop(name, None)
         self._controlled_corridor_entry_cache.pop(name, None)
         self._controlled_corridor_approach_holds.pop(name, None)
+        self._controlled_corridor_active_holds.pop(name, None)
         self._traffic_zone_winners.pop(name, None)
         for region_id, lease in list(self._controlled_corridor_leases.items()):
             if isinstance(lease, tuple) and lease and lease[0] == name:
@@ -714,26 +746,31 @@ class FleetManagerRuntimeStateMixin(FleetManagerStateCompatibilityMixin):
         Mark the current result stale and signal cooperative cancellation.
         The dispatcher still discards a solver that cannot stop immediately.
         """
-        cancelled_job_id = ""
+        jobs = list(self.planning_state.jobs.values())
         with self._dispatch_job_lock:
-            if self._dispatch_job is not None:
-                if self._dispatch_job.kind == "dispatch":
-                    for entry in self._dispatch_job.entries:
-                        if not isinstance(entry, tuple) or not entry:
-                            continue
-                        order = entry[0]
-                        if (
-                            isinstance(order, FleetOrder)
-                            and self.orders.get(order.order_id) is order
-                            and order.status == "PLANNING"
-                        ):
-                            order.status = "QUEUED"
-                            order.error = ""
-                            order.updated_at = self._now()
-                self._dispatch_job.discard = True
-                cancelled_job_id = self._dispatch_job.job_id
-        if cancelled_job_id:
-            self._planning_worker.cancel_job(cancelled_job_id)
+            compatibility_job = self._dispatch_job
+        if compatibility_job is not None and compatibility_job not in jobs:
+            jobs.append(compatibility_job)
+        cancelled_job_ids: list[str] = []
+        for job in jobs:
+            if job.kind == "dispatch":
+                for entry in job.entries:
+                    if not isinstance(entry, tuple) or not entry:
+                        continue
+                    order = entry[0]
+                    if (
+                        isinstance(order, FleetOrder)
+                        and self.orders.get(order.order_id) is order
+                        and order.status == "PLANNING"
+                    ):
+                        order.status = "QUEUED"
+                        order.error = ""
+                        order.updated_at = self._now()
+            job.discard = True
+            if job.job_id:
+                cancelled_job_ids.append(job.job_id)
+        for job_id in cancelled_job_ids:
+            self._planning_worker.cancel_job(job_id)
         self._last_async_job_kind = ""
         self._runtime_replans.clear()
         self._rolling_prefetch_retry_at.clear()
@@ -743,6 +780,10 @@ class FleetManagerRuntimeStateMixin(FleetManagerStateCompatibilityMixin):
         self._rolling_prefetch_last_attempt_at.clear()
         for robot in self.robots.values():
             robot.rolling_boundary_since = None
+            robot.rolling_refill_status = "idle"
+            robot.rolling_refill_job_id = ""
+            robot.rolling_append_status = "idle"
+            robot.rolling_append_failure_reason = ""
         self._stationary_order_retry_state.clear()
         self._dispatch_conflict_dependencies.clear()
         self._stationary_clearance_relocations.clear()
@@ -764,6 +805,7 @@ class FleetManagerRuntimeStateMixin(FleetManagerStateCompatibilityMixin):
         self.planning_state.stale_candidates = 0
         self.planning_state.committed_candidates = 0
         self.planning_state.diagnostic_counts.clear()
+        self.planning_state.rolling_metrics = RollingRuntimeMetrics()
         self._runtime_tick_route_clocks.clear()
         self.reset_traffic_flow_state()
         self._advance_planning_revision("planning runtime state reset")

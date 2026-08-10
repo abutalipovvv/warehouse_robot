@@ -403,6 +403,46 @@ class EvacuationGeometryMixin:
             clock += direction * step
         clocks.append(target_clock)
 
+        target_pose = self._pose_at_trajectory(trajectory, target_clock)
+        path_poses = [current_pose]
+        if target_pose is not None:
+            path_poses.append(target_pose)
+        lower_clock = min(start_clock, target_clock)
+        upper_clock = max(start_clock, target_clock)
+        path_poses.extend(
+            sample
+            for sample in trajectory
+            if (
+                lower_clock - 0.000001
+                <= float(sample.get("t", 0.0) or 0.0)
+                <= upper_clock + 0.000001
+            )
+        )
+        margin = max(
+            self.collision.robot_broadphase_distance(),
+            float(self.planner.rotation_min_robot_center_distance_m),
+        ) + 0.05
+        min_x = min(float(pose.get("x", 0.0) or 0.0) for pose in path_poses)
+        max_x = max(float(pose.get("x", 0.0) or 0.0) for pose in path_poses)
+        min_y = min(float(pose.get("y", 0.0) or 0.0) for pose in path_poses)
+        max_y = max(float(pose.get("y", 0.0) or 0.0) for pose in path_poses)
+        other_candidates = [
+            other
+            for other in self._runtime_robots()
+            if (
+                other.name != robot.name
+                and other.pose is not None
+                and min_x - margin
+                <= float(other.pose.get("x", 0.0) or 0.0)
+                <= max_x + margin
+                and min_y - margin
+                <= float(other.pose.get("y", 0.0) or 0.0)
+                <= max_y + margin
+            )
+        ]
+        if not other_candidates:
+            return ""
+
         for check_clock in clocks:
             candidate_pose = self._pose_at_trajectory(
                 trajectory,
@@ -416,9 +456,7 @@ class EvacuationGeometryMixin:
             # run during execution.
             if self._candidate_stays_put(current_pose, candidate_pose):
                 continue
-            for other in self._runtime_robots():
-                if other.name == robot.name or other.pose is None:
-                    continue
+            for other in other_candidates:
                 if not self.collision.robot_footprints_conflict(
                     candidate_pose,
                     other.pose,

@@ -243,13 +243,23 @@ class FleetMotionSafetyMixin:
         unsafe_names: set[str] = set()
         unsafe_pairs: list[tuple[str, str]] = []
         unsafe_pair_details: list[dict[str, Any]] = []
+        broadphase_distance = self.collision.robot_broadphase_distance()
         for index, robot in enumerate(robots):
             for other in robots[index + 1:]:
                 previous_robot_pose = snapshots[robot.name].get("pose")
                 previous_other_pose = snapshots[other.name].get("pose")
-                endpoint_overlap = self.collision.footprints_overlap(
-                    robot.pose,
-                    other.pose,
+                endpoint_distance = math.hypot(
+                    float(robot.pose.get("x", 0.0) or 0.0)
+                    - float(other.pose.get("x", 0.0) or 0.0),
+                    float(robot.pose.get("y", 0.0) or 0.0)
+                    - float(other.pose.get("y", 0.0) or 0.0),
+                )
+                endpoint_overlap = bool(
+                    endpoint_distance <= broadphase_distance
+                    and self.collision.footprints_overlap(
+                        robot.pose,
+                        other.pose,
+                    )
                 )
                 swept_overlap = self._swept_footprints_overlap(
                     previous_robot_pose,

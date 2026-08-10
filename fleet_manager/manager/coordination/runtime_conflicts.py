@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 from typing import Any
+from zlib import crc32
 
 from fleet_manager.manager.tasks.models import FleetOrder
 from fleet_manager.robot.model import FleetRobot
@@ -30,7 +31,7 @@ class RuntimeConflictMixin:
         interval = self._runtime_collision_preflight_interval()
         # A stable per-robot phase prevents all fifty lookahead scans from
         # becoming due on the same physics tick after a batch plan commit.
-        phase = (sum(ord(char) for char in robot.name) % 7) / 7.0
+        phase = (crc32(robot.name.encode("utf-8")) % 1000) / 1000.0
         robot.collision_preflight_revision = robot.route_revision
         robot.collision_preflight_due_at = now + (interval * (0.85 + (phase * 0.30)))
 
@@ -52,8 +53,15 @@ class RuntimeConflictMixin:
         """
         if not robot.trajectory or robot.pose is None:
             return None
-        start_lm = self._safe_replan_start_lm(robot)
-        if start_lm not in self.landmarks:
+        start_lm = robot.current_lm
+        if (
+            start_lm not in self.landmarks
+            or not self._pose_is_at_lm(robot.pose, start_lm)
+        ):
+            # Runtime keeps ``current_lm`` at the last tagged graph sample.
+            # While the body is already on an edge that LM is not a legal
+            # holding point.  A full nearest-node scan here used to cost
+            # O(|V|) for every robot preflight on large warehouse maps.
             return None
 
         graph = self._controlled_corridor_graph
@@ -108,7 +116,10 @@ class RuntimeConflictMixin:
             (self._runtime_robot_speed(other) for other in robot_candidates),
             default=0.0,
         )
-        broadphase = self.collision.robot_broadphase_distance()
+        broadphase = max(
+            self.collision.robot_broadphase_distance(),
+            float(self.planner.rotation_min_robot_center_distance_m),
+        )
         safe_step = (
             broadphase / relative_speed
             if relative_speed > 0.000001
@@ -139,11 +150,37 @@ class RuntimeConflictMixin:
         while clock <= end_clock + 0.000001:
             checks.append(clock)
             clock += step
+        base_clock = self._runtime_tick_route_clocks.get(
+            robot.name,
+            robot.route_clock,
+        )
+        candidate_distances = {
+            other.name: math.hypot(
+                float(robot.pose.get("x", 0.0) or 0.0)
+                - float(other.pose.get("x", 0.0) or 0.0),
+                float(robot.pose.get("y", 0.0) or 0.0)
+                - float(other.pose.get("y", 0.0) or 0.0),
+            )
+            for other in robot_candidates
+            if other.pose is not None and robot.pose is not None
+        }
         for check_clock in checks:
+            prediction_offset = max(0.0, check_clock - base_clock)
+            reachable_distance = (
+                broadphase
+                + (relative_speed * prediction_offset)
+                + 0.05
+            )
+            check_candidates = [
+                other
+                for other in robot_candidates
+                if candidate_distances.get(other.name, 0.0)
+                <= reachable_distance
+            ]
             reason = self._blocked_at_clock(
                 robot,
                 check_clock,
-                robot_candidates=robot_candidates,
+                robot_candidates=check_candidates,
             )
             if reason:
                 return reason
@@ -157,13 +194,27 @@ class RuntimeConflictMixin:
         if robot.pose is None:
             return []
         robot_speed = self._runtime_robot_speed(robot)
-        broadphase = self.collision.robot_broadphase_distance()
+        broadphase = max(
+            self.collision.robot_broadphase_distance(),
+            float(self.planner.rotation_min_robot_center_distance_m),
+        )
         candidates: list[FleetRobot] = []
         for other in self._runtime_robots():
             if other.name == robot.name or other.pose is None:
                 continue
-            other_speed = self._runtime_robot_speed(other) if other.status == "MOVING" else 0.0
-            reachable_distance = broadphase + ((robot_speed + other_speed) * lookahead) + 0.05
+            other_speed = (
+                self._runtime_robot_speed(other)
+                if (
+                    other.trajectory
+                    and other.status in {"MOVING", "WAITING", "RETREATING"}
+                )
+                else 0.0
+            )
+            reachable_distance = (
+                broadphase
+                + ((robot_speed + other_speed) * lookahead)
+                + 0.05
+            )
             center_distance = math.hypot(
                 float(robot.pose.get("x", 0.0) or 0.0)
                 - float(other.pose.get("x", 0.0) or 0.0),
@@ -220,11 +271,19 @@ class RuntimeConflictMixin:
         )
         if reason:
             return reason
-        others = (
-            robot_candidates
-            if robot_candidates is not None
-            else self._runtime_robots()
-        )
+        if robot_candidates is None:
+            # Exact swept-footprint checks are expensive because they
+            # interpolate both trajectories.  A robot farther away than both
+            # bodies can physically travel during this check cannot collide.
+            # Use this circle only as a reject filter; every nearby pair still
+            # goes through the unchanged exact geometry below.
+            candidate_horizon = max(offset, self._runtime_motion_step())
+            others = self._lookahead_robot_candidates(
+                robot,
+                candidate_horizon,
+            )
+        else:
+            others = robot_candidates
         for other in others:
             reason = self._runtime_peer_conflict_reason(
                 robot,
@@ -291,6 +350,20 @@ class RuntimeConflictMixin:
         if other_pose is None:
             return ""
 
+        if future_prediction:
+            center_distance = math.hypot(
+                float(pose.get("x", 0.0) or 0.0)
+                - float(other_pose.get("x", 0.0) or 0.0),
+                float(pose.get("y", 0.0) or 0.0)
+                - float(other_pose.get("y", 0.0) or 0.0),
+            )
+            reject_distance = max(
+                self.collision.robot_broadphase_distance(),
+                float(self.planner.rotation_min_robot_center_distance_m),
+            )
+            if center_distance > reject_distance:
+                return ""
+
         sweep_reason = self._immediate_sweep_conflict_reason(
             robot,
             other,
@@ -314,14 +387,6 @@ class RuntimeConflictMixin:
             return rotation_reason
 
         if future_prediction:
-            center_distance = math.hypot(
-                float(pose.get("x", 0.0) or 0.0)
-                - float(other_pose.get("x", 0.0) or 0.0),
-                float(pose.get("y", 0.0) or 0.0)
-                - float(other_pose.get("y", 0.0) or 0.0),
-            )
-            if center_distance > self.collision.robot_broadphase_distance():
-                return ""
             # The circumscribed circle is reject-only. Adjacent graph lanes
             # can be closer while the oriented rectangular bodies remain
             # disjoint, so exact footprint geometry stays authoritative.
@@ -348,6 +413,8 @@ class RuntimeConflictMixin:
         offset: float,
     ) -> str:
         incremental_dt = max(0.0, check_clock - robot.route_clock)
+        if incremental_dt > self._runtime_motion_step() + 0.000001:
+            return ""
         segment_start_pose = (
             self._pose_at_trajectory(
                 robot.trajectory,
@@ -360,8 +427,7 @@ class RuntimeConflictMixin:
             max(0.0, offset - incremental_dt),
         )
         if (
-            incremental_dt > self._runtime_motion_step() + 0.000001
-            or segment_start_pose is None
+            segment_start_pose is None
             or other_segment_start is None
         ):
             return ""

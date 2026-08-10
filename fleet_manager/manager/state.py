@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import deque
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from typing import Any
@@ -10,6 +11,7 @@ from fleet_manager.manager.events import FleetEvent
 from fleet_manager.robot.model import FleetRobot
 from fleet_manager.manager.planning import (
     FrozenMapping,
+    PlanningDependencyStamp,
     PlanningJobRecord,
     PlanningSnapshot,
     ReservationSnapshot,
@@ -101,6 +103,9 @@ class TrafficState:
     controlled_corridor_approach_holds: dict[str, dict[str, Any]] = field(
         default_factory=dict
     )
+    controlled_corridor_active_holds: dict[str, dict[str, Any]] = field(
+        default_factory=dict
+    )
     controlled_corridor_winners: dict[str, str] = field(default_factory=dict)
     controlled_corridor_occupancy: dict[str, list[str]] = field(
         default_factory=dict
@@ -110,6 +115,11 @@ class TrafficState:
     )
     controlled_corridor_blockers: dict[str, str] = field(default_factory=dict)
     controlled_corridor_tick_now: float = 0.0
+    controlled_corridor_downstream_bucket_size: float = 0.0
+    controlled_corridor_downstream_buckets: dict[
+        tuple[int, int],
+        dict[str, FleetRobot],
+    ] = field(default_factory=dict)
 
     traffic_zone_by_lm: dict[str, Any] = field(default_factory=dict)
     traffic_zone_wait_since: dict[tuple[str, str], float] = field(
@@ -132,6 +142,61 @@ class TrafficState:
 
     metrics: dict[str, int] = field(default_factory=default_traffic_metrics)
     last_runtime_safety_rollback: dict[str, Any] | None = None
+
+
+@dataclass(slots=True)
+class RollingRuntimeMetrics:
+    """Bounded observations for rolling refill health and benchmarks."""
+
+    moving_robot_count: int = 0
+    rolling_eligible_count: int = 0
+    rolling_urgent_count: int = 0
+    rolling_critical_count: int = 0
+    rolling_empty_count: int = 0
+    rolling_jobs_queued: int = 0
+    rolling_jobs_running: int = 0
+    planning_queue_size: int = 0
+    peak_planning_queue_size: int = 0
+    planning_worker_utilization: float = 0.0
+    worker_observations: int = 0
+    worker_busy_observations: int = 0
+    rolling_buffer_unprotected: int = 0
+    rolling_buffer_underruns: int = 0
+    controlled_corridor_waiting_count: int = 0
+    controlled_corridor_wait_events: int = 0
+    rolling_append_failures: int = 0
+    rolling_planner_failures: int = 0
+    rolling_wait_only_plans: int = 0
+    pending_route_handoffs: int = 0
+    rolling_commits_appended: int = 0
+    rolling_commits_pending: int = 0
+    rolling_commits_deferred: int = 0
+    rolling_commits_rejected: int = 0
+    next_segment_wait_count: int = 0
+    next_segment_wait_total_sec: float = 0.0
+    next_segment_wait_max_sec: float = 0.0
+    unprotected_robot_ids: set[str] = field(default_factory=set)
+    underrun_robot_ids: set[str] = field(default_factory=set)
+    controlled_corridor_wait_robot_ids: set[str] = field(
+        default_factory=set
+    )
+    pending_route_robot_ids: set[str] = field(default_factory=set)
+    next_segment_wait_started_at: dict[str, float] = field(default_factory=dict)
+    queue_wait_samples: deque[float] = field(
+        default_factory=lambda: deque(maxlen=4096)
+    )
+    solver_duration_samples: deque[float] = field(
+        default_factory=lambda: deque(maxlen=4096)
+    )
+    route_buffer_samples: deque[float] = field(
+        default_factory=lambda: deque(maxlen=8192)
+    )
+    planning_failure_reasons: deque[str] = field(
+        default_factory=lambda: deque(maxlen=256)
+    )
+    underrun_events: deque[str] = field(
+        default_factory=lambda: deque(maxlen=64)
+    )
 
 
 @dataclass(slots=True)
@@ -163,6 +228,9 @@ class PlanningState:
     committed_candidates: int = 0
     submission_sequence: int = 0
     diagnostic_counts: dict[str, int] = field(default_factory=dict)
+    rolling_metrics: RollingRuntimeMetrics = field(
+        default_factory=RollingRuntimeMetrics
+    )
 
     def record_event(self, event_name: str) -> int:
         clean_name = str(event_name).strip()
@@ -234,6 +302,12 @@ class PlanningSnapshotFactory:
         graph_revision: int | str | None = None,
         map_revision: int | str | None = None,
     ) -> PlanningSnapshot:
+        request_values = list(requests)
+        robot_names = {
+            str(request.get("name") or "")
+            for request in request_values
+            if str(request.get("name") or "")
+        }
         robots = tuple(
             RobotPlanningState.from_robot(robot)
             for robot in sorted(
@@ -247,7 +321,26 @@ class PlanningSnapshotFactory:
                 self.fleet_state.robots.values(),
                 key=lambda item: item.name,
             )
-            if robot.trajectory
+            if robot.trajectory and robot.name in robot_names
+        )
+        traffic_resources = self.traffic_resource_snapshots()
+        dependency_stamp = PlanningDependencyStamp(
+            map_revision=map_revision,
+            graph_revision=graph_revision,
+            robot_route_revisions=tuple(
+                sorted(
+                    (robot.name, int(robot.route_revision))
+                    for robot in self.fleet_state.robots.values()
+                    if robot.name in robot_names
+                )
+            ),
+            traffic_resource_owners=tuple(
+                sorted(
+                    (resource.kind, resource.resource_id, resource.owner)
+                    for resource in traffic_resources
+                )
+            ),
+            world_blockers=self.world_blocker_signature(),
         )
         return PlanningSnapshot(
             revision=self.fleet_state.revision.value,
@@ -255,13 +348,14 @@ class PlanningSnapshotFactory:
             robots=robots,
             active_routes=routes,
             reservations=self._reservations(primary_payload),
-            traffic_resources=self._traffic_resources(),
+            traffic_resources=traffic_resources,
             blockers=tuple(sorted(str(item) for item in blockers)),
             graph_revision=graph_revision,
             map_revision=map_revision,
+            dependency_stamp=dependency_stamp,
             requests=tuple(
                 FrozenMapping.from_mapping(request)
-                for request in requests
+                for request in request_values
             ),
             primary_payload=FrozenMapping.from_mapping(primary_payload),
             fallback_payload=(
@@ -281,6 +375,27 @@ class PlanningSnapshotFactory:
                 sorted(str(item) for item in release_owners)
             ),
         )
+
+    def world_blocker_signature(self) -> tuple[str, ...]:
+        return tuple(sorted(
+            [
+                *(
+                    f"obstacle:{FrozenMapping.from_mapping(item).items!r}"
+                    for item in self.fleet_state.obstacles
+                ),
+                *(
+                    "obstacle_area:"
+                    f"{FrozenMapping.from_mapping(item).items!r}"
+                    for item in self.fleet_state.obstacle_areas
+                ),
+                *(
+                    f"stationary:{landmark}:{owner}"
+                    for landmark, owner in (
+                        self.traffic_state.stationary_blockers.items()
+                    )
+                ),
+            ]
+        ))
 
     @staticmethod
     def _reservations(
@@ -316,7 +431,9 @@ class PlanningSnapshotFactory:
             )
         return tuple(reservations)
 
-    def _traffic_resources(self) -> tuple[TrafficResourceSnapshot, ...]:
+    def traffic_resource_snapshots(
+        self,
+    ) -> tuple[TrafficResourceSnapshot, ...]:
         resources: list[TrafficResourceSnapshot] = []
         for resource_id, lease in sorted(
             self.traffic_state.controlled_corridor_leases.items()

@@ -139,6 +139,28 @@ def test_strict_config_rejects_backend_type_and_contradiction(
         load_route_params(contradiction_path, strict=True)
 
 
+def test_strict_config_rejects_misordered_rolling_thresholds(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "rolling.yaml"
+    _write_yaml(path, {
+        "fleet": {
+            "rolling_emergency_threshold_sec": 3.0,
+            "rolling_critical_threshold_sec": 10.0,
+            "rolling_urgent_threshold_sec": 25.0,
+            "rolling_refill_threshold_sec": 60.0,
+            "rolling_target_buffer_sec": 50.0,
+            "rolling_max_prepared_buffer_sec": 150.0,
+        }
+    })
+
+    with pytest.raises(
+        ConfigurationError,
+        match=r"emergency < critical < urgent < refill < target <= max",
+    ):
+        load_route_params(path, strict=True)
+
+
 def test_compatibility_backend_fallback_emits_warning(capsys) -> None:
     selector = BackendSelector(strict=False)
 

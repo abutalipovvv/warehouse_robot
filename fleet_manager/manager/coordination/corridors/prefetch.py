@@ -394,7 +394,143 @@ class ControlledCorridorPrefetchGateMixin:
         request["goalLm"] = holding_lm
         request["routeNodes"] = route_nodes[: holding_index + 1]
         request.pop("departureNotBefore", None)
+        request["controlledCorridorApproach"] = {
+            "holdingLm": holding_lm,
+            "stagingLm": staging_lm,
+            "orderId": str(
+                intent.get("order_id")
+                or (robot.active_order_id if robot is not None else "")
+                or ""
+            ),
+            "intentSignature": intent.get("signature"),
+        }
         return True
+
+    def _commit_controlled_corridor_approach_route(
+        self,
+        robot: FleetRobot,
+        plan: dict[str, Any],
+    ) -> None:
+        """Bind a safe approach assignment to the committed route revision.
+
+        The holding LM is chosen before the planner runs. Route commit then
+        allocates a new revision, so keeping the old revision makes a valid
+        corridor wait look like an exhausted rolling route on the next tick.
+        """
+        self._controlled_corridor_active_holds.pop(robot.name, None)
+        marker = plan.get("controlledCorridorApproach")
+        if not isinstance(marker, dict):
+            self._controlled_corridor_approach_holds.pop(robot.name, None)
+            return
+
+        holding_lm = str(marker.get("holdingLm") or "").strip()
+        staging_lm = str(marker.get("stagingLm") or "").strip()
+        if (
+            not holding_lm
+            or holding_lm != robot.route_chunk_goal_lm
+            or holding_lm not in self.landmarks
+        ):
+            self._controlled_corridor_approach_holds.pop(robot.name, None)
+            return
+
+        assignment = self._controlled_corridor_approach_holds.get(robot.name)
+        assigned_at = (
+            float(assignment.get("assigned_at", self._now()) or self._now())
+            if isinstance(assignment, dict)
+            else self._now()
+        )
+        self._controlled_corridor_approach_holds[robot.name] = {
+            "lm": holding_lm,
+            "staging_lm": staging_lm,
+            "route_revision": int(robot.route_revision),
+            "order_id": str(
+                marker.get("orderId")
+                or robot.active_order_id
+                or ""
+            ),
+            "intent_signature": marker.get("intentSignature"),
+            "assigned_at": assigned_at,
+        }
+
+    def _controlled_corridor_approach_wait(
+        self,
+        robot: FleetRobot,
+    ) -> dict[str, Any] | None:
+        """Return the live authored holding assignment at its route endpoint."""
+        assignment = self._controlled_corridor_approach_assignment(robot)
+        if assignment is None:
+            return None
+        holding_lm = str(assignment.get("lm") or "").strip()
+        if holding_lm != robot.current_lm:
+            return None
+        return assignment
+
+    def _controlled_corridor_approach_assignment(
+        self,
+        robot: FleetRobot,
+    ) -> dict[str, Any] | None:
+        """Return the revision-bound legal endpoint for this committed route."""
+
+        assignment = self._controlled_corridor_approach_holds.get(robot.name)
+        if not isinstance(assignment, dict):
+            return None
+        holding_lm = str(assignment.get("lm") or "").strip()
+        order_id = str(assignment.get("order_id") or "").strip()
+        if (
+            not holding_lm
+            or holding_lm != robot.route_chunk_goal_lm
+            or int(assignment.get("route_revision", -1))
+            != int(robot.route_revision)
+            or not robot.active_order_id
+            or order_id != robot.active_order_id
+            or robot.route_final_lm == holding_lm
+        ):
+            return None
+        return assignment
+
+    def _robot_waits_for_controlled_corridor(
+        self,
+        robot: FleetRobot,
+    ) -> bool:
+        """Distinguish a legal stop-line hold from missing route refill."""
+        approach_wait = self._controlled_corridor_approach_wait(robot)
+        passage = self._controlled_corridor_passages.get(robot.name)
+        active_hold = self._controlled_corridor_active_holds.get(robot.name)
+        recorded_hold = bool(
+            isinstance(active_hold, dict)
+            and str(active_hold.get("lm") or "") == robot.current_lm
+            and robot.current_lm == robot.route_chunk_goal_lm
+            and int(active_hold.get("route_revision", -1))
+            == int(robot.route_revision)
+            and str(active_hold.get("order_id") or "")
+            == robot.active_order_id
+        )
+        live_staging_wait = bool(
+            isinstance(passage, dict)
+            and not bool(passage.get("entered"))
+            and str(passage.get("staging_lm") or "")
+            == robot.current_lm
+            and robot.current_lm == robot.route_chunk_goal_lm
+            and int(passage.get("route_revision", -1))
+            == int(robot.route_revision)
+        )
+        at_stopped_endpoint = bool(
+            robot.status == "WAITING"
+            and robot.route_buffer_seconds <= 0.000001
+        )
+        return bool(
+            at_stopped_endpoint
+            and recorded_hold
+        ) or bool(
+            at_stopped_endpoint
+            and str(robot.last_reason or "").startswith(
+                "waiting for controlled corridor slot at "
+            )
+            and (
+                approach_wait is not None
+                or live_staging_wait
+            )
+        )
 
     def _controlled_corridor_approach_holding_lm(
         self,

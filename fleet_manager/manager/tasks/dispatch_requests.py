@@ -1297,8 +1297,6 @@ class DispatchRequestBatchMixin:
         return conflicts_by_requester
 
     def _order_plan_payload(self, order: FleetOrder, request: dict[str, Any]) -> dict[str, Any]:
-        robot = self.robots.get(str(request.get("name") or ""))
-        rolling_continuation = bool(robot is not None and robot.has_executed_route)
         recovery_group = int(order.dispatch_failures or 0) >= 2
         # Preparing the request transitions the order to PLANNING and clears
         # its visible error string. The occupancy record is the durable marker
@@ -1314,16 +1312,13 @@ class DispatchRequestBatchMixin:
             # congested request from monopolising Python's GIL and freezing
             # the simulation clock.
             "lowLevelMaxTime": self._runtime_low_level_max_time(),
-            # CBS coordinates a newly released group.  For a continuation the
-            # other robots are fixed time reservations; CBS cannot move them,
-            # so falling back from SIPP only burns several seconds.  Traffic
-            # retries/deadlock priority leases handle that case on a fresh tick.
-            # After repeated failures the dispatcher deliberately builds a
-            # small recovery group, where CBS can coordinate the participants
-            # instead of treating every neighbour as an immutable obstacle.
+            # CBS coordinates a small linked recovery group.  A first attempt
+            # for one robot sees every neighbour as a fixed reservation, so a
+            # CBS fallback cannot move the blocker and only burns several
+            # seconds.  After repeated failures the dispatcher deliberately
+            # builds a bounded group where CBS can coordinate participants.
             "allowCbsFallback": (
-                not rolling_continuation
-                or recovery_group
+                recovery_group
                 or stationary_retry
             ),
             # A robot without an executable trajectory is a physical obstacle,

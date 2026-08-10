@@ -379,7 +379,13 @@ class TrafficReservationMixin:
         try:
             configured = max(
                 0.0,
-                float(fleet.get("rolling_horizon_sec", 10.0) or 0.0),
+                float(
+                    fleet.get(
+                        "rolling_target_buffer_sec",
+                        fleet.get("rolling_horizon_sec", 10.0),
+                    )
+                    or 0.0
+                ),
             )
         except (TypeError, ValueError):
             configured = 10.0
@@ -407,7 +413,13 @@ class TrafficReservationMixin:
         try:
             maximum = max(
                 configured,
-                float(fleet.get("rolling_horizon_max_sec", 120.0) or 120.0),
+                float(
+                    fleet.get(
+                        "rolling_max_prepared_buffer_sec",
+                        fleet.get("rolling_horizon_max_sec", 120.0),
+                    )
+                    or 120.0
+                ),
             )
         except (TypeError, ValueError):
             maximum = max(configured, 120.0)
