@@ -2,9 +2,9 @@
 <package format="3">
   <name>ecom_mobile_robot_description</name>
   <version>0.1.0</version>
-  <description>Ecom mobile robot description adapted to the existing TRP1 ROS interface.</description>
+  <description>Ecom mobile robot description adapted to the existing ROS interface.</description>
 
-  <maintainer email="kaisar.abutlaipov@teleworker.ai">kaisar.abutlaipov</maintainer>
+  <maintainer email="kaisar.abutlaipovv#gmail.com">kaisar.abutlaipov</maintainer>
   <license>Proprietary</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
