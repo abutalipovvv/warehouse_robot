@@ -55,7 +55,10 @@ class RosRuntimeSlamMixin:
             self._latest_map = None
             self._latest_map_at = None
             self._slam_trail = []
-            self._slam_ignore_maps_until = monotonic() + 1.0
+            # The callback already rejects maps outside an active SLAM session.
+            # Waiting here used to drop slam_toolbox's first map and made the
+            # web UI appear frozen until the next map-update interval.
+            self._slam_ignore_maps_until = 0.0
             self._slam_state = {
                 "active": True,
                 "state": "starting",

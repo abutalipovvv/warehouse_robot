@@ -3,6 +3,9 @@ from __future__ import annotations
 import heapq
 import math
 
+import numpy as np
+
+from ..math import TrajectoryMath
 from .models import GraphEdge, Landmark, PlannedRoute, WorldPoint
 from .params import load_route_params
 
@@ -21,7 +24,7 @@ class LmRoutePlanner:
         if not isinstance(planner_params, dict):
             planner_params = {}
         self.default_sample_distance = float(
-            planner_params.get("trajectory_sample_distance", 0.05)
+            planner_params.get("trajectory_sample_distance", 0.01)
         )
         self._adjacency = self._build_adjacency()
         self._edge_by_key = {
@@ -121,23 +124,30 @@ class LmRoutePlanner:
             return self._sample_line(start.to_point(), end.to_point(), sample_distance, edge_id)
 
         points = edge.geometry.control_points
-        approx_length = max(edge.length, sample_distance)
-        steps = max(2, math.ceil(approx_length / sample_distance))
-        samples: list[dict[str, float | str]] = []
-        for step in range(steps + 1):
-            t = step / steps
-            point = self._bezier_point(points, t)
-            tangent = self._bezier_derivative(points, t)
-            samples.append(
-                {
-                    "x": point.x,
-                    "y": point.y,
-                    "yaw": self._motion_yaw(edge, math.atan2(tangent.y, tangent.x)),
-                    "edgeId": edge_id,
-                    "motionDirection": edge.motion_direction_label(edge.motion_direction_code()),
-                }
+        control_matrix = np.asarray(
+            [(point.x, point.y) for point in points],
+            dtype=np.float64,
+        )
+        sampled_xy, derivatives = (
+            TrajectoryMath.sample_cubic_bezier_by_arc_length(
+                control_matrix,
+                sample_distance,
             )
-        return samples
+        )
+        sampled_yaw = np.arctan2(derivatives[:, 1], derivatives[:, 0])
+        if edge.motion_direction_code() == 1:
+            sampled_yaw = TrajectoryMath.normalize_angles(sampled_yaw + math.pi)
+        direction = edge.motion_direction_label(edge.motion_direction_code())
+        return [
+            {
+                "x": float(point[0]),
+                "y": float(point[1]),
+                "yaw": float(yaw),
+                "edgeId": edge_id,
+                "motionDirection": direction,
+            }
+            for point, yaw in zip(sampled_xy, sampled_yaw)
+        ]
 
     def _sample_line(
         self,
@@ -157,48 +167,24 @@ class LmRoutePlanner:
         edge = self._edge_by_key.get(tuple(edge_id.split("->", 1))) if "->" in edge_id else None
         if edge is not None:
             yaw = self._motion_yaw(edge, yaw)
+        ratios = np.linspace(0.0, 1.0, steps + 1, dtype=np.float64)
+        start_vector = np.asarray((start.x, start.y), dtype=np.float64)
+        displacement = np.asarray((dx, dy), dtype=np.float64)
+        sampled_xy = start_vector[None, :] + ratios[:, None] * displacement[None, :]
         return [
             {
-                "x": start.x + dx * (step / steps),
-                "y": start.y + dy * (step / steps),
+                "x": float(point[0]),
+                "y": float(point[1]),
                 "yaw": yaw,
                 "edgeId": edge_id,
-                "motionDirection": edge.motion_direction_label(edge.motion_direction_code()) if edge is not None else "not_specified",
+                "motionDirection": (
+                    edge.motion_direction_label(edge.motion_direction_code())
+                    if edge is not None
+                    else "not_specified"
+                ),
             }
-            for step in range(steps + 1)
+            for point in sampled_xy
         ]
-
-    def _bezier_point(self, control_points, t: float) -> WorldPoint:
-        p0, p1, p2, p3 = control_points
-        omt = 1.0 - t
-        x = (
-            (omt ** 3) * p0.x
-            + 3.0 * (omt ** 2) * t * p1.x
-            + 3.0 * omt * (t ** 2) * p2.x
-            + (t ** 3) * p3.x
-        )
-        y = (
-            (omt ** 3) * p0.y
-            + 3.0 * (omt ** 2) * t * p1.y
-            + 3.0 * omt * (t ** 2) * p2.y
-            + (t ** 3) * p3.y
-        )
-        return WorldPoint(x=x, y=y)
-
-    def _bezier_derivative(self, control_points, t: float) -> WorldPoint:
-        p0, p1, p2, p3 = control_points
-        omt = 1.0 - t
-        dx = (
-            (3.0 * omt * omt * (p1.x - p0.x))
-            + (6.0 * omt * t * (p2.x - p1.x))
-            + (3.0 * t * t * (p3.x - p2.x))
-        )
-        dy = (
-            (3.0 * omt * omt * (p1.y - p0.y))
-            + (6.0 * omt * t * (p2.y - p1.y))
-            + (3.0 * t * t * (p3.y - p2.y))
-        )
-        return WorldPoint(x=dx, y=dy)
 
     def _build_adjacency(self) -> dict[str, list[GraphEdge]]:
         adjacency: dict[str, list[GraphEdge]] = {}
@@ -208,11 +194,8 @@ class LmRoutePlanner:
 
     def _motion_yaw(self, edge: GraphEdge, tangent_yaw: float) -> float:
         if edge.motion_direction_code() == 1:
-            return self._normalize_angle(tangent_yaw + math.pi)
+            return TrajectoryMath.normalize_angle(tangent_yaw + math.pi)
         return tangent_yaw
-
-    def _normalize_angle(self, angle: float) -> float:
-        return (angle + math.pi) % (2.0 * math.pi) - math.pi
 
     def _world_distance(self, first: Landmark, second: Landmark) -> float:
         return math.hypot(second.x - first.x, second.y - first.y)

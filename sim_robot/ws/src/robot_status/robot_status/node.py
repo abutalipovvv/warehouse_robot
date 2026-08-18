@@ -64,6 +64,8 @@ class RobotStatusNode(Node):
         self._last_localization_fix_at: float | None = None
         self._last_manual_cmd_at: float | None = None
         self._executor_state = self._default_executor_state()
+        self._last_reported_localization_ok: bool | None = None
+        self._last_reported_state = ""
 
         self.status_pub = self.create_publisher(RobotStatus, status_topic, 10)
         self.create_subscription(PoseWithCovarianceStamped, amcl_topic, self._on_amcl_pose, AMCL_QOS)
@@ -100,8 +102,15 @@ class RobotStatusNode(Node):
         self._last_manual_cmd_at = monotonic()
 
     def _on_executor_state(self, message: ExecutorState) -> None:
+        route_was_active = bool(self._executor_state.get("routeActive"))
+        route_is_active = bool(message.route_active)
+        if route_was_active and not route_is_active:
+            # Route execution and teleoperation share /cmd_vel.  The last
+            # non-zero PID command must not be mistaken for a fresh manual
+            # command during the short ARRIVED transition.
+            self._last_manual_cmd_at = None
         self._executor_state = {
-            "routeActive": bool(message.route_active),
+            "routeActive": route_is_active,
             "routePaused": bool(message.route_paused),
             "state": str(message.state or ""),
             "message": str(message.message or ""),
@@ -109,6 +118,42 @@ class RobotStatusNode(Node):
             "currentEdgeId": str(message.current_edge_id or ""),
             "routeId": str(message.route_id or ""),
             "routeProgress": float(message.route_progress),
+            "tracking": {
+                "crossTrackError": float(
+                    getattr(message, "cross_track_error", 0.0)
+                ),
+                "headingError": float(
+                    getattr(message, "heading_error", 0.0)
+                ),
+                "remainingDistance": float(
+                    getattr(message, "remaining_distance", 0.0)
+                ),
+                "goalPositionError": float(
+                    getattr(message, "goal_position_error", 0.0)
+                ),
+                "goalYawError": float(
+                    getattr(message, "goal_yaw_error", 0.0)
+                ),
+                "commandedLinear": float(
+                    getattr(message, "commanded_linear", 0.0)
+                ),
+                "commandedAngular": float(
+                    getattr(message, "commanded_angular", 0.0)
+                ),
+                "maxCrossTrackError": float(
+                    getattr(message, "max_cross_track_error", 0.0)
+                ),
+                "meanCrossTrackError": float(
+                    getattr(message, "mean_cross_track_error", 0.0)
+                ),
+                "samples": int(getattr(message, "tracking_samples", 0)),
+                "arrivalStableCycles": int(
+                    getattr(message, "arrival_stable_cycles", 0)
+                ),
+                "arrivalRequiredCycles": int(
+                    getattr(message, "arrival_required_cycles", 0)
+                ),
+            },
         }
 
     def _publish_status(self) -> None:
@@ -221,6 +266,43 @@ class RobotStatusNode(Node):
         status.current_edge_id = str(executor_state.get("currentEdgeId") or "")
         status.route_id = str(executor_state.get("routeId") or "")
         status.route_progress = float(executor_state.get("routeProgress", 0.0) or 0.0)
+        tracking = (
+            executor_state.get("tracking")
+            if isinstance(executor_state.get("tracking"), dict)
+            else {}
+        )
+        status.cross_track_error = float(
+            tracking.get("crossTrackError", 0.0) or 0.0
+        )
+        status.heading_error = float(tracking.get("headingError", 0.0) or 0.0)
+        status.remaining_distance = float(
+            tracking.get("remainingDistance", 0.0) or 0.0
+        )
+        status.goal_position_error = float(
+            tracking.get("goalPositionError", 0.0) or 0.0
+        )
+        status.goal_yaw_error = float(
+            tracking.get("goalYawError", 0.0) or 0.0
+        )
+        status.commanded_linear = float(
+            tracking.get("commandedLinear", 0.0) or 0.0
+        )
+        status.commanded_angular = float(
+            tracking.get("commandedAngular", 0.0) or 0.0
+        )
+        status.max_cross_track_error = float(
+            tracking.get("maxCrossTrackError", 0.0) or 0.0
+        )
+        status.mean_cross_track_error = float(
+            tracking.get("meanCrossTrackError", 0.0) or 0.0
+        )
+        status.tracking_samples = int(tracking.get("samples", 0) or 0)
+        status.arrival_stable_cycles = int(
+            tracking.get("arrivalStableCycles", 0) or 0
+        )
+        status.arrival_required_cycles = int(
+            tracking.get("arrivalRequiredCycles", 0) or 0
+        )
         if pose is not None:
             status.pose_x = float(pose["x"])
             status.pose_y = float(pose["y"])
@@ -228,6 +310,20 @@ class RobotStatusNode(Node):
         status.linear_velocity = float(self._velocity.get("linear", 0.0) or 0.0)
         status.angular_velocity = float(self._velocity.get("angular", 0.0) or 0.0)
         self.status_pub.publish(status)
+        if localization_ok != self._last_reported_localization_ok:
+            self._last_reported_localization_ok = localization_ok
+            if localization_ok:
+                self.get_logger().info(
+                    f"localization ready: map={self.map_id} "
+                    f"pose=({pose['x']:.3f}, {pose['y']:.3f}, {pose['yaw']:.3f})"
+                )
+            else:
+                self.get_logger().warning(
+                    f"localization unavailable: {message or 'map->base_link pose is missing'}"
+                )
+        if state != self._last_reported_state:
+            self._last_reported_state = state
+            self.get_logger().info(f"robot state: {state} - {message}")
 
     def _default_executor_state(self) -> dict[str, object]:
         return {
@@ -239,6 +335,7 @@ class RobotStatusNode(Node):
             "currentEdgeId": "",
             "routeId": "",
             "routeProgress": 0.0,
+            "tracking": {},
         }
 
     def _handle_load_map(self, request, response):

@@ -334,7 +334,18 @@ class RosRuntimeControlMixin:
     def _route_payload_from_request(self, payload: dict[str, Any]) -> dict[str, Any]:
         route_payload = payload.get("route")
         if isinstance(route_payload, dict):
-            return route_payload
+            return dict(route_payload)
+
+        # ExecuteRoute transports route_json as a top-level object and appends
+        # command/ownership fields.  A supplied MAPF route must reach the robot
+        # planner unchanged; only goal-only requests are planned locally.
+        protocol = str(payload.get("protocol") or payload.get("routeProtocol") or "").strip().lower()
+        nodes = payload.get("nodes") or payload.get("routeNodes") or payload.get("route_nodes")
+        if protocol in {"lm_route", "lm-route", "lmroute"} or isinstance(nodes, list):
+            explicit_route = dict(payload)
+            for key in ("ownerId", "owner_id", "commandId", "command_id", "order"):
+                explicit_route.pop(key, None)
+            return explicit_route
 
         goal_lm = str(payload.get("goalLm") or payload.get("targetLm") or "").strip()
         if not goal_lm:

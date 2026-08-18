@@ -13,7 +13,7 @@ setup(
         ("share/ament_index/resource_index/packages", [f"resource/{package_name}"]),
         (f"share/{package_name}", ["package.xml"]),
     ],
-    install_requires=["setuptools"],
+    install_requires=["setuptools", "numpy>=1.24"],
     zip_safe=True,
     maintainer="ros",
     maintainer_email="kaisar.abutalipovv@gmail.com",

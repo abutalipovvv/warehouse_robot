@@ -299,7 +299,11 @@ class GrpcRobotRuntimeMixin:
         order: FleetOrder,
         plan: dict[str, Any],
     ) -> dict[str, Any]:
-        full_nodes = [str(item) for item in plan.get("nodes", []) if str(item)]
+        full_nodes: list[str] = []
+        for item in plan.get("nodes", []):
+            node = str(item).strip()
+            if node and (not full_nodes or full_nodes[-1] != node):
+                full_nodes.append(node)
         start_lm = str(plan.get("startLm") or order.start_lm or (full_nodes[0] if full_nodes else ""))
         final_goal_lm = str(plan.get("goalLm") or order.target_lm or (full_nodes[-1] if full_nodes else ""))
         if not full_nodes and start_lm and final_goal_lm:
@@ -423,11 +427,11 @@ class GrpcRobotRuntimeMixin:
     def _remote_route_chunk_lms(self) -> int:
         fleet = self.params.get("fleet", {})
         if not isinstance(fleet, dict):
-            return 5
+            return 0
         try:
-            return max(0, int(fleet.get("remote_route_chunk_lms", 5) or 0))
+            return max(0, int(fleet.get("remote_route_chunk_lms", 0) or 0))
         except (TypeError, ValueError):
-            return 5
+            return 0
 
     def _next_remote_chunk_index(self, robot: FleetRobot, order: FleetOrder, chunk_start_lm: str) -> int:
         if robot.route_final_lm == order.target_lm:

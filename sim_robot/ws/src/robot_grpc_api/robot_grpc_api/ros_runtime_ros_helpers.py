@@ -66,6 +66,7 @@ class RosRuntimeMessageServiceMixin:
                 "currentEdgeId": "",
                 "routeId": "",
                 "routeProgress": 0.0,
+                "tracking": {},
                 "pose": None,
                 "velocity": {"linear": 0.0, "angular": 0.0},
                 "battery": None,
@@ -93,6 +94,40 @@ class RosRuntimeMessageServiceMixin:
             "currentEdgeId": str(getattr(message, "current_edge_id", "") or ""),
             "routeId": str(getattr(message, "route_id", "") or ""),
             "routeProgress": float(getattr(message, "route_progress", 0.0)),
+            "tracking": {
+                "crossTrackError": float(
+                    getattr(message, "cross_track_error", 0.0)
+                ),
+                "headingError": float(getattr(message, "heading_error", 0.0)),
+                "remainingDistance": float(
+                    getattr(message, "remaining_distance", 0.0)
+                ),
+                "goalPositionError": float(
+                    getattr(message, "goal_position_error", 0.0)
+                ),
+                "goalYawError": float(
+                    getattr(message, "goal_yaw_error", 0.0)
+                ),
+                "commandedLinear": float(
+                    getattr(message, "commanded_linear", 0.0)
+                ),
+                "commandedAngular": float(
+                    getattr(message, "commanded_angular", 0.0)
+                ),
+                "maxCrossTrackError": float(
+                    getattr(message, "max_cross_track_error", 0.0)
+                ),
+                "meanCrossTrackError": float(
+                    getattr(message, "mean_cross_track_error", 0.0)
+                ),
+                "samples": int(getattr(message, "tracking_samples", 0)),
+                "arrivalStableCycles": int(
+                    getattr(message, "arrival_stable_cycles", 0)
+                ),
+                "arrivalRequiredCycles": int(
+                    getattr(message, "arrival_required_cycles", 0)
+                ),
+            },
             "pose": pose,
             "velocity": {
                 "linear": float(getattr(message, "linear_velocity", 0.0)),

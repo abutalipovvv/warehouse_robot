@@ -2,17 +2,19 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 from pathlib import Path
 
 import rclpy
-from geometry_msgs.msg import Twist
+from geometry_msgs.msg import PoseWithCovarianceStamped, Twist
+from nav_msgs.msg import Odometry
 from rclpy.node import Node
 
 from robot_msgs.msg import ExecutorState, RobotStatus
 from robot_msgs.srv import CancelRoute, ExecuteRoute, LoadRobotMap, PlanRoute, SetRoutePaused
 
-from .executor import RouteExecutor
-from .route_planner import RobotTrajectoryPlanner
+from .execution import RouteExecutor
+from .planning import RobotTrajectoryPlanner
 from .runtime import PlannedRobotRoute, Pose2D, RobotRuntime, route_update_is_stale
 
 
@@ -23,6 +25,8 @@ class RobotRouteNode(Node):
         route_planner: RobotTrajectoryPlanner,
         *,
         cmd_vel_topic: str,
+        odom_topic: str,
+        initial_pose_topic: str,
         status_topic: str,
         executor_status_topic: str,
         plan_service_name: str,
@@ -36,16 +40,34 @@ class RobotRouteNode(Node):
         self.route_planner = route_planner
         self._cmd_vel_pub = self.create_publisher(Twist, cmd_vel_topic, 20)
         self._executor_state_pub = self.create_publisher(ExecutorState, executor_status_topic, 20)
-        self._executor = RouteExecutor(runtime, route_planner, self._publish_cmd_vel)
+        self._executor = RouteExecutor(
+            runtime,
+            route_planner,
+            self._publish_cmd_vel,
+            logger=self.get_logger(),
+        )
         self._latest_status = self._default_status_payload()
+        self._latest_odom_pose: dict[str, float] | None = None
         self._last_motion_command = False
         self.create_subscription(RobotStatus, status_topic, self._on_robot_status, 20)
+        self.create_subscription(Odometry, odom_topic, self._on_odom, 20)
+        self.create_subscription(
+            PoseWithCovarianceStamped,
+            initial_pose_topic,
+            self._on_initial_pose,
+            10,
+        )
         self.create_service(PlanRoute, plan_service_name, self._handle_plan_route)
         self.create_service(ExecuteRoute, execute_service_name, self._handle_execute_route)
         self.create_service(CancelRoute, cancel_service_name, self._handle_cancel_route)
         self.create_service(SetRoutePaused, pause_service_name, self._handle_set_route_paused)
         self.create_service(LoadRobotMap, load_map_service_name, self._handle_load_map)
         self.create_timer(0.05, self._control_step)
+        self.get_logger().info(
+            f"ready: robot={runtime.robot_id} map={route_planner.map_id} "
+            f"LMs={len(route_planner.loaded_map.landmarks)} "
+            f"edges={len(route_planner.loaded_map.edges)}"
+        )
 
     def _on_robot_status(self, message: RobotStatus) -> None:
         self._latest_status = {
@@ -74,10 +96,56 @@ class RobotRouteNode(Node):
 
     def _control_step(self) -> None:
         had_motion = self._last_motion_command
-        self._executor.control_step(self._latest_status)
+        status = dict(self._latest_status)
+        status["odomPose"] = self._latest_odom_pose
+        self._executor.control_step(status)
         if had_motion and not self._command_is_active():
             self._publish_cmd_vel(0.0, 0.0)
         self._publish_executor_state()
+
+    def _on_odom(self, message: Odometry) -> None:
+        pose = message.pose.pose
+        rotation = pose.orientation
+        siny_cosp = 2.0 * (
+            (rotation.w * rotation.z) + (rotation.x * rotation.y)
+        )
+        cosy_cosp = 1.0 - 2.0 * (
+            (rotation.y * rotation.y) + (rotation.z * rotation.z)
+        )
+        self._latest_odom_pose = {
+            "x": float(pose.position.x),
+            "y": float(pose.position.y),
+            "yaw": math.atan2(siny_cosp, cosy_cosp),
+        }
+
+    def _on_initial_pose(self, message: PoseWithCovarianceStamped) -> None:
+        """Reset local tracking when AMCL is explicitly relocated."""
+
+        pose = message.pose.pose
+        rotation = pose.orientation
+        siny_cosp = 2.0 * (
+            (rotation.w * rotation.z) + (rotation.x * rotation.y)
+        )
+        cosy_cosp = 1.0 - 2.0 * (
+            (rotation.y * rotation.y) + (rotation.z * rotation.z)
+        )
+        ros_pose = Pose2D(
+            x=float(pose.position.x),
+            y=float(pose.position.y),
+            yaw=math.atan2(siny_cosp, cosy_cosp),
+        )
+        map_pose = self.route_planner.ros_pose_to_map(ros_pose)
+        anchored = self._executor.reanchor_pose(
+            map_pose,
+            self._latest_odom_pose,
+        )
+        if self.runtime.active_route() is not None:
+            self.runtime.cancel_route("Pose relocated.")
+        self._publish_cmd_vel(0.0, 0.0)
+        self.get_logger().info(
+            "pose relocated: local odom tracking "
+            f"{'reanchored' if anchored else 'will anchor when odom is available'}"
+        )
 
     def _command_is_active(self) -> bool:
         snapshot = self.runtime.snapshot()
@@ -93,6 +161,7 @@ class RobotRouteNode(Node):
                 y=float(request.start_y),
                 yaw=float(request.start_yaw),
             )
+            pose = self._preferred_planning_pose(pose)
             start_lm = str(request.start_lm or "").strip() or None
             route = self.route_planner.plan_from_pose(
                 pose=pose,
@@ -102,10 +171,15 @@ class RobotRouteNode(Node):
             response.ok = True
             response.error = ""
             response.route_json = json.dumps(route.to_dict(), ensure_ascii=False)
+            self.get_logger().info(
+                f"route planned: {route.start_lm}->{route.goal_lm} "
+                f"nodes={len(route.nodes)} length={route.length:.2f}m"
+            )
         except Exception as exc:  # pragma: no cover - ROS service boundary
             response.ok = False
             response.error = str(exc)
             response.route_json = ""
+            self.get_logger().warning(f"route planning failed: {exc}")
         return response
 
     def _handle_execute_route(self, request, response):
@@ -134,26 +208,55 @@ class RobotRouteNode(Node):
                 "info",
                 f"{verb} route {route.route_id} rev {route.revision} -> {route.goal_lm}",
             )
+            self.get_logger().info(
+                f"route accepted: id={route.route_id} rev={route.revision} "
+                f"goal={route.goal_lm} replace={replacing}"
+            )
             response.ok = True
             response.error = ""
             self._publish_executor_state()
         except Exception as exc:  # pragma: no cover - ROS service boundary
             response.ok = False
             response.error = str(exc)
+            self.get_logger().warning(f"route execution rejected: {exc}")
         return response
 
     def _route_from_execute_payload(self, payload: dict[str, object]) -> PlannedRobotRoute:
         if self._is_lm_route_payload(payload):
             pose_payload = self._latest_status.get("pose")
-            if not isinstance(pose_payload, dict):
-                raise ValueError("robot pose is not available yet")
-            pose = Pose2D(
-                x=float(pose_payload.get("x", 0.0) or 0.0),
-                y=float(pose_payload.get("y", 0.0) or 0.0),
-                yaw=float(pose_payload.get("yaw", 0.0) or 0.0),
+            localized_pose = (
+                Pose2D(
+                    x=float(pose_payload.get("x", 0.0) or 0.0),
+                    y=float(pose_payload.get("y", 0.0) or 0.0),
+                    yaw=float(pose_payload.get("yaw", 0.0) or 0.0),
+                )
+                if isinstance(pose_payload, dict)
+                else None
             )
+            pose = self._preferred_planning_pose(localized_pose)
+            if pose is None:
+                raise ValueError("robot pose is not available yet")
             return self.route_planner.plan_from_lm_route(pose, payload)
         return PlannedRobotRoute.from_dict(payload)
+
+    def _preferred_planning_pose(
+        self,
+        localized_pose: Pose2D | None,
+    ) -> Pose2D | None:
+        """Use the same continuous pose for planning and local tracking."""
+
+        navigation = self.route_planner.current_params().get(
+            "navigation",
+            {},
+        )
+        tracking_pose = self._executor.latest_tracking_pose()
+        if (
+            tracking_pose is not None
+            and isinstance(navigation, dict)
+            and bool(navigation.get("odom_tracking_enabled", True))
+        ):
+            return tracking_pose
+        return localized_pose
 
     def _is_lm_route_payload(self, payload: dict[str, object]) -> bool:
         protocol = str(payload.get("protocol") or payload.get("routeProtocol") or "").strip().lower()
@@ -169,6 +272,7 @@ class RobotRouteNode(Node):
             self.runtime.cancel_route(message)
             self._publish_cmd_vel(0.0, 0.0)
             self.runtime.add_event("warn", "route canceled")
+            self.get_logger().warning(f"route canceled: {message}")
             response.ok = True
             response.error = ""
             self._publish_executor_state()
@@ -185,8 +289,10 @@ class RobotRouteNode(Node):
             if paused:
                 self._publish_cmd_vel(0.0, 0.0)
                 self.runtime.add_event("warn", "route paused")
+                self.get_logger().warning(f"route paused: {message or 'operator request'}")
             else:
                 self.runtime.add_event("info", "route resumed")
+                self.get_logger().info(f"route resumed: {message or 'operator request'}")
             response.ok = True
             response.error = ""
             self._publish_executor_state()
@@ -202,11 +308,15 @@ class RobotRouteNode(Node):
                 raise ValueError(f"map_dir does not exist: {map_dir}")
             self.runtime.cancel_route("Map changed.")
             self._publish_cmd_vel(0.0, 0.0)
+            self._executor.reset_pose_anchor()
             self.route_planner.reload_params_from_disk()
             self.route_planner.reload_map(map_dir)
             self.runtime.set_map(self.route_planner.map_id)
             event = f"map reloaded: {self.route_planner.map_id}"
             self.runtime.add_event("warn", event)
+            self.get_logger().info(
+                f"map loaded: id={self.route_planner.map_id} dir={self.route_planner.map_dir}"
+            )
             response.ok = True
             response.error = ""
             response.map_name = str(request.map_name or self.route_planner.map_id)
@@ -231,6 +341,11 @@ class RobotRouteNode(Node):
     def _publish_executor_state(self) -> None:
         snapshot = self.runtime.snapshot()
         route = snapshot.get("route") if isinstance(snapshot.get("route"), dict) else None
+        tracking = (
+            snapshot.get("tracking")
+            if isinstance(snapshot.get("tracking"), dict)
+            else {}
+        )
         message = ExecutorState()
         message.stamp = self.get_clock().now().to_msg()
         message.robot_id = self.runtime.robot_id
@@ -243,6 +358,38 @@ class RobotRouteNode(Node):
         message.current_edge_id = str(snapshot.get("currentEdgeId") or "")
         message.route_id = str(route.get("routeId") or "") if isinstance(route, dict) else ""
         message.route_progress = float(snapshot.get("routeProgress", 0.0) or 0.0)
+        message.cross_track_error = float(
+            tracking.get("crossTrackError", 0.0) or 0.0
+        )
+        message.heading_error = float(tracking.get("headingError", 0.0) or 0.0)
+        message.remaining_distance = float(
+            tracking.get("remainingDistance", 0.0) or 0.0
+        )
+        message.goal_position_error = float(
+            tracking.get("goalPositionError", 0.0) or 0.0
+        )
+        message.goal_yaw_error = float(
+            tracking.get("goalYawError", 0.0) or 0.0
+        )
+        message.commanded_linear = float(
+            tracking.get("commandedLinear", 0.0) or 0.0
+        )
+        message.commanded_angular = float(
+            tracking.get("commandedAngular", 0.0) or 0.0
+        )
+        message.max_cross_track_error = float(
+            tracking.get("maxCrossTrackError", 0.0) or 0.0
+        )
+        message.mean_cross_track_error = float(
+            tracking.get("meanCrossTrackError", 0.0) or 0.0
+        )
+        message.tracking_samples = int(tracking.get("samples", 0) or 0)
+        message.arrival_stable_cycles = int(
+            tracking.get("arrivalStableCycles", 0) or 0
+        )
+        message.arrival_required_cycles = int(
+            tracking.get("arrivalRequiredCycles", 0) or 0
+        )
         self._executor_state_pub.publish(message)
 
     def _default_status_payload(self) -> dict[str, object]:
@@ -270,6 +417,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--params", required=True, type=Path)
     parser.add_argument("--robot-id", default="robot1")
     parser.add_argument("--cmd-vel-topic", default="/cmd_vel")
+    parser.add_argument("--odom-topic", default="/odom")
+    parser.add_argument("--initial-pose-topic", default="/initialpose")
     parser.add_argument("--status-topic", default="/robot_status")
     parser.add_argument("--executor-status-topic", default="/route/executor_state")
     parser.add_argument("--plan-service", default="/route/plan")
@@ -293,6 +442,8 @@ def main() -> None:
         runtime=runtime,
         route_planner=route_planner,
         cmd_vel_topic=args.cmd_vel_topic,
+        odom_topic=args.odom_topic,
+        initial_pose_topic=args.initial_pose_topic,
         status_topic=args.status_topic,
         executor_status_topic=args.executor_status_topic,
         plan_service_name=args.plan_service,

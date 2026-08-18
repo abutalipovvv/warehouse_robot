@@ -248,6 +248,12 @@ class RosRuntimeLifecycleMixin:
             from nav2_msgs.srv import ManageLifecycleNodes
             from rclpy.executors import SingleThreadedExecutor
             from rclpy.node import Node
+            from rclpy.qos import (
+                DurabilityPolicy,
+                HistoryPolicy,
+                QoSProfile,
+                ReliabilityPolicy,
+            )
             from rclpy.time import Time
             from rcl_interfaces.msg import Parameter, ParameterType, ParameterValue
             from rcl_interfaces.srv import ListParameters, SetParameters
@@ -314,7 +320,13 @@ class RosRuntimeLifecycleMixin:
             node.create_subscription(RobotStatus, self.status_topic, self._on_status, 10)
             node.create_subscription(Odometry, self.odom_topic, self._on_odom, 20)
             node.create_subscription(LaserScan, self.scan_topic, self._on_scan, 10)
-            node.create_subscription(OccupancyGrid, self.map_topic, self._on_map, 1)
+            map_qos = QoSProfile(
+                history=HistoryPolicy.KEEP_LAST,
+                depth=1,
+                reliability=ReliabilityPolicy.RELIABLE,
+                durability=DurabilityPolicy.TRANSIENT_LOCAL,
+            )
+            node.create_subscription(OccupancyGrid, self.map_topic, self._on_map, map_qos)
             executor = SingleThreadedExecutor(context=context)
             executor.add_node(node)
             thread = threading.Thread(
@@ -403,8 +415,16 @@ class RosRuntimeLifecycleMixin:
                 return
             if monotonic() < self._slam_ignore_maps_until:
                 return
+            first_live_map = self._latest_map is None
             self._latest_map = message
             self._latest_map_at = monotonic()
+        if first_live_map and self._node is not None:
+            info = getattr(message, "info", None)
+            self._node.get_logger().info(
+                f"SLAM map stream ready: topic={self.map_topic} "
+                f"size={int(getattr(info, 'width', 0) or 0)}x"
+                f"{int(getattr(info, 'height', 0) or 0)}"
+            )
 
     def _odom_pose_payload(self, message: Any) -> dict[str, float] | None:
         try:

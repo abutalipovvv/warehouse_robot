@@ -4,17 +4,11 @@ import math
 from pathlib import Path
 from typing import Any
 
-from .route_core import LmRoutePlanner, PlannedRoute, WarehouseMapLoader, WorldPoint, load_route_params
+from ..math import TrajectoryMath
+from ..route_core import LmRoutePlanner, PlannedRoute, WarehouseMapLoader, WorldPoint, load_route_params
 
-from .runtime import PlannedRobotRoute, Pose2D, RoutePoint
-
-
-def normalize_angle(angle: float) -> float:
-    return math.atan2(math.sin(angle), math.cos(angle))
-
-
-def clamp(value: float, low: float, high: float) -> float:
-    return max(low, min(high, value))
+from ..runtime import PlannedRobotRoute, Pose2D, RoutePoint
+from .route_contract import MapfRoutePlan
 
 
 class RobotTrajectoryPlanner:
@@ -122,7 +116,13 @@ class RobotTrajectoryPlanner:
         planner_params = self.params.get("planner", {})
         if not isinstance(planner_params, dict):
             planner_params = {}
-        sample_distance = max(0.02, float(planner_params.get("trajectory_sample_distance", 0.05) or 0.05))
+        sample_distance = max(
+            0.005,
+            float(
+                planner_params.get("trajectory_sample_distance", 0.01)
+                or 0.01
+            ),
+        )
         tolerance = max(0.01, float(planner_params.get("nearest_lm_tolerance", 0.05) or 0.05))
         on_route_tolerance = max(0.02, float(planner_params.get("on_route_tolerance", 0.12) or 0.12))
 
@@ -186,20 +186,18 @@ class RobotTrajectoryPlanner:
 
     def plan_from_lm_route(self, pose: Pose2D, route_payload: dict[str, Any]) -> PlannedRobotRoute:
         self.reload_params_from_disk()
-        nodes = self._lm_route_nodes(route_payload)
+        contract = MapfRoutePlan.from_payload(route_payload)
+        self._validate_route_contract(contract)
+        nodes = list(contract.nodes)
         if not nodes:
-            goal_lm = str(route_payload.get("goalLm") or route_payload.get("goal_lm") or route_payload.get("targetLm") or "").strip()
-            start_lm = str(route_payload.get("startLm") or route_payload.get("start_lm") or "").strip() or None
-            route = self.plan_from_pose(pose=pose, goal_lm=goal_lm, start_lm=start_lm)
+            route = self.plan_from_pose(
+                pose=pose,
+                goal_lm=contract.goal_lm,
+                start_lm=contract.start_lm or None,
+            )
             return self._apply_route_metadata(route, route_payload)
 
-        start_lm = str(route_payload.get("startLm") or route_payload.get("start_lm") or "").strip()
-        goal_lm = str(route_payload.get("goalLm") or route_payload.get("goal_lm") or route_payload.get("targetLm") or "").strip()
-        if start_lm and nodes[0] != start_lm:
-            nodes.insert(0, start_lm)
-        if goal_lm and nodes[-1] != goal_lm:
-            nodes.append(goal_lm)
-        goal_lm = goal_lm or nodes[-1]
+        goal_lm = contract.goal_lm
 
         for node in nodes:
             if node not in self.loaded_map.landmarks:
@@ -208,7 +206,13 @@ class RobotTrajectoryPlanner:
         planner_params = self.params.get("planner", {})
         if not isinstance(planner_params, dict):
             planner_params = {}
-        sample_distance = max(0.02, float(planner_params.get("trajectory_sample_distance", 0.05) or 0.05))
+        sample_distance = max(
+            0.005,
+            float(
+                planner_params.get("trajectory_sample_distance", 0.01)
+                or 0.01
+            ),
+        )
         tolerance = max(0.01, float(planner_params.get("nearest_lm_tolerance", 0.05) or 0.05))
 
         route = self._route_from_nodes(nodes)
@@ -248,6 +252,50 @@ class RobotTrajectoryPlanner:
             length=connector_length + route.length,
         )
         return self._apply_route_metadata(planned, route_payload)
+
+    def _validate_route_contract(self, contract: MapfRoutePlan) -> None:
+        route_nodes = list(contract.nodes)
+        full_nodes = list(contract.full_nodes or contract.nodes)
+        for node in set(full_nodes) | set(route_nodes):
+            if node not in self.loaded_map.landmarks:
+                raise ValueError(f"unknown route LM: {node}")
+
+        full_edges = set(zip(full_nodes, full_nodes[1:]))
+        for start_lm, goal_lm in zip(route_nodes, route_nodes[1:]):
+            if self.planner.get_edge(start_lm, goal_lm) is None:
+                raise ValueError(
+                    f"LM route edge is missing: {start_lm}->{goal_lm}"
+                )
+
+        for segment in contract.timed_segments:
+            if segment.kind != "move":
+                if segment.node not in full_nodes:
+                    raise ValueError(
+                        f"timed {segment.kind} node is outside route: "
+                        f"{segment.node}"
+                    )
+                continue
+            edge_key = (segment.from_lm, segment.to_lm)
+            if edge_key not in full_edges:
+                raise ValueError(
+                    f"timed segment is outside route: {segment.edge_id}"
+                )
+            edge = self.planner.get_edge(*edge_key)
+            if edge is None:
+                raise ValueError(
+                    f"LM route edge is missing: {segment.edge_id}"
+                )
+            expected = edge.motion_direction_label(
+                edge.motion_direction_code()
+            )
+            allowed = {expected, "not_specified"}
+            if expected == "not_specified":
+                allowed.add("forward")
+            if segment.motion_direction not in allowed:
+                raise ValueError(
+                    f"motion direction mismatch on {segment.edge_id}: "
+                    f"map={expected}, MAPF={segment.motion_direction}"
+                )
 
     def _apply_timed_segments(
         self,
@@ -372,22 +420,6 @@ class RobotTrajectoryPlanner:
             length=float(best["total_length"]),
         )
 
-    def _lm_route_nodes(self, route_payload: dict[str, Any]) -> list[str]:
-        raw_nodes = route_payload.get("nodes")
-        if raw_nodes is None:
-            raw_nodes = route_payload.get("routeNodes") or route_payload.get("route_nodes") or []
-        if not isinstance(raw_nodes, list):
-            return []
-        nodes: list[str] = []
-        for item in raw_nodes:
-            node = str(item).strip()
-            if not node or node.startswith("CURRENT_"):
-                continue
-            if nodes and nodes[-1] == node:
-                continue
-            nodes.append(node)
-        return nodes
-
     def _route_from_nodes(self, nodes: list[str]) -> PlannedRoute:
         if not nodes:
             raise ValueError("LM route nodes are required")
@@ -422,11 +454,11 @@ class RobotTrajectoryPlanner:
             return current_edge_route.trajectory
 
         landmark = self.loaded_map.landmarks[start_lm]
-        return self._sample_line(
-            pose,
-            Pose2D(x=landmark.x, y=landmark.y, yaw=pose.yaw),
-            sample_distance,
-            edge_id=f"CURRENT_POSE->{start_lm}",
+        distance = math.hypot(landmark.x - pose.x, landmark.y - pose.y)
+        raise ValueError(
+            "strict LM route rejected: robot pose is "
+            f"{distance:.3f} m from start {start_lm} and is not on a graph edge; "
+            "relocate/localize the robot or request a route from its current edge"
         )
 
     def _apply_route_metadata(
@@ -537,10 +569,21 @@ class RobotTrajectoryPlanner:
             length_sq = (dx * dx) + (dy * dy)
             if length_sq <= 1e-9:
                 continue
-            ratio = clamp((((pose.x - first.x) * dx) + ((pose.y - first.y) * dy)) / length_sq, 0.0, 1.0)
+            ratio = TrajectoryMath.clamp(
+                (((pose.x - first.x) * dx) + ((pose.y - first.y) * dy))
+                / length_sq,
+                0.0,
+                1.0,
+            )
             projected_x = first.x + (dx * ratio)
             projected_y = first.y + (dy * ratio)
-            projected_yaw = normalize_angle(first.yaw + (normalize_angle(second.yaw - first.yaw) * ratio))
+            projected_yaw = TrajectoryMath.normalize_angle(
+                first.yaw
+                + (
+                    TrajectoryMath.normalize_angle(second.yaw - first.yaw)
+                    * ratio
+                )
+            )
             distance = math.hypot(pose.x - projected_x, pose.y - projected_y)
             if best is None or distance < float(best["distance"]):
                 best = {
@@ -574,9 +617,4 @@ class RobotTrajectoryPlanner:
         return remaining
 
     def _path_length(self, points: list[RoutePoint]) -> float:
-        length = 0.0
-        for index in range(1, len(points)):
-            previous = points[index - 1]
-            current = points[index]
-            length += math.hypot(current.x - previous.x, current.y - previous.y)
-        return length
+        return TrajectoryMath.polyline_length([(point.x, point.y) for point in points])

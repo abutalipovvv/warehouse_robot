@@ -156,10 +156,12 @@ def test_stage_launch_uses_ecom_description_and_keeps_stage_hardware_contract() 
         ).read_text(encoding="utf-8")
     )
     amcl = nav2["amcl"]["ros__parameters"]
-    assert amcl["max_beams"] == 120
-    assert amcl["min_particles"] == 500
-    assert amcl["max_particles"] == 2000
-    assert amcl["sigma_hit"] == 0.15
+    assert amcl["max_beams"] == 180
+    assert amcl["min_particles"] == 800
+    assert amcl["max_particles"] == 3000
+    assert amcl["sigma_hit"] == 0.12
+    assert amcl["update_min_d"] == 0.02
+    assert amcl["update_min_a"] == 0.02
     assert amcl["transform_tolerance"] == 0.5
     assert amcl["z_hit"] + amcl["z_rand"] == 1.0
     assert (
@@ -223,9 +225,15 @@ def test_stage_launch_uses_ecom_description_and_keeps_stage_hardware_contract() 
     assert "this.addTrp1Model(group, active)" not in web_scene
 
     web_app = _operator_app_source()
+    index_html = (OPERATOR_STATIC_ROOT / "index.html").read_text(encoding="utf-8")
     assert "this.fleetSelectionCleared = true" in web_app
     assert "this.clearFleetRobotSelection();" in web_app
     assert '"fleet-route-preview active"' in web_app
+    assert "const displayedRoute = active && preview.length >= 2 ? preview : trajectory;" in web_app
+    assert '<input id="fleetRotateInput" type="checkbox" />' in index_html
+    assert "Boolean(this.fleetRotateInput?.checked) && !this.isFleetRobotsMode()" in web_app
+    assert "this.fleetRotateInput.disabled = isRemoteMode;" in web_app
+    assert "sliceTrajectoryByTime(" not in web_app
     assert "this.fleetRobotColor(robot.name)" in web_app
     assert "const frameIntervalMs = 1000 / 60;" not in web_app
     assert "this.drawFleetAnimationFrame(now);" in web_app

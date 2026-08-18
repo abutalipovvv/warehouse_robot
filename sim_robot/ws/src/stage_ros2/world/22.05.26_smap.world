@@ -40,5 +40,7 @@ trp1_with_laser
 (
   name "trp1"
   color "LightSteelBlue"
-  pose [ -4.902 1.362 0.000 0.000 ]
+  # LM91 starts on a westbound aisle edge. Spawning eastbound forced the full
+  # size chassis to attempt an in-place 180-degree turn against the wall.
+  pose [ -4.902 1.362 0.000 180.000 ]
 )

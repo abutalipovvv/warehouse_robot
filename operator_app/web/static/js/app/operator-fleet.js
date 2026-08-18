@@ -1660,6 +1660,12 @@ export const withFleetUi = (Base) => class OperatorAppFleetUi extends Base {
 
   syncFleetRemoteFields() {
     const isRemoteMode = this.isFleetRobotsMode();
+    if (this.fleetRotateInput) {
+      this.fleetRotateInput.disabled = isRemoteMode;
+      if (isRemoteMode) {
+        this.fleetRotateInput.checked = false;
+      }
+    }
     if (this.fleetRobotNameLabel) {
       this.fleetRobotNameLabel.classList.toggle("hidden", false);
     }

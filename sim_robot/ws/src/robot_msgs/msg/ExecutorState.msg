@@ -9,3 +9,15 @@ string target_lm
 string current_edge_id
 string route_id
 float32 route_progress
+float32 cross_track_error
+float32 heading_error
+float32 remaining_distance
+float32 goal_position_error
+float32 goal_yaw_error
+float32 commanded_linear
+float32 commanded_angular
+float32 max_cross_track_error
+float32 mean_cross_track_error
+uint32 tracking_samples
+uint32 arrival_stable_cycles
+uint32 arrival_required_cycles

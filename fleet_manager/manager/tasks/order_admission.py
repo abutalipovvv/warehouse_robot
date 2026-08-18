@@ -1143,12 +1143,14 @@ class OrderAdmissionMixin:
         start_lm: str,
         prepared: _PreparedDispatchPlan,
     ) -> None:
-        order.route_nodes = [
-            str(item)
-            for plan in prepared.result.get("plans", [])
-            if isinstance(plan, dict)
-            for item in plan.get("nodes", [])
-        ]
+        order.route_nodes = []
+        for item in prepared.plan.get("nodes", []):
+            node = str(item).strip()
+            if node and (
+                not order.route_nodes
+                or order.route_nodes[-1] != node
+            ):
+                order.route_nodes.append(node)
         self._apply_planner_result(
             prepared.result,
             prepared.committed_at,

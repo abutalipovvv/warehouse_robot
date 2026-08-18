@@ -1338,7 +1338,15 @@ class DispatchRequestBatchMixin:
             payload["speed"] = order.speed
         if order.acceleration > 0.0:
             payload["acceleration"] = order.acceleration
-        payload["rotate"] = bool(order.rotate)
+        robot = self.robots.get(str(request.get("name") or ""))
+        # Remote robots own continuous heading control locally. Injecting
+        # discrete MAPF rotate actions makes them stop at LM junctions and can
+        # reject otherwise valid graph routes as rotation_blocked. Simulation
+        # robots still reserve and execute their explicit rotation actions.
+        payload["rotate"] = bool(
+            order.rotate
+            and (robot is None or not robot.is_remote())
+        )
         payload["stretchMotionToReservationTicks"] = bool(order.stretch_motion_to_reservation_ticks)
         if order.turn_speed > 0.0:
             payload["turnSpeed"] = order.turn_speed

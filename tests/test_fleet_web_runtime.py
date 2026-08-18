@@ -7742,6 +7742,93 @@ def test_remote_route_payload_contains_absolute_timed_segment_contract() -> None
     ]
 
 
+def test_remote_route_payload_removes_wait_node_duplicates() -> None:
+    manager = _remote_manager()
+    robot = FleetRobot(name="r1", current_lm="A", mode="remote")
+    order = FleetOrder(order_id="order-1", target_lm="B", vehicle="r1")
+
+    route = manager._remote_route_payload(
+        robot,
+        order,
+        {
+            "startLm": "A",
+            "goalLm": "B",
+            "nodes": ["A", "A", "B", "B"],
+            "trajectory": [],
+        },
+    )
+
+    assert route["nodes"] == ["A", "B"]
+    assert route["fullNodes"] == ["A", "B"]
+
+
+def test_remote_route_payload_sends_the_complete_lm_route_by_default() -> None:
+    manager = _remote_manager()
+    robot = FleetRobot(name="r1", current_lm="A", mode="remote")
+    order = FleetOrder(order_id="order-1", target_lm="B", vehicle="r1")
+
+    route = manager._remote_route_payload(
+        robot,
+        order,
+        {
+            "startLm": "A",
+            "goalLm": "B",
+            "nodes": ["A", "N1", "N2", "N3", "N4", "N5", "B"],
+            "trajectory": [],
+        },
+    )
+
+    assert manager._remote_route_chunk_lms() == 0
+    assert route["nodes"] == ["A", "N1", "N2", "N3", "N4", "N5", "B"]
+    assert route["chunk"]["isFinal"] is True
+    assert route["goalLm"] == "B"
+    assert route["finalGoalLm"] == "B"
+
+
+def test_remote_robot_uses_local_heading_control_without_mapf_rotate_actions() -> None:
+    manager = _remote_manager()
+    manager.robots["r1"] = FleetRobot(
+        name="r1",
+        current_lm="A",
+        mode="remote",
+    )
+    order = FleetOrder(
+        order_id="order-1",
+        target_lm="B",
+        vehicle="r1",
+        rotate=True,
+    )
+
+    payload = manager._order_plan_payload(
+        order,
+        {"name": "r1", "startLm": "A", "goalLm": "B"},
+    )
+
+    assert payload["rotate"] is False
+
+
+def test_simulated_robot_keeps_requested_mapf_rotate_actions() -> None:
+    manager = _manager()
+    manager.robots["r1"] = FleetRobot(
+        name="r1",
+        current_lm="A",
+        mode="simulated",
+    )
+    order = FleetOrder(
+        order_id="order-1",
+        target_lm="B",
+        vehicle="r1",
+        rotate=True,
+    )
+
+    payload = manager._order_plan_payload(
+        order,
+        {"name": "r1", "startLm": "A", "goalLm": "B"},
+    )
+
+    assert payload["rotate"] is True
+
+
 def test_remote_timed_contract_keeps_explicit_rotation_action() -> None:
     manager = _remote_manager()
 

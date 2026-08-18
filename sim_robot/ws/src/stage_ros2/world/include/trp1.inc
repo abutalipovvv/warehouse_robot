@@ -34,8 +34,10 @@ define trp1_base position
   localization "odom"
   odom_error [ 0.03 0.03 0.0 0.03 ]
 
-  velocity_bounds [-1.0 1.0 0 0 0 0 -45.0 45.0]
-  acceleration_bounds [-0.5 0.5 0 0 0 0 -45.0 45.0]
+  # Stage world files express angular limits in degrees. These correspond to
+  # about 1.57 rad/s and 3.14 rad/s^2; cmd_vel itself remains SI radians/s.
+  velocity_bounds [-1.0 1.0 0 0 0 0 -90.0 90.0]
+  acceleration_bounds [-0.5 0.5 0 0 0 0 -180.0 180.0]
 )
 
 define trp1_no_sonar trp1_base

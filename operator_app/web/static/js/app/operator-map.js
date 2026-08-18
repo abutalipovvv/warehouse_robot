@@ -383,27 +383,17 @@ export const withMapView = (Base) => class OperatorAppMapView extends Base {
     const trajectory = robot.trajectory || [];
     const active = robot.name === this.selectedFleetRobotName;
     const preview = Array.isArray(robot.routePreview) ? robot.routePreview : [];
-    if (active && preview.length >= 2) {
-      this.appendRoutePolyline(preview, "fleet-route-preview active", this.fleetRobotColor(robot.name));
-    }
+    // routePreview is the authoritative full LM/edge path for the selected
+    // robot; trajectory is the currently committed MAPF time window. Drawing
+    // both produced two apparent routes, even though only one command was sent.
+    const displayedRoute = active && preview.length >= 2 ? preview : trajectory;
     this.appendRoutePolyline(
-      trajectory,
-      active ? "fleet-route-plan active" : "fleet-route-plan",
+      displayedRoute,
+      active && preview.length >= 2
+        ? "fleet-route-preview active"
+        : (active ? "fleet-route-plan active" : "fleet-route-plan"),
       active ? this.fleetRobotColor(robot.name) : "",
     );
-    if (!active) {
-      return;
-    }
-    const clock = Math.max(0, Number(robot.routeClock || 0));
-    const finalTime = Math.max(...trajectory.map((point, index) => Number(point.t ?? index)));
-    const done = this.sliceTrajectoryByTime(trajectory, 0, clock);
-    const remaining = this.sliceTrajectoryByTime(trajectory, clock, finalTime);
-    if (done.length > 1) {
-      this.appendRoutePolyline(done, "fleet-route-done");
-    }
-    if (remaining.length > 1) {
-      this.appendRoutePolyline(remaining, "fleet-route-active", this.fleetRobotColor(robot.name));
-    }
   }
 
   appendRoutePolyline(points, className, stroke = "") {
@@ -421,28 +411,6 @@ export const withMapView = (Base) => class OperatorAppMapView extends Base {
       return `${px.x},${px.y}`;
     }).join(" "));
     this.operatorRouteLayer.append(polyline);
-  }
-
-  sliceTrajectoryByTime(points, startTime, endTime) {
-    if (!Array.isArray(points) || points.length < 2 || endTime <= startTime) {
-      return [];
-    }
-    const result = [];
-    const startPose = this.interpolateTrajectory(points, startTime);
-    if (startPose) {
-      result.push(startPose);
-    }
-    for (const point of points) {
-      const t = Number(point.t ?? 0);
-      if (t > startTime && t < endTime) {
-        result.push(point);
-      }
-    }
-    const endPose = this.interpolateTrajectory(points, endTime);
-    if (endPose) {
-      result.push(endPose);
-    }
-    return result;
   }
 
   interpolateTrajectory(points, targetTime) {
@@ -1388,7 +1356,7 @@ export const withMapView = (Base) => class OperatorAppMapView extends Base {
     }
     const world = this.pixelToWorld(mapPixel);
     if (this.isRos2Robot() && !this.isFleetManager()) {
-      this.startPoseNavigation(world);
+      this.startDirectRobotMapNavigation(world);
       return;
     }
     if (this.fleetNavigateUsesPose()) {
@@ -1419,7 +1387,7 @@ export const withMapView = (Base) => class OperatorAppMapView extends Base {
       return;
     }
     if (this.isRos2Robot() && !this.isFleetManager()) {
-      this.startPoseNavigation(world);
+      this.startDirectRobotMapNavigation(world);
       return;
     }
     if (this.fleetNavigateUsesPose()) {
@@ -1436,6 +1404,15 @@ export const withMapView = (Base) => class OperatorAppMapView extends Base {
       return;
     }
     this.handleLandmarkTarget(nearest.landmark.name);
+  }
+
+  async startDirectRobotMapNavigation(world) {
+    const nearest = this.nearestLandmark(world);
+    if (nearest && nearest.distance <= 0.75) {
+      await this.handleLandmarkTarget(nearest.landmark.name);
+      return;
+    }
+    await this.startPoseNavigation(world);
   }
 
   handleScene3dLandmarkHover(lmName) {

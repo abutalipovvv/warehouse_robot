@@ -233,7 +233,10 @@ fleet:
   # turn this bounded recovery into a whole-fleet retreat.
   deadlock_portal_queue_max_robots: 8
   deadlock_portal_queue_lookahead_sec: 4.0
-  remote_route_chunk_lms: 5
+  # Send one authoritative LM route to the robot. A positive value is an
+  # emergency compatibility limit for legacy executors; chunking makes the
+  # robot finish and re-dispatch at every boundary.
+  remote_route_chunk_lms: 0
   remote_poll_interval_sec: 0.25
   remote_timeout_sec: 0.8
   remote_dispatch_lead_sec: 0.75

@@ -16,13 +16,13 @@ ROBOT_PLANNER_SRC = (
 if str(ROBOT_PLANNER_SRC) not in sys.path:
     sys.path.insert(0, str(ROBOT_PLANNER_SRC))
 
-from robot_planner.executor import (
+from robot_planner.execution import (
     RouteControlParameters,
     RouteExecutor,
     RouteProgress,
     RouteSteeringState,
 )
-from robot_planner.route_planner import RobotTrajectoryPlanner
+from robot_planner.planning import RobotTrajectoryPlanner
 from robot_planner.runtime import RoutePoint
 
 

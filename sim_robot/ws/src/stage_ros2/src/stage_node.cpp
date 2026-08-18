@@ -43,7 +43,15 @@ void StageNode::declare_parameters()
   auto param_desc_watchdog_timeout = rcl_interfaces::msg::ParameterDescriptor{};
   param_desc_watchdog_timeout.description =
     "timeout after which a vehicle stopps if no command is received!";
-  this->declare_parameter<double>("base_watchdog_timeout", 5, param_desc_watchdog_timeout);
+  this->declare_parameter<double>("base_watchdog_timeout", 0.5, param_desc_watchdog_timeout);
+
+  auto param_desc_max_linear_speed = rcl_interfaces::msg::ParameterDescriptor{};
+  param_desc_max_linear_speed.description = "maximum absolute differential-drive linear command in m/s";
+  this->declare_parameter<double>("max_command_linear_speed", 1.0, param_desc_max_linear_speed);
+
+  auto param_desc_max_angular_speed = rcl_interfaces::msg::ParameterDescriptor{};
+  param_desc_max_angular_speed.description = "maximum absolute differential-drive angular command in rad/s";
+  this->declare_parameter<double>("max_command_angular_speed", 1.5, param_desc_max_angular_speed);
 
   auto param_desc_is_depth_canonical = rcl_interfaces::msg::ParameterDescriptor{};
   param_desc_is_depth_canonical.description = "USE depth canonical!";
@@ -110,11 +118,13 @@ void StageNode::declare_parameters()
 
 void StageNode::update_parameters()
 {
-  double base_watchdog_timeout_sec{5.0};
+  double base_watchdog_timeout_sec{0.5};
   this->get_parameter("enable_gui", this->enable_gui_);
   this->get_parameter("enforce_prefixes", this->enforce_prefixes_);
   this->get_parameter("one_tf_tree", this->one_tf_tree_);
   this->get_parameter("base_watchdog_timeout", base_watchdog_timeout_sec);
+  this->get_parameter("max_command_linear_speed", this->max_command_linear_speed_);
+  this->get_parameter("max_command_angular_speed", this->max_command_angular_speed_);
   this->base_watchdog_timeout_ = rclcpp::Duration::from_seconds(base_watchdog_timeout_sec);
   this->get_parameter("is_depth_canonical", this->isDepthCanonical_);
   this->get_parameter("publish_ground_truth", this->publish_ground_truth_);
@@ -157,6 +167,8 @@ void StageNode::callback_update_parameters()
   double base_watchdog_timeout_sec;
   this->get_parameter("base_watchdog_timeout", base_watchdog_timeout_sec);
   this->base_watchdog_timeout_ = rclcpp::Duration::from_seconds(base_watchdog_timeout_sec);
+  this->get_parameter("max_command_linear_speed", this->max_command_linear_speed_);
+  this->get_parameter("max_command_angular_speed", this->max_command_angular_speed_);
 
   this->get_parameter("use_static_transformations", use_static_transformations_);
 

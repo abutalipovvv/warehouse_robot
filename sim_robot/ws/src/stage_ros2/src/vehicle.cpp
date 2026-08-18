@@ -1,6 +1,7 @@
 #include <stage_ros2/stage_node.hpp>
 
 #include <chrono>
+#include <algorithm>
 #include <cmath>
 #include <memory>
 #include <filesystem>
@@ -321,32 +322,33 @@ void StageNode::Vehicle::publish_msg()
   msg_odom_.pose.pose.orientation = createQuaternionMsgFromYaw(imu_odom_yaw_);
   msg_odom_.twist.twist.linear.x = body_motion.x;
   msg_odom_.twist.twist.linear.y = body_motion.y;
-  msg_odom_.twist.twist.angular.z =
-    node_->use_imu_for_odom_yaw_ ? imu_angular_velocity_z : body_motion.a;
+  // Odometry twist describes the simulated chassis motion. Keep IMU noise on
+  // /imu only; leaking gyro noise into /odom makes a stationary robot appear
+  // to move and destabilizes status/localization consumers.
+  msg_odom_.twist.twist.angular.z = body_motion.a;
   msg_odom_.header.frame_id = frame_id_odom_;
   msg_odom_.header.stamp = node_->sim_time_;
   msg_odom_.child_frame_id = frame_id_base_link_;
 
   pub_odom_->publish(msg_odom_);
 
-  // Also publish the ground truth pose and velocity.
-  nav_msgs::msg::Odometry ground_truth_msg;
-  ground_truth_msg.pose.pose.position.x = gt.getOrigin().x();
-  ground_truth_msg.pose.pose.position.y = gt.getOrigin().y();
-  ground_truth_msg.pose.pose.position.z = gt.getOrigin().z();
-  ground_truth_msg.pose.pose.orientation.x = gt.getRotation().x();
-  ground_truth_msg.pose.pose.orientation.y = gt.getRotation().y();
-  ground_truth_msg.pose.pose.orientation.z = gt.getRotation().z();
-  ground_truth_msg.pose.pose.orientation.w = gt.getRotation().w();
-  ground_truth_msg.twist.twist.linear.x = gvel.x;
-  ground_truth_msg.twist.twist.linear.y = gvel.y;
-  ground_truth_msg.twist.twist.linear.z = gvel.z;
-  ground_truth_msg.twist.twist.angular.z = gvel.a;
-
-  ground_truth_msg.header.frame_id = frame_id_world_;
-  ground_truth_msg.header.stamp = node_->sim_time_;
-
-  pub_ground_truth_->publish(ground_truth_msg);
+  if (node_->publish_ground_truth_ && pub_ground_truth_) {
+    nav_msgs::msg::Odometry ground_truth_msg;
+    ground_truth_msg.pose.pose.position.x = gt.getOrigin().x();
+    ground_truth_msg.pose.pose.position.y = gt.getOrigin().y();
+    ground_truth_msg.pose.pose.position.z = gt.getOrigin().z();
+    ground_truth_msg.pose.pose.orientation.x = gt.getRotation().x();
+    ground_truth_msg.pose.pose.orientation.y = gt.getRotation().y();
+    ground_truth_msg.pose.pose.orientation.z = gt.getRotation().z();
+    ground_truth_msg.pose.pose.orientation.w = gt.getRotation().w();
+    ground_truth_msg.twist.twist.linear.x = gvel.x;
+    ground_truth_msg.twist.twist.linear.y = gvel.y;
+    ground_truth_msg.twist.twist.linear.z = gvel.z;
+    ground_truth_msg.twist.twist.angular.z = gvel.a;
+    ground_truth_msg.header.frame_id = frame_id_world_;
+    ground_truth_msg.header.stamp = node_->sim_time_;
+    pub_ground_truth_->publish(ground_truth_msg);
+  }
   time_last_pose_update_ = node_->sim_time_;
 }
 void StageNode::Vehicle::publish_tf()
@@ -384,10 +386,26 @@ void StageNode::Vehicle::check_watchdog_timeout()
 void StageNode::Vehicle::callback_cmd(const geometry_msgs::msg::Twist::SharedPtr msg)
 {
   std::scoped_lock lock(node_->msg_lock);
+  if (!std::isfinite(msg->linear.x) || !std::isfinite(msg->angular.z)) {
+    this->positionmodel->SetSpeed(0.0, 0.0, 0.0);
+    timeout_cmd_ = rclcpp::Time(0, 0);
+    RCLCPP_WARN_THROTTLE(
+      node_->get_logger(), *node_->get_clock(), 5000,
+      "Rejected non-finite cmd_vel for %s", name().c_str());
+    return;
+  }
+  const double linear = std::clamp(
+    msg->linear.x,
+    -node_->max_command_linear_speed_,
+    node_->max_command_linear_speed_);
+  const double angular = std::clamp(
+    msg->angular.z,
+    -node_->max_command_angular_speed_,
+    node_->max_command_angular_speed_);
   this->positionmodel->SetSpeed(
-      msg->linear.x,
-      msg->linear.y,
-      msg->angular.z);
+      linear,
+      0.0,
+      angular);
   time_last_cmd_received_ = node_->sim_time_;
   timeout_cmd_ = time_last_cmd_received_ + node_->base_watchdog_timeout_;
 }

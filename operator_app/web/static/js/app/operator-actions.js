@@ -8,7 +8,7 @@ export const withActions = (Base) => class OperatorAppActions extends Base {
     return {
       speed: this.fleetRouteSpeed(),
       acceleration: Math.max(0.0, Number(this.fleetRouteAccelerationInput?.value || 0.0) || 0.0),
-      rotate: Boolean(this.fleetRotateInput?.checked),
+      rotate: Boolean(this.fleetRotateInput?.checked) && !this.isFleetRobotsMode(),
       turnSpeed: Math.max(0.05, Number(this.fleetTurnSpeedInput?.value || 0.9) || 0.9),
       stretchMotionToReservationTicks: true,
     };
@@ -380,7 +380,9 @@ export const withActions = (Base) => class OperatorAppActions extends Base {
       this.fleetRouteAccelerationInput.value = String(navigation.route_acceleration);
     }
     if (this.fleetRotateInput && navigation.simulate_rotation !== undefined) {
-      this.fleetRotateInput.checked = Boolean(navigation.simulate_rotation);
+      const robotControlledHeading = this.isFleetRobotsMode();
+      this.fleetRotateInput.checked = !robotControlledHeading && Boolean(navigation.simulate_rotation);
+      this.fleetRotateInput.disabled = robotControlledHeading;
     }
     if (this.fleetTurnSpeedInput && navigation.turn_speed !== undefined) {
       this.fleetTurnSpeedInput.value = String(navigation.turn_speed);

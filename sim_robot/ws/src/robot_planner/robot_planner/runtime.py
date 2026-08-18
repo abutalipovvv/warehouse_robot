@@ -222,6 +222,38 @@ class RobotEvent:
         }
 
 
+@dataclass
+class TrackingMetrics:
+    cross_track_error: float = 0.0
+    heading_error: float = 0.0
+    remaining_distance: float = 0.0
+    goal_position_error: float = 0.0
+    goal_yaw_error: float = 0.0
+    commanded_linear: float = 0.0
+    commanded_angular: float = 0.0
+    max_cross_track_error: float = 0.0
+    mean_cross_track_error: float = 0.0
+    samples: int = 0
+    arrival_stable_cycles: int = 0
+    arrival_required_cycles: int = 0
+
+    def to_dict(self) -> dict[str, float | int]:
+        return {
+            "crossTrackError": self.cross_track_error,
+            "headingError": self.heading_error,
+            "remainingDistance": self.remaining_distance,
+            "goalPositionError": self.goal_position_error,
+            "goalYawError": self.goal_yaw_error,
+            "commandedLinear": self.commanded_linear,
+            "commandedAngular": self.commanded_angular,
+            "maxCrossTrackError": self.max_cross_track_error,
+            "meanCrossTrackError": self.mean_cross_track_error,
+            "samples": self.samples,
+            "arrivalStableCycles": self.arrival_stable_cycles,
+            "arrivalRequiredCycles": self.arrival_required_cycles,
+        }
+
+
 class RobotRuntime:
     def __init__(self, robot_id: str, map_id: str) -> None:
         self.robot_id = robot_id
@@ -239,6 +271,7 @@ class RobotRuntime:
         self._active_route: PlannedRobotRoute | None = None
         self._route_paused = False
         self._events: list[RobotEvent] = []
+        self._tracking = TrackingMetrics()
         self.add_event("info", "robot runtime initialized")
 
     def add_event(self, level: str, message: str) -> None:
@@ -254,6 +287,7 @@ class RobotRuntime:
             self._current_edge_id = ""
             self._route_progress = 0.0
             self._route_paused = False
+            self._tracking = TrackingMetrics()
             self._state = "LOCALIZING"
             self._message = f"Map changed to {self.map_id}. Waiting for localization."
 
@@ -295,6 +329,7 @@ class RobotRuntime:
             self._current_edge_id = route.trajectory[0].edge_id if route.trajectory else ""
             self._route_progress = 0.0
             self._route_paused = False
+            self._tracking = TrackingMetrics()
             self._state = "EXECUTING_ROUTE"
             self._message = f"Executing route to {route.goal_lm}."
 
@@ -330,6 +365,45 @@ class RobotRuntime:
             self._current_edge_id = edge_id
             self._route_progress = max(0.0, min(1.0, progress))
 
+    def update_tracking_metrics(
+        self,
+        *,
+        cross_track_error: float,
+        heading_error: float,
+        remaining_distance: float,
+        goal_position_error: float,
+        goal_yaw_error: float,
+        commanded_linear: float,
+        commanded_angular: float,
+        arrival_stable_cycles: int,
+        arrival_required_cycles: int,
+    ) -> None:
+        with self._lock:
+            absolute_cross_track = abs(float(cross_track_error))
+            previous_samples = self._tracking.samples
+            samples = previous_samples + 1
+            mean_cross_track = (
+                (self._tracking.mean_cross_track_error * previous_samples)
+                + absolute_cross_track
+            ) / samples
+            self._tracking = TrackingMetrics(
+                cross_track_error=float(cross_track_error),
+                heading_error=float(heading_error),
+                remaining_distance=max(0.0, float(remaining_distance)),
+                goal_position_error=max(0.0, float(goal_position_error)),
+                goal_yaw_error=float(goal_yaw_error),
+                commanded_linear=float(commanded_linear),
+                commanded_angular=float(commanded_angular),
+                max_cross_track_error=max(
+                    self._tracking.max_cross_track_error,
+                    absolute_cross_track,
+                ),
+                mean_cross_track_error=mean_cross_track,
+                samples=samples,
+                arrival_stable_cycles=max(0, int(arrival_stable_cycles)),
+                arrival_required_cycles=max(0, int(arrival_required_cycles)),
+            )
+
     def set_route_paused(self, paused: bool, message: str = "") -> None:
         with self._lock:
             self._route_paused = bool(paused)
@@ -356,6 +430,7 @@ class RobotRuntime:
             self._current_edge_id = ""
             self._route_progress = 0.0
             self._route_paused = False
+            self._tracking = TrackingMetrics()
             self._state = "IDLE"
             self._message = message
 
@@ -390,6 +465,7 @@ class RobotRuntime:
                 "routeProgress": self._route_progress,
                 "routePaused": self._route_paused,
                 "route": route,
+                "tracking": self._tracking.to_dict(),
                 "localizationAgeSec": self.localization_age(),
                 "events": [item.to_dict() for item in self._events[-120:]],
             }

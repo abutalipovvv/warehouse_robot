@@ -102,3 +102,16 @@ def test_operator_frontend_is_modular_and_offline() -> None:
     assert "cdn.jsdelivr.net" not in scene_js
     assert (STATIC_ROOT / "vendor" / "babylon-9.16.2.js").stat().st_size > 1_000_000
     assert (STATIC_ROOT / "vendor" / "BABYLON-LICENSE.md").is_file()
+
+
+def test_direct_robot_map_click_snaps_to_graph_landmark() -> None:
+    module_root = STATIC_ROOT / "js" / "app"
+    map_module = (module_root / "operator-map.js").read_text(encoding="utf-8")
+    scene_module = (module_root / "operator-scene.js").read_text(encoding="utf-8")
+
+    assert map_module.count("this.startDirectRobotMapNavigation(world);") == 2
+    assert "async startDirectRobotMapNavigation(world)" in map_module
+    assert "nearest.distance <= 0.75" in map_module
+    assert "await this.handleLandmarkTarget(nearest.landmark.name);" in map_module
+    assert "await this.startPoseNavigation(world);" in map_module
+    assert "payload.startLm = robot.nearestLm" not in scene_module

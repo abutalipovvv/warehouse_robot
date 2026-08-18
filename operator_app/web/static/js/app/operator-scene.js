@@ -874,7 +874,7 @@ export const withSceneNavigation = (Base) => class OperatorAppSceneNavigation ex
 
   navigateButtonIdleText() {
     return (this.isRos2Robot() && !this.isFleetManager()) || this.fleetNavigateUsesPose()
-      ? "Navigate To Pose"
+      ? "Navigate To LM/Pose"
       : "Navigate To LM";
   }
 
@@ -912,9 +912,6 @@ export const withSceneNavigation = (Base) => class OperatorAppSceneNavigation ex
         y: Number(robot.pose.y || 0),
         yaw: Number(robot.pose.yaw || 0),
       };
-    }
-    if (robot.nearestLm) {
-      payload.startLm = robot.nearestLm;
     }
     try {
       const result = await this.postJson(this.robotApiPath("/api/robot/route/execute"), payload);

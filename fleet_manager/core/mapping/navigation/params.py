@@ -222,7 +222,8 @@ DEFAULT_ROUTE_PARAMS: dict[str, Any] = {
         "parked_clearance_relocation_timeout_sec": 120.0,
         "deadlock_recovery_cooldown_sec": 4.0,
         "replan_interval_sec": 1.00,
-        "remote_route_chunk_lms": 5,
+        # Zero sends the complete graph route in one robot-side contract.
+        "remote_route_chunk_lms": 0,
         "cbs_low_level_max_time": 160,
         "cbs_max_high_level_nodes": 2000,
         "cbs_max_planning_time_sec": 5.00,

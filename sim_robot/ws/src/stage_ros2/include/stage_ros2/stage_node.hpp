@@ -198,6 +198,8 @@ public:
   double imu_yaw_noise_stddev_;            /// ROS parameter
   double imu_angular_velocity_noise_stddev_;   /// ROS parameter
   double imu_linear_acceleration_noise_stddev_;   /// ROS parameter
+  double max_command_linear_speed_;              /// ROS parameter
+  double max_command_angular_speed_;             /// ROS parameter
 
   // TF broadcaster to publish the robot odom
   std::shared_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_stage_;

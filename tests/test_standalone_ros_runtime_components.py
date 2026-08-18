@@ -345,6 +345,34 @@ def _status_message(**overrides: Any) -> SimpleNamespace:
     return SimpleNamespace(**values)
 
 
+def test_explicit_mapf_route_is_forwarded_without_replanning(runtime: RosRobotRuntime) -> None:
+    payload = {
+        "protocol": "lm_route",
+        "protocolVersion": 2,
+        "routeId": "mapf-route-17",
+        "revision": 4,
+        "startLm": "LM280",
+        "goalLm": "LM131",
+        "nodes": ["LM280", "LM131"],
+        "replaceMode": "immediate",
+        "ownerId": "fleet-coordinator",
+        "commandId": "dispatch-17",
+    }
+
+    route = runtime._route_payload_from_request(payload)
+
+    assert route == {
+        "protocol": "lm_route",
+        "protocolVersion": 2,
+        "routeId": "mapf-route-17",
+        "revision": 4,
+        "startLm": "LM280",
+        "goalLm": "LM131",
+        "nodes": ["LM280", "LM131"],
+        "replaceMode": "immediate",
+    }
+
+
 def test_facade_composes_seven_disjoint_local_capabilities() -> None:
     assert RosRobotRuntime.__bases__ == tuple(EXPECTED_COMPONENT_METHODS)
     owned: set[str] = set()
