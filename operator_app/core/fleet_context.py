@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from fleet_manager.core.mapping.maps.map_loader import WarehouseMapLoader
+from fleet_manager.core.mapping.maps.map_exchange import build_editable_map_payload
 from fleet_manager.core.mapping.navigation.params import (
     load_route_params,
     save_route_params,
@@ -144,6 +145,9 @@ class FleetContextService:
     def _load_context(self, map_dir: Path) -> None:
         owner = self.owner
         loaded_map = WarehouseMapLoader(map_dir).load()
+        active_map_signature = str(
+            build_editable_map_payload(loaded_map.map_dir).get("signature") or ""
+        )
         params = load_route_params(
             owner.params_path,
             create=True,
@@ -154,11 +158,6 @@ class FleetContextService:
             current = params.setdefault(section, {})
             if isinstance(current, dict):
                 current.update(values)
-        owner.loaded_map = loaded_map
-        owner.map_dir = loaded_map.map_dir.resolve()
-        owner.maps_root = owner.map_dir.parent
-        owner._scene_builder = MapSceneBuilder(loaded_map)
-        owner._scene3d_cache = None
         manager_class = (
             FleetManagerROS
             if owner.mode == "robots"
@@ -173,10 +172,16 @@ class FleetContextService:
             map_metadata=loaded_map.map_metadata,
             remote_adapter=owner.remote_adapter,
         )
-        owner.manager = manager
         executor = getattr(owner, "_runtime_command_executor", None)
         if executor is not None:
             manager.set_runtime_command_executor(executor)
+        owner.loaded_map = loaded_map
+        owner.map_dir = loaded_map.map_dir.resolve()
+        owner.maps_root = owner.map_dir.parent
+        owner._active_map_signature = active_map_signature
+        owner._scene_builder = MapSceneBuilder(loaded_map)
+        owner._scene3d_cache = None
+        owner.manager = manager
         previous_close = getattr(
             previous_manager,
             "close",

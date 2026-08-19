@@ -511,6 +511,7 @@ def test_map_transfer_payloads_keep_service_json_contract(
                 map_name="alpha",
                 map_dir="/maps/alpha.smap",
                 map_id="alpha-id",
+                signature="sig-a",
             )
         if label == "map list":
             return SimpleNamespace(
@@ -519,9 +520,11 @@ def test_map_transfer_payloads_keep_service_json_contract(
                 active_map_name="alpha",
                 active_map_dir="/maps/alpha.smap",
                 active_map_id="alpha-id",
+                active_map_signature="sig-a",
                 map_names=["alpha", "beta.smap"],
                 map_dirs=["/maps/alpha.smap", "/maps/beta.smap"],
                 map_ids=["alpha-id", "beta-id"],
+                map_signatures=["sig-a", "sig-b"],
             )
         if label == "map bundle pull":
             return SimpleNamespace(

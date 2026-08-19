@@ -7,7 +7,7 @@ from pathlib import Path
 
 import yaml
 
-from .models import EdgeGeometry, GraphEdge, Landmark, LoadedMapData, MapMetadata, WorldPoint
+from .models import EdgeGeometry, GraphEdge, Landmark, LoadedMapData, MapMetadata, TrafficZone, WorldPoint
 from .pgm import PgmImage
 
 
@@ -48,11 +48,13 @@ class WarehouseMapLoader:
         )
         landmarks = self._load_landmarks(self.map_dir / "LMs.yaml", map_metadata)
         edges = self._load_edges(self.map_dir / "graph_edges_lengths.yaml", landmarks, map_metadata)
+        traffic_zones = self._load_traffic_zones(self.map_dir / "traffic_zones.yaml", map_metadata)
         return LoadedMapData(
             map_dir=self.map_dir,
             map_metadata=map_metadata,
             landmarks=landmarks,
             edges=edges,
+            traffic_zones=traffic_zones,
         )
 
     def read_yaml(self, path: Path) -> object:
@@ -145,6 +147,62 @@ class WarehouseMapLoader:
             )
             landmarks[landmark.name] = landmark
         return landmarks
+
+    def _load_traffic_zones(
+        self,
+        path: Path,
+        map_metadata: MapMetadata,
+    ) -> list[TrafficZone]:
+        if not path.exists():
+            return []
+        payload = self._read_yaml(path)
+        if not isinstance(payload, dict):
+            raise ValueError(f"Unexpected traffic zone file format: {path}")
+        raw_zones = payload.get("zones") or payload.get("trafficZones") or []
+        if not isinstance(raw_zones, list):
+            raise ValueError(f"traffic zone list is invalid: {path}")
+        already_map_frame = self._coordinate_frame_is_map_top_left(payload)
+        zones: list[TrafficZone] = []
+        seen: set[str] = set()
+        for index, item in enumerate(raw_zones):
+            if not isinstance(item, dict):
+                continue
+            zone_id = str(item.get("id") or item.get("zoneId") or f"corridor:{index + 1}").strip()
+            if not zone_id or zone_id in seen:
+                raise ValueError(f"duplicate or empty traffic zone id: {zone_id!r}")
+            if str(item.get("shape") or "rectangle").strip().lower() != "rectangle":
+                continue
+            bounds = item.get("bounds")
+            if not isinstance(bounds, dict):
+                continue
+            try:
+                first = WorldPoint(
+                    x=float(bounds.get("minX", bounds.get("min_x"))),
+                    y=float(bounds.get("minY", bounds.get("min_y"))),
+                )
+                second = WorldPoint(
+                    x=float(bounds.get("maxX", bounds.get("max_x"))),
+                    y=float(bounds.get("maxY", bounds.get("max_y"))),
+                )
+            except (TypeError, ValueError):
+                continue
+            if not already_map_frame:
+                first = map_metadata.ros_to_map_point(first)
+                second = map_metadata.ros_to_map_point(second)
+            seen.add(zone_id)
+            zones.append(
+                TrafficZone(
+                    zone_id=zone_id,
+                    kind=str(item.get("kind") or "controlled_corridor"),
+                    min_x=min(first.x, second.x),
+                    min_y=min(first.y, second.y),
+                    max_x=max(first.x, second.x),
+                    max_y=max(first.y, second.y),
+                    capacity=max(1, int(item.get("capacity") or 1)),
+                    properties=dict(item.get("properties") or {}),
+                )
+            )
+        return zones
 
     def _load_edges(
         self,

@@ -391,6 +391,7 @@ class GrpcRobotClient:
             "active": str(response.active_map_name or ""),
             "activeMapDir": str(response.active_map_dir or ""),
             "activeMapId": str(response.active_map_id or ""),
+            "activeSignature": str(response.active_map_signature or ""),
             "maps": maps,
         }
 
@@ -403,7 +404,7 @@ class GrpcRobotClient:
             "mapName": active,
             "mapDir": str(active_item.get("mapDir") or maps.get("activeMapDir") or ""),
             "mapId": str(active_item.get("mapId") or maps.get("activeMapId") or ""),
-            "signature": str(active_item.get("signature") or ""),
+            "signature": str(maps.get("activeSignature") or ""),
         }
 
     def get_map_bundle(self, endpoint: str, map_name: str = "") -> dict[str, Any]:

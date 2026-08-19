@@ -396,6 +396,12 @@ export class OperatorAppBase {
     this.confirmStartSlamButton = document.getElementById("confirmStartSlamButton");
     this.slamParamsInput = document.getElementById("slamParamsInput");
     this.slamDialogStatus = document.getElementById("slamDialogStatus");
+    this.finishSlamDialog = document.getElementById("finishSlamDialog");
+    this.finishSlamForm = document.getElementById("finishSlamForm");
+    this.finishSlamMapNameInput = document.getElementById("finishSlamMapNameInput");
+    this.cancelFinishSlamButton = document.getElementById("cancelFinishSlamButton");
+    this.confirmFinishSlamButton = document.getElementById("confirmFinishSlamButton");
+    this.confirmFinishSlamPushButton = document.getElementById("confirmFinishSlamPushButton");
   }
 
   async init() {
@@ -515,7 +521,7 @@ export class OperatorAppBase {
     this.operatorLmNamesButton?.addEventListener("click", () => this.toggleLmNames());
     this.operatorEdgeDirectionsButton?.addEventListener("click", () => this.toggleEdgeDirections());
     this.startSlamButton?.addEventListener("click", () => this.openSlamDialog());
-    this.doneSlamButton?.addEventListener("click", () => this.finishSlam());
+    this.doneSlamButton?.addEventListener("click", () => this.openFinishSlamDialog());
     this.cancelSlamButton?.addEventListener("click", () => this.cancelSlam());
     this.fleetRobotNameInput.addEventListener("input", () => {
       this.fleetNameEdited = true;
@@ -617,6 +623,12 @@ export class OperatorAppBase {
     this.closeSlamDialogButton?.addEventListener("click", () => this.slamDialog.close());
     this.cancelSlamDialogButton?.addEventListener("click", () => this.slamDialog.close());
     this.confirmStartSlamButton?.addEventListener("click", () => this.startSlamFromDialog());
+    this.cancelFinishSlamButton?.addEventListener("click", () => this.finishSlamDialog.close());
+    this.confirmFinishSlamPushButton?.addEventListener("click", () => this.finishSlam(true));
+    this.finishSlamForm?.addEventListener("submit", (event) => {
+      event.preventDefault();
+      this.finishSlam(false);
+    });
 
     this.operatorZoomInButton.addEventListener("click", () => this.zoomMap(1.16));
     this.operatorZoomOutButton.addEventListener("click", () => this.zoomMap(0.86));
@@ -1107,6 +1119,11 @@ export class OperatorAppBase {
       robotSignature: "",
       operatorSignature: "",
       sourceRobotMapName: "",
+      robotStoredMapName: "",
+      robotActiveSignature: "",
+      activationRequired: false,
+      remoteVerified: false,
+      syncState: "",
       hasLocalChanges: false,
     };
   }

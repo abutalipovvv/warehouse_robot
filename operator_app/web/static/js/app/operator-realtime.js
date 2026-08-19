@@ -501,6 +501,7 @@ export const withRealtime = (Base) => class OperatorAppRealtime extends Base {
       });
       this.slamState = result.state || null;
       this.slamActive = Boolean(result.state?.active ?? true);
+      this.mapView.follow = true;
       this.beginRobotMapTransition("2D SLAM started. Waiting for live map...");
       this.slamDialog.close();
       this.openSlamStream();
@@ -737,28 +738,50 @@ export const withRealtime = (Base) => class OperatorAppRealtime extends Base {
     return canvas.toDataURL("image/png");
   }
 
-  async finishSlam() {
+  openFinishSlamDialog() {
     const robot = this.selectedRobot();
     if (!robot || this.isFleetManager(robot)) {
       return;
     }
     const defaultName = `slam_${new Date().toISOString().slice(0, 16).replace(/[-:T]/g, "")}`;
-    const mapName = String(window.prompt("New map name", defaultName) || "").trim();
-    if (!mapName) {
+    this.finishSlamMapNameInput.value = defaultName;
+    if (typeof this.finishSlamDialog.showModal === "function" && !this.finishSlamDialog.open) {
+      this.finishSlamDialog.showModal();
+      this.finishSlamMapNameInput.focus();
+      this.finishSlamMapNameInput.select();
+    }
+  }
+
+  async finishSlam(pushToRobot = false) {
+    const robot = this.selectedRobot();
+    if (!robot || this.isFleetManager(robot)) {
       return;
     }
+    const mapName = String(this.finishSlamMapNameInput?.value || "").trim();
+    if (!mapName) {
+      this.finishSlamMapNameInput?.focus();
+      return;
+    }
+    const activate = Boolean(pushToRobot);
+    this.finishSlamDialog?.close();
     try {
       const result = await this.runMapTransfer("slam", async (progress) => {
         await progress(3, "Preparing SLAM save...", 100);
         let staged = 8;
         const timer = window.setInterval(() => {
           staged = Math.min(92, staged + (staged < 60 ? 7 : 3));
-          this.setMapTransferProgress(staged, "Saving SLAM map and creating smap files...", 0);
+          this.setMapTransferProgress(
+            staged,
+            activate
+              ? "Saving locally, pushing, and loading the SLAM map..."
+              : "Saving the SLAM map in the Operator workspace...",
+            0,
+          );
         }, 380);
         try {
           const response = await this.postJson(`/api/robots/${encodeURIComponent(robot.id)}/slam/finish`, {
             mapName,
-            activate: true,
+            activate,
           });
           await progress(95, "Pulling saved map into Operator App...", 150);
           return response;
@@ -768,13 +791,19 @@ export const withRealtime = (Base) => class OperatorAppRealtime extends Base {
       });
       this.slamActive = false;
       this.slamState = result.state || null;
-      this.beginRobotMapTransition(`Loading saved SLAM map ${result.mapName || mapName}...`);
+      this.beginRobotMapTransition(
+        activate
+          ? `Loading saved SLAM map ${result.mapName || mapName}...`
+          : "Restoring the map and localization used before SLAM...",
+      );
       this.closeSlamStream();
       await this.refreshRobotMapState({ quiet: true });
       await this.refreshRobots({ quiet: true });
       await this.fetchSelectedRobotStatus(true);
       this.renderSelectedRobot();
-      this.robotMessageText.textContent = `SLAM map saved: ${result.mapName || mapName}.`;
+      this.robotMessageText.textContent = activate
+        ? `SLAM map saved locally, pushed, verified, and loaded: ${result.mapName || mapName}.`
+        : `SLAM map saved locally: ${result.mapName || mapName}. Previous robot map and localization restored.`;
     } catch (error) {
       this.robotMessageText.textContent = `Finish SLAM failed: ${error.message || error}`;
     }

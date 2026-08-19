@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import shutil
+import tempfile
 from threading import RLock
 from pathlib import Path
 from time import monotonic, sleep
@@ -22,6 +24,7 @@ from robot_msgs.srv import (
 from robot_planner import (
     WarehouseMapLoader,
     build_editable_map_bundle_payload,
+    build_editable_map_payload,
     editable_map_signature,
     restore_editable_map_bundle,
 )
@@ -50,6 +53,11 @@ class RobotMapManagerNode(Node):
         self.state_file = Path(state_file).resolve()
         self._active_map_dir = Path(map_dir).resolve()
         self._active_map_id = self._map_id_for_dir(self._active_map_dir)
+        self._active_map_signature = self._signature_for_dir(self._active_map_dir)
+        self._runtime_backup_dir = (self.maps_root / ".active-runtime-backup").resolve()
+        self._runtime_backup_map_name = ""
+        self._runtime_backup_signature = ""
+        self._clear_runtime_backup()
         self._state_lock = RLock()
         self._callback_group = ReentrantCallbackGroup()
         self._map_server_client = self.create_client(
@@ -106,6 +114,7 @@ class RobotMapManagerNode(Node):
             response.map_name = self._active_map_name()
             response.map_dir = str(self._active_map_dir)
             response.map_id = self._active_map_id
+            response.signature = self._active_map_signature
         return response
 
     def _handle_load_map(self, request, response):
@@ -121,12 +130,14 @@ class RobotMapManagerNode(Node):
                 response.map_name = self._active_map_name()
                 response.map_dir = str(self._active_map_dir)
                 response.map_id = self._active_map_id
+                response.signature = self._active_map_signature
         except Exception as exc:  # pragma: no cover - ROS service boundary
             response.ok = False
             response.error = str(exc)
             response.map_name = ""
             response.map_dir = ""
             response.map_id = ""
+            response.signature = ""
         return response
 
     def _handle_list_maps(self, _request, response):
@@ -135,29 +146,35 @@ class RobotMapManagerNode(Node):
                 names: list[str] = []
                 dirs: list[str] = []
                 ids: list[str] = []
+                signatures: list[str] = []
                 for item in sorted(self.maps_root.glob("*.smap")):
                     if not item.is_dir() or not (item / "LMs.yaml").exists():
                         continue
                     names.append(item.stem.replace(".smap", ""))
                     dirs.append(str(item.resolve()))
                     ids.append(self._fast_map_id_for_dir(item))
+                    signatures.append(self._signature_for_dir(item))
                 response.ok = True
                 response.error = ""
                 response.active_map_name = self._active_map_name()
                 response.active_map_dir = str(self._active_map_dir)
                 response.active_map_id = self._active_map_id
+                response.active_map_signature = self._active_map_signature
                 response.map_names = names
                 response.map_dirs = dirs
                 response.map_ids = ids
+                response.map_signatures = signatures
         except Exception as exc:  # pragma: no cover - ROS service boundary
             response.ok = False
             response.error = str(exc)
             response.active_map_name = ""
             response.active_map_dir = ""
             response.active_map_id = ""
+            response.active_map_signature = ""
             response.map_names = []
             response.map_dirs = []
             response.map_ids = []
+            response.map_signatures = []
         return response
 
     def _handle_get_bundle(self, request, response):
@@ -193,7 +210,7 @@ class RobotMapManagerNode(Node):
                     raise ValueError("bundle_json must contain an object")
                 map_name = str(request.map_name or payload.get("mapName") or "").strip()
                 target = self._resolve_put_target_map(map_name)
-                restore_editable_map_bundle(target, payload)
+                signature = self._store_bundle_atomically(target, payload)
                 if bool(request.activate):
                     self._load_target_map(target)
                 response.ok = True
@@ -201,7 +218,7 @@ class RobotMapManagerNode(Node):
                 response.map_name = target.stem.replace(".smap", "")
                 response.map_dir = str(target)
                 response.map_id = self._map_id_for_dir(target)
-                response.signature = str(payload.get("signature") or editable_map_signature(payload))
+                response.signature = signature
         except Exception as exc:  # pragma: no cover - ROS service boundary
             response.ok = False
             response.error = str(exc)
@@ -212,6 +229,44 @@ class RobotMapManagerNode(Node):
         return response
 
     def _load_target_map(self, target: Path) -> None:
+        previous = self._active_map_dir
+        previous_name = self._active_map_name()
+        previous_id = self._active_map_id
+        previous_signature = self._active_map_signature
+        rollback_target = previous
+        has_runtime_backup = (
+            self._runtime_backup_dir.is_dir()
+            and self._runtime_backup_map_name == previous_name
+            and self._runtime_backup_signature == self._active_map_signature
+        )
+        if has_runtime_backup:
+            rollback_target = self._runtime_backup_dir
+        try:
+            self._apply_target_map(target)
+            new_map_id = self._map_id_for_dir(target)
+            new_signature = self._signature_for_dir(target)
+            self._active_map_dir = target
+            self._active_map_id = new_map_id
+            self._active_map_signature = new_signature
+            self._persist_state()
+        except Exception as exc:
+            self._active_map_dir = previous
+            self._active_map_id = previous_id
+            self._active_map_signature = previous_signature
+            rollback_error = ""
+            if (
+                rollback_target.is_dir()
+                and (has_runtime_backup or previous.resolve() != target.resolve())
+            ):
+                try:
+                    self._apply_target_map(rollback_target, map_name=previous_name)
+                except Exception as rollback_exc:
+                    rollback_error = f"; rollback failed: {rollback_exc}"
+            raise ValueError(f"map load transaction failed: {exc}{rollback_error}") from exc
+
+        self._clear_runtime_backup()
+
+    def _apply_target_map(self, target: Path, *, map_name: str = "") -> None:
         map_yaml = find_ros_map_yaml(target)
         nav2_request = Nav2LoadMap.Request()
         nav2_request.map_url = str(map_yaml)
@@ -220,14 +275,63 @@ class RobotMapManagerNode(Node):
             raise ValueError(f"map_server rejected map load with result={int(nav2_response.result)}")
 
         internal_request = LoadRobotMap.Request()
-        internal_request.map_name = target.stem.replace(".smap", "")
+        internal_request.map_name = str(map_name or target.stem.replace(".smap", ""))
         internal_request.map_dir = str(target)
         self._require_ok(self._call_service(self._route_load_client, internal_request, "route/load_map"), "route/load_map")
         self._require_ok(self._call_service(self._status_load_client, internal_request, "status/load_map"), "status/load_map")
 
-        self._active_map_dir = target
-        self._active_map_id = self._map_id_for_dir(target)
-        self._persist_state()
+    def _store_bundle_atomically(self, target: Path, payload: dict) -> str:
+        self.maps_root.mkdir(parents=True, exist_ok=True)
+        staging = Path(
+            tempfile.mkdtemp(
+                prefix=f".{target.name}.upload-",
+                dir=str(self.maps_root),
+            )
+        ).resolve()
+        backup = (self.maps_root / f".{target.name}.backup").resolve()
+        swapped = False
+        backed_up = False
+        try:
+            restore_editable_map_bundle(staging, payload)
+            staged_payload = build_editable_map_payload(staging)
+            staged_payload["mapName"] = target.stem.replace(".smap", "")
+            staged_signature = editable_map_signature(staged_payload)
+            expected_signature = str(payload.get("signature") or "").strip()
+            if expected_signature and staged_signature != expected_signature:
+                raise ValueError(
+                    "uploaded map signature mismatch: "
+                    f"expected {expected_signature}, got {staged_signature}"
+                )
+            if (
+                target.resolve() == self._active_map_dir.resolve()
+                and staged_signature != self._active_map_signature
+            ):
+                self._preserve_active_runtime_map(target)
+            if backup.exists():
+                shutil.rmtree(backup)
+            if target.exists():
+                target.rename(backup)
+                backed_up = True
+            staging.rename(target)
+            swapped = True
+            verified_signature = self._signature_for_dir(target)
+            if verified_signature != staged_signature:
+                raise ValueError(
+                    "stored map signature mismatch after atomic replace: "
+                    f"expected {staged_signature}, got {verified_signature}"
+                )
+            if backup.exists():
+                shutil.rmtree(backup)
+            return verified_signature
+        except Exception:
+            if swapped and target.exists():
+                shutil.rmtree(target)
+            if backed_up and backup.exists():
+                backup.rename(target)
+            raise
+        finally:
+            if staging.exists():
+                shutil.rmtree(staging)
 
     def _resolve_target_map(self, *, map_name: str, map_dir: str) -> Path:
         if map_dir:
@@ -266,6 +370,57 @@ class RobotMapManagerNode(Node):
             return self._active_map_id
         return resolved.stem.replace(".smap", "")
 
+    def _signature_for_dir(self, map_dir: Path, *, map_name: str = "") -> str:
+        resolved = Path(map_dir).resolve()
+        payload = build_editable_map_payload(resolved)
+        payload["mapName"] = str(map_name or resolved.stem.replace(".smap", ""))
+        return editable_map_signature(payload)
+
+    def _preserve_active_runtime_map(self, target: Path) -> None:
+        active_name = self._active_map_name()
+        if (
+            self._runtime_backup_dir.is_dir()
+            and self._runtime_backup_map_name == active_name
+            and self._runtime_backup_signature == self._active_map_signature
+        ):
+            return
+        current_signature = self._signature_for_dir(target, map_name=active_name)
+        if current_signature != self._active_map_signature:
+            raise ValueError(
+                "cannot preserve active runtime map before Push: "
+                f"runtime={self._active_map_signature}, storage={current_signature}"
+            )
+        staging = Path(
+            tempfile.mkdtemp(
+                prefix=".active-runtime-backup-",
+                dir=str(self.maps_root),
+            )
+        ).resolve()
+        shutil.rmtree(staging)
+        try:
+            shutil.copytree(target, staging)
+            copied_signature = self._signature_for_dir(staging, map_name=active_name)
+            if copied_signature != self._active_map_signature:
+                raise ValueError("active runtime backup verification failed")
+            if self._runtime_backup_dir.exists():
+                shutil.rmtree(self._runtime_backup_dir)
+            staging.rename(self._runtime_backup_dir)
+            self._runtime_backup_map_name = active_name
+            self._runtime_backup_signature = copied_signature
+        finally:
+            if staging.exists():
+                shutil.rmtree(staging)
+
+    def _clear_runtime_backup(self) -> None:
+        try:
+            if self._runtime_backup_dir.exists():
+                shutil.rmtree(self._runtime_backup_dir)
+        except OSError as exc:
+            self.get_logger().warning(f"failed to remove stale runtime map backup: {exc}")
+            return
+        self._runtime_backup_map_name = ""
+        self._runtime_backup_signature = ""
+
     def _active_map_name(self) -> str:
         return self._active_map_dir.stem.replace(".smap", "")
 
@@ -274,6 +429,7 @@ class RobotMapManagerNode(Node):
             "mapName": self._active_map_name(),
             "mapDir": str(self._active_map_dir),
             "mapId": self._active_map_id,
+            "signature": self._active_map_signature,
         }
         atomic_write_text(
             self.state_file,

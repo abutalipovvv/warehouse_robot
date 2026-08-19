@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import inspect
 import json
+import math
 import os
 from pathlib import Path
 import subprocess
@@ -99,6 +100,7 @@ EXPECTED_COMPONENT_METHODS = {
         "acquire_control",
         "release_control",
         "relocate",
+        "_publish_initial_pose_ros",
         "_map_pose_to_ros_pose",
         "confirm_localization",
         "pause_route",
@@ -141,6 +143,10 @@ EXPECTED_COMPONENT_METHODS = {
         "slam_map_frame_payload",
         "finish_slam",
         "cancel_slam",
+        "_capture_pre_slam_localization",
+        "_slam_session_pose_snapshot",
+        "_restore_pre_slam_localization",
+        "_compose_planar_pose",
         "_set_slam_progress",
         "_slam_cells_to_bytes",
         "_safe_map_name",
@@ -158,6 +164,7 @@ EXPECTED_COMPONENT_METHODS = {
         "_wait_for_zero_odom_after_reset",
         "_pause_nav2_for_slam",
         "_resume_nav2_after_slam",
+        "_ensure_slam_toolbox_active",
         "_stop_robot_motion_for_slam",
         "_call_nav2_lifecycle_manager",
         "_call_nav2_node_transition",
@@ -273,12 +280,14 @@ EXPECTED_STATE_KEYS = [
     "_reset_odom_client",
     "_nav2_lifecycle_clients",
     "_nav2_change_state_clients",
+    "_slam_lifecycle_state_client",
     "_save_map_type",
     "_std_empty_type",
     "_occupancy_grid_type",
     "_slam_process",
     "_slam_temp_dir",
     "_nav2_paused_for_slam",
+    "_pre_slam_localization",
     "_slam_ignore_maps_until",
     "_slam_state",
     "_slam_trail",
@@ -381,7 +390,7 @@ def test_facade_composes_seven_disjoint_local_capabilities() -> None:
         assert actual == expected
         assert owned.isdisjoint(actual)
         owned.update(actual)
-    assert len(owned) == 103
+    assert len(owned) == 109
     assert _defined_methods(RosRobotRuntime) == set()
     assert not any(
         "fleet_manager" in value.__module__
@@ -520,6 +529,36 @@ def test_odom_callback_tracks_slam_pose_and_trail(
     assert runtime._slam_trail == [runtime._latest_odom_pose]
 
 
+def test_initial_pose_uses_robot_odom_clock(
+    runtime: RosRobotRuntime,
+) -> None:
+    class InitialPose:
+        def __init__(self) -> None:
+            self.header = SimpleNamespace(
+                frame_id="",
+                stamp=SimpleNamespace(sec=0, nanosec=0),
+            )
+            self.pose = SimpleNamespace(
+                pose=SimpleNamespace(
+                    position=SimpleNamespace(x=0.0, y=0.0, z=0.0),
+                    orientation=SimpleNamespace(z=0.0, w=1.0),
+                ),
+                covariance=[0.0] * 36,
+            )
+
+    published: list[Any] = []
+    runtime._pose_with_covariance_type = InitialPose
+    runtime._initial_pose_pub = SimpleNamespace(publish=published.append)
+    runtime._latest_odom_pose = {"stampSec": 42.25}
+    runtime._publish_twist = lambda linear, angular: None
+
+    runtime._publish_initial_pose_ros(x=1.0, y=2.0, yaw=0.3)
+
+    assert len(published) == 1
+    assert published[0].header.stamp.sec == 42
+    assert published[0].header.stamp.nanosec == 250_000_000
+
+
 def test_reset_odom_waits_for_fresh_zero_pose(
     runtime: RosRobotRuntime,
     monkeypatch: pytest.MonkeyPatch,
@@ -562,6 +601,41 @@ def test_reset_odom_waits_for_fresh_zero_pose(
 
     assert calls == [("reset odom", 3.0)]
     assert runtime._slam_trail == []
+
+
+def test_cancel_restore_composes_slam_odom_with_saved_map_pose(
+    runtime: RosRobotRuntime,
+) -> None:
+    runtime._pre_slam_localization = {
+        "mapName": "warehouse-old",
+        "pose": {"x": 10.0, "y": 4.0, "yaw": math.pi / 2.0},
+    }
+    runtime._latest_odom_pose = {
+        "x": 2.0,
+        "y": 1.0,
+        "yaw": -0.25,
+    }
+    runtime.active_map_payload = lambda: {"mapName": "warehouse-old"}
+    published: list[dict[str, Any]] = []
+    runtime._publish_initial_pose_ros = lambda **payload: published.append(payload)
+
+    restored = runtime._restore_pre_slam_localization()
+
+    assert restored["mapName"] == "warehouse-old"
+    assert restored["pose"] == pytest.approx(
+        {"x": 9.0, "y": 6.0, "yaw": (math.pi / 2.0) - 0.25}
+    )
+    assert len(published) == 1
+    assert published[0]["x"] == pytest.approx(9.0)
+    assert published[0]["y"] == pytest.approx(6.0)
+    assert published[0]["yaw"] == pytest.approx((math.pi / 2.0) - 0.25)
+    assert published[0]["frame_id"] == "map_local"
+    assert published[0]["confirm"] is True
+    assert published[0]["repeat"] == 3
+    covariance = json.loads(published[0]["covariance_json"])
+    assert covariance[0] == covariance[7] == pytest.approx(0.0025)
+    assert covariance[35] == pytest.approx(0.0027415568)
+    assert runtime._pre_slam_localization is None
 
 
 def test_nav2_pause_and_resume_keep_manager_order(
@@ -618,6 +692,39 @@ def test_nav2_pause_and_resume_keep_manager_order(
         20,
         20,
     ]
+
+
+def test_slam_lifecycle_is_explicitly_activated(
+    runtime: RosRobotRuntime,
+) -> None:
+    class GetState:
+        class Request:
+            pass
+
+    runtime._transition_type = SimpleNamespace(TRANSITION_ACTIVATE=3)
+    state_client = SimpleNamespace(srv_type=GetState)
+    runtime._slam_lifecycle_state_client = state_client
+    runtime._service_available = lambda client, timeout_sec=0.05: True
+    runtime._call_service = lambda client, request, label, timeout_sec: SimpleNamespace(
+        current_state=SimpleNamespace(id=2, label="inactive")
+    )
+    calls: list[tuple[str, int, str]] = []
+
+    def activate(
+        node_name: str,
+        transition_id: int,
+        transition_label: str,
+        details: dict[str, Any],
+    ) -> bool:
+        calls.append((node_name, transition_id, transition_label))
+        details["nodes"].append(node_name)
+        return True
+
+    runtime._call_nav2_node_transition = activate
+
+    runtime._ensure_slam_toolbox_active()
+
+    assert calls == [("slam_toolbox", 3, "activate")]
 
 
 def test_navigation_mode_guards_map_changes(runtime: RosRobotRuntime) -> None:
@@ -695,6 +802,62 @@ def test_slam_writes_are_atomic_and_use_local_shared_pgm(
         ("text", ".operator_meta.json"),
         ("text", "smap_summary.json"),
     ]
+
+
+@pytest.mark.parametrize("activate", [False, True])
+def test_finish_slam_selects_saved_or_previous_localization(
+    runtime: RosRobotRuntime,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    activate: bool,
+) -> None:
+    runtime._slam_state = {"active": True, "state": "mapping"}
+    runtime._latest_map = SimpleNamespace()
+    runtime._slam_maps_root = lambda: tmp_path
+    runtime._save_slam_map_files = lambda target, name: None
+    runtime._write_empty_smap_sidecars = lambda target, name: None
+    monkeypatch.setattr(
+        ros_runtime_slam,
+        "build_editable_map_bundle_payload",
+        lambda target: {"mapName": target.stem.replace(".smap", "")},
+    )
+    monkeypatch.setattr(
+        ros_runtime_slam,
+        "editable_map_signature",
+        lambda payload: "saved-signature",
+    )
+    calls: list[tuple[str, Any]] = []
+    runtime._stop_slam_process = lambda: calls.append(("stop", None))
+    runtime._resume_nav2_after_slam = lambda: calls.append(("resume", None))
+    runtime._restore_pre_slam_localization = lambda: calls.append(
+        ("restore-previous", None)
+    ) or {"mapName": "old-map"}
+    runtime._slam_session_pose_snapshot = lambda: {
+        "x": 1.0,
+        "y": 2.0,
+        "yaw": 0.3,
+    }
+    runtime.load_map = lambda name, allow_during_transition: calls.append(
+        ("load", (name, allow_during_transition))
+    ) or {"mapId": name}
+    runtime._publish_initial_pose_ros = lambda **payload: calls.append(
+        ("initial-pose", payload)
+    )
+
+    result = runtime.finish_slam(map_name="new-map", activate=activate)
+
+    assert result["mapName"] == "new-map"
+    assert result["signature"] == "saved-signature"
+    if activate:
+        assert ("load", ("new-map", True)) in calls
+        assert any(kind == "initial-pose" for kind, _payload in calls)
+        assert not any(kind == "restore-previous" for kind, _payload in calls)
+    else:
+        assert ("restore-previous", None) in calls
+        assert not any(kind == "load" for kind, _payload in calls)
+        assert not any(kind == "initial-pose" for kind, _payload in calls)
+        assert result["mapDir"] == ""
+        assert not any(tmp_path.glob(".slam-new-map-*"))
 
 
 def test_params_and_temporary_slam_params_use_local_atomic_writer(

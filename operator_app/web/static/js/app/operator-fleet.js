@@ -163,19 +163,15 @@ export const withFleetUi = (Base) => class OperatorAppFleetUi extends Base {
         this.robotMapState = {
           robotActiveMapName: robotActiveName,
           operatorActiveMapName: localActiveName,
-          robotSignature: String(robotActive.signature || localActive.robotSignature || "").trim(),
+          robotSignature: String(localActive.robotSignature || "").trim(),
           operatorSignature: nextSignature,
           sourceRobotMapName: String(localActive.robotMapName || localActive.sourceMapName || robotActiveName).trim(),
-          hasLocalChanges: Boolean(
-            localActiveName &&
-            (
-              Boolean(localActive.hasLocalChanges) ||
-              (nextSignature &&
-               String(robotActive.signature || localActive.robotSignature || "").trim() &&
-               nextSignature !== String(robotActive.signature || localActive.robotSignature || "").trim()) ||
-              (localActiveName && robotActiveName && localActiveName !== robotActiveName)
-            )
-          ),
+          robotStoredMapName: String(localActive.robotMapName || "").trim(),
+          robotActiveSignature: String(localActive.robotActiveSignature || robotActive.signature || "").trim(),
+          activationRequired: Boolean(localActive.activationRequired),
+          remoteVerified: Boolean(localActive.remoteVerified),
+          syncState: String(localActive.syncState || "").trim(),
+          hasLocalChanges: Boolean(localActive.hasLocalChanges),
         };
       } catch (error) {
         if (!this.mapContextRequestIsCurrent(context)) {
@@ -213,21 +209,15 @@ export const withFleetUi = (Base) => class OperatorAppFleetUi extends Base {
       this.robotMapState = {
         robotActiveMapName: String(robotActive.mapName || localActive.robotMapName || "").trim(),
         operatorActiveMapName: String(localActive.activeMapName || "").trim(),
-        robotSignature: String(robotActive.signature || localActive.robotSignature || "").trim(),
+        robotSignature: String(localActive.robotSignature || "").trim(),
         operatorSignature: nextSignature,
         sourceRobotMapName: String(localActive.robotMapName || localActive.sourceMapName || "").trim(),
-        hasLocalChanges: Boolean(
-          localActive.activeMapName &&
-          (
-            Boolean(localActive.hasLocalChanges) ||
-            (nextSignature &&
-             String(robotActive.signature || localActive.robotSignature || "").trim() &&
-             nextSignature !== String(robotActive.signature || localActive.robotSignature || "").trim()) ||
-            (String(localActive.activeMapName || "").trim() &&
-             String(robotActive.mapName || "").trim() &&
-             String(localActive.activeMapName || "").trim() !== String(robotActive.mapName || "").trim())
-          )
-        ),
+        robotStoredMapName: String(localActive.robotMapName || "").trim(),
+        robotActiveSignature: String(localActive.robotActiveSignature || robotActive.signature || "").trim(),
+        activationRequired: Boolean(localActive.activationRequired),
+        remoteVerified: Boolean(localActive.remoteVerified),
+        syncState: String(localActive.syncState || "").trim(),
+        hasLocalChanges: Boolean(localActive.hasLocalChanges),
       };
     } catch (error) {
       if (!this.mapContextRequestIsCurrent(context)) {
@@ -349,6 +339,11 @@ export const withFleetUi = (Base) => class OperatorAppFleetUi extends Base {
       robotSignature,
       operatorSignature: nextSignature || this.robotMapState.operatorSignature,
       sourceRobotMapName: String(local?.robotMapName || local?.sourceMapName || loadedName || this.robotMapState.sourceRobotMapName || "").trim(),
+      robotStoredMapName: String(local?.robotMapName || loadedName || "").trim(),
+      robotActiveSignature: String(result?.signature || local?.robotSignature || "").trim(),
+      activationRequired: false,
+      remoteVerified: true,
+      syncState: "synchronized",
       hasLocalChanges: local
         ? Boolean(local.hasLocalChanges || (localName && loadedName && localName !== loadedName))
         : this.robotMapState.hasLocalChanges,
@@ -1105,36 +1100,69 @@ export const withFleetUi = (Base) => class OperatorAppFleetUi extends Base {
     const hasChanges = Boolean(this.robotMapState.hasLocalChanges);
     const remoteLabel = isFleet ? "Fleet Manager" : "Robot";
     const remoteMap = this.robotMapState.robotActiveMapName || "-";
+    const storedMap = this.robotMapState.robotStoredMapName || this.robotMapState.sourceRobotMapName || "-";
     const localMap = this.robotMapState.operatorActiveMapName || "-";
+    const syncState = String(this.robotMapState.syncState || "");
+    const shortHash = (value) => {
+      const hash = String(value || "").trim();
+      return hash ? hash.slice(0, 12) : "-";
+    };
+    const hashes = `Operator ${shortHash(this.robotMapState.operatorSignature)} · Robot storage ${shortHash(this.robotMapState.robotSignature)} · Active ${shortHash(this.robotMapState.robotActiveSignature)}`;
     if (!hasLocal) {
       this.setMapSyncStatus("neutral", {
         state: "Local map missing",
         local: localMap,
+        stored: storedMap,
+        active: remoteMap,
         remoteLabel,
-        remote: remoteMap,
         detail: "Use Pull to create this workspace's local operator copy.",
       });
       this.controlPushMapButton.classList.remove("primary");
       return;
     }
-    if (hasChanges) {
-      const source = this.robotMapState.sourceRobotMapName || this.robotMapState.robotActiveMapName || "-";
-      this.setMapSyncStatus("warning", {
-        state: "Local changes",
+    if (syncState === "unverified") {
+      this.setMapSyncStatus("neutral", {
+        state: "Unverified",
         local: localMap,
+        stored: storedMap,
+        active: remoteMap,
         remoteLabel,
-        remote: source,
-        detail: "Use Push to apply only this workspace's local changes.",
+        detail: "The robot could not be queried, so synchronization is not being claimed.",
+      });
+      this.controlPushMapButton.classList.remove("primary");
+      return;
+    }
+    if (hasChanges) {
+      this.setMapSyncStatus("warning", {
+        state: syncState === "local_only" ? "Local only" : "Local changes",
+        local: localMap,
+        stored: storedMap,
+        active: remoteMap,
+        remoteLabel,
+        detail: `${hashes}. Use Push to upload and verify this local map.`,
       });
       this.controlPushMapButton.classList.add("primary");
+      return;
+    }
+    if (this.robotMapState.activationRequired) {
+      this.setMapSyncStatus("neutral", {
+        state: "Load required",
+        local: localMap,
+        stored: storedMap,
+        active: remoteMap,
+        remoteLabel,
+        detail: `${hashes}. The map is verified in robot storage; use Load to activate it.`,
+      });
+      this.controlPushMapButton.classList.remove("primary");
       return;
     }
     this.setMapSyncStatus("success", {
       state: "Maps synchronized",
       local: localMap,
+      stored: storedMap,
+      active: remoteMap,
       remoteLabel,
-      remote: remoteMap,
-      detail: "Local and remote signatures match.",
+      detail: `${hashes}. Storage, runtime, and Operator are verified.`,
     });
     this.controlPushMapButton.classList.remove("primary");
   }
@@ -1148,7 +1176,8 @@ export const withFleetUi = (Base) => class OperatorAppFleetUi extends Base {
     const fields = [
       ["State", details.state],
       ["Operator", details.local],
-      [details.remoteLabel || "Remote", details.remote],
+      [`${details.remoteLabel || "Remote"} storage`, details.stored],
+      [`${details.remoteLabel || "Remote"} active`, details.active],
     ];
     for (const [label, value] of fields) {
       const item = document.createElement("span");

@@ -4,6 +4,8 @@ string error
 string active_map_name
 string active_map_dir
 string active_map_id
+string active_map_signature
 string[] map_names
 string[] map_dirs
 string[] map_ids
+string[] map_signatures

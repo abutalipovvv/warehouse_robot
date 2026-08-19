@@ -4,11 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from .fleet_manager import (
-    FLEET_MANAGER_ID,
-    FLEET_MANAGER_SIM_ID,
-    OperatorFleetManager,
-)
+from .fleet_manager import FLEET_MANAGER_ID
 
 
 class FleetMapSyncMixin:
@@ -27,96 +23,70 @@ class FleetMapSyncMixin:
         active_payload = self.map_cache.load_active_map(manager_id)
         robot_active = manager.maps_active_payload()
         robot_active_name = str(robot_active.get("mapName") or "").strip()
-        robot_signature = str(robot_active.get("signature") or "").strip()
-        sync_warning = ""
-        local_active_name = str(active_payload.get("mapName") or active_name).strip() if isinstance(active_payload, dict) else active_name
-        if manager_id == FLEET_MANAGER_SIM_ID and robot_active_name and local_active_name != robot_active_name:
-            try:
-                active_payload = self._sync_fleet_local_map_from_manager(
-                    manager,
-                    manager_id,
-                    robot_active_name,
-                    robot_active=robot_active,
-                )
-                active_name = self.map_cache.active_map_name(manager_id)
-            except Exception as exc:
-                sync_warning = str(exc)
+        robot_active_signature = str(robot_active.get("signature") or "").strip()
+        stored_signature = ""
+        remote_verified = False
+        remote_error = ""
         if isinstance(active_payload, dict):
+            local_name = str(active_payload.get("mapName") or active_name).strip()
             local_signature = str(active_payload.get("signature") or "").strip()
-            active_payload["robotSignature"] = str(active_payload.get("robotSignature") or robot_signature)
-            active_payload["robotMapName"] = str(active_payload.get("robotMapName") or robot_active_name)
-            active_payload["hasLocalChanges"] = bool(
-                (local_signature and robot_signature and local_signature != robot_signature)
-                or (robot_active_name and str(active_payload.get("mapName") or "").strip() != robot_active_name)
+            try:
+                stored = manager.pull_map_payload(local_name)
+                stored_signature = str(stored.get("signature") or "").strip()
+                remote_verified = bool(stored_signature)
+                active_payload["robotSignature"] = stored_signature
+                active_payload["robotMapName"] = local_name if remote_verified else ""
+                active_payload["hasLocalChanges"] = bool(
+                    not remote_verified
+                    or not local_signature
+                    or local_signature != stored_signature
+                )
+            except Exception as exc:
+                remote_error = str(exc)
+        local_signature = str(active_payload.get("signature") or "").strip() if isinstance(active_payload, dict) else ""
+        has_local_changes = bool(active_payload.get("hasLocalChanges")) if isinstance(active_payload, dict) else False
+        local_name = str(active_payload.get("mapName") or active_name).strip() if isinstance(active_payload, dict) else ""
+        activation_required = bool(
+            isinstance(active_payload, dict)
+            and remote_verified
+            and not has_local_changes
+            and (
+                robot_active_name != local_name
+                or robot_active_signature != local_signature
             )
+        )
+        if not isinstance(active_payload, dict):
+            sync_state = "local_missing"
+        elif remote_error:
+            sync_state = "unverified"
+        elif not remote_verified:
+            sync_state = "local_only"
+        elif has_local_changes:
+            sync_state = "local_changes"
+        elif activation_required:
+            sync_state = "load_required"
+        else:
+            sync_state = "synchronized"
         return {
             "ok": True,
             "activeMapName": active_name,
             "map": active_payload.get("map") if isinstance(active_payload, dict) else None,
             "sourceMapName": str(active_payload.get("sourceMapName") or "") if isinstance(active_payload, dict) else "",
             "signature": str(active_payload.get("signature") or "") if isinstance(active_payload, dict) else "",
-            "robotSignature": str(active_payload.get("robotSignature") or robot_signature) if isinstance(active_payload, dict) else robot_signature,
-            "robotMapName": str(active_payload.get("robotMapName") or robot_active_name) if isinstance(active_payload, dict) else robot_active_name,
-            "hasLocalChanges": bool(active_payload.get("hasLocalChanges")) if isinstance(active_payload, dict) else False,
-            **({"warning": sync_warning} if sync_warning else {}),
+            "robotSignature": stored_signature or (str(active_payload.get("robotSignature") or "") if isinstance(active_payload, dict) else ""),
+            "robotMapName": str(active_payload.get("robotMapName") or "") if isinstance(active_payload, dict) else "",
+            "robotActiveMapName": robot_active_name,
+            "robotActiveSignature": robot_active_signature,
+            "hasLocalChanges": has_local_changes,
+            "activationRequired": activation_required,
+            "remoteVerified": remote_verified,
+            "syncState": sync_state,
+            **({"remoteError": remote_error} if remote_error else {}),
         }
 
     def fleet_local_map_payload(self, map_name: str, manager_id: str = FLEET_MANAGER_ID) -> dict[str, Any]:
         payload = self.map_cache.load_map(manager_id, map_name)
         return {"ok": True, **payload}
-
-    def _fleet_local_response(
-        self,
-        active_payload: dict[str, Any] | None,
-        *,
-        active_name: str,
-        robot_active_name: str,
-        robot_signature: str,
-    ) -> dict[str, Any] | None:
-        if not isinstance(active_payload, dict):
-            return None
-        map_payload = active_payload.get("map") if isinstance(active_payload.get("map"), dict) else None
-        local_name = str(active_payload.get("mapName") or active_name).strip()
-        local_signature = str(active_payload.get("signature") or "").strip()
-        robot_map_name = str(active_payload.get("robotMapName") or active_payload.get("sourceMapName") or robot_active_name).strip()
-        robot_sig = str(active_payload.get("robotSignature") or robot_signature).strip()
-        has_local_changes = bool(
-            active_payload.get("hasLocalChanges")
-            or (local_signature and robot_sig and local_signature != robot_sig)
-            or (local_name and robot_map_name and local_name != robot_map_name)
-        )
-        return {
-            "activeMapName": local_name,
-            "mapName": local_name,
-            "map": map_payload,
-            "sourceMapName": str(active_payload.get("sourceMapName") or robot_map_name or local_name),
-            "signature": local_signature,
-            "robotSignature": robot_sig,
-            "robotMapName": robot_map_name,
-            "hasLocalChanges": has_local_changes,
-        }
-
-    def _sync_fleet_local_map_from_manager(
-        self,
-        manager: OperatorFleetManager,
-        manager_id: str,
-        map_name: str,
-        *,
-        robot_active: dict[str, Any] | None = None,
-    ) -> dict[str, Any] | None:
-        pulled = manager.pull_map_payload(map_name)
-        pulled_name = str(pulled.get("mapName") or map_name).strip()
-        cached = self.map_cache.save_pulled_map(manager_id, pulled, activate=True)
-        active_payload = self.map_cache.load_active_map(manager_id)
-        active_name = str(cached.get("mapName") or pulled_name or self.map_cache.active_map_name(manager_id)).strip()
-        robot_active_name = str((robot_active or {}).get("mapName") or pulled_name or map_name).strip()
-        robot_signature = str((robot_active or {}).get("signature") or pulled.get("signature") or "").strip()
-        return self._fleet_local_response(
-            active_payload,
-            active_name=active_name,
-            robot_active_name=robot_active_name,
-            robot_signature=robot_signature,
-        )
 
     def fleet_load_map_payload(
         self,
@@ -124,23 +94,58 @@ class FleetMapSyncMixin:
         manager_id: str = FLEET_MANAGER_ID,
     ) -> dict[str, Any]:
         manager = self._fleet_manager_for_id(manager_id)
-        loaded = manager.load_map_payload(payload)
-        map_name = str(loaded.get("mapName") or payload.get("mapName") or payload.get("folder") or "").strip()
+        map_name = str(payload.get("mapName") or payload.get("folder") or "").strip()
         if not map_name:
-            return loaded
+            raise ValueError("mapName is required")
+        requested_name = map_name.removesuffix(".smap")
+        previous = manager.maps_active_payload()
+        loaded = manager.load_map_payload(payload)
         try:
-            local_payload = self._sync_fleet_local_map_from_manager(
-                manager,
-                manager_id,
-                map_name,
-                robot_active=loaded,
+            active = manager.maps_active_payload()
+            loaded_name = str(active.get("mapName") or loaded.get("mapName") or "").strip()
+            if loaded_name != requested_name:
+                raise ValueError(
+                    f"Fleet Manager activated {loaded_name or '-'} instead of {requested_name}"
+                )
+            bundle = manager.pull_map_payload(loaded_name)
+            bundle_signature = str(bundle.get("signature") or "").strip()
+            active_signature = str(active.get("signature") or loaded.get("signature") or "").strip()
+            if not bundle_signature or active_signature != bundle_signature:
+                raise ValueError(
+                    "Fleet Manager active map verification failed after Load: "
+                    f"runtime={active_signature or '-'} stored={bundle_signature or '-'}"
+                )
+            self.map_cache.save_pulled_map(manager_id, bundle, activate=True)
+            local_payload = self.map_cache.load_active_map(manager_id)
+            if not isinstance(local_payload, dict):
+                raise ValueError("operator failed to activate the verified Fleet Manager map")
+            loaded.update(
+                {
+                    "signature": bundle_signature,
+                    "verified": True,
+                    "local": {
+                        "activeMapName": str(local_payload.get("mapName") or loaded_name),
+                        "map": local_payload.get("map"),
+                        "sourceMapName": str(local_payload.get("sourceMapName") or loaded_name),
+                        "signature": str(local_payload.get("signature") or ""),
+                        "robotSignature": bundle_signature,
+                        "robotMapName": loaded_name,
+                        "hasLocalChanges": False,
+                        "activationRequired": False,
+                        "syncState": "synchronized",
+                    },
+                }
             )
-            if isinstance(local_payload, dict):
-                loaded["local"] = local_payload
-                loaded.setdefault("signature", str(local_payload.get("robotSignature") or local_payload.get("signature") or ""))
+            return loaded
         except Exception as exc:
-            loaded["warning"] = str(exc)
-        return loaded
+            previous_name = str(previous.get("mapName") or "").strip()
+            rollback_error = ""
+            if previous_name and previous_name != requested_name:
+                try:
+                    manager.load_map_payload({"mapName": previous_name})
+                except Exception as rollback_exc:
+                    rollback_error = f"; Fleet Manager rollback failed: {rollback_exc}"
+            raise ValueError(f"Load verification failed: {exc}{rollback_error}") from exc
 
     def fleet_save_local_map_payload(
         self,
@@ -225,13 +230,16 @@ class FleetMapSyncMixin:
             }
         )
         local_name = str(result.get("mapName") or output_name or target_map_name or "map").strip()
-        cached = self.map_cache.save_map(
-            manager_id,
-            local_name,
-            result,
-            source_map_name=str(result.get("mapName") or local_name),
-        )
-        return {"ok": True, "pushed": result, "local": cached}
+        read_back = manager.pull_map_payload(local_name)
+        expected_signature = str(result.get("signature") or "").strip()
+        stored_signature = str(read_back.get("signature") or "").strip()
+        if not expected_signature or stored_signature != expected_signature:
+            raise ValueError(
+                "Fleet Manager map verification failed after Push: "
+                f"expected {expected_signature or '-'}, got {stored_signature or '-'}"
+            )
+        cached = self.map_cache.save_pulled_map(manager_id, read_back, activate=True)
+        return {"ok": True, "pushed": result, "verified": read_back, "local": cached}
 
     def fleet_pull_sync_payload(self, manager_id: str = FLEET_MANAGER_ID) -> dict[str, Any]:
         manager = self._fleet_manager_for_id(manager_id)
@@ -245,12 +253,19 @@ class FleetMapSyncMixin:
             if isinstance(local_map, dict):
                 local_signature = str(local_map.get("signature") or "").strip()
         robot_signature = str(robot_current.get("signature") or "").strip()
+        robot_runtime_signature = str(robot_active.get("signature") or "").strip()
+        load_required = robot_runtime_signature != robot_signature
         local_active_name = str(local_active.get("mapName") or "") if isinstance(local_active, dict) else ""
         if robot_active_name and robot_active_name == local_active_name and local_signature and local_signature == robot_signature:
             return {
                 "ok": True,
                 "changed": False,
-                "message": f"Operator already has active Fleet Manager map {robot_active_name}.",
+                "loadRequired": load_required,
+                "message": (
+                    f"Operator already has stored Fleet Manager map {robot_active_name}; Load is required."
+                    if load_required
+                    else f"Operator already has active Fleet Manager map {robot_active_name}."
+                ),
                 "robotActiveMapName": robot_active_name,
                 "localActiveMapName": local_active_name,
             }
@@ -266,7 +281,12 @@ class FleetMapSyncMixin:
         return {
             "ok": True,
             "changed": True,
-            "message": f"Pulled active Fleet Manager map {robot_active_name}.",
+            "loadRequired": load_required,
+            "message": (
+                f"Pulled stored Fleet Manager map {robot_active_name}; Load is required to activate it."
+                if load_required
+                else f"Pulled active Fleet Manager map {robot_active_name}."
+            ),
             "robotActiveMapName": robot_active_name,
             "localActiveMapName": str(pulled.get("local", {}).get("mapName") or robot_active_name),
             **pulled,
@@ -276,6 +296,7 @@ class FleetMapSyncMixin:
         manager = self._fleet_manager_for_id(manager_id)
         robot_active = manager.maps_active_payload()
         robot_active_name = str(robot_active.get("mapName") or "").strip()
+        robot_active_signature = str(robot_active.get("signature") or "").strip()
         local_active = self.map_cache.load_active_map(manager_id)
         if not isinstance(local_active, dict):
             raise ValueError("operator has no active local map")
@@ -284,16 +305,36 @@ class FleetMapSyncMixin:
             raise ValueError("operator active local map is invalid")
         local_map_payload = local_active.get("map")
         local_signature = str(local_map_payload.get("signature") or "").strip() if isinstance(local_map_payload, dict) else ""
-        has_local_changes = bool(local_active.get("hasLocalChanges"))
-        robot_current = manager.pull_map_payload(robot_active_name)
-        robot_signature = str(robot_current.get("signature") or "").strip()
-        if (not has_local_changes) and local_map_name == robot_active_name and local_signature and local_signature == robot_signature:
+        stored_signature = ""
+        try:
+            stored = manager.pull_map_payload(local_map_name)
+            stored_signature = str(stored.get("signature") or "").strip()
+        except Exception:
+            stored = None
+        if stored_signature == local_signature:
+            synced_local = self.map_cache.mark_synced(
+                manager_id,
+                local_map_name,
+                robot_signature=stored_signature,
+                robot_map_name=local_map_name,
+                activate=True,
+            )
+            load_required = bool(
+                robot_active_name != local_map_name
+                or robot_active_signature != local_signature
+            )
             return {
                 "ok": True,
                 "changed": False,
-                "message": f"Fleet Manager already uses {robot_active_name}.",
+                "loadRequired": load_required,
+                "message": (
+                    f"Fleet Manager already stores {local_map_name}; use Load to activate it."
+                    if load_required
+                    else f"Fleet Manager already stores and uses {local_map_name}."
+                ),
                 "robotActiveMapName": robot_active_name,
                 "localActiveMapName": local_map_name,
+                "local": synced_local,
             }
         pushed = self.fleet_push_map_payload(
             {
@@ -304,22 +345,25 @@ class FleetMapSyncMixin:
             },
             manager_id=manager_id,
         )
-        loaded = manager.load_map_payload({"mapName": local_map_name})
-        local_signature_after_push = str((pushed.get("pushed") or {}).get("signature") or local_signature).strip()
-        synced_local = self.map_cache.mark_synced(
-            manager_id,
-            local_map_name,
-            robot_signature=local_signature_after_push,
-            robot_map_name=str(loaded.get("mapName") or local_map_name),
-            activate=True,
+        after = manager.maps_active_payload()
+        after_active_name = str(after.get("mapName") or robot_active_name).strip()
+        after_active_signature = str(after.get("signature") or robot_active_signature).strip()
+        load_required = bool(
+            after_active_name != local_map_name
+            or after_active_signature != local_signature
         )
         return {
             "ok": True,
             "changed": True,
-            "message": f"Pushed and activated {local_map_name} on Fleet Manager.",
-            "robotActiveMapName": str(loaded.get("mapName") or local_map_name),
+            "loadRequired": load_required,
+            "message": (
+                f"Uploaded and verified {local_map_name}. Use Load to activate it on Fleet Manager."
+                if load_required
+                else f"Uploaded and verified active Fleet Manager map {local_map_name}."
+            ),
+            "robotActiveMapName": after_active_name,
             "localActiveMapName": local_map_name,
             "pushed": pushed.get("pushed"),
-            "local": synced_local,
-            "loaded": loaded,
+            "verified": pushed.get("verified"),
+            "local": pushed.get("local"),
         }

@@ -91,6 +91,29 @@ def test_save_editable_map_rejects_raster_dimension_mismatch(tmp_path: Path) -> 
     assert (map_dir / "map.pgm").read_bytes() == original
 
 
+def test_map_signature_covers_bundle_files_but_not_operator_metadata(
+    tmp_path: Path,
+) -> None:
+    map_dir = _make_map(tmp_path)
+    initial = build_editable_map_payload(map_dir)
+
+    (map_dir / ".operator_meta.json").write_text(
+        '{"lastSyncAt":"local-only"}\n',
+        encoding="utf-8",
+    )
+    with_operator_metadata = build_editable_map_payload(map_dir)
+    assert with_operator_metadata["signature"] == initial["signature"]
+
+    pgm = map_dir / "map.pgm"
+    pgm.write_bytes(pgm.read_bytes()[:-1] + b"\xff")
+    changed = build_editable_map_payload(map_dir)
+    assert changed["signature"] != initial["signature"]
+    assert all(
+        item["path"] != ".operator_meta.json"
+        for item in changed["contentManifest"]
+    )
+
+
 def test_traffic_zone_round_trip_keeps_geometry_as_the_source_of_truth(
     tmp_path: Path,
 ) -> None:

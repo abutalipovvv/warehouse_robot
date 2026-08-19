@@ -70,25 +70,47 @@ class RobotControlProxyMixin:
         if not robot.is_grpc:
             raise ValueError("unsupported robot transport; use grpc")
         map_name = str(payload.get("mapName") or payload.get("map_name") or "").strip()
+        activate = bool(payload.get("activate", True))
         result = self.grpc_adapter.finish_slam(
             self._grpc_endpoint(robot),
             map_name=map_name,
-            activate=bool(payload.get("activate", True)),
+            activate=activate,
         )
         bundle = result.get("bundle") if isinstance(result.get("bundle"), dict) else None
         if isinstance(bundle, dict):
-            cached = self.map_cache.save_pulled_map(robot.id, bundle, activate=True)
+            if activate:
+                remote = self.grpc_adapter.get_map_bundle(
+                    self._grpc_endpoint(robot),
+                    str(result.get("mapName") or map_name),
+                )
+                expected_signature = str(bundle.get("signature") or "").strip()
+                remote_signature = str(remote.get("signature") or "").strip()
+                if not expected_signature or remote_signature != expected_signature:
+                    raise ValueError(
+                        "saved SLAM map failed robot read-back verification: "
+                        f"expected {expected_signature or '-'}, got {remote_signature or '-'}"
+                    )
+                active = self.grpc_adapter.active_map(self._grpc_endpoint(robot))
+                if (
+                    str(active.get("mapName") or "").strip() != str(result.get("mapName") or map_name).strip()
+                    or str(active.get("signature") or "").strip() != expected_signature
+                ):
+                    raise ValueError("saved SLAM map is not the verified active robot map")
+                cached = self.map_cache.save_pulled_map(robot.id, bundle, activate=True)
+            else:
+                cached = self.map_cache.save_local_bundle(robot.id, bundle, activate=False)
             result["local"] = cached
-            self.workspace.save_active_map_meta(
-                robot,
-                {
-                    "ok": True,
-                    "mapName": str(result.get("mapName") or map_name),
-                    "mapDir": str(result.get("mapDir") or ""),
-                    "mapId": str(result.get("mapId") or ""),
-                    "signature": str(result.get("signature") or ""),
-                },
-            )
+            if activate:
+                self.workspace.save_active_map_meta(
+                    robot,
+                    {
+                        "ok": True,
+                        "mapName": str(result.get("mapName") or map_name),
+                        "mapDir": str(result.get("mapDir") or ""),
+                        "mapId": str(result.get("mapId") or ""),
+                        "signature": str(result.get("signature") or ""),
+                    },
+                )
             try:
                 self.workspace.save_map_index(robot, self.grpc_adapter.list_maps(self._grpc_endpoint(robot)))
             except Exception:

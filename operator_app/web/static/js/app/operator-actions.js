@@ -1677,7 +1677,7 @@ export const withActions = (Base) => class OperatorAppActions extends Base {
     const remoteName = this.robotMapState.robotActiveMapName || this.robotMapState.sourceRobotMapName || "-";
     this.mapSyncDecisionTitle.textContent = "Inconsistent Map Data";
     this.mapSyncDecisionText.textContent = context.message || `Operator local map differs from the active ${target} map.`;
-    this.mapSyncDecisionDetail.textContent = `Local: ${localName}. ${target}: ${remoteName}. Choose Push to overwrite the ${target} map, Pull to replace the local draft, or Cancel to keep driving with the current ${target} map.`;
+    this.mapSyncDecisionDetail.textContent = `Local: ${localName}. ${target} active: ${remoteName}. Choose Push to upload and verify the local map in storage, Pull to replace the local draft, or Cancel to leave both unchanged. Load activates a pushed map separately.`;
     return new Promise((resolve) => {
       this.mapSyncDecisionResolve = resolve;
       this.mapSyncDecisionDialog.showModal();
@@ -1807,7 +1807,9 @@ export const withActions = (Base) => class OperatorAppActions extends Base {
     }
     const target = this.isFleetManager(robot) ? "Fleet Manager" : "robot";
     if (!options.skipConfirm) {
-      const confirmed = window.confirm(`Push local operator map to ${target}? This overwrites the active map used by ${target}.`);
+      const confirmed = window.confirm(
+        `Upload and verify the local operator map in ${target} storage? Push does not activate it; use Load separately.`,
+      );
       if (!confirmed) {
         return null;
       }
@@ -1937,7 +1939,9 @@ export const withActions = (Base) => class OperatorAppActions extends Base {
     }
     const selectedMap = this.pendingRobotMaps.find((item) => String(item.name || item.folder || "") === mapName);
     const activeName = String(this.robotMapState.robotActiveMapName || this.currentStatus?.mapName || "").replace(/\.smap$/, "");
-    if ((selectedMap && selectedMap.active) || (activeName && mapName.replace(/\.smap$/, "") === activeName)) {
+    const selectedIsActive = (selectedMap && selectedMap.active)
+      || (activeName && mapName.replace(/\.smap$/, "") === activeName);
+    if (selectedIsActive && !this.robotMapState.activationRequired) {
       this.loadMapHint.className = "probe-result neutral";
       this.loadMapHint.textContent = `${mapName} is already active.`;
       return;

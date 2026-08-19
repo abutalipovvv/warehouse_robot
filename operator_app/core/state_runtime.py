@@ -324,6 +324,27 @@ class RuntimeOwnershipMixin:
         except Exception as exc:
             warnings.append(f"active map failed: {exc}")
 
+        if not str(active_map.get("mapName") or "").strip() and isinstance(map_index, dict):
+            indexed_active_name = str(map_index.get("active") or "").strip()
+            if indexed_active_name:
+                active_item = next(
+                    (
+                        item
+                        for item in map_index.get("maps", [])
+                        if isinstance(item, dict)
+                        and str(item.get("name") or "").strip() == indexed_active_name
+                    ),
+                    {},
+                )
+                active_map = {
+                    "ok": True,
+                    "mapName": indexed_active_name,
+                    "mapDir": str(active_item.get("mapDir") or map_index.get("activeMapDir") or ""),
+                    "mapId": str(active_item.get("mapId") or map_index.get("activeMapId") or ""),
+                    "signature": str(map_index.get("activeSignature") or ""),
+                }
+                self.workspace.save_active_map_meta(robot, active_map)
+
         map_names: list[str] = []
         for item in map_index.get("maps", []) if isinstance(map_index, dict) else []:
             if not isinstance(item, dict):
@@ -338,7 +359,14 @@ class RuntimeOwnershipMixin:
         for map_name in map_names:
             try:
                 bundle = self.grpc_adapter.get_map_bundle(endpoint, map_name)
-                self.map_cache.save_pulled_map(robot.id, bundle, activate=map_name == active_name or not cached_maps)
+                self.map_cache.save_pulled_map(
+                    robot.id,
+                    bundle,
+                    activate=(
+                        map_name == active_name
+                        or (not active_name and not cached_maps)
+                    ),
+                )
                 cached_maps.append(str(bundle.get("mapName") or map_name))
             except Exception as exc:
                 warnings.append(f"map {map_name} failed: {exc}")

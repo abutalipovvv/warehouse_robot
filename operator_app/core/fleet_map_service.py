@@ -2,14 +2,20 @@
 
 from __future__ import annotations
 
+import re
+import shutil
+import tempfile
 from pathlib import Path
 from typing import Any
 
 from fleet_manager.core.mapping.maps.map_exchange import (
     build_editable_map_bundle_payload,
     build_editable_map_payload,
+    editable_map_signature,
     list_editable_maps,
 )
+from fleet_manager.core.mapping.maps.map_loader import WarehouseMapLoader
+from fleet_manager.core.mapping.maps.models import LoadedMapData
 from fleet_manager.core.mapping.maps.map_writer import (
     save_editable_map,
 )
@@ -55,23 +61,29 @@ class FleetMapService:
 
     def maps_active_payload(self) -> dict[str, Any]:
         owner = self.owner
-        payload = owner.map_payload()
         return {
             "ok": True,
-            "mapName": str(
-                payload.get("mapName")
-                or owner.map_dir.stem.replace(".smap", "")
-            ),
+            "mapName": owner.map_dir.stem.replace(".smap", ""),
             "mapDir": str(owner.map_dir),
-            "signature": str(payload.get("signature") or ""),
+            "signature": str(owner._active_map_signature or ""),
         }
 
     def maps_list_payload(self) -> dict[str, Any]:
         owner = self.owner
-        return list_editable_maps(
+        payload = list_editable_maps(
             owner.maps_root,
             active_map_dir=owner.map_dir,
         )
+        params = load_route_params(owner.params_path, create=True)
+        for item in payload.get("maps", []):
+            if not isinstance(item, dict):
+                continue
+            target = Path(str(item.get("mapDir") or ""))
+            item["signature"] = str(
+                build_editable_map_payload(target, params=params).get("signature") or ""
+            )
+        payload["activeSignature"] = str(owner._active_map_signature or "")
+        return payload
 
     def pull_map_payload(
         self,
@@ -113,13 +125,14 @@ class FleetMapService:
         editable_map = payload.get("map")
         if not isinstance(editable_map, dict):
             raise ValueError("map payload is required")
-        loaded_map = save_editable_map(
-            source_dir,
-            editable_map,
-            output_name=output_name,
-            overwrite_output=bool(
-                payload.get("overwriteOutput", False)
-            ),
+        target = self._push_target_dir(source_dir, output_name)
+        overwrite_output = bool(payload.get("overwriteOutput", False))
+        if target != source_dir and target.exists() and not overwrite_output:
+            raise ValueError(f"map already exists: {target.name}")
+        loaded_map = self._save_map_atomically(
+            source_dir=source_dir,
+            target=target,
+            editable_map=editable_map,
         )
         params = load_route_params(
             owner.params_path,
@@ -165,8 +178,66 @@ class FleetMapService:
                 "",
             ),
             "mapDir": str(owner.map_dir),
+            "signature": str(owner._active_map_signature or ""),
             "mode": owner.mode,
         }
+
+    def _push_target_dir(self, source_dir: Path, output_name: str) -> Path:
+        if not output_name:
+            return source_dir.resolve()
+        safe_name = re.sub(r"[^A-Za-z0-9_.-]+", "_", output_name).strip("._")
+        if not safe_name:
+            raise ValueError("save-as name is empty")
+        if not safe_name.endswith(".smap"):
+            safe_name = f"{safe_name}.smap"
+        target = (self.owner.maps_root / safe_name).resolve()
+        if self.owner.maps_root.resolve() not in target.parents:
+            raise ValueError("map must stay inside fleet maps_out")
+        return target
+
+    def _save_map_atomically(
+        self,
+        *,
+        source_dir: Path,
+        target: Path,
+        editable_map: dict[str, Any],
+    ) -> LoadedMapData:
+        root = self.owner.maps_root.resolve()
+        staging = Path(
+            tempfile.mkdtemp(prefix=f".{target.name}.incoming-", dir=str(root))
+        ).resolve()
+        backup = (root / f".{target.name}.backup").resolve()
+        swapped = False
+        backed_up = False
+        shutil.rmtree(staging)
+        try:
+            shutil.copytree(source_dir, staging)
+            save_editable_map(staging, editable_map)
+            staged = build_editable_map_payload(staging)
+            staged["mapName"] = target.stem.replace(".smap", "")
+            staged_signature = editable_map_signature(staged)
+            if backup.exists():
+                shutil.rmtree(backup)
+            if target.exists():
+                target.rename(backup)
+                backed_up = True
+            staging.rename(target)
+            swapped = True
+            verified = build_editable_map_payload(target)
+            if str(verified.get("signature") or "") != staged_signature:
+                raise ValueError("fleet map verification failed after atomic replace")
+            if backup.exists():
+                shutil.rmtree(backup)
+            return WarehouseMapLoader(target).load()
+        except Exception:
+            if swapped and target.exists():
+                shutil.rmtree(target)
+            if backed_up and backup.exists():
+                backup.rename(target)
+            raise
+        finally:
+            if staging.exists():
+                shutil.rmtree(staging)
 
     def save_map_payload(
         self,

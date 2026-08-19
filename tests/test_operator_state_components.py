@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 from threading import RLock
+from types import SimpleNamespace
 from typing import Any
+
+import pytest
 
 from operator_app.core.fleet_manager import (
     FLEET_MANAGER_ID,
@@ -170,40 +173,6 @@ def test_stream_snapshot_uses_only_selected_manager_lock() -> None:
     ]
 
 
-def test_fleet_local_response_detects_local_map_differences() -> None:
-    state = OperatorAppState.__new__(OperatorAppState)
-
-    assert (
-        state._fleet_local_response(
-            None,
-            active_name="local",
-            robot_active_name="robot",
-            robot_signature="remote-signature",
-        )
-        is None
-    )
-    assert state._fleet_local_response(
-        {
-            "mapName": "local",
-            "map": {"lms": []},
-            "signature": "local-signature",
-            "sourceMapName": "robot",
-        },
-        active_name="fallback",
-        robot_active_name="robot",
-        robot_signature="remote-signature",
-    ) == {
-        "activeMapName": "local",
-        "mapName": "local",
-        "map": {"lms": []},
-        "sourceMapName": "robot",
-        "signature": "local-signature",
-        "robotSignature": "remote-signature",
-        "robotMapName": "robot",
-        "hasLocalChanges": True,
-    }
-
-
 def test_robot_endpoint_validation_contract() -> None:
     state = OperatorAppState.__new__(OperatorAppState)
 
@@ -215,3 +184,238 @@ def test_robot_endpoint_validation_contract() -> None:
     )
     assert state._require_port({"port": "50052"}) == 50052
     assert state._payload_robot_type({"mode": " GRPC "}) == "grpc"
+
+
+def test_saved_slam_map_can_remain_inactive() -> None:
+    state = OperatorAppState.__new__(OperatorAppState)
+    robot = SimpleNamespace(id="robot-1", is_grpc=True)
+    state.get_robot = lambda robot_id: robot
+    state._grpc_endpoint = lambda selected: "127.0.0.1:50051"
+    calls: list[tuple[str, Any]] = []
+
+    class Adapter:
+        def finish_slam(
+            self,
+            endpoint: str,
+            *,
+            map_name: str,
+            activate: bool,
+        ) -> dict[str, Any]:
+            calls.append(("finish", (endpoint, map_name, activate)))
+            return {
+                "ok": True,
+                "mapName": map_name,
+                "bundle": {"mapName": map_name},
+            }
+
+        def list_maps(self, endpoint: str) -> dict[str, Any]:
+            calls.append(("list", endpoint))
+            return {"ok": True, "maps": []}
+
+    class Cache:
+        def save_local_bundle(
+            self,
+            robot_id: str,
+            bundle: dict[str, Any],
+            *,
+            activate: bool,
+        ) -> dict[str, Any]:
+            calls.append(("cache", (robot_id, bundle, activate)))
+            return {"mapName": bundle["mapName"]}
+
+    class Workspace:
+        def save_active_map_meta(self, *args: Any) -> None:
+            calls.append(("active", args))
+
+        def save_map_index(self, selected: Any, payload: dict[str, Any]) -> None:
+            calls.append(("index", (selected.id, payload)))
+
+    state.grpc_adapter = Adapter()
+    state.map_cache = Cache()
+    state.workspace = Workspace()
+
+    result = state.finish_robot_slam_payload(
+        "robot-1",
+        {"mapName": "new-slam", "activate": False},
+    )
+
+    assert result["ok"] is True
+    assert ("finish", ("127.0.0.1:50051", "new-slam", False)) in calls
+    assert (
+        "cache",
+        ("robot-1", {"mapName": "new-slam"}, False),
+    ) in calls
+    assert not any(kind == "active" for kind, _payload in calls)
+
+
+def test_robot_push_sync_uploads_without_loading_runtime_map() -> None:
+    state = OperatorAppState.__new__(OperatorAppState)
+    robot = SimpleNamespace(id="robot-1", is_grpc=True)
+    state.get_robot = lambda robot_id: robot
+    state._grpc_endpoint = lambda selected: "robot:50051"
+    calls: list[tuple[str, Any]] = []
+
+    class Adapter:
+        def list_maps(self, endpoint: str) -> dict[str, Any]:
+            calls.append(("list", endpoint))
+            return {
+                "active": "map-a",
+                "activeSignature": "old-runtime",
+                "maps": [{"name": "map-a", "signature": "old-storage"}],
+            }
+
+    class Cache:
+        def load_active_map(self, robot_id: str) -> dict[str, Any]:
+            return {
+                "mapName": "map-a",
+                "sourceMapName": "map-a",
+                "map": {"signature": "new-local"},
+            }
+
+    class Workspace:
+        def save_map_index(self, selected: Any, payload: dict[str, Any]) -> None:
+            calls.append(("index", selected.id))
+
+    state.grpc_adapter = Adapter()
+    state.map_cache = Cache()
+    state.workspace = Workspace()
+    state.push_robot_map_payload = lambda robot_id, payload: calls.append(
+        ("push", (robot_id, payload))
+    ) or {
+        "pushed": {"mapName": "map-a"},
+        "verified": {"signature": "new-local"},
+        "local": {"mapName": "map-a"},
+    }
+
+    result = state.push_sync_payload("robot-1")
+
+    assert result["changed"] is True
+    assert result["loadRequired"] is True
+    assert [kind for kind, _payload in calls].count("push") == 1
+    assert not any(kind == "load" for kind, _payload in calls)
+
+
+def test_robot_load_rolls_back_previous_map_when_verification_fails() -> None:
+    state = OperatorAppState.__new__(OperatorAppState)
+    robot = SimpleNamespace(id="robot-1", is_grpc=True)
+    state.get_robot = lambda robot_id: robot
+    state._is_grpc_robot_id = lambda robot_id: True
+    state._grpc_endpoint = lambda selected: "robot:50051"
+    load_calls: list[str] = []
+
+    class Adapter:
+        def active_map(self, endpoint: str) -> dict[str, Any]:
+            if not load_calls:
+                return {"mapName": "old-map", "signature": "old-signature"}
+            return {"mapName": "wrong-map", "signature": "wrong-signature"}
+
+        def load_map(self, endpoint: str, map_name: str) -> dict[str, Any]:
+            load_calls.append(map_name)
+            return {"mapName": map_name}
+
+    state.grpc_adapter = Adapter()
+
+    with pytest.raises(ValueError, match="Load verification failed"):
+        state.load_robot_map_payload("robot-1", {"mapName": "new-map"})
+
+    assert load_calls == ["new-map", "old-map"]
+
+
+def test_robot_map_state_distinguishes_storage_from_same_name_runtime() -> None:
+    state = OperatorAppState.__new__(OperatorAppState)
+    robot = SimpleNamespace(id="robot-1", is_grpc=True)
+    state.get_robot = lambda robot_id: robot
+    state._is_grpc_robot_id = lambda robot_id: True
+    state._grpc_endpoint = lambda selected: "robot:50051"
+
+    class Adapter:
+        def list_maps(self, endpoint: str) -> dict[str, Any]:
+            return {
+                "active": "map-a",
+                "activeSignature": "old-runtime-signature",
+                "maps": [{"name": "map-a", "signature": "new-signature"}],
+            }
+
+    class Cache:
+        def active_map_name(self, robot_id: str) -> str:
+            return "map-a"
+
+        def load_active_map(self, robot_id: str) -> dict[str, Any]:
+            return {
+                "mapName": "map-a",
+                "sourceMapName": "map-a",
+                "signature": "new-signature",
+                "map": {"signature": "new-signature"},
+                "hasLocalChanges": False,
+            }
+
+    state.grpc_adapter = Adapter()
+    state.map_cache = Cache()
+
+    result = state.local_active_map_payload("robot-1")
+
+    assert result["hasLocalChanges"] is False
+    assert result["robotSignature"] == "new-signature"
+    assert result["robotActiveSignature"] == "old-runtime-signature"
+    assert result["activationRequired"] is True
+    assert result["syncState"] == "load_required"
+
+
+def test_robot_connection_bootstrap_downloads_entire_map_library() -> None:
+    state = OperatorAppState.__new__(OperatorAppState)
+    robot = SimpleNamespace(id="robot-1")
+    cached: list[tuple[str, bool]] = []
+    saved: list[tuple[str, Any]] = []
+    state._ensure_robot_workspace = lambda selected: {"robotId": selected.id}
+
+    class Adapter:
+        def list_maps(self, endpoint: str) -> dict[str, Any]:
+            return {
+                "active": "map-b",
+                "activeSignature": "sig-b",
+                "maps": [
+                    {"name": "map-a", "signature": "sig-a"},
+                    {"name": "map-b", "signature": "sig-b"},
+                ],
+            }
+
+        def active_map(self, endpoint: str) -> dict[str, Any]:
+            raise RuntimeError("second list call unavailable")
+
+        def get_map_bundle(self, endpoint: str, map_name: str) -> dict[str, Any]:
+            return {"mapName": map_name, "signature": f"sig-{map_name[-1]}"}
+
+        def get_params(self, endpoint: str) -> dict[str, Any]:
+            return {"params": {"robot": {"name": "robot-1"}}}
+
+    class Cache:
+        def save_pulled_map(
+            self,
+            robot_id: str,
+            bundle: dict[str, Any],
+            *,
+            activate: bool,
+        ) -> None:
+            cached.append((bundle["mapName"], activate))
+
+    class Workspace:
+        def save_map_index(self, selected: Any, payload: dict[str, Any]) -> None:
+            saved.append(("index", payload["active"]))
+
+        def save_active_map_meta(self, selected: Any, payload: dict[str, Any]) -> None:
+            saved.append(("active", payload["mapName"]))
+
+    state.grpc_adapter = Adapter()
+    state.map_cache = Cache()
+    state.workspace = Workspace()
+    state._cache_robot_params = lambda selected, params, source: saved.append(
+        ("params", source)
+    )
+
+    result = state._bootstrap_robot_workspace(robot, "robot:50051")
+
+    assert result["cachedMaps"] == ["map-a", "map-b"]
+    assert result["activeMapName"] == "map-b"
+    assert cached == [("map-a", False), ("map-b", True)]
+    assert ("active", "map-b") in saved
+    assert ("params", "robot") in saved

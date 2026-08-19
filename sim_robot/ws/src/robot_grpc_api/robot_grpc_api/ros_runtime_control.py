@@ -251,15 +251,61 @@ class RosRuntimeControlMixin:
         if self._initial_pose_pub is None or self._pose_with_covariance_type is None:
             raise ValueError(self._error or "initial pose publisher is not available")
         ros_x, ros_y, ros_yaw = self._map_pose_to_ros_pose(float(x), float(y), float(yaw))
+        self._publish_initial_pose_ros(
+            x=ros_x,
+            y=ros_y,
+            yaw=ros_yaw,
+            frame_id=frame_id,
+            covariance_json=covariance_json,
+            confirm=confirm,
+        )
+        return {
+            "ok": True,
+            "relocate": {
+                "x": float(x),
+                "y": float(y),
+                "yaw": float(yaw),
+                "frameId": str(frame_id or "map"),
+            },
+        }
+
+    def _publish_initial_pose_ros(
+        self,
+        *,
+        x: float,
+        y: float,
+        yaw: float,
+        frame_id: str = "map",
+        covariance_json: str = "",
+        confirm: bool = False,
+        repeat: int = 1,
+    ) -> None:
+        if self._initial_pose_pub is None or self._pose_with_covariance_type is None:
+            raise ValueError(self._error or "initial pose publisher is not available")
         message = self._pose_with_covariance_type()
         message.header.frame_id = str(frame_id or "map")
-        if self._node is not None:
-            message.header.stamp = self._node.get_clock().now().to_msg()
-        message.pose.pose.position.x = ros_x
-        message.pose.pose.position.y = ros_y
+
+        def stamp_from_robot_clock() -> None:
+            with self._lock:
+                odom_pose = dict(self._latest_odom_pose) if isinstance(self._latest_odom_pose, dict) else None
+            stamp_sec = float(odom_pose.get("stampSec", 0.0) or 0.0) if odom_pose is not None else 0.0
+            if stamp_sec > 0.0:
+                whole_sec = int(stamp_sec)
+                nanosec = int(round((stamp_sec - whole_sec) * 1e9))
+                if nanosec >= 1_000_000_000:
+                    whole_sec += 1
+                    nanosec -= 1_000_000_000
+                message.header.stamp.sec = whole_sec
+                message.header.stamp.nanosec = nanosec
+            elif self._node is not None:
+                message.header.stamp = self._node.get_clock().now().to_msg()
+
+        stamp_from_robot_clock()
+        message.pose.pose.position.x = float(x)
+        message.pose.pose.position.y = float(y)
         message.pose.pose.position.z = 0.0
-        qz = math.sin(ros_yaw * 0.5)
-        qw = math.cos(ros_yaw * 0.5)
+        qz = math.sin(float(yaw) * 0.5)
+        qw = math.cos(float(yaw) * 0.5)
         message.pose.pose.orientation.z = qz
         message.pose.pose.orientation.w = qw
         covariance = self._covariance_from_json(covariance_json)
@@ -269,12 +315,15 @@ class RosRuntimeControlMixin:
             message.pose.covariance[0] = 0.25
             message.pose.covariance[7] = 0.25
             message.pose.covariance[35] = 0.06853891945200942
-        self._initial_pose_pub.publish(message)
+        for attempt in range(max(1, int(repeat))):
+            if attempt > 0:
+                time.sleep(0.08)
+                stamp_from_robot_clock()
+            self._initial_pose_pub.publish(message)
         self._publish_twist(0.0, 0.0)
         with self._lock:
             self._localization_confirmed = bool(confirm)
             self._relocation_requested_at = monotonic()
-        return {"ok": True, "relocate": {"x": float(x), "y": float(y), "yaw": float(yaw), "frameId": message.header.frame_id}}
 
     def _map_pose_to_ros_pose(self, x: float, y: float, yaw: float) -> tuple[float, float, float]:
         active = self.active_map_payload()

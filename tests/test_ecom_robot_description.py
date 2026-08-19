@@ -293,9 +293,8 @@ def test_stage_launch_uses_ecom_description_and_keeps_stage_hardware_contract() 
         / "trp1_description"
         / "launch"
         / "launch.py"
-    ).read_text(encoding="utf-8")
-    assert "FindPackageShare('ecom_mobile_robot_description')" in legacy_launch
-    assert "'ecom_stage.urdf.xacro'" in legacy_launch
+    )
+    assert not legacy_launch.exists()
 
 
 def test_fleet_sim_direct_pose_keeps_babylon_render_loop_active() -> None:

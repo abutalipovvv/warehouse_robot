@@ -545,7 +545,7 @@ body[data-fleet-page="fleet"] #mapSyncStatus {
 
 .map-sync-status {
   display: grid;
-  grid-template-columns: repeat(3, minmax(110px, auto)) minmax(180px, 1fr);
+  grid-template-columns: repeat(4, minmax(110px, 1fr));
   align-items: center;
   gap: 0.45rem;
   text-align: left;
@@ -581,6 +581,7 @@ body[data-fleet-page="fleet"] #mapSyncStatus {
   color: var(--muted);
   font-size: 0.7rem;
   padding-left: 0.2rem;
+  grid-column: 1 / -1;
 }
 
 .robot-control-actions {
@@ -2776,6 +2777,33 @@ dialog::backdrop {
   background: #fff;
   border: 1px solid var(--border);
   box-shadow: 0 24px 60px rgba(17, 44, 94, 0.22);
+}
+
+.slam-finish-dialog > label:first-of-type {
+  display: grid;
+  gap: 0.4rem;
+  margin-top: 1rem;
+}
+
+.slam-finish-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.7rem;
+  margin: 1rem 0;
+  padding: 0.85rem;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--panel-soft);
+}
+
+.slam-finish-option span {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.slam-finish-option small {
+  color: var(--muted);
+  line-height: 1.4;
 }
 
 .dialog-head {

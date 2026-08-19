@@ -115,3 +115,18 @@ def test_direct_robot_map_click_snaps_to_graph_landmark() -> None:
     assert "await this.handleLandmarkTarget(nearest.landmark.name);" in map_module
     assert "await this.startPoseNavigation(world);" in map_module
     assert "payload.startLm = robot.nearestLm" not in scene_module
+
+
+def test_live_slam_uses_svg_map_and_robot_follow_view() -> None:
+    module_root = STATIC_ROOT / "js" / "app"
+    map_module = (module_root / "operator-map.js").read_text(encoding="utf-8")
+    realtime_module = (module_root / "operator-realtime.js").read_text(
+        encoding="utf-8"
+    )
+    index_html = (STATIC_ROOT / "index.html").read_text(encoding="utf-8")
+
+    assert "if (!this.babylonMapFailed && !this.slamActive)" in map_module
+    assert "this.mapView.follow = true;" in realtime_module
+    assert 'id="confirmFinishSlamButton"' in index_html
+    assert 'id="confirmFinishSlamPushButton"' in index_html
+    assert "finishSlam(pushToRobot = false)" in realtime_module

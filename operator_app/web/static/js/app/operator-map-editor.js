@@ -1110,7 +1110,7 @@ export const withMapEditor = (Base) => class OperatorAppMapEditor extends Base {
       await this.ensureFleetRasterGrid();
       this.fleetMapDirty = false;
       this.syncFleetMapEditorState();
-      this.robotMessageText.textContent = `Local fleet map saved: ${this.robotMapState.operatorActiveMapName || mapName}. Push Map will apply it.`;
+      this.robotMessageText.textContent = `Local fleet map saved: ${this.robotMapState.operatorActiveMapName || mapName}. Push uploads it; Load activates it.`;
       this.renderSelectedRobot();
       if (options.offerPush) {
         await this.offerMapSyncDecisionAfterLocalSave({

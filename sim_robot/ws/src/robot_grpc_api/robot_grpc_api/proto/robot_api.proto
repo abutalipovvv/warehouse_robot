@@ -298,6 +298,7 @@ message ListMapsResponse {
   string active_map_dir = 4;
   string active_map_id = 5;
   repeated RobotMapInfo maps = 6;
+  string active_map_signature = 7;
 }
 
 message GetMapBundleRequest {

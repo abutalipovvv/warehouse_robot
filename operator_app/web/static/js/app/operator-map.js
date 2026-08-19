@@ -25,7 +25,7 @@ export const withMapView = (Base) => class OperatorAppMapView extends Base {
     ) {
       this.ensureFleetRasterGrid();
     }
-    if (!this.babylonMapFailed) {
+    if (!this.babylonMapFailed && !this.slamActive) {
       this.syncMapControls();
       this.renderOperatorBabylonMap();
       return;

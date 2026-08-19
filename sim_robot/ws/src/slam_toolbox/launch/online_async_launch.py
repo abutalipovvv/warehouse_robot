@@ -18,7 +18,7 @@ from lifecycle_msgs.msg import Transition
 def _reset_odom_before_slam(context, *args, **kwargs):
     del args, kwargs
     service_name = LaunchConfiguration('reset_odom_service').perform(context).strip()
-    if not service_name:
+    if service_name.lower() in {'', 'disabled', 'none', 'off'}:
         return []
     timeout_sec = float(LaunchConfiguration('reset_odom_timeout').perform(context))
 

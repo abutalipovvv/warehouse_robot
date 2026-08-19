@@ -10,6 +10,17 @@ from .atomic_storage import atomic_write_bytes
 from .map_loader import WarehouseMapLoader
 from .planner import LmRoutePlanner
 
+EDITABLE_MAP_SIGNATURE_VERSION = 2
+BUNDLE_EXCLUDED_FILES = {".operator_meta.json"}
+DERIVED_TRAFFIC_PROPERTY = "_traffic_zone_derived"
+DERIVED_TRAFFIC_KEYS = (
+    "controlled_region",
+    "controlled_region_capacity",
+    "can_wait",
+    "waitAllowed",
+    "holding_point",
+)
+
 
 def find_ros_map_yaml(map_dir: Path) -> Path:
     directory = Path(map_dir).resolve()
@@ -33,12 +44,15 @@ def build_editable_map_payload(
     landmarks = [loaded_map.landmarks[name] for name in sorted(loaded_map.landmarks)]
     payload = {
         "ok": True,
+        "signatureVersion": EDITABLE_MAP_SIGNATURE_VERSION,
         "mapName": loaded_map.map_dir.stem.replace(".smap", ""),
         "coordinateFrame": "map_top_left",
         "mapDir": str(loaded_map.map_dir),
         "map": loaded_map.map_metadata.to_dict(),
         "lms": [item.to_dict() for item in landmarks],
         "edges": [edge.to_dict() for edge in loaded_map.edges],
+        "trafficZones": [zone.to_dict() for zone in loaded_map.traffic_zones],
+        "contentManifest": _content_manifest(loaded_map.map_dir),
         "routes": planner.build_route_catalog(),
         "defaultGoal": landmarks[-1].name if landmarks else "",
     }
@@ -57,6 +71,10 @@ def build_editable_map_bundle_payload(
     for path in sorted(root.rglob("*")):
         if not path.is_file():
             continue
+        if path.name in BUNDLE_EXCLUDED_FILES:
+            continue
+        if path.is_symlink():
+            raise ValueError(f"map bundle cannot contain symbolic links: {path}")
         files.append(
             {
                 "path": str(path.relative_to(root)).replace("\\", "/"),
@@ -88,22 +106,77 @@ def restore_editable_map_bundle(map_dir: Path, payload: dict[str, Any]) -> Path:
         content = item.get("content")
         if encoding != "base64" or not isinstance(content, str):
             raise ValueError(f"unsupported bundle entry for {relative}")
-        atomic_write_bytes(
-            target,
-            base64.b64decode(content.encode("ascii")),
-        )
+        try:
+            decoded = base64.b64decode(content.encode("ascii"), validate=True)
+        except (ValueError, UnicodeEncodeError) as exc:
+            raise ValueError(f"invalid base64 map bundle entry: {relative}") from exc
+        atomic_write_bytes(target, decoded)
     return root
 
 
 def editable_map_signature(payload: dict[str, Any]) -> str:
     normalized = {
+        "signatureVersion": EDITABLE_MAP_SIGNATURE_VERSION,
         "mapName": str(payload.get("mapName") or ""),
         "map": payload.get("map") or {},
-        "lms": payload.get("lms") or [],
-        "edges": payload.get("edges") or [],
+        "lms": _signature_graph_items(payload.get("lms")),
+        "edges": _signature_graph_items(payload.get("edges")),
+        "trafficZones": payload.get("trafficZones") or [],
+        "contentManifest": payload.get("contentManifest") or [],
     }
     encoded = json.dumps(normalized, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
+
+
+def _signature_graph_items(raw_items: Any) -> list[Any]:
+    if not isinstance(raw_items, list):
+        return []
+    normalized: list[Any] = []
+    for item in raw_items:
+        if not isinstance(item, dict):
+            normalized.append(item)
+            continue
+        source = dict(item)
+        properties = source.get("properties")
+        if isinstance(properties, dict):
+            source["properties"] = _source_traffic_properties(properties)
+        normalized.append(source)
+    return normalized
+
+
+def _source_traffic_properties(properties: dict[str, Any]) -> dict[str, Any]:
+    source = dict(properties)
+    derived = source.pop(DERIVED_TRAFFIC_PROPERTY, None)
+    if not isinstance(derived, dict):
+        return source
+    for key in DERIVED_TRAFFIC_KEYS:
+        source.pop(key, None)
+    original = derived.get("original")
+    if isinstance(original, dict):
+        source.update(original)
+    return source
+
+
+def _content_manifest(map_dir: Path) -> list[dict[str, Any]]:
+    root = Path(map_dir).resolve()
+    manifest: list[dict[str, Any]] = []
+    for path in sorted(root.rglob("*")):
+        if not path.is_file() or path.name in BUNDLE_EXCLUDED_FILES:
+            continue
+        if path.is_symlink():
+            raise ValueError(f"map bundle cannot contain symbolic links: {path}")
+        digest = hashlib.sha256()
+        with path.open("rb") as stream:
+            for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                digest.update(chunk)
+        manifest.append(
+            {
+                "path": str(path.relative_to(root)).replace("\\", "/"),
+                "size": path.stat().st_size,
+                "sha256": digest.hexdigest(),
+            }
+        )
+    return manifest
 
 
 def list_editable_maps(

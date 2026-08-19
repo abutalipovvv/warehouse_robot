@@ -153,12 +153,14 @@ class RosRuntimeLifecycleMixin:
         self._reset_odom_client = None
         self._nav2_lifecycle_clients: dict[str, Any] = {}
         self._nav2_change_state_clients: dict[str, Any] = {}
+        self._slam_lifecycle_state_client = None
         self._save_map_type = None
         self._std_empty_type = None
         self._occupancy_grid_type = None
         self._slam_process: subprocess.Popen | None = None
         self._slam_temp_dir: Path | None = None
         self._nav2_paused_for_slam = False
+        self._pre_slam_localization: dict[str, Any] | None = None
         self._slam_ignore_maps_until = 0.0
         self._slam_state: dict[str, Any] = {
             "active": False,
@@ -243,7 +245,7 @@ class RosRuntimeLifecycleMixin:
             from rclpy.context import Context
             from geometry_msgs.msg import PoseWithCovarianceStamped, Twist
             from lifecycle_msgs.msg import Transition
-            from lifecycle_msgs.srv import ChangeState
+            from lifecycle_msgs.srv import ChangeState, GetState
             from nav_msgs.msg import OccupancyGrid, Odometry
             from nav2_msgs.srv import ManageLifecycleNodes
             from rclpy.executors import SingleThreadedExecutor
@@ -315,8 +317,12 @@ class RosRuntimeLifecycleMixin:
             }
             self._nav2_change_state_clients = {
                 self._topic(f"/{node_name}/change_state"): node.create_client(ChangeState, self._topic(f"/{node_name}/change_state"))
-                for node_name in NAV2_LIFECYCLE_NODES
+                for node_name in (*NAV2_LIFECYCLE_NODES, "slam_toolbox")
             }
+            self._slam_lifecycle_state_client = node.create_client(
+                GetState,
+                self._topic("/slam_toolbox/get_state"),
+            )
             node.create_subscription(RobotStatus, self.status_topic, self._on_status, 10)
             node.create_subscription(Odometry, self.odom_topic, self._on_odom, 20)
             node.create_subscription(LaserScan, self.scan_topic, self._on_scan, 10)

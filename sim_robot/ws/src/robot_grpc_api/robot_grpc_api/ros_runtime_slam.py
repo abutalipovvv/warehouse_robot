@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 import re
 import shutil
@@ -20,8 +21,14 @@ from robot_planner.route_core.atomic_storage import (
     atomic_write_text,
 )
 from robot_planner.route_core.pgm import read_pgm_size
+from robot_planner import build_editable_map_bundle_payload, editable_map_signature
 
 from .ros_runtime_lifecycle import _clean_node_suffix
+
+_SLAM_LOCALIZATION_COVARIANCE = tuple(
+    0.0025 if index in {0, 7} else (0.0027415568 if index == 35 else 0.0)
+    for index in range(36)
+)
 
 class RosRuntimeSlamMixin:
     """Manage SLAM sessions and persist standalone map artifacts."""
@@ -51,7 +58,20 @@ class RosRuntimeSlamMixin:
             state = str(self._slam_state.get("state") or "idle")
             if state in {"starting", "saving", "canceling", "resuming"}:
                 raise ValueError(f"SLAM mode switch is already in progress: {state}")
+
+        try:
+            checkpoint = self._capture_pre_slam_localization()
+        except Exception as exc:
+            raise ValueError(
+                "Cannot start 2D SLAM without a restorable navigation "
+                f"localization checkpoint: {exc}"
+            ) from exc
+
+        with self._lock:
+            if bool(self._slam_state.get("active")):
+                raise ValueError("SLAM is already running")
             session_id = f"slam-{self.robot_id}-{int(time.time())}"
+            self._pre_slam_localization = checkpoint
             self._latest_map = None
             self._latest_map_at = None
             self._slam_trail = []
@@ -73,6 +93,7 @@ class RosRuntimeSlamMixin:
 
         if not self.slam_launch_file.is_file():
             with self._lock:
+                self._pre_slam_localization = None
                 self._slam_state.update({"active": False, "state": "error", "message": "SLAM launch file is missing."})
             raise ValueError(f"SLAM launch file does not exist: {self.slam_launch_file}")
 
@@ -83,12 +104,14 @@ class RosRuntimeSlamMixin:
             params = self._normalize_slam_params(params, default_params)
         except Exception as exc:
             with self._lock:
+                self._pre_slam_localization = None
                 self._slam_state.update({"active": False, "state": "error", "message": f"Invalid SLAM parameters: {exc}"})
             raise
         try:
             nav2_control = self._pause_nav2_for_slam()
         except Exception as exc:
             with self._lock:
+                self._pre_slam_localization = None
                 self._slam_state.update({"active": False, "state": "error", "message": f"Failed to pause Nav2: {exc}"})
             raise
         with self._lock:
@@ -101,6 +124,10 @@ class RosRuntimeSlamMixin:
         except Exception as exc:
             if bool(nav2_control.get("changed")):
                 self._resume_nav2_after_slam()
+            try:
+                self._restore_pre_slam_localization(use_odom_delta=False)
+            except Exception as restore_exc:
+                self._append_runtime_event("error", f"pre-SLAM localization restore failed: {restore_exc}")
             with self._lock:
                 self._slam_state.update({"active": False, "state": "error", "message": f"Failed to reset odom: {exc}"})
             raise
@@ -121,7 +148,9 @@ class RosRuntimeSlamMixin:
             str(self.slam_launch_file),
             f"slam_params_file:={params_file}",
             f"use_sim_time:={'true' if use_sim_time else 'false'}",
-            f"reset_odom_service:={self.reset_odom_service_name}",
+            # The API reset and verified odometry immediately above.  Passing
+            # the service again made the launch file reset it a second time.
+            "reset_odom_service:=disabled",
         ]
         try:
             print(f"[robot_api_server] Starting 2D SLAM launch: {' '.join(cmd)}", flush=True)
@@ -132,10 +161,15 @@ class RosRuntimeSlamMixin:
             sleep(0.5)
             if process.poll() is not None:
                 raise ValueError(f"SLAM launch exited immediately with code {process.returncode}")
+            self._ensure_slam_toolbox_active()
         except FileNotFoundError as exc:
             shutil.rmtree(temp_dir, ignore_errors=True)
             if bool(nav2_control.get("changed")):
                 self._resume_nav2_after_slam()
+            try:
+                self._restore_pre_slam_localization()
+            except Exception as restore_exc:
+                self._append_runtime_event("error", f"pre-SLAM localization restore failed: {restore_exc}")
             with self._lock:
                 self._slam_state.update({"active": False, "state": "error", "message": "ros2 command is not available."})
             raise ValueError("ros2 command is not available; source the ROS environment before starting SLAM") from exc
@@ -143,6 +177,10 @@ class RosRuntimeSlamMixin:
             self._stop_slam_process()
             if bool(nav2_control.get("changed")):
                 self._resume_nav2_after_slam()
+            try:
+                self._restore_pre_slam_localization()
+            except Exception as restore_exc:
+                self._append_runtime_event("error", f"pre-SLAM localization restore failed: {restore_exc}")
             with self._lock:
                 self._slam_state.update({"active": False, "state": "error", "message": f"Failed to start 2D SLAM: {exc}"})
             raise
@@ -249,21 +287,42 @@ class RosRuntimeSlamMixin:
         with self._lock:
             if not bool(self._slam_state.get("active")) and self._latest_map is None:
                 raise ValueError("SLAM is not running and no live map is available")
-            self._slam_state.update({"state": "saving", "message": "Preparing SLAM map save.", "progress": 5})
 
         maps_root = self._slam_maps_root()
-        target = (maps_root / f"{safe_name}.smap").resolve()
+        persistent_target = (maps_root / f"{safe_name}.smap").resolve()
+        target = persistent_target
         if maps_root not in target.parents:
             raise ValueError("map must stay inside maps_root")
-        if target.exists():
+        if activate and target.exists():
             raise ValueError(f"map already exists: {target.name}")
+        if not activate:
+            maps_root.mkdir(parents=True, exist_ok=True)
+            target = Path(
+                tempfile.mkdtemp(
+                    prefix=f".slam-{safe_name}-",
+                    dir=str(maps_root),
+                )
+            ).resolve()
 
+        session_pose = self._slam_session_pose_snapshot()
+        if activate and session_pose is None:
+            raise ValueError("Live SLAM pose is unavailable; cannot localize on the saved map")
+        with self._lock:
+            self._slam_state.update({"state": "saving", "message": "Preparing SLAM map save.", "progress": 5})
+
+        artifacts_complete = False
         self._set_slam_progress(20, "Saving occupancy grid as PGM/YAML.")
-        target.mkdir(parents=True, exist_ok=False)
+        if activate:
+            target.mkdir(parents=True, exist_ok=False)
         try:
             self._save_slam_map_files(target, safe_name)
             self._set_slam_progress(55, "Creating editable smap files.")
             self._write_empty_smap_sidecars(target, safe_name)
+            artifacts_complete = True
+            self._set_slam_progress(62, "Building map bundle for operator pull.")
+            bundle = build_editable_map_bundle_payload(target)
+            bundle["mapName"] = safe_name
+            bundle["signature"] = editable_map_signature(bundle)
             self._stop_slam_process()
             with self._lock:
                 self._slam_state.update({"state": "resuming", "message": "Restoring Nav2 after SLAM.", "progress": 64})
@@ -272,8 +331,21 @@ class RosRuntimeSlamMixin:
             if activate:
                 self._set_slam_progress(72, "Loading new map on robot.")
                 loaded = self.load_map(safe_name, allow_during_transition=True)
-            self._set_slam_progress(86, "Building map bundle for operator pull.")
-            bundle = self.pull_map_bundle_payload(safe_name)
+                self._publish_initial_pose_ros(
+                    x=float(session_pose["x"]),
+                    y=float(session_pose["y"]),
+                    yaw=float(session_pose["yaw"]),
+                    frame_id=self.map_frame,
+                    covariance_json=json.dumps(_SLAM_LOCALIZATION_COVARIANCE),
+                    confirm=True,
+                    repeat=3,
+                )
+                with self._lock:
+                    self._pre_slam_localization = None
+            else:
+                self._set_slam_progress(72, "Restoring previous map localization.")
+                self._restore_pre_slam_localization()
+                shutil.rmtree(target)
             with self._lock:
                 self._slam_state.update(
                     {
@@ -282,7 +354,7 @@ class RosRuntimeSlamMixin:
                         "message": f"SLAM map saved: {safe_name}.",
                         "progress": 100,
                         "savedMapName": safe_name,
-                        "mapDir": str(target),
+                        "mapDir": str(target) if activate else "",
                     }
                 )
                 state = dict(self._slam_state)
@@ -290,19 +362,32 @@ class RosRuntimeSlamMixin:
                 "ok": True,
                 "state": state,
                 "mapName": safe_name,
-                "mapDir": str(target),
+                "mapDir": str(target) if activate else "",
                 "mapId": str(loaded.get("mapId") or safe_name),
                 "signature": str(bundle.get("signature") or ""),
                 "bundleJson": json.dumps(bundle, ensure_ascii=False),
             }
-        except Exception:
-            shutil.rmtree(target, ignore_errors=True)
+        except Exception as exc:
             with self._lock:
                 running = self._slam_process is not None and self._slam_process.poll() is None
+            if running or not artifacts_complete:
+                shutil.rmtree(target, ignore_errors=True)
+            restore_error = ""
+            if not running:
+                with self._lock:
+                    can_restore = isinstance(self._pre_slam_localization, dict)
+                if can_restore:
+                    try:
+                        self._resume_nav2_after_slam()
+                        self._restore_pre_slam_localization()
+                    except Exception as restore_exc:
+                        restore_error = f"; previous localization restore also failed: {restore_exc}"
+            with self._lock:
                 self._slam_state.update(
                     {
                         "active": running,
-                        "state": "error",
+                        "state": "mapping" if running else "error",
+                        "message": f"Failed to finish SLAM: {exc}{restore_error}",
                         "progress": max(1, int(self._slam_state.get("progress") or 1)),
                     }
                 )
@@ -316,17 +401,131 @@ class RosRuntimeSlamMixin:
         with self._lock:
             self._slam_state.update({"state": "resuming", "message": "Restoring Nav2 after SLAM cancel."})
         self._resume_nav2_after_slam()
+        try:
+            restored = self._restore_pre_slam_localization()
+        except Exception as exc:
+            with self._lock:
+                self._slam_state.update(
+                    {
+                        "active": False,
+                        "state": "error",
+                        "message": f"SLAM canceled, but localization restore failed: {exc}",
+                        "progress": 0,
+                    }
+                )
+            raise
         with self._lock:
             self._slam_state.update(
                 {
                     "active": False,
                     "state": "canceled",
-                    "message": reason or "SLAM canceled.",
+                    "message": (
+                        f"{reason or 'SLAM canceled.'} "
+                        f"Restored {restored['mapName']} localization."
+                    ),
                     "progress": 0,
                 }
             )
             state = dict(self._slam_state)
         return {"ok": True, "state": state}
+
+    def _capture_pre_slam_localization(self) -> dict[str, Any]:
+        active_map = self.active_map_payload()
+        map_name = str(active_map.get("mapName") or "").strip()
+        if not map_name:
+            raise ValueError("the robot has no active navigation map")
+
+        pose = self._slam_tf_pose_payload()
+        source = "tf"
+        if pose is None:
+            status = self.status_robot_payload()
+            map_pose = status.get("pose") if isinstance(status.get("pose"), dict) else None
+            if not bool(status.get("localizationOk")) or map_pose is None:
+                raise ValueError("map-to-base pose is not available")
+            ros_x, ros_y, ros_yaw = self._map_pose_to_ros_pose(
+                float(map_pose.get("x", 0.0) or 0.0),
+                float(map_pose.get("y", 0.0) or 0.0),
+                float(map_pose.get("yaw", 0.0) or 0.0),
+            )
+            pose = {"x": ros_x, "y": ros_y, "yaw": ros_yaw}
+            source = "status"
+
+        values = [float(pose[key]) for key in ("x", "y", "yaw")]
+        if not all(math.isfinite(value) for value in values):
+            raise ValueError("map-to-base pose contains non-finite values")
+        checkpoint = {
+            "mapName": map_name,
+            "mapDir": str(active_map.get("mapDir") or ""),
+            "mapId": str(active_map.get("mapId") or ""),
+            "pose": {"x": values[0], "y": values[1], "yaw": values[2]},
+            "source": source,
+            "capturedAtSec": time.time(),
+        }
+        print(
+            "[robot_api_server] Pre-SLAM localization checkpoint: "
+            f"map={map_name} x={values[0]:.3f} y={values[1]:.3f} "
+            f"yaw={values[2]:.3f} source={source}",
+            flush=True,
+        )
+        return checkpoint
+
+    def _slam_session_pose_snapshot(self) -> dict[str, float] | None:
+        with self._lock:
+            pose = self._latest_slam_pose or self._latest_odom_pose
+            snapshot = dict(pose) if isinstance(pose, dict) else None
+        if snapshot is None:
+            return None
+        values = {key: float(snapshot.get(key, 0.0) or 0.0) for key in ("x", "y", "yaw")}
+        return values if all(math.isfinite(value) for value in values.values()) else None
+
+    def _restore_pre_slam_localization(self, *, use_odom_delta: bool = True) -> dict[str, Any]:
+        with self._lock:
+            checkpoint = dict(self._pre_slam_localization) if isinstance(self._pre_slam_localization, dict) else None
+            odom_pose = dict(self._latest_odom_pose) if isinstance(self._latest_odom_pose, dict) else None
+        if checkpoint is None:
+            raise ValueError("pre-SLAM localization checkpoint is unavailable")
+
+        map_name = str(checkpoint.get("mapName") or "").strip()
+        active_map = self.active_map_payload()
+        active_name = str(active_map.get("mapName") or "").strip()
+        if self._safe_map_name(active_name) != self._safe_map_name(map_name):
+            self.load_map(map_name, allow_during_transition=True)
+
+        origin = checkpoint.get("pose") if isinstance(checkpoint.get("pose"), dict) else {}
+        delta = odom_pose if use_odom_delta and odom_pose is not None else {"x": 0.0, "y": 0.0, "yaw": 0.0}
+        pose = self._compose_planar_pose(origin, delta)
+        self._publish_initial_pose_ros(
+            x=pose["x"],
+            y=pose["y"],
+            yaw=pose["yaw"],
+            frame_id=self.map_frame,
+            covariance_json=json.dumps(_SLAM_LOCALIZATION_COVARIANCE),
+            confirm=True,
+            repeat=3,
+        )
+        with self._lock:
+            self._pre_slam_localization = None
+        print(
+            "[robot_api_server] Restored pre-SLAM localization: "
+            f"map={map_name} x={pose['x']:.3f} y={pose['y']:.3f} yaw={pose['yaw']:.3f}",
+            flush=True,
+        )
+        return {"mapName": map_name, "pose": pose}
+
+    def _compose_planar_pose(self, origin: Any, delta: Any) -> dict[str, float]:
+        origin_x = float(origin.get("x", 0.0) or 0.0)
+        origin_y = float(origin.get("y", 0.0) or 0.0)
+        origin_yaw = float(origin.get("yaw", 0.0) or 0.0)
+        delta_x = float(delta.get("x", 0.0) or 0.0)
+        delta_y = float(delta.get("y", 0.0) or 0.0)
+        delta_yaw = float(delta.get("yaw", 0.0) or 0.0)
+        cos_yaw = math.cos(origin_yaw)
+        sin_yaw = math.sin(origin_yaw)
+        return {
+            "x": origin_x + (cos_yaw * delta_x) - (sin_yaw * delta_y),
+            "y": origin_y + (sin_yaw * delta_x) + (cos_yaw * delta_y),
+            "yaw": self._normalize_angle(origin_yaw + delta_yaw),
+        }
 
     def _set_slam_progress(self, progress: int, message: str) -> None:
         with self._lock:

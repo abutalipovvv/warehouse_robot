@@ -289,6 +289,7 @@ class RobotApiService:
                 active_map_name=str(payload.get("active") or payload.get("activeMapName") or ""),
                 active_map_dir=str(payload.get("activeMapDir") or ""),
                 active_map_id=str(payload.get("activeMapId") or ""),
+                active_map_signature=str(payload.get("activeSignature") or ""),
             )
             for item in payload.get("maps", []) if isinstance(payload.get("maps"), list) else []:
                 if not isinstance(item, dict):

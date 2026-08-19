@@ -174,6 +174,63 @@ class RosRuntimeNav2LifecycleMixin:
         )
         return details
 
+    def _ensure_slam_toolbox_active(self, timeout_sec: float = 4.0) -> None:
+        transition_type = self._transition_type
+        if transition_type is None:
+            raise ValueError("SLAM lifecycle transition type is unavailable")
+
+        deadline = monotonic() + max(0.5, float(timeout_sec))
+        errors: list[str] = []
+        while monotonic() < deadline:
+            with self._lock:
+                if self._latest_map is not None:
+                    return
+            state_client = self._slam_lifecycle_state_client
+            if state_client is None or not self._service_available(state_client, 0.2):
+                sleep(0.1)
+                continue
+            try:
+                response = self._call_service(
+                    state_client,
+                    state_client.srv_type.Request(),
+                    "slam_toolbox lifecycle state",
+                    timeout_sec=1.0,
+                )
+                current_state = getattr(response, "current_state", None)
+                state_id = int(getattr(current_state, "id", 0) or 0)
+                state_label = str(getattr(current_state, "label", "") or "").lower()
+            except Exception as exc:
+                errors.append(str(exc))
+                sleep(0.1)
+                continue
+            if state_id == 3 or state_label == "active":
+                return
+            if state_id != 2 and state_label != "inactive":
+                sleep(0.1)
+                continue
+            details: dict[str, Any] = {
+                "changed": False,
+                "managers": [],
+                "nodes": [],
+                "errors": [],
+            }
+            if self._call_nav2_node_transition(
+                "slam_toolbox",
+                int(transition_type.TRANSITION_ACTIVATE),
+                "activate",
+                details,
+            ):
+                print("[robot_api_server] slam_toolbox lifecycle is active.", flush=True)
+                return
+            errors.extend(str(item) for item in details["errors"])
+            sleep(0.1)
+
+        with self._lock:
+            if self._latest_map is not None:
+                return
+        detail = errors[-1] if errors else "change_state service is unavailable"
+        raise ValueError(f"slam_toolbox did not become active: {detail}")
+
     def _stop_robot_motion_for_slam(self, details: dict[str, Any]) -> None:
         try:
             self._publish_twist(0.0, 0.0)

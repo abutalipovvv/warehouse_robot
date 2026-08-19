@@ -31,6 +31,7 @@ class RosRuntimeMapTransferMixin:
             "mapName": str(response.map_name or ""),
             "mapDir": str(response.map_dir or ""),
             "mapId": str(response.map_id or ""),
+            "signature": str(response.signature or ""),
         }
 
     def list_maps_payload(self) -> dict[str, Any]:
@@ -45,13 +46,17 @@ class RosRuntimeMapTransferMixin:
         if not bool(response.ok):
             raise ValueError(str(response.error or "map list failed"))
         maps = []
-        for name, map_dir, map_id in zip(response.map_names, response.map_dirs, response.map_ids):
+        signatures = list(response.map_signatures)
+        for index, (name, map_dir, map_id) in enumerate(
+            zip(response.map_names, response.map_dirs, response.map_ids)
+        ):
             maps.append(
                 {
                     "name": str(name),
                     "folder": f"{name}.smap" if str(name) and not str(name).endswith(".smap") else str(name),
                     "mapDir": str(map_dir),
                     "mapId": str(map_id),
+                    "signature": str(signatures[index]) if index < len(signatures) else "",
                     "active": str(name) == str(response.active_map_name),
                 }
             )
@@ -60,6 +65,7 @@ class RosRuntimeMapTransferMixin:
             "active": str(response.active_map_name or ""),
             "activeMapDir": str(response.active_map_dir or ""),
             "activeMapId": str(response.active_map_id or ""),
+            "activeSignature": str(response.active_map_signature or ""),
             "maps": maps,
         }
 
@@ -142,6 +148,7 @@ class RosRuntimeMapTransferMixin:
             "mapName": str(response.map_name or ""),
             "mapDir": str(response.map_dir or ""),
             "mapId": str(response.map_id or ""),
+            "signature": str(response.signature or ""),
         }
 
     def _stop_navigation_before_map_change(self) -> None:

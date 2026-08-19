@@ -367,7 +367,7 @@ class RobotMapEditorApp {
       }
       await this.refreshLocalMaps({ silent: true });
       if (!options.silent) {
-        this.setStatus("Map saved locally. Push it to the robot to apply it.");
+        this.setStatus("Map saved locally. Push uploads and verifies it; Load activates it on the robot.");
         this.log("info", "Map saved locally.");
       }
       this.render();
@@ -418,8 +418,8 @@ class RobotMapEditorApp {
       this.clearPendingPush();
       this.currentHasLocalChanges = false;
       await this.refreshLocalMaps({ silent: true });
-      this.setStatus(payload.message || "Map pushed to robot. Operator and robot are synced.");
-      this.log("info", "Map pushed to robot.");
+      this.setStatus(payload.message || "Map uploaded and verified in robot storage. Use Load in Control to activate it.");
+      this.log("info", payload.loadRequired ? "Map pushed; robot Load is required." : "Map pushed and verified.");
       this.render();
       return payload;
     } catch (error) {
@@ -1746,7 +1746,7 @@ class RobotMapEditorApp {
         title: "Unsaved edits",
         headline: "Unsaved edits in this editor.",
         message: "Unsaved edits. Save or push to apply them.",
-        detail: "Save keeps the changes on this PC. Push to Robot saves and applies them on the robot.",
+        detail: "Save keeps changes on this PC. Push uploads and verifies them in the robot map library.",
       };
     }
     if (this.hasSavedLocalChanges()) {
@@ -1756,16 +1756,16 @@ class RobotMapEditorApp {
         title: "Not synced",
         headline: "Saved locally, not pushed to robot.",
         message: "Operator map is not synced with the robot.",
-        detail: "Push to Robot applies this map on the robot. Cancel Changes restores the robot map.",
+        detail: "Push uploads this map to robot storage. Use Load in Control to activate it.",
       };
     }
     return {
       kind: "synced",
       chip: "synced",
       title: "Synced",
-      headline: "Operator and robot maps are synced.",
-      message: "Operator and robot maps are synced.",
-      detail: "Edits here stay on this PC until you save or push them.",
+      headline: "Operator map matches the robot storage copy.",
+      message: "Operator and robot storage maps are synced.",
+      detail: "Load is a separate Control action that activates a stored robot map.",
     };
   }
 

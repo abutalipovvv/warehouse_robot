@@ -581,7 +581,7 @@
         Operator local map differs from the active robot map.
       </p>
       <div id="mapSyncDecisionDetail" class="map-sync-choice-note">
-        Choose Push to overwrite the robot map, Pull to replace the local draft, or Cancel to keep driving with the current robot map.
+        Choose Push to upload the local map into robot storage, Pull to replace the local draft, or Cancel to leave both unchanged. Use Load separately to activate a pushed map.
       </div>
       <div class="map-sync-choice-grid">
         <button id="mapSyncPullButton" type="button">
@@ -594,7 +594,7 @@
         </button>
         <button id="mapSyncPushButton" class="primary" type="button">
           <strong>Push</strong>
-          <span>Apply local map</span>
+          <span>Upload and verify local map</span>
         </button>
       </div>
     </form>
@@ -679,6 +679,32 @@
       <div class="dialog-actions">
         <button id="cancelSlamDialogButton" type="button">Cancel</button>
         <button id="confirmStartSlamButton" class="primary" type="button">Start</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="finishSlamDialog">
+    <form id="finishSlamForm" class="dialog-card slam-finish-dialog">
+      <div class="dialog-head">
+        <div>
+          <div class="eyebrow">2D SLAM</div>
+          <h2>Save constructed map</h2>
+        </div>
+      </div>
+      <label>
+        Map name
+        <input id="finishSlamMapNameInput" type="text" autocomplete="off" required />
+      </label>
+      <div class="slam-finish-option">
+        <span>
+          <strong>Save keeps the map in this Operator workspace.</strong>
+          <small>Save &amp; Push also verifies it on the robot, loads it, and makes it the default map.</small>
+        </span>
+      </div>
+      <div class="dialog-actions">
+        <button id="cancelFinishSlamButton" type="button">Cancel</button>
+        <button id="confirmFinishSlamButton" type="submit">Save</button>
+        <button id="confirmFinishSlamPushButton" class="primary" type="button">Save &amp; Push</button>
       </div>
     </form>
   </dialog>

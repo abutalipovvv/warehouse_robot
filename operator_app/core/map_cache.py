@@ -4,12 +4,14 @@ import json
 import os
 import re
 import shutil
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
 from fleet_manager.core.mapping.maps.map_exchange import (
     build_editable_map_payload,
+    editable_map_signature,
     list_editable_maps,
     restore_editable_map_bundle,
 )
@@ -83,7 +85,8 @@ class MapCache:
         robot_signature = str(meta.get("robotSignature") or "").strip()
         robot_map_name = str(meta.get("robotMapName") or meta.get("sourceMapName") or editable.get("mapName") or map_name).strip()
         has_local_changes = bool(
-            (local_signature and robot_signature and local_signature != robot_signature)
+            not (robot_signature and robot_map_name)
+            or (local_signature and local_signature != robot_signature)
             or (robot_map_name and robot_map_name != str(editable.get("mapName") or map_name).strip())
         )
         return {
@@ -96,24 +99,49 @@ class MapCache:
             "robotSignature": robot_signature,
             "robotMapName": robot_map_name,
             "hasLocalChanges": has_local_changes,
+            "isStoredOnRobot": bool(robot_signature and robot_map_name),
         }
 
     def save_pulled_map(self, robot_id: str, payload: dict[str, Any], *, activate: bool = True) -> dict[str, Any]:
         map_name = str(payload.get("mapName") or "").strip()
         if not map_name:
             raise ValueError("pulled mapName is required")
-        map_dir = self._map_dir(robot_id, map_name)
-        if map_dir.exists():
-            shutil.rmtree(map_dir)
-        restore_editable_map_bundle(map_dir, payload)
-        self._write_map_meta(
-            map_dir,
-            {
+        map_dir = self._restore_bundle_atomically(
+            robot_id,
+            map_name,
+            payload,
+            meta={
                 "savedAt": utc_now(),
                 "sourceMapName": map_name,
                 "robotSignature": str(payload.get("signature") or "").strip(),
                 "robotMapName": map_name,
                 "lastSyncAt": utc_now(),
+            },
+        )
+        if activate:
+            self.set_active_map(robot_id, map_name)
+        return self._map_info(robot_id, map_name)
+
+    def save_local_bundle(
+        self,
+        robot_id: str,
+        payload: dict[str, Any],
+        *,
+        activate: bool = False,
+    ) -> dict[str, Any]:
+        map_name = str(payload.get("mapName") or "").strip()
+        if not map_name:
+            raise ValueError("local bundle mapName is required")
+        self._restore_bundle_atomically(
+            robot_id,
+            map_name,
+            payload,
+            meta={
+                "savedAt": utc_now(),
+                "sourceMapName": map_name,
+                "robotSignature": "",
+                "robotMapName": "",
+                "lastSyncAt": "",
             },
         )
         if activate:
@@ -205,7 +233,8 @@ class MapCache:
                 payload = build_editable_map_payload(map_dir)
                 local_signature = str(payload.get("signature") or "").strip()
                 has_local_changes = bool(
-                    (local_signature and robot_signature and local_signature != robot_signature)
+                    not (robot_signature and robot_map_name)
+                    or (local_signature and local_signature != robot_signature)
                     or (robot_map_name and robot_map_name != map_name)
                 )
             except Exception:
@@ -219,9 +248,70 @@ class MapCache:
             "signature": local_signature,
             "robotSignature": robot_signature,
             "hasLocalChanges": has_local_changes,
+            "isStoredOnRobot": bool(robot_signature and robot_map_name),
             "path": str(map_dir),
             "active": self.active_map_name(robot_id) == map_name,
         }
+
+    def _restore_bundle_atomically(
+        self,
+        robot_id: str,
+        map_name: str,
+        payload: dict[str, Any],
+        *,
+        meta: dict[str, Any],
+    ) -> Path:
+        target = self._map_dir(robot_id, map_name)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        staging = Path(
+            tempfile.mkdtemp(
+                prefix=f".{target.name}.incoming-",
+                dir=str(target.parent),
+            )
+        ).resolve()
+        backup = (target.parent / f".{target.name}.backup").resolve()
+        swapped = False
+        backed_up = False
+        try:
+            restore_editable_map_bundle(staging, payload)
+            incoming_meta = staging / ".operator_meta.json"
+            if incoming_meta.exists():
+                incoming_meta.unlink()
+            editable = build_editable_map_payload(staging)
+            editable["mapName"] = map_name
+            actual_signature = editable_map_signature(editable)
+            expected_signature = str(payload.get("signature") or "").strip()
+            if expected_signature and expected_signature != actual_signature:
+                raise ValueError(
+                    "map bundle signature mismatch: "
+                    f"expected {expected_signature}, got {actual_signature}"
+                )
+            normalized_meta = dict(meta)
+            if normalized_meta.get("robotSignature"):
+                normalized_meta["robotSignature"] = actual_signature
+            self._write_map_meta(staging, normalized_meta)
+            if backup.exists():
+                shutil.rmtree(backup)
+            if target.exists():
+                target.rename(backup)
+                backed_up = True
+            staging.rename(target)
+            swapped = True
+            verified = build_editable_map_payload(target)
+            if str(verified.get("signature") or "") != actual_signature:
+                raise ValueError("local map verification failed after atomic replace")
+            if backup.exists():
+                shutil.rmtree(backup)
+            return target
+        except Exception:
+            if swapped and target.exists():
+                shutil.rmtree(target)
+            if backed_up and backup.exists():
+                backup.rename(target)
+            raise
+        finally:
+            if staging.exists():
+                shutil.rmtree(staging)
 
     def _active_map_dir(self, robot_id: str) -> Path | None:
         active_name = self.active_map_name(robot_id)

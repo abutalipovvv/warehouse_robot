@@ -173,11 +173,39 @@ class MapMetadata:
 
 
 @dataclass(frozen=True)
+class TrafficZone:
+    zone_id: str
+    kind: str
+    min_x: float
+    min_y: float
+    max_x: float
+    max_y: float
+    capacity: int = 1
+    properties: Mapping[str, object] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "id": self.zone_id,
+            "kind": self.kind,
+            "shape": "rectangle",
+            "bounds": {
+                "minX": self.min_x,
+                "minY": self.min_y,
+                "maxX": self.max_x,
+                "maxY": self.max_y,
+            },
+            "capacity": self.capacity,
+            "properties": dict(self.properties),
+        }
+
+
+@dataclass(frozen=True)
 class LoadedMapData:
     map_dir: Path
     map_metadata: MapMetadata
     landmarks: dict[str, Landmark]
     edges: list[GraphEdge]
+    traffic_zones: list[TrafficZone] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
