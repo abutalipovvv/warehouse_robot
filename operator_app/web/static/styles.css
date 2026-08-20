@@ -600,6 +600,7 @@ body[data-fleet-page="fleet"] #mapSyncStatus {
 
 body[data-fleet-page="fleet"] .robot-control-actions {
   grid-template-columns:
+    minmax(132px, 0.48fr)
     minmax(300px, 2.15fr)
     minmax(104px, 0.75fr)
     minmax(150px, 1.05fr);
@@ -654,6 +655,46 @@ body[data-fleet-page="map"] .robot-control-actions {
 #localizationActionGroup .robot-action-grid,
 #visualActionGroup .robot-action-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+#driveActionGroup .robot-action-grid {
+  grid-template-columns: minmax(112px, 1fr);
+}
+
+body[data-fleet-page="fleet"] #driveActionGroup {
+  min-height: 64px;
+  padding: 0.32rem;
+}
+
+body[data-fleet-page="fleet"] #driveActionGroup .robot-action-grid button {
+  min-height: 28px;
+  padding: 0.22rem 0.3rem;
+  font-size: 0.7rem;
+}
+
+#controlToggleButton.control-state-owned,
+#controlToggleButton.control-state-owned:disabled {
+  border-color: #14804a;
+  background: #14804a;
+  color: #ffffff;
+  opacity: 1;
+  box-shadow: 0 5px 14px rgba(20, 128, 74, 0.22);
+}
+
+#controlToggleButton.control-state-free,
+#controlToggleButton.control-state-free:disabled {
+  border-color: #2368ff;
+  background: #2368ff;
+  color: #ffffff;
+  opacity: 1;
+}
+
+#controlToggleButton.control-state-foreign,
+#controlToggleButton.control-state-foreign:disabled {
+  border-color: #d08a31;
+  background: #fff2dc;
+  color: #815018;
+  opacity: 1;
 }
 
 #navigationActionGroup .robot-action-grid {

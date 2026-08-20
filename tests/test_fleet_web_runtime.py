@@ -7889,6 +7889,75 @@ def test_remote_robot_owned_by_operator_is_not_available_to_fleet() -> None:
     assert robot.remote_status["controlOwner"] == "operator-app"
 
 
+def test_free_remote_robot_waits_for_explicit_fleet_control() -> None:
+    manager = _remote_manager()
+    adapter = _RemoteControlAdapter()
+    manager.remote_adapter = adapter
+    robot = FleetRobot(
+        name="r1",
+        current_lm="A",
+        mode="remote",
+        base_url="grpc://robot1:50051",
+    )
+    manager.robots[robot.name] = robot
+
+    assert not manager._robot_can_accept_order(robot, explicit=True)
+
+    manager.acquire_robot_control({"name": robot.name})
+
+    assert manager._robot_can_accept_order(robot, explicit=True)
+
+
+def test_off_graph_remote_robot_reconnects_before_mapf_route() -> None:
+    manager = _remote_manager()
+    adapter = _RemoteControlAdapter(
+        owner_id=FLEET_CONTROL_OWNER_ID,
+        owner_name="Fleet Manager",
+    )
+    adapter.pose = {"x": 0.35, "y": 0.4, "yaw": 0.0}
+    manager.remote_adapter = adapter
+    robot = FleetRobot(
+        name="r1",
+        current_lm="A",
+        status="IDLE",
+        mode="remote",
+        base_url="grpc://robot1:50051",
+        pose=dict(adapter.pose),
+    )
+    manager.robots[robot.name] = robot
+
+    result = manager.set_order({
+        "id": "remote-pose-goal",
+        "vehicle": robot.name,
+        "targetLm": "B",
+        "replaceActive": True,
+    })
+    order = manager.orders["remote-pose-goal"]
+
+    assert result["ok"] is True
+    assert order.status == "EXECUTING"
+    assert robot.status == "MOVING"
+    assert robot.route_note == "remote graph reconnect"
+    assert robot.route_chunk_goal_lm == "A"
+    assert robot.route_final_lm == "B"
+    assert len(adapter.execute_calls) == 1
+    reconnect_payload = adapter.execute_calls[0]["payload"]
+    assert reconnect_payload["goalLm"] == "A"
+    assert "startLm" not in reconnect_payload
+    assert "route" not in reconnect_payload
+
+    adapter.pose = {"x": 0.0, "y": 0.0, "yaw": 0.0}
+    adapter.state = "ARRIVED"
+    robot.remote_last_poll_at = None
+    manager._advance_remote_robot_order(robot, manager._now() + 1.0)
+
+    assert len(adapter.execute_calls) == 2
+    mapf_payload = adapter.execute_calls[1]["payload"]
+    assert mapf_payload["route"]["nodes"] == ["A", "B"]
+    assert order.status == "EXECUTING"
+    assert robot.route_chunk_goal_lm == "B"
+
+
 def test_remote_order_pauses_for_operator_and_replans_after_release(monkeypatch) -> None:
     manager = _remote_manager()
     adapter = _RemoteControlAdapter(owner_id="operator-app", owner_name="Operator App")
@@ -7936,6 +8005,14 @@ def test_remote_order_pauses_for_operator_and_replans_after_release(monkeypatch)
 
     manager._advance_remote_robot_order(robot, now + 1.0)
 
+    assert robot.active_order_id == "o1"
+    assert order.status == "PAUSED"
+    assert dispatched == []
+
+    adapter.owner_id = FLEET_CONTROL_OWNER_ID
+    adapter.owner_name = "Fleet Manager"
+    manager._advance_remote_robot_order(robot, now + 2.0)
+
     assert robot.active_order_id == ""
     assert order.status == "QUEUED"
     assert order.error == ""
@@ -7977,7 +8054,7 @@ def test_direct_takeover_is_mirrored_before_next_remote_poll() -> None:
     assert not robot.trajectory
 
 
-def test_fleet_control_acquire_never_forces_operator_takeover() -> None:
+def test_fleet_commands_require_explicit_control_acquire() -> None:
     manager = _remote_manager()
     adapter = _RemoteControlAdapter()
     manager.remote_adapter = adapter
@@ -7988,7 +8065,25 @@ def test_fleet_control_acquire_never_forces_operator_takeover() -> None:
         base_url="grpc://robot1:50051",
     )
 
-    manager._ensure_remote_control(robot, "execute route")
+    with pytest.raises(ValueError, match="use Seize Control first"):
+        manager._ensure_remote_control(robot, "execute route")
+
+    assert adapter.acquire_calls == []
+
+
+def test_fleet_control_acquire_and_release_use_non_forced_lease() -> None:
+    manager = _remote_manager()
+    adapter = _RemoteControlAdapter()
+    manager.remote_adapter = adapter
+    robot = FleetRobot(
+        name="r1",
+        current_lm="A",
+        mode="remote",
+        base_url="grpc://robot1:50051",
+    )
+    manager.robots[robot.name] = robot
+
+    acquired = manager.acquire_robot_control({"name": "r1"})
 
     assert adapter.acquire_calls == [
         {
@@ -7999,6 +8094,41 @@ def test_fleet_control_acquire_never_forces_operator_takeover() -> None:
             "lease_ms": 0,
         }
     ]
+    assert acquired["robot"]["remoteStatus"]["controlOwner"] == FLEET_CONTROL_OWNER_ID
+
+    released = manager.release_robot_control({"name": "r1"})
+
+    assert adapter.stop_calls[-1]["owner_id"] == FLEET_CONTROL_OWNER_ID
+    assert adapter.release_calls == [
+        {
+            "endpoint": "grpc://robot1:50051",
+            "owner_id": FLEET_CONTROL_OWNER_ID,
+            "force": False,
+        }
+    ]
+    assert released["robot"]["remoteStatus"]["controlOwner"] == ""
+
+
+def test_fleet_control_never_steals_operator_lease() -> None:
+    manager = _remote_manager()
+    adapter = _RemoteControlAdapter(
+        owner_id="operator-app",
+        owner_name="Operator App",
+    )
+    manager.remote_adapter = adapter
+    robot = FleetRobot(
+        name="r1",
+        current_lm="A",
+        mode="remote",
+        base_url="grpc://robot1:50051",
+    )
+    manager.robots[robot.name] = robot
+
+    with pytest.raises(ValueError, match="cannot seize control.*Operator App"):
+        manager.acquire_robot_control({"name": "r1"})
+
+    assert adapter.owner_id == "operator-app"
+    assert adapter.acquire_calls[0]["force"] is False
 
 
 def test_far_order_selects_a_reachable_prefix_before_time_aware_mapf() -> None:
@@ -15142,7 +15272,12 @@ class _RemoteControlAdapter:
     def __init__(self, owner_id: str = "", owner_name: str = "") -> None:
         self.owner_id = owner_id
         self.owner_name = owner_name
+        self.state = "IDLE"
+        self.pose = {"x": 0.0, "y": 0.0, "yaw": 0.0}
+        self.nearest_lm = "A"
         self.acquire_calls: list[dict[str, object]] = []
+        self.release_calls: list[dict[str, object]] = []
+        self.stop_calls: list[dict[str, object]] = []
         self.execute_calls: list[dict[str, object]] = []
         self.cancel_calls: list[dict[str, object]] = []
         self.cancel_error: Exception | None = None
@@ -15153,9 +15288,9 @@ class _RemoteControlAdapter:
             "robot": {
                 "robotId": "r1",
                 "connected": True,
-                "state": "IDLE",
-                "nearestLm": "A",
-                "pose": {"x": 0.0, "y": 0.0, "yaw": 0.0},
+                "state": self.state,
+                "nearestLm": self.nearest_lm,
+                "pose": dict(self.pose),
                 "controlOwner": self.owner_id,
                 "controlOwnerName": self.owner_name,
                 "control": {
@@ -15167,10 +15302,45 @@ class _RemoteControlAdapter:
 
     def acquire_control(self, endpoint: str, **kwargs) -> dict[str, object]:
         self.acquire_calls.append({"endpoint": endpoint, **kwargs})
-        return {"ok": True}
+        requested_owner = str(kwargs.get("owner_id") or "")
+        if self.owner_id and self.owner_id != requested_owner:
+            raise ValueError(f"control is owned by {self.owner_name or self.owner_id}")
+        self.owner_id = requested_owner
+        self.owner_name = str(kwargs.get("owner_name") or requested_owner)
+        return {"ok": True, "status": self.status(endpoint)}
+
+    def release_control(self, endpoint: str, **kwargs) -> dict[str, object]:
+        self.release_calls.append({"endpoint": endpoint, **kwargs})
+        requested_owner = str(kwargs.get("owner_id") or "")
+        if self.owner_id and self.owner_id != requested_owner:
+            raise ValueError(f"control is owned by {self.owner_name or self.owner_id}")
+        self.owner_id = ""
+        self.owner_name = ""
+        return {"ok": True, "status": self.status(endpoint)}
+
+    def stop(self, endpoint: str, **kwargs) -> dict[str, object]:
+        self.stop_calls.append({"endpoint": endpoint, **kwargs})
+        requested_owner = str(kwargs.get("owner_id") or "")
+        if self.owner_id != requested_owner:
+            raise ValueError(f"control is owned by {self.owner_name or self.owner_id or 'nobody'}")
+        self.state = "STOPPED"
+        return {"ok": True, "status": self.status(endpoint)}
 
     def execute_route(self, endpoint: str, payload: dict) -> dict[str, object]:
         self.execute_calls.append({"endpoint": endpoint, "payload": payload})
+        if not isinstance(payload.get("route"), dict):
+            goal_lm = str(payload.get("goalLm") or self.nearest_lm)
+            self.state = "EXECUTING_ROUTE"
+            route = {
+                "goalLm": goal_lm,
+                "startLm": self.nearest_lm,
+                "nodes": ["CURRENT_POSE", goal_lm],
+                "trajectory": [
+                    {"t": 0.0, **self.pose, "edgeId": f"CURRENT_POSE->{goal_lm}"},
+                    {"t": 1.0, "x": 0.0, "y": 0.0, "yaw": 0.0, "edgeId": f"CURRENT_POSE->{goal_lm}", "lm": goal_lm},
+                ],
+            }
+            return {"ok": True, "route": route, "status": self.status(endpoint)}
         return {"ok": True}
 
     def cancel_route(self, endpoint: str, **kwargs) -> dict[str, object]:
@@ -15482,7 +15652,10 @@ def test_remote_clearance_dispatch_preserves_its_explicit_spatial_route(
             ),
             properties={"direction": 2},
         ))
-    adapter = _RemoteControlAdapter()
+    adapter = _RemoteControlAdapter(
+        owner_id=FLEET_CONTROL_OWNER_ID,
+        owner_name="Fleet Manager",
+    )
     manager = FleetManagerROS(
         landmarks,
         edges,
@@ -15549,6 +15722,9 @@ def test_remote_clearance_dispatch_preserves_its_explicit_spatial_route(
 def test_failed_remote_clearance_cancel_preserves_route_until_retry() -> None:
     manager = _remote_clearance_manager()
     adapter = manager.remote_adapter
+    adapter.owner_id = FLEET_CONTROL_OWNER_ID
+    adapter.owner_name = "Fleet Manager"
+    adapter.state = "WAITING"
     manager.params["fleet"]["parked_clearance_relocation_timeout_sec"] = 20.0
     now = manager._now()
     remote = FleetRobot(
@@ -15622,6 +15798,8 @@ def test_remote_stationary_plan_failure_queues_common_clearance_recovery(
     monkeypatch,
 ) -> None:
     manager = _remote_clearance_manager()
+    manager.remote_adapter.owner_id = FLEET_CONTROL_OWNER_ID
+    manager.remote_adapter.owner_name = "Fleet Manager"
     manager.params["fleet"]["parked_clearance_relocation_failures"] = 1
     waiter = FleetRobot(
         name="r1",

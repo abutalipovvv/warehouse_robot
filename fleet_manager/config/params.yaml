@@ -45,7 +45,7 @@ navigation:
   rejoin_speed_limit: 0.16
   hard_rejoin_speed_limit: 0.06
   route_acceleration: 0.6
-  simulate_rotation: true
+  simulate_rotation: false
   turn_speed: 0.9
 planner:
   nearest_lm_tolerance: 0.01
@@ -81,7 +81,7 @@ fleet:
   rolling_horizon_scale_with_simulation_time: true
   rolling_horizon_max_sec: 120
   reservation_safety_time_sec: 0.35
-  robot_clearance_m: 0
+  robot_clearance_m: 0.35
   continuous_collision_step_sec: 0.1
   wait_time_sec: 1
   wait_cost: 6
@@ -156,6 +156,7 @@ fleet:
   traffic_zone_replan_after_sec: 6
   runtime_replan_lm_tolerance_m: 0.1
   start_pose_lm_tolerance_m: 0.1
+  remote_graph_reconnect_max_distance_m: 2
   deadlock_wait_timeout_sec: 1
   traffic_replan_after_sec: 3
   parked_robot_replan_after_sec: 1

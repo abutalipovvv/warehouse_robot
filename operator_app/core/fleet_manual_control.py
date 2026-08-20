@@ -132,6 +132,30 @@ class FleetManualControlService:
             ),
         }
 
+    def acquire_control_payload(
+        self,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        owner = self.owner
+        owner._sync_manager_mode()
+        if owner.mode != "robots":
+            raise ValueError("control leases are available only for real robots")
+        return owner._result_with_context(
+            owner.manager.acquire_robot_control(payload)
+        )
+
+    def release_control_payload(
+        self,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        owner = self.owner
+        owner._sync_manager_mode()
+        if owner.mode != "robots":
+            raise ValueError("control leases are available only for real robots")
+        return owner._result_with_context(
+            owner.manager.release_robot_control(payload)
+        )
+
     def note_external_control_takeover(
         self,
         endpoint: str,

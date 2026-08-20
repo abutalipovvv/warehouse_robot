@@ -33,6 +33,8 @@ class OperatorRequestHandler(
             "/index.html",
             "/app.js",
             "/scene3d.js",
+            "/occupancy-walls.js",
+            "/occupancy-wall-worker.js",
             "/styles.css",
             "/map-editor.html",
             "/map-editor.js",

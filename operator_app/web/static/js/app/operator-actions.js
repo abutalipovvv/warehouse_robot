@@ -1197,6 +1197,17 @@ export const withActions = (Base) => class OperatorAppActions extends Base {
       return;
     }
     if (active) {
+      const controlledRobot = this.isFleetManager()
+        ? this.selectedFleetRobot()
+        : (this.currentStatus?.robot || {});
+      const requiredOwner = this.isFleetManager() ? "fleet-manager" : "operator-app";
+      const requiresLease = !this.isFleetManagerSim();
+      if (requiresLease && this.robotControlPayload(controlledRobot).ownerId !== requiredOwner) {
+        this.robotMessageText.textContent = this.isFleetManager()
+          ? "Use Seize Control before sending Fleet Manager commands."
+          : "Use Seize Control before driving the robot.";
+        return;
+      }
       const wasIdle = this.manualKeys.size === 0;
       this.manualKeys.add(key);
       if (this.isFleetManager()) {

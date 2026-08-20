@@ -12,6 +12,7 @@ from fleet_manager.manager.endpoints import (
 from fleet_manager.manager.tasks.statuses import (
     EXTERNAL_CONTROL_PAUSE_PREFIX,
     FLEET_CONTROL_OWNER_ID,
+    FLEET_CONTROL_OWNER_NAME,
     TERMINAL_ORDER_STATUSES,
 )
 from fleet_manager.robot.model import FleetRobot
@@ -37,6 +38,106 @@ class FleetManagerRemoteControlMixin:
         """No-op transport hook overridden by the gRPC runtime."""
         del robot
 
+    def _dispatch_remote_graph_reconnect(
+        self,
+        order: Any,
+        robot: FleetRobot,
+        final_goal: str,
+    ) -> tuple[bool, str]:
+        """Transport hook for returning a remote robot to the LM graph."""
+
+        del order, robot, final_goal
+        return False, ""
+
+    def _require_remote_robot(self, payload: dict[str, Any]) -> FleetRobot:
+        name = str(payload.get("name") or "").strip()
+        if not name:
+            raise ValueError("robot name is required")
+        robot = self.robots.get(name)
+        if robot is None:
+            raise ValueError(f"unknown robot: {name}")
+        if not robot.is_remote() or not robot.base_url:
+            raise ValueError(f"{name} is not a remote robot")
+        return robot
+
+    def _apply_control_command_status(
+        self,
+        robot: FleetRobot,
+        response: dict[str, Any],
+    ) -> None:
+        status = response.get("status")
+        if isinstance(status, dict):
+            self._apply_remote_status(robot, status, self._now())
+
+    @runtime_command
+    def acquire_robot_control(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """Seize a free robot for Fleet Manager without stealing ownership."""
+
+        robot = self._require_remote_robot(payload)
+        try:
+            response = self.remote_adapter.acquire_control(
+                robot.base_url,
+                owner_id=FLEET_CONTROL_OWNER_ID,
+                owner_name=FLEET_CONTROL_OWNER_NAME,
+                force=False,
+                lease_ms=0,
+            )
+            self._apply_control_command_status(robot, response)
+            robot.remote_online = True
+            robot.remote_error = ""
+        except Exception as exc:
+            robot.remote_online = self._is_remote_control_conflict(exc)
+            robot.remote_error = str(exc)
+            raise ValueError(f"cannot seize control of {robot.name}: {exc}") from exc
+
+        robot.last_reason = "Fleet Manager control acquired"
+        robot.updated_at = self._now()
+        self._event("info", f"Fleet Manager control acquired: {robot.name}")
+        self._advance_planning_revision(f"Fleet Manager control acquired: {robot.name}")
+        return {
+            "ok": True,
+            "robot": robot.to_dict(),
+            "state": self.state(),
+        }
+
+    @runtime_command
+    def release_robot_control(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """Stop Fleet Manager motion, retire its active order, and release."""
+
+        robot = self._require_remote_robot(payload)
+        self._ensure_remote_control(robot, "release control")
+
+        # Stop first. Releasing a lease while a route is active would let a
+        # new owner inherit motion that Fleet Manager started.
+        self._stop_robot(robot)
+        if robot.remote_error:
+            raise ValueError(
+                f"cannot release control of {robot.name}: stop failed: {robot.remote_error}"
+            )
+        try:
+            response = self.remote_adapter.release_control(
+                robot.base_url,
+                owner_id=FLEET_CONTROL_OWNER_ID,
+                force=False,
+            )
+            self._apply_control_command_status(robot, response)
+            robot.remote_online = True
+            robot.remote_error = ""
+        except Exception as exc:
+            robot.remote_online = self._is_remote_control_conflict(exc)
+            robot.remote_error = str(exc)
+            raise ValueError(f"cannot release control of {robot.name}: {exc}") from exc
+
+        robot.last_reason = "Fleet Manager control released"
+        robot.updated_at = self._now()
+        self._event("info", f"Fleet Manager control released: {robot.name}")
+        self._advance_planning_revision(f"Fleet Manager control released: {robot.name}")
+        return {
+            "ok": True,
+            "robot": robot.to_dict(),
+            "state": self.state(),
+        }
+
 
     @runtime_command
     def teleop_robot(
@@ -45,22 +146,16 @@ class FleetManagerRemoteControlMixin:
         *,
         include_state: bool = True,
     ) -> dict[str, Any]:
-        name = str(payload.get("name", "")).strip()
-        if not name:
-            raise ValueError("robot name is required")
-        robot = self.robots.get(name)
-        if robot is None:
-            raise ValueError(f"unknown robot: {name}")
-        if not robot.is_remote() or not robot.base_url:
-            raise ValueError(f"{name} is not a remote robot")
+        robot = self._require_remote_robot(payload)
+        name = robot.name
 
         linear = float(payload.get("linear", 0.0) or 0.0)
         angular = float(payload.get("angular", 0.0) or 0.0)
         timeout_ms = max(80, int(payload.get("timeoutMs", 350) or 350))
+        self._ensure_remote_control(robot, "manual control")
         if robot.active_order_id:
             self._cancel_active_order_for_robot(robot, "manual control takeover")
         try:
-            self._ensure_remote_control(robot, "manual control")
             response = self.remote_adapter.teleop(
                 robot.base_url,
                 linear=linear,
@@ -100,14 +195,8 @@ class FleetManagerRemoteControlMixin:
 
     @runtime_command
     def teleop_stop_robot(self, payload: dict[str, Any]) -> dict[str, Any]:
-        name = str(payload.get("name", "")).strip()
-        if not name:
-            raise ValueError("robot name is required")
-        robot = self.robots.get(name)
-        if robot is None:
-            raise ValueError(f"unknown robot: {name}")
-        if not robot.is_remote() or not robot.base_url:
-            raise ValueError(f"{name} is not a remote robot")
+        robot = self._require_remote_robot(payload)
+        name = robot.name
         try:
             self._ensure_remote_control(robot, "manual stop")
             response = self.remote_adapter.teleop_stop(robot.base_url, owner_id=FLEET_CONTROL_OWNER_ID)

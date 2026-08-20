@@ -8,7 +8,6 @@ from typing import Any
 from fleet_manager.manager.tasks.statuses import (
     EXTERNAL_CONTROL_PAUSE_PREFIX,
     FLEET_CONTROL_OWNER_ID,
-    FLEET_CONTROL_OWNER_NAME,
     TERMINAL_ORDER_STATUSES,
 )
 from fleet_manager.manager.tasks.models import FleetOrder
@@ -17,6 +16,122 @@ from fleet_manager.robot.model import FleetRobot
 
 class GrpcRobotRuntimeMixin:
     """Execute shared fleet decisions through robot gRPC tunnels."""
+
+    def _remote_graph_reconnect_limit(self) -> float:
+        return self.settings.fleet.number(
+            "remote_graph_reconnect_max_distance_m",
+            2.0,
+            minimum=0.10,
+            default_if_falsy=True,
+        )
+
+    def _dispatch_remote_graph_reconnect(
+        self,
+        order: FleetOrder,
+        robot: FleetRobot,
+        final_goal: str,
+    ) -> tuple[bool, str]:
+        """Return an idle off-graph robot to an LM before MAPF dispatch.
+
+        The local robot planner owns this short recovery because it has the
+        continuous localization pose and can reconnect from the current edge.
+        Once the robot reports arrival at the reconnect LM, the ordinary
+        Fleet/MAPF order automatically resumes from that graph boundary.
+        """
+
+        if not robot.is_remote() or not robot.base_url or robot.pose is None:
+            return False, "robot has no graph-safe start pose"
+        reconnect_lm = self._nearest_lm_for_robot(robot)
+        landmark = self.landmarks.get(reconnect_lm)
+        if landmark is None:
+            return False, "no graph landmark near robot pose"
+        distance = math.hypot(
+            float(landmark.x) - float(robot.pose.get("x", 0.0) or 0.0),
+            float(landmark.y) - float(robot.pose.get("y", 0.0) or 0.0),
+        )
+        limit = self._remote_graph_reconnect_limit()
+        if distance > limit:
+            return False, (
+                "robot is too far from the traffic graph for automatic "
+                f"reconnect ({distance:.2f} m > {limit:.2f} m)"
+            )
+
+        try:
+            self._ensure_remote_control(robot, "reconnect to traffic graph")
+            response = self.remote_adapter.execute_route(
+                robot.base_url,
+                {
+                    # Deliberately omit startLm/nodes. The robot planner must
+                    # use its live pose and either continue the current edge
+                    # or build the bounded connector to this LM.
+                    "goalLm": reconnect_lm,
+                    "ownerId": FLEET_CONTROL_OWNER_ID,
+                    "order": order.to_dict(),
+                },
+            )
+            route = response.get("route")
+            if not isinstance(route, dict):
+                raise ValueError("robot did not return its reconnect route")
+            trajectory = [
+                dict(item)
+                for item in route.get("trajectory", [])
+                if isinstance(item, dict)
+            ]
+            if not trajectory:
+                raise ValueError("robot returned an empty reconnect trajectory")
+            self._apply_control_command_status(robot, response)
+        except Exception as exc:
+            robot.remote_error = str(exc)
+            robot.remote_online = self._is_remote_control_conflict(exc)
+            return False, f"remote graph reconnect failed: {exc}"
+
+        now = self._now()
+        graph_nodes = [
+            str(item)
+            for item in route.get("nodes", [])
+            if str(item) in self.landmarks
+        ]
+        robot.target_lm = reconnect_lm
+        robot.status = "MOVING"
+        robot.trajectory = trajectory
+        robot.trajectory_dirty = True
+        robot.plan_nodes = graph_nodes or [reconnect_lm]
+        robot.route_started_at = now
+        robot.route_clock = 0.0
+        robot.last_tick_at = now
+        robot.blocked_since = None
+        robot.last_replan_at = None
+        robot.last_reason = (
+            f"returning to traffic graph at {reconnect_lm}; "
+            f"then {final_goal}"
+        )
+        robot.route_note = "remote graph reconnect"
+        robot.active_order_id = order.order_id
+        robot.route_revision = self._next_route_revision()
+        robot.route_chunk_index = 0
+        robot.route_chunk_goal_lm = reconnect_lm
+        robot.route_final_lm = final_goal
+        robot.route_preview = [dict(item) for item in trajectory]
+        robot.route_preview_dirty = True
+        robot.pending_route = None
+        robot.has_executed_route = True
+        robot.remote_online = True
+        robot.remote_error = ""
+        robot.updated_at = now
+
+        self._set_order_status(
+            order,
+            "EXECUTING",
+            robot=robot,
+            start_lm=reconnect_lm,
+        )
+        order.route_nodes = [reconnect_lm]
+        self._event(
+            "info",
+            f"remote graph reconnect: {robot.name}->{reconnect_lm}; "
+            f"then {final_goal}",
+        )
+        return True, ""
 
     def _remote_poll_interval(self) -> float:
         fleet = self.params.get("fleet", {})
@@ -198,6 +313,15 @@ class GrpcRobotRuntimeMixin:
             return
         if (
             not owner_id
+            and str(order.error or "").startswith(EXTERNAL_CONTROL_PAUSE_PREFIX)
+        ):
+            # A local operator released the robot, but this does not grant
+            # Fleet Manager ownership. Keep the task paused until the
+            # operator explicitly presses Seize Control in Fleet Manager.
+            robot.last_tick_at = now
+            return
+        if (
+            owner_id == FLEET_CONTROL_OWNER_ID
             and str(order.error or "").startswith(EXTERNAL_CONTROL_PAUSE_PREFIX)
             and robot.status in {"ARRIVED", "IDLE", "STOPPED"}
         ):
@@ -516,22 +640,23 @@ class GrpcRobotRuntimeMixin:
     def _ensure_remote_control(self, robot: FleetRobot, action: str) -> None:
         if not robot.is_remote() or not robot.base_url:
             return
-        try:
-            self.remote_adapter.acquire_control(
-                robot.base_url,
-                owner_id=FLEET_CONTROL_OWNER_ID,
-                owner_name=FLEET_CONTROL_OWNER_NAME,
-                # A Fleet Manager background tick must never steal a robot
-                # from an operator who explicitly took manual control.
-                force=False,
-                lease_ms=0,
+        self._sync_remote_robot(robot, self._now(), force=True)
+        if not robot.remote_online:
+            raise ValueError(
+                f"cannot {action}: {robot.name} is offline"
+                + (f" ({robot.remote_error})" if robot.remote_error else "")
             )
-            robot.remote_online = True
+        owner_id, owner_name = self._remote_control_owner(robot)
+        if owner_id == FLEET_CONTROL_OWNER_ID:
             robot.remote_error = ""
-        except Exception as exc:
-            robot.remote_online = self._is_remote_control_conflict(exc)
-            robot.remote_error = str(exc)
-            raise ValueError(f"remote control acquire failed before {action}: {exc}") from exc
+            return
+        if owner_id:
+            raise ValueError(
+                f"cannot {action}: control is owned by {owner_name or owner_id}"
+            )
+        raise ValueError(
+            f"cannot {action}: Fleet Manager control is not acquired; use Seize Control first"
+        )
 
     @staticmethod
     def _is_remote_control_conflict(error: Exception | str) -> bool:

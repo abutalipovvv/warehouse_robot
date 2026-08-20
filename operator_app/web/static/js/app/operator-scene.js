@@ -817,17 +817,22 @@ export const withSceneNavigation = (Base) => class OperatorAppSceneNavigation ex
     const relocateArmed = this.relocateMode && !isFleet;
     this.operatorScene3d?.classList.toggle("target-armed", navigateArmed || queueArmed || spawnArmed);
     this.scene3d?.setTargetArmed(this.scene3dTargetArmed());
-    const robot = this.currentStatus && this.currentStatus.robot ? this.currentStatus.robot : {};
+    const robot = isFleet
+      ? (this.selectedFleetRobot() || {})
+      : (this.currentStatus && this.currentStatus.robot ? this.currentStatus.robot : {});
     const routeState = String(robot.state || "").toUpperCase();
     const routeActive = Boolean(robot.targetLm || robot.routeId || routeState === "EXECUTING_ROUTE" || routeState === "PAUSED");
     const paused = this.robotNavigationPaused(robot);
     const mappingActive = !isFleet && this.slamActive;
     const control = this.robotControlPayload(robot);
-    const operatorOwnsControl = control.ownerId === "operator-app";
+    const expectedOwnerId = isFleet ? "fleet-manager" : "operator-app";
+    const ownsControl = control.ownerId === expectedOwnerId;
+    const foreignControl = Boolean(control.ownerId) && !ownsControl;
+    const fleetControlRequired = isFleet && this.isFleetRobotsMode();
     const idleText = this.navigateButtonIdleText();
     this.navigateRobotButton.classList.toggle("primary", !navigateArmed);
     this.navigateRobotButton.classList.toggle("danger", navigateArmed);
-    this.navigateRobotButton.disabled = relocateArmed || mappingActive;
+    this.navigateRobotButton.disabled = relocateArmed || mappingActive || (fleetControlRequired && !ownsControl);
     this.navigateRobotButton.textContent = navigateArmed
       ? (this.pendingFleetRobotName
           ? `${this.fleetNavigateUsesPose() ? "Select Pose" : "Select LM"}: ${this.pendingFleetRobotName}`
@@ -845,14 +850,21 @@ export const withSceneNavigation = (Base) => class OperatorAppSceneNavigation ex
     if (this.resumeRouteButton) {
       this.resumeRouteButton.disabled = mappingActive || !paused;
     }
-    if (this.takeControlButton) {
-      this.takeControlButton.disabled = mappingActive || operatorOwnsControl;
-      this.takeControlButton.textContent = control.ownerId && !operatorOwnsControl
-        ? `Take Control from ${control.ownerName || control.ownerId}`
-        : "Take Control";
-    }
-    if (this.releaseControlButton) {
-      this.releaseControlButton.disabled = mappingActive || !operatorOwnsControl;
+    if (this.controlToggleButton) {
+      // Keep a foreign-owned control visible and clickable. Acquire remains
+      // non-forcing, so the robot rejects an actual takeover, but the click
+      // now reports the owner instead of looking like an ignored button. It
+      // also recovers immediately when only the displayed status was stale.
+      this.controlToggleButton.disabled = mappingActive;
+      this.controlToggleButton.classList.toggle("control-state-owned", ownsControl);
+      this.controlToggleButton.classList.toggle("control-state-free", !control.ownerId);
+      this.controlToggleButton.classList.toggle("control-state-foreign", foreignControl);
+      this.controlToggleButton.textContent = foreignControl
+        ? `Controlled by ${control.ownerName || control.ownerId}`
+        : (ownsControl ? "Release Control" : "Seize Control");
+      this.controlToggleButton.title = foreignControl
+        ? `Control belongs to ${control.ownerName || control.ownerId}. Release it there before seizing here.`
+        : "";
     }
     if (!relocateArmed) {
       this.relocationDrag = null;
@@ -964,17 +976,34 @@ export const withSceneNavigation = (Base) => class OperatorAppSceneNavigation ex
     if (this.robotControlPayload(robot).ownerId === "operator-app") {
       return true;
     }
-    return this.acquireRobotControl(true, false);
+    this.robotMessageText.textContent = "Navigation blocked. Press Seize Control first.";
+    return false;
   }
 
-  async acquireRobotControl(force = true, announce = true) {
+  async toggleControl() {
+    const robot = this.isFleetManager()
+      ? (this.selectedFleetRobot() || {})
+      : (this.currentStatus?.robot || {});
+    const expectedOwner = this.isFleetManager() ? "fleet-manager" : "operator-app";
+    const ownsControl = this.robotControlPayload(robot).ownerId === expectedOwner;
+    if (this.isFleetManager()) {
+      return ownsControl
+        ? this.releaseFleetRobotControl()
+        : this.acquireFleetRobotControl();
+    }
+    return ownsControl
+      ? this.releaseRobotControl()
+      : this.acquireRobotControl(false, true);
+  }
+
+  async acquireRobotControl(force = false, announce = true) {
     if (!this.selectedRobot() || this.isFleetManager()) {
       return false;
     }
     try {
       const result = await this.postJson(this.robotApiPath("/api/robot/control/acquire"), {
         force,
-        stopNavigation: force,
+        stopNavigation: true,
       });
       this.currentStatus = result.status || await this.getJson(this.robotApiPath("/api/robot/status"));
       this.renderSelectedRobot();
@@ -985,8 +1014,48 @@ export const withSceneNavigation = (Base) => class OperatorAppSceneNavigation ex
       }
       return true;
     } catch (error) {
-      this.robotMessageText.textContent = `Take control failed: ${error.message || error}`;
+      this.robotMessageText.textContent = `Seize control failed: ${error.message || error}`;
       return false;
+    }
+  }
+
+  async acquireFleetRobotControl() {
+    const robot = this.selectedFleetRobot();
+    if (!this.isFleetRobotsMode() || !this.isFleetRemoteRobot(robot)) {
+      return false;
+    }
+    try {
+      const result = await this.postJson(this.fleetApiPath("/robots/control/acquire"), {
+        name: robot.name,
+      });
+      this.currentStatus = result.state || await this.getJson(this.fleetApiPath("/state"));
+      this.renderFleetStateImmediately();
+      this.robotMessageText.textContent = `${robot.name}: Fleet Manager control acquired.`;
+      return true;
+    } catch (error) {
+      this.robotMessageText.textContent = `Seize control failed: ${error.message || error}`;
+      return false;
+    }
+  }
+
+  async releaseFleetRobotControl() {
+    const robot = this.selectedFleetRobot();
+    if (!this.isFleetRobotsMode() || !this.isFleetRemoteRobot(robot)) {
+      return;
+    }
+    try {
+      this.manualKeys.clear();
+      this.stopFleetSimManualCommandLoop();
+      this.syncManualButtons();
+      await this.releaseFleetManualControl();
+      const result = await this.postJson(this.fleetApiPath("/robots/control/release"), {
+        name: robot.name,
+      });
+      this.currentStatus = result.state || await this.getJson(this.fleetApiPath("/state"));
+      this.renderFleetStateImmediately();
+      this.robotMessageText.textContent = `${robot.name}: Fleet Manager control released.`;
+    } catch (error) {
+      this.robotMessageText.textContent = `Release control failed: ${error.message || error}`;
     }
   }
 
@@ -995,7 +1064,10 @@ export const withSceneNavigation = (Base) => class OperatorAppSceneNavigation ex
       return;
     }
     try {
-      const result = await this.postJson(this.robotApiPath("/api/robot/control/release"), { force });
+      const result = await this.postJson(this.robotApiPath("/api/robot/control/release"), {
+        force,
+        stopNavigation: true,
+      });
       this.currentStatus = result.status || await this.getJson(this.robotApiPath("/api/robot/status"));
       this.renderSelectedRobot();
       this.robotMessageText.textContent = "Control released.";

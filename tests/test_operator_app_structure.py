@@ -98,7 +98,12 @@ def test_operator_frontend_is_modular_and_offline() -> None:
     assert 'import("../../scene3d.js")' in scene_module
 
     scene_js = (STATIC_ROOT / "scene3d.js").read_text(encoding="utf-8")
+    occupancy_js = (STATIC_ROOT / "occupancy-walls.js").read_text(encoding="utf-8")
+    occupancy_worker_js = (STATIC_ROOT / "occupancy-wall-worker.js").read_text(encoding="utf-8")
     assert 'new URL("./vendor/babylon-9.16.2.js", import.meta.url)' in scene_js
+    assert 'new URL("./occupancy-wall-worker.js", import.meta.url)' in scene_js
+    assert "OCCUPANCY_WALL_MAX_INSTANCES = 1500" in occupancy_js
+    assert 'from "./occupancy-walls.js"' in occupancy_worker_js
     assert "cdn.jsdelivr.net" not in scene_js
     assert (STATIC_ROOT / "vendor" / "babylon-9.16.2.js").stat().st_size > 1_000_000
     assert (STATIC_ROOT / "vendor" / "BABYLON-LICENSE.md").is_file()

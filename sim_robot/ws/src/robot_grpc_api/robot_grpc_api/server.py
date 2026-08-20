@@ -9,6 +9,15 @@ from .contracts import API_VERSION, GRPC_CHANNEL_OPTIONS, json_loads_object, rob
 from .proto import robot_api_pb2
 
 
+GRPC_SERVER_OPTIONS = (
+    *GRPC_CHANNEL_OPTIONS,
+    # A control lease lives in this server process. Allowing SO_REUSEPORT
+    # would load-balance requests across independent lease states when a
+    # stale launcher leaves another Robot API on the same port.
+    ("grpc.so_reuseport", 0),
+)
+
+
 def _load_grpc_modules():
     try:
         import grpc  # type: ignore
@@ -507,7 +516,7 @@ def serve_robot_api(runtime: Any, *, host: str = "0.0.0.0", port: int = 50051, m
     grpc, robot_api_pb2_grpc = _load_grpc_modules()
     server = grpc.server(
         futures.ThreadPoolExecutor(max_workers=max(2, int(max_workers))),
-        options=GRPC_CHANNEL_OPTIONS,
+        options=GRPC_SERVER_OPTIONS,
     )
     robot_api_pb2_grpc.add_RobotApiServicer_to_server(RobotApiService(runtime), server)
     bind = f"{host}:{int(port)}"

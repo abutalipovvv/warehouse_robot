@@ -195,7 +195,9 @@ class RobotControlProxyMixin:
                     endpoint,
                     owner_id=OPERATOR_CONTROL_OWNER_ID,
                     owner_name=OPERATOR_CONTROL_OWNER_NAME,
-                    force=bool(payload.get("force")),
+                    # Ownership is exclusive. The Operator App must release
+                    # Fleet Manager control through its owner, not steal it.
+                    force=False,
                     lease_ms=int(payload.get("leaseMs", payload.get("lease_ms", 0)) or 0),
                 )
                 if bool(payload.get("stopNavigation") or payload.get("stop_navigation")):
@@ -211,13 +213,22 @@ class RobotControlProxyMixin:
                     self._note_fleet_external_control_takeover(endpoint)
                 return self._json_response_tuple(result)
             if method == "POST" and route == "/api/robot/control/release":
-                return self._json_response_tuple(
-                    self.grpc_adapter.release_control(
+                result: dict[str, Any] = {}
+                if bool(payload.get("stopNavigation") or payload.get("stop_navigation")):
+                    stopped = self.grpc_adapter.stop(
                         endpoint,
                         owner_id=OPERATOR_CONTROL_OWNER_ID,
-                        force=bool(payload.get("force")),
                     )
+                    if isinstance(stopped.get("status"), dict):
+                        result["status"] = stopped["status"]
+                    result["navigationStopped"] = True
+                released = self.grpc_adapter.release_control(
+                    endpoint,
+                    owner_id=OPERATOR_CONTROL_OWNER_ID,
+                    force=False,
                 )
+                result.update(released)
+                return self._json_response_tuple(result)
             if method == "POST" and route == "/api/robot/relocate":
                 pose = payload.get("pose") if isinstance(payload.get("pose"), dict) else payload
                 return self._json_response_tuple(

@@ -43,6 +43,8 @@ MAP_HOOKS = {
 MANUAL_HOOKS = {
     "manual_step_payload",
     "manual_stop_payload",
+    "acquire_control_payload",
+    "release_control_payload",
     "note_external_control_takeover",
 }
 SNAPSHOT_HOOKS = {

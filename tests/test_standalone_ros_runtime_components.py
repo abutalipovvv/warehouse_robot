@@ -744,6 +744,21 @@ def test_navigation_mode_guards_map_changes(runtime: RosRobotRuntime) -> None:
         runtime._ensure_manual_control_allowed("teleop")
 
 
+def test_commands_never_auto_acquire_free_control(runtime: RosRobotRuntime) -> None:
+    with pytest.raises(ValueError, match="use Seize Control first"):
+        runtime._ensure_control_owner("operator-app", action="manual control")
+
+    runtime.acquire_control(
+        owner_id="operator-app",
+        owner_name="Operator App",
+    )
+    runtime._ensure_control_owner("operator-app", action="manual control")
+    runtime.release_control(owner_id="operator-app")
+
+    with pytest.raises(ValueError, match="use Seize Control first"):
+        runtime._ensure_control_owner("operator-app", action="manual control")
+
+
 def test_slam_writes_are_atomic_and_use_local_shared_pgm(
     runtime: RosRobotRuntime,
     monkeypatch: pytest.MonkeyPatch,

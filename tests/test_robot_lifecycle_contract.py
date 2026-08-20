@@ -6,7 +6,7 @@ from operator_app.core.state import OperatorAppState
 from fleet_manager.runtime.grpc.api.contracts import robot_status_from_json
 from operator_app.core.grpc.contracts import robot_status_to_json
 from fleet_manager.runtime.grpc.api.proto import robot_api_pb2, robot_api_pb2_grpc
-from fleet_manager.runtime.grpc.api.server import RobotApiService
+from fleet_manager.runtime.grpc.api.server import GRPC_SERVER_OPTIONS, RobotApiService
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -55,6 +55,16 @@ def test_grpc_health_reports_ros_runtime_initialization_failure() -> None:
     assert response.error == "ROS2 runtime failed"
 
 
+def test_robot_api_disables_grpc_port_reuse_for_single_control_owner() -> None:
+    assert ("grpc.so_reuseport", 0) in GRPC_SERVER_OPTIONS
+
+    standalone_server = (
+        PROJECT_ROOT
+        / "sim_robot/ws/src/robot_grpc_api/robot_grpc_api/server.py"
+    ).read_text(encoding="utf-8")
+    assert '("grpc.so_reuseport", 0)' in standalone_server
+
+
 def test_status_roundtrip_preserves_lifecycle_fields_in_raw_json() -> None:
     payload = {
         "robotId": "robot1",
@@ -74,7 +84,7 @@ def test_status_roundtrip_preserves_lifecycle_fields_in_raw_json() -> None:
     assert decoded["localizationConfirmed"] is False
 
 
-def test_operator_takeover_stops_previous_autonomous_route() -> None:
+def test_operator_seize_stops_previous_autonomous_route_without_force() -> None:
     state = OperatorAppState.__new__(OperatorAppState)
     adapter = _TakeoverAdapter()
     state.grpc_adapter = adapter
@@ -93,16 +103,37 @@ def test_operator_takeover_stops_previous_autonomous_route() -> None:
     assert payload["navigationStopped"] is True
     assert payload["status"]["robot"]["state"] == "IDLE"
     assert adapter.calls == [
-        ("acquire", "grpc://127.0.0.1:50051", "operator-app", True),
+        ("acquire", "grpc://127.0.0.1:50051", "operator-app", False),
         ("stop", "grpc://127.0.0.1:50051", "operator-app"),
     ]
 
 
-def test_operator_ui_requests_force_takeover_and_graph_safe_fleet_pose() -> None:
+def test_operator_ui_uses_exclusive_control_and_graph_safe_fleet_pose() -> None:
     app_js = _operator_app_source()
+    styles = (OPERATOR_STATIC_ROOT / "styles.css").read_text(encoding="utf-8")
+    index_html = (OPERATOR_STATIC_ROOT / "index.html").read_text(encoding="utf-8")
 
-    assert 'acquireRobotControl(true, true)' in app_js
-    assert 'stopNavigation: force' in app_js
+    assert 'acquireRobotControl(false, true)' in app_js
+    assert 'stopNavigation: true' in app_js
+    assert '? this.releaseFleetRobotControl()' in app_js
+    assert ': this.acquireFleetRobotControl()' in app_js
+    assert '? this.releaseRobotControl()' in app_js
+    assert ': this.acquireRobotControl(false, true)' in app_js
+    assert 'this.fleetApiPath("/robots/control/acquire")' in app_js
+    assert 'this.fleetApiPath("/robots/control/release")' in app_js
+    assert 'remoteStatus === "object"' in app_js
+    assert 'id="controlToggleButton"' in index_html
+    assert 'id="takeControlButton"' not in index_html
+    assert 'id="releaseControlButton"' not in index_html
+    assert 'addEventListener("click", () => this.toggleControl())' in app_js
+    assert 'classList.toggle("control-state-owned", ownsControl)' in app_js
+    assert 'classList.toggle("control-state-free", !control.ownerId)' in app_js
+    assert "this.controlToggleButton.disabled = mappingActive;" in app_js
+    assert "Release it there before seizing here." in app_js
+    assert "#controlToggleButton.control-state-owned" in styles
+    assert "#controlToggleButton.control-state-free" in styles
+    assert 'Navigation blocked. Press Seize Control first.' in app_js
+    assert 'body[data-fleet-page="fleet"] #driveActionGroup' in styles
     assert 'async startFleetPoseNavigation(world)' in app_js
     assert 'await this.startFleetNavigation(nearest.landmark.name' in app_js
     assert 'return Boolean(this.targetFleetRobot());' in app_js
@@ -266,8 +297,11 @@ def test_babylon_2d_uses_robot_model_footprint_and_future_route() -> None:
     assert 'this.viewMode === "2d" ? 0.94 : 0.82' in scene_js
     assert "occupancyWallRectanglesFromImageData(" in scene_js
     assert "this.ensureOccupancyWalls();" in scene_js
+    assert "await this.buildOccupancyWalls(" in scene_js
+    assert "new Worker(OCCUPANCY_WALL_WORKER_URL" in scene_js
     assert "mesh.thinInstanceSetBuffer(\"matrix\", matrices, 16, true);" in scene_js
-    assert "const position = new B.Vector3(Number(wall.x || 0), height / 2" in scene_js
+    assert "matrices[offset + 12] = Number(wall.x || 0);" in scene_js
+    assert 'new B.StandardMaterial("warehouse-wall-material"' in scene_js
 
 
 class _TakeoverAdapter:

@@ -206,8 +206,7 @@ export class OperatorAppBase {
     this.mapActionGroup = document.getElementById("mapActionGroup");
     this.slamActionGroup = document.getElementById("slamActionGroup");
     this.navigateRobotButton = document.getElementById("navigateRobotButton");
-    this.takeControlButton = document.getElementById("takeControlButton");
-    this.releaseControlButton = document.getElementById("releaseControlButton");
+    this.controlToggleButton = document.getElementById("controlToggleButton");
     this.relocateRobotButton = document.getElementById("relocateRobotButton");
     this.pauseRouteButton = document.getElementById("pauseRouteButton");
     this.resumeRouteButton = document.getElementById("resumeRouteButton");
@@ -498,8 +497,7 @@ export class OperatorAppBase {
     this.homeRefreshButton?.addEventListener("click", () => this.refreshRobots());
     this.homeAddRobotButton?.addEventListener("click", () => this.openAddRobotDialog());
     this.navigateRobotButton.addEventListener("click", () => this.toggleNavigateMode());
-    this.takeControlButton?.addEventListener("click", () => this.acquireRobotControl(true, true));
-    this.releaseControlButton?.addEventListener("click", () => this.releaseRobotControl());
+    this.controlToggleButton?.addEventListener("click", () => this.toggleControl());
     this.relocateRobotButton?.addEventListener("click", () => this.toggleRelocateMode());
     this.pauseRouteButton?.addEventListener("click", () => this.pauseRobotRoute());
     this.resumeRouteButton?.addEventListener("click", () => this.resumeRobotRoute());

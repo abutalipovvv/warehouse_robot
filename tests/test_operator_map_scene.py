@@ -108,3 +108,33 @@ def test_scene_payload_is_cached_after_map_raster_load(tmp_path: Path) -> None:
             "stride": 1,
         }
     ]
+
+
+def test_large_raster_uses_adaptive_visual_wall_stride(tmp_path: Path) -> None:
+    width = 20
+    height = 20
+    (tmp_path / "large.pgm").write_bytes(
+        f"P5\n{width} {height}\n255\n".encode("ascii") + bytes(width * height)
+    )
+    (tmp_path / "large.yaml").write_text(
+        "\n".join(
+            [
+                "image: large.pgm",
+                "resolution: 0.02",
+                "origin: [0.0, 0.0, 0.0]",
+                "negate: 0",
+                "occupied_thresh: 0.65",
+                "free_thresh: 0.196",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    builder = MapSceneBuilder(
+        _loaded_map(tmp_path, width=width, height=height),
+        target_wall_grid_cells=100,
+    )
+
+    walls = builder.wall_rectangles(wall_height=1.8)
+
+    assert len(walls) == 1
+    assert walls[0]["stride"] == 2

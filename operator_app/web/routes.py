@@ -44,6 +44,8 @@ FLEET_ACTIONS: dict[tuple[str, ...], str] = {
     ("check",): "check",
     ("manual-step",): "manual_step",
     ("manual-stop",): "manual_stop",
+    ("robots", "control", "acquire"): "robots_control_acquire",
+    ("robots", "control", "release"): "robots_control_release",
     ("maps", "list"): "maps_list",
     ("maps", "active"): "maps_active",
     ("maps", "local"): "maps_local_list",

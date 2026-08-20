@@ -234,6 +234,12 @@ class OperatorFleetManager:
     def manual_stop_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
         return self._manual_control.manual_stop_payload(payload)
 
+    def acquire_control_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return self._manual_control.acquire_control_payload(payload)
+
+    def release_control_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return self._manual_control.release_control_payload(payload)
+
     def note_external_control_takeover(
         self,
         endpoint: str,

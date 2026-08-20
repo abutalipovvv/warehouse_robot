@@ -246,7 +246,7 @@ class OrderAdmissionService:
             if not robot.remote_online:
                 return False
             owner_id = self._remote_owner(robot)
-            if owner_id and owner_id != FLEET_CONTROL_OWNER_ID:
+            if owner_id != FLEET_CONTROL_OWNER_ID:
                 return False
             if robot.status in {"LOCALIZING", "OFFLINE", "ERROR"}:
                 return False
@@ -935,7 +935,22 @@ class OrderAdmissionMixin:
             stationary_failure_debug = None
             start_lm = self._safe_replan_start_lm(robot)
             if not start_lm or start_lm not in self.landmarks:
-                failed_reason = "robot is between graph landmarks"
+                reconnect_started = False
+                reconnect_error = ""
+                if robot.is_remote():
+                    reconnect_started, reconnect_error = (
+                        self._dispatch_remote_graph_reconnect(
+                            order,
+                            robot,
+                            order.target_lm,
+                        )
+                    )
+                if reconnect_started:
+                    return True
+                failed_reason = (
+                    reconnect_error
+                    or "robot is between graph landmarks"
+                )
                 continue
             if start_lm == order.target_lm and not robot.trajectory:
                 return self._complete_order_at_current_target(

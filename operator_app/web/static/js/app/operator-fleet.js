@@ -872,11 +872,15 @@ export const withFleetUi = (Base) => class OperatorAppFleetUi extends Base {
   }
 
   robotControlPayload(robot) {
-    const control = robot && typeof robot.control === "object" ? robot.control : {};
+    const remote = robot && typeof robot.remoteStatus === "object" ? robot.remoteStatus : {};
+    const remoteRobot = remote && typeof remote.robot === "object" ? remote.robot : remote;
+    const control = robot && typeof robot.control === "object"
+      ? robot.control
+      : (remoteRobot && typeof remoteRobot.control === "object" ? remoteRobot.control : {});
     return {
-      state: String(robot?.controlState || control.state || "").toUpperCase(),
-      ownerId: String(robot?.controlOwner || control.ownerId || ""),
-      ownerName: String(robot?.controlOwnerName || control.ownerName || ""),
+      state: String(robot?.controlState || remoteRobot?.controlState || control.state || "").toUpperCase(),
+      ownerId: String(robot?.controlOwner || remoteRobot?.controlOwner || control.ownerId || ""),
+      ownerName: String(robot?.controlOwnerName || remoteRobot?.controlOwnerName || control.ownerName || ""),
     };
   }
 
@@ -1061,15 +1065,23 @@ export const withFleetUi = (Base) => class OperatorAppFleetUi extends Base {
     this.robotModelPanel.classList.toggle("hidden", !isRobotModel);
     this.manualPad.classList.toggle("hidden", isRobotModel || isParams);
     const showRobotLifecycle = !isFleet && !isRobotModel && !isParams;
-    this.driveActionGroup?.classList.toggle("hidden", !showRobotLifecycle);
+    const selectedFleetRobot = isFleet ? this.selectedFleetRobot() : null;
+    const showFleetControlLease = isFleet
+      && this.isFleetRobotsMode()
+      && this.isFleetRemoteRobot(selectedFleetRobot)
+      && !isRobotModel
+      && !isParams;
+    this.driveActionGroup?.classList.toggle("hidden", !(showRobotLifecycle || showFleetControlLease));
     this.localizationActionGroup?.classList.toggle("hidden", !showRobotLifecycle);
     this.navigationActionGroup?.classList.toggle("hidden", isRobotModel || isParams);
     this.visualActionGroup?.classList.toggle("hidden", isRobotModel || isParams);
     this.mapActionGroup?.classList.toggle("hidden", isRobotModel || isParams);
     this.slamActionGroup?.classList.toggle("hidden", !showRobotLifecycle);
+    this.controlToggleButton?.classList.toggle(
+      "hidden",
+      !(showRobotLifecycle || showFleetControlLease),
+    );
     for (const button of [
-      this.takeControlButton,
-      this.releaseControlButton,
       this.relocateRobotButton,
       this.pauseRouteButton,
       this.resumeRouteButton,

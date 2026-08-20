@@ -20,13 +20,16 @@ MAP_SUPPORT_YAML_FILES = {
     "traffic_zones.yaml",
 }
 
+WALL_STRIDE_STEPS = (1, 2, 3, 4, 6, 8, 12, 16, 24, 32)
+
 
 @dataclass(slots=True)
 class MapSceneBuilder:
     """Cache static map geometry and merge occupied pixels into wall boxes."""
 
     loaded_map: LoadedMapData
-    maximum_wall_rectangles: int = 6000
+    maximum_wall_rectangles: int = 1500
+    target_wall_grid_cells: int = 180_000
     _cached_payload: dict[str, Any] | None = None
 
     @property
@@ -87,7 +90,27 @@ class MapSceneBuilder:
             ros_map.get("occupied_thresh", 0.65) or 0.65
         )
         negate = int(ros_map.get("negate", 0) or 0)
-        for stride in (1, 2, 4, 8):
+        # Starting at full PGM resolution is needlessly expensive for large
+        # maps: the 3D walls are visualization geometry, not navigation
+        # collision data.  Select the first stride from the raster area and
+        # only increase it if the merged instance budget is still exceeded.
+        # At 0.02 m/px, stride 3 preserves a 0.06 m visual resolution while
+        # reducing the 22.05.26 map from 9,565 boxes to about 1,400.
+        target_cells = max(1, int(self.target_wall_grid_cells))
+        initial_stride = max(
+            1,
+            math.ceil(math.sqrt((width * height) / target_cells)),
+        )
+        strides = [initial_stride]
+        strides.extend(
+            stride
+            for stride in WALL_STRIDE_STEPS
+            if stride > initial_stride
+        )
+        if strides[-1] < WALL_STRIDE_STEPS[-1]:
+            strides.append(WALL_STRIDE_STEPS[-1])
+
+        for index, stride in enumerate(strides):
             rectangles = self.merge_wall_rectangles(
                 width,
                 height,
@@ -99,7 +122,7 @@ class MapSceneBuilder:
             )
             if (
                 len(rectangles) <= self.maximum_wall_rectangles
-                or stride == 8
+                or index == len(strides) - 1
             ):
                 return rectangles
         return []

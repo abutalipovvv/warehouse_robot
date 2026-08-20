@@ -653,12 +653,9 @@ class RosRuntimeControlMixin:
         with self._lock:
             self._expire_control_owner_locked()
             if not self._control_owner_id:
-                if owner:
-                    self._control_owner_id = owner
-                    self._control_owner_name = owner
-                    self._control_acquired_at = monotonic()
-                    self._control_lease_ms = 0
-                return
+                raise ValueError(
+                    f"cannot {action}: control is free; use Seize Control first"
+                )
             if owner and owner == self._control_owner_id:
                 self._control_acquired_at = self._control_acquired_at or monotonic()
                 return

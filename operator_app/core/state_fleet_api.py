@@ -113,6 +113,10 @@ class FleetApiRoutingMixin:
                 return manager.manual_step_payload(payload)
             if action == "manual_stop":
                 return manager.manual_stop_payload(payload)
+            if action == "robots_control_acquire":
+                return manager.acquire_control_payload(payload)
+            if action == "robots_control_release":
+                return manager.release_control_payload(payload)
             if action == "maps_load":
                 return self.fleet_load_map_payload(payload, manager_id=manager_id)
             if action == "maps_save":

@@ -1,4 +1,9 @@
+import { occupancyWallRectanglesFromImageData } from "./occupancy-walls.js";
+
+export { occupancyWallRectanglesFromImageData } from "./occupancy-walls.js";
+
 const BABYLON_RUNTIME_URL = new URL("./vendor/babylon-9.16.2.js", import.meta.url).href;
+const OCCUPANCY_WALL_WORKER_URL = new URL("./occupancy-wall-worker.js", import.meta.url);
 
 const loadBabylon = () => {
   if (globalThis.BABYLON) {
@@ -75,115 +80,6 @@ const ROBOT_PALETTE = [
   0x84cc16,
 ];
 
-const OCCUPANCY_WALL_LUMINANCE_MAX = 96;
-const OCCUPANCY_WALL_MAX_INSTANCES = 6000;
-const OCCUPANCY_WALL_TARGET_PIXELS = 700000;
-
-export function occupancyWallRectanglesFromImageData(
-  imageData,
-  resolution = 1,
-  wallHeight = 1.8,
-) {
-  const width = Math.max(0, Math.floor(Number(imageData?.width || 0)));
-  const height = Math.max(0, Math.floor(Number(imageData?.height || 0)));
-  const pixels = imageData?.data;
-  if (!width || !height || !pixels || pixels.length < width * height * 4) {
-    return [];
-  }
-  const mapResolution = Math.max(0.000001, Number(resolution || 1));
-  const verticalHeight = Math.max(0.05, Number(wallHeight || 1.8));
-  const initialStride = Math.max(
-    1,
-    Math.ceil(Math.sqrt((width * height) / OCCUPANCY_WALL_TARGET_PIXELS)),
-  );
-
-  const rectanglesForStride = (stride) => {
-    const gridWidth = Math.ceil(width / stride);
-    const gridHeight = Math.ceil(height / stride);
-    const occupied = new Uint8Array(gridWidth * gridHeight);
-    for (let y = 0; y < height; y += 1) {
-      const targetRow = Math.floor(y / stride) * gridWidth;
-      let sourceIndex = y * width * 4;
-      for (let x = 0; x < width; x += 1, sourceIndex += 4) {
-        if (pixels[sourceIndex + 3] < 16) {
-          continue;
-        }
-        const luminance = (
-          pixels[sourceIndex]
-          + pixels[sourceIndex + 1]
-          + pixels[sourceIndex + 2]
-        ) / 3;
-        if (luminance <= OCCUPANCY_WALL_LUMINANCE_MAX) {
-          occupied[targetRow + Math.floor(x / stride)] = 1;
-        }
-      }
-    }
-
-    let active = new Map();
-    const rectangles = [];
-    for (let cellY = 0; cellY < gridHeight; cellY += 1) {
-      const rowOffset = cellY * gridWidth;
-      const runs = [];
-      let runStart = -1;
-      for (let cellX = 0; cellX < gridWidth; cellX += 1) {
-        if (occupied[rowOffset + cellX]) {
-          if (runStart < 0) {
-            runStart = cellX;
-          }
-        } else if (runStart >= 0) {
-          runs.push([runStart, cellX - runStart]);
-          runStart = -1;
-        }
-      }
-      if (runStart >= 0) {
-        runs.push([runStart, gridWidth - runStart]);
-      }
-
-      const nextActive = new Map();
-      for (const [x, runWidth] of runs) {
-        const key = `${x}:${runWidth}`;
-        const rectangle = active.get(key) || {
-          x,
-          y: cellY,
-          width: runWidth,
-          height: 0,
-        };
-        rectangle.height += 1;
-        nextActive.set(key, rectangle);
-        active.delete(key);
-      }
-      rectangles.push(...active.values());
-      active = nextActive;
-    }
-    rectangles.push(...active.values());
-
-    return rectangles.map((rectangle) => {
-      const pixelX = rectangle.x * stride;
-      const pixelY = rectangle.y * stride;
-      const pixelWidth = Math.min(width - pixelX, rectangle.width * stride);
-      const pixelHeight = Math.min(height - pixelY, rectangle.height * stride);
-      return {
-        x: (pixelX + (pixelWidth / 2)) * mapResolution,
-        z: (pixelY + (pixelHeight / 2)) * mapResolution,
-        width: pixelWidth * mapResolution,
-        depth: pixelHeight * mapResolution,
-        height: verticalHeight,
-        stride,
-      };
-    });
-  };
-
-  let stride = initialStride;
-  while (stride <= 16) {
-    const rectangles = rectanglesForStride(stride);
-    if (rectangles.length <= OCCUPANCY_WALL_MAX_INSTANCES || stride === 16) {
-      return rectangles;
-    }
-    stride *= 2;
-  }
-  return [];
-}
-
 const toColor3 = (hex) => B.Color3.FromHexString(
   `#${Number(hex || 0).toString(16).padStart(6, "0")}`,
 );
@@ -236,12 +132,14 @@ export class OperatorScene3D {
     this.wallMaterial = null;
     this.wallMesh = null;
     delete this.container.dataset.occupancyWalls;
+    delete this.container.dataset.occupancyWallStride;
     this.currentFloor = null;
     this.currentWallHeight = 1.8;
     this.serverWallsAvailable = false;
     this.occupancyWallBuildGeneration = 0;
     this.occupancyWallBuildPending = false;
     this.occupancyWallBuildComplete = false;
+    this.occupancyWallWorkerTask = null;
     this.graphMesh = null;
     this.edgeDirectionMesh = null;
     this.edgeDirectionsVisible = true;
@@ -1095,6 +993,7 @@ export class OperatorScene3D {
       pitch: this.pitch,
     };
     const nextMapName = String(payload?.mapName || "");
+    this.cancelOccupancyWallWorker("Occupancy map changed.");
     this.staticRoot?.dispose(false, true);
     this.staticRoot = new B.TransformNode("static-root", this.scene);
     this.editorRoot?.dispose(false, true);
@@ -1110,6 +1009,7 @@ export class OperatorScene3D {
     this.currentFloor = null;
     this.serverWallsAvailable = false;
     delete this.container.dataset.occupancyWalls;
+    delete this.container.dataset.occupancyWallStride;
     this.occupancyWallBuildGeneration += 1;
     this.occupancyWallBuildPending = false;
     this.occupancyWallBuildComplete = false;
@@ -1242,29 +1142,40 @@ export class OperatorScene3D {
       return;
     }
     const mesh = B.MeshBuilder.CreateBox("warehouse-walls", { size: 1 }, this.scene);
-    const material = this.pbrMaterial("warehouse-wall-material", COLORS.wall, 0.04, 0.82);
-    material.alpha = 0.92;
+    // One opaque StandardMaterial is considerably cheaper than evaluating a
+    // transparent PBR shader for every wall face on every animated frame.
+    const material = new B.StandardMaterial("warehouse-wall-material", this.scene);
+    material.diffuseColor = toColor3(COLORS.wall);
+    material.specularColor = B.Color3.Black();
+    material.alpha = 1;
+    material.backFaceCulling = true;
     mesh.material = material;
     mesh.parent = this.staticRoot;
     mesh.isPickable = false;
     const matrices = new Float32Array(walls.length * 16);
     walls.forEach((wall, index) => {
       const height = Math.max(0.05, Number(wall.height || 1.8));
-      const scale = new B.Vector3(
-        Math.max(0.01, Number(wall.width || 0.01)),
-        height,
-        Math.max(0.01, Number(wall.depth || 0.01)),
-      );
-      const position = new B.Vector3(Number(wall.x || 0), height / 2, Number(wall.z || 0));
-      B.Matrix.Compose(scale, B.Quaternion.Identity(), position).copyToArray(matrices, index * 16);
+      const offset = index * 16;
+      // The wall boxes never rotate. Write scale + translation matrices
+      // directly and avoid thousands of short-lived Vector/Quaternion/Matrix
+      // objects and the resulting garbage-collector pause.
+      matrices[offset] = Math.max(0.01, Number(wall.width || 0.01));
+      matrices[offset + 5] = height;
+      matrices[offset + 10] = Math.max(0.01, Number(wall.depth || 0.01));
+      matrices[offset + 12] = Number(wall.x || 0);
+      matrices[offset + 13] = height / 2;
+      matrices[offset + 14] = Number(wall.z || 0);
+      matrices[offset + 15] = 1;
     });
     mesh.thinInstanceSetBuffer("matrix", matrices, 16, true);
     mesh.thinInstanceRefreshBoundingInfo(true);
     mesh.freezeWorldMatrix();
     mesh.doNotSyncBoundingInfo = true;
+    material.freeze();
     this.wallMaterial = material;
     this.wallMesh = mesh;
     this.container.dataset.occupancyWalls = String(walls.length);
+    this.container.dataset.occupancyWallStride = String(walls[0]?.stride || 1);
     mesh.setEnabled(this.viewMode === "3d");
   }
 
@@ -1300,7 +1211,7 @@ export class OperatorScene3D {
         return;
       }
       await new Promise((resolve) => window.setTimeout(resolve, 0));
-      const walls = occupancyWallRectanglesFromImageData(
+      const walls = await this.buildOccupancyWalls(
         imageData,
         floor.resolution,
         this.currentWallHeight,
@@ -1359,6 +1270,79 @@ export class OperatorScene3D {
     }
     context.drawImage(image, 0, 0);
     return context.getImageData(0, 0, imageCanvas.width, imageCanvas.height);
+  }
+
+  cancelOccupancyWallWorker(reason = "Occupancy wall build cancelled.") {
+    const task = this.occupancyWallWorkerTask;
+    if (!task) {
+      return;
+    }
+    this.occupancyWallWorkerTask = null;
+    window.clearTimeout(task.timeout);
+    task.worker.terminate();
+    task.reject(new Error(reason));
+  }
+
+  async buildOccupancyWalls(imageData, resolution, wallHeight) {
+    if (typeof globalThis.Worker !== "function") {
+      await new Promise((resolve) => window.setTimeout(resolve, 0));
+      return occupancyWallRectanglesFromImageData(imageData, resolution, wallHeight);
+    }
+
+    this.cancelOccupancyWallWorker();
+    const worker = new Worker(OCCUPANCY_WALL_WORKER_URL, {
+      type: "module",
+      name: "occupancy-wall-builder",
+    });
+    return new Promise((resolve, reject) => {
+      const finish = (callback) => {
+        const task = this.occupancyWallWorkerTask;
+        if (!task || task.worker !== worker) {
+          return;
+        }
+        this.occupancyWallWorkerTask = null;
+        window.clearTimeout(task.timeout);
+        worker.terminate();
+        callback();
+      };
+      const task = {
+        worker,
+        reject,
+        timeout: window.setTimeout(() => {
+          finish(() => reject(new Error("Occupancy wall generation timed out.")));
+        }, 20000),
+      };
+      this.occupancyWallWorkerTask = task;
+      worker.addEventListener("message", (event) => {
+        const result = event.data || {};
+        if (!result.ok) {
+          finish(() => reject(new Error(result.error || "Occupancy wall generation failed.")));
+          return;
+        }
+        finish(() => resolve(Array.isArray(result.walls) ? result.walls : []));
+      }, { once: true });
+      worker.addEventListener("error", (event) => {
+        finish(() => reject(new Error(event.message || "Occupancy wall worker failed.")));
+      }, { once: true });
+
+      const pixels = imageData.data;
+      const pixelBuffer = (
+        pixels.byteOffset === 0 && pixels.byteLength === pixels.buffer.byteLength
+          ? pixels.buffer
+          : pixels.slice().buffer
+      );
+      try {
+        worker.postMessage({
+          width: imageData.width,
+          height: imageData.height,
+          pixels: pixelBuffer,
+          resolution,
+          wallHeight,
+        }, [pixelBuffer]);
+      } catch (error) {
+        finish(() => reject(error));
+      }
+    });
   }
 
   addEdges(edges) {
@@ -2979,10 +2963,7 @@ export class OperatorScene3D {
       this.activeCamera = nextCamera;
       this.scene.activeCamera = nextCamera;
     }
-    if (this.wallMaterial && this.lastCameraModeTopDown !== topDown) {
-      this.wallMaterial.alpha = topDown ? 0.38 : 0.92;
-      this.lastCameraModeTopDown = topDown;
-    }
+    this.lastCameraModeTopDown = topDown;
   }
 
   requestRender() {
@@ -3039,6 +3020,7 @@ export class OperatorScene3D {
   dispose() {
     this.disposed = true;
     this.occupancyWallBuildGeneration += 1;
+    this.cancelOccupancyWallWorker("3D scene disposed.");
     window.cancelAnimationFrame(this.animationFrame);
     window.clearTimeout(this.cameraInteractionRestoreTimer);
     window.clearTimeout(this.landmarkLabelRefreshTimer);

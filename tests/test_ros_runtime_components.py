@@ -419,6 +419,15 @@ def test_control_lease_and_teleop_are_lock_safe(
     runtime._twist_type = Twist
     runtime._cmd_vel_pub = SimpleNamespace(publish=published.append)
 
+    with pytest.raises(ValueError, match="use Seize Control first"):
+        runtime.teleop(
+            linear=0.5,
+            angular=-0.25,
+            owner_id="operator one",
+        )
+    assert runtime._control_state_payload()["state"] == "FREE"
+    assert published == []
+
     acquired = runtime.acquire_control(
         owner_id=" operator  one ",
         owner_name="Operator One",
