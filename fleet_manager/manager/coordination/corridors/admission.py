@@ -155,16 +155,16 @@ class ControlledCorridorAdmissionDecisionMixin:
             }
         ):
             blocker = self.robots.get(context.blocker_name)
-            if self._central_corridor_wait_is_reciprocal(
+            if self._central_corridor_wait_closes_cycle(
                 robot,
                 blocker,
             ):
-                # A red-light waiter and its named owner now wait for each
-                # other.  That reciprocal dependency is a real cycle even
-                # while both bodies are still outside the authored region;
-                # hiding one edge as an "expected queue" turns it into an
-                # acyclic chain and can grant the red-light waiter forever.
-                # Expose both edges to deterministic local arbitration.
+                # A red-light waiter can close a dependency cycle either
+                # directly or through bodies queued at the corridor exit.
+                # Hiding this edge as an "expected queue" turns the cycle
+                # into an acyclic chain and leaves a physical owner stopped
+                # inside the no-wait passage. Expose the complete component
+                # to deterministic local arbitration.
                 return False
             if context.decision.slot is None:
                 # A deferred request is still an intentional calendar
@@ -258,21 +258,32 @@ class ControlledCorridorAdmissionDecisionMixin:
             ),
         )
 
-    def _central_corridor_wait_is_reciprocal(
+    def _central_corridor_wait_closes_cycle(
         self,
         robot: FleetRobot,
         blocker: FleetRobot | None,
     ) -> bool:
-        """Expose a real two-robot cycle to local deadlock arbitration."""
-        if blocker is None or blocker.status != "WAITING":
-            return False
-        blocker_dependency = (
-            str(blocker.wait_for_robot or "").strip()
-            or self._robot_name_from_conflict_reason(
-                blocker.last_reason
+        """Return whether the named owner chain leads back to the waiter."""
+        current = blocker
+        visited = {robot.name}
+        while current is not None and current.status == "WAITING":
+            if current.name in visited:
+                return current.name == robot.name
+            visited.add(current.name)
+            dependency = (
+                str(current.wait_for_robot or "").strip()
+                or self._robot_name_from_conflict_reason(
+                    current.last_reason
+                )
             )
-        )
-        return blocker_dependency == robot.name
+            if not dependency:
+                return False
+            if dependency == robot.name:
+                return True
+            if dependency in visited:
+                return False
+            current = self.robots.get(dependency)
+        return False
 
     @staticmethod
     def _central_corridor_blocker_precedes(
@@ -366,6 +377,10 @@ class ControlledCorridorAdmissionDecisionMixin:
                 else 0.0,
             }
         broadphase_distance = self.collision.robot_broadphase_distance()
+        robot_entry = self._next_controlled_corridor_entry(robot)
+        robot_regions = set(
+            self._controlled_corridor_entry_regions(robot_entry)
+        )
 
         def may_overlap(pose: dict[str, Any] | None) -> bool:
             if pose is None:
@@ -391,6 +406,34 @@ class ControlledCorridorAdmissionDecisionMixin:
                     other.pose,
                 )
             )
+            if current_conflict:
+                other_entry = self._next_controlled_corridor_entry(other)
+                other_regions = set(
+                    self._controlled_corridor_entry_regions(other_entry)
+                )
+                other_stop_lm = str(
+                    (other_entry or {}).get("holding_lm")
+                    or (other_entry or {}).get("src")
+                    or ""
+                )
+                if (
+                    robot_regions.intersection(other_regions)
+                    and not self._controlled_regions_for_robot(other)
+                    and self._controlled_corridor_pose_is_at_lm(
+                        other.pose,
+                        other_stop_lm,
+                    )
+                ):
+                    # Two externally staged requests for the same resource
+                    # are ordered by the central calendar. Authored staging
+                    # clearance keeps the losing body outside the exit box.
+                    continue
+                # Strict no-box admission: a body which occupies the exit
+                # pocket must clear it physically before a new robot enters
+                # the no-wait passage. A predicted departure is not enough;
+                # that departure can itself be delayed by downstream traffic
+                # after admission and strand the new owner inside.
+                return other.name
             prediction_offset = max(
                 0.0,
                 float(exit_clock) - float(robot.route_clock),
@@ -404,7 +447,7 @@ class ControlledCorridorAdmissionDecisionMixin:
                     float(other.route_clock) + prediction_offset
                     >= final_clock - self._runtime_motion_step()
                 )
-            if not current_conflict and not predicted_at_terminal:
+            if not predicted_at_terminal:
                 # Only terminal arrivals can become a new hard downstream
                 # blocker. Moving/moving crossings stay in temporal SIPP.
                 continue
@@ -419,21 +462,11 @@ class ControlledCorridorAdmissionDecisionMixin:
                     predicted_pose,
                 )
             )
-            if not current_conflict:
-                # Future moving/moving crossings remain SIPP's responsibility.
-                # A trajectory which *ends* in the exit pocket is different:
-                # there is no committed departure after its arrival, so
-                # admitting this corridor would knowingly block the box.
-                # Protect that terminal body even while it is still moving
-                # toward the exit. Ordinary through-traffic remains temporal
-                # SIPP traffic and is not promoted to a hard block.
-                if predicted_conflict and predicted_at_terminal:
-                    return other.name
-                continue
-            if predicted_conflict or (
-                other.status != "MOVING"
-                or not other.trajectory
-            ):
+            # Future moving/moving crossings remain SIPP's responsibility.
+            # A trajectory which *ends* in the exit pocket is different:
+            # there is no committed departure after its arrival, so admitting
+            # this corridor would knowingly block the box.
+            if predicted_conflict:
                 return other.name
         return ""
 
@@ -514,6 +547,16 @@ class ControlledCorridorAdmissionDecisionMixin:
         if upcoming is not None:
             region_id = str(upcoming["region"])
             regions = self._controlled_corridor_entry_regions(upcoming)
+            if inside.intersection(regions):
+                # Admission is an external stop-line decision. Once any part
+                # of this atomic passage is physically occupied, the robot is
+                # past that decision and must keep clearing toward the safe
+                # exit. The live calendar deliberately drops resource windows
+                # which are already behind the footprint; requiring the
+                # original full bundle again here would revoke a valid grant
+                # between adjacent corridor sections and stop the robot in
+                # the no-wait passage.
+                return ""
             entry_lm = str(upcoming["src"])
             holding_lm = str(upcoming.get("holding_lm") or "")
             stop_lm = holding_lm or entry_lm

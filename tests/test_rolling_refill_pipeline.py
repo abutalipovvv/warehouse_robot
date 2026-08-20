@@ -664,7 +664,7 @@ def test_critical_refill_can_queue_behind_an_active_solver_job() -> None:
         manager.close()
 
 
-def test_revision_cancels_queued_dispatch_and_requeues_order() -> None:
+def test_unrelated_revision_keeps_dependency_valid_queued_dispatch() -> None:
     manager = _line_manager(2)
     started = Event()
     release = Event()
@@ -709,11 +709,12 @@ def test_revision_cancels_queued_dispatch_and_requeues_order() -> None:
         manager._advance_planning_revision("unrelated order changed")
         manager._collect_completed_planning_candidates()
 
-        assert order.status == "QUEUED"
-        assert dispatch_job.job_id not in manager.planning_state.jobs
-        assert manager.planning_state.diagnostic_counts[
-            "planning_job_cancelled"
-        ] >= 1
+        assert order.status == "PLANNING"
+        assert dispatch_job.job_id in manager.planning_state.jobs
+        assert manager.planning_state.diagnostic_counts.get(
+            "planning_job_cancelled",
+            0,
+        ) == 0
     finally:
         release.set()
         manager.close()

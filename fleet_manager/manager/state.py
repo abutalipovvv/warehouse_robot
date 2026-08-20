@@ -323,7 +323,14 @@ class PlanningSnapshotFactory:
             )
             if robot.trajectory and robot.name in robot_names
         )
+        reservations = self._reservations(primary_payload)
         traffic_resources = self.traffic_resource_snapshots()
+        reservation_owners = {
+            reservation.owner
+            for reservation in reservations
+            if reservation.owner
+        }
+        dependency_robot_names = robot_names | reservation_owners
         dependency_stamp = PlanningDependencyStamp(
             map_revision=map_revision,
             graph_revision=graph_revision,
@@ -331,7 +338,7 @@ class PlanningSnapshotFactory:
                 sorted(
                     (robot.name, int(robot.route_revision))
                     for robot in self.fleet_state.robots.values()
-                    if robot.name in robot_names
+                    if robot.name in dependency_robot_names
                 )
             ),
             traffic_resource_owners=tuple(
@@ -347,7 +354,7 @@ class PlanningSnapshotFactory:
             created_at=float(created_at),
             robots=robots,
             active_routes=routes,
-            reservations=self._reservations(primary_payload),
+            reservations=reservations,
             traffic_resources=traffic_resources,
             blockers=tuple(sorted(str(item) for item in blockers)),
             graph_revision=graph_revision,

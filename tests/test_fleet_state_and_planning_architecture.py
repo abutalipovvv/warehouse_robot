@@ -309,6 +309,81 @@ def test_rolling_candidate_ignores_unrelated_order_revision() -> None:
         manager.close()
 
 
+def test_dispatch_candidate_ignores_unrelated_order_revision() -> None:
+    landmarks, edges = _graph()
+    manager = FleetManagerCore(landmarks, edges, params={"fleet": {}})
+    robot = FleetRobot(name="dispatch-robot", current_lm="A")
+    manager.robots[robot.name] = robot
+    manager._synchronize_planning_revision()
+    record = PlanningJobRecord(kind="dispatch")
+    planning_job = manager._build_planning_job(
+        record,
+        [{"name": robot.name, "startLm": "A", "goalLm": "B"}],
+        {},
+    )
+    candidate = PlanCandidate.from_result(
+        planning_job,
+        {"ok": True, "plans": []},
+        finished_at=monotonic(),
+    )
+    try:
+        manager.orders["unrelated-order"] = FleetOrder(
+            order_id="unrelated-order",
+            target_lm="A",
+        )
+        manager._synchronize_planning_revision()
+
+        assert candidate.expected_revision != manager.planning_revision
+        assert manager._planning_candidate_is_current(record, candidate)
+    finally:
+        manager.close()
+
+
+def test_dependency_stamp_rejects_reservation_owner_route_change() -> None:
+    landmarks, edges = _graph()
+    manager = FleetManagerCore(landmarks, edges, params={"fleet": {}})
+    requester = FleetRobot(name="requester", current_lm="A")
+    owner = FleetRobot(
+        name="reservation-owner",
+        current_lm="B",
+        route_revision=3,
+    )
+    manager.robots = {requester.name: requester, owner.name: owner}
+    manager._synchronize_planning_revision()
+    record = PlanningJobRecord(kind="dispatch")
+    planning_job = manager._build_planning_job(
+        record,
+        [{"name": requester.name, "startLm": "A", "goalLm": "B"}],
+        {
+            "reserved_vertex_intervals": [
+                {
+                    "robot": owner.name,
+                    "node": "B",
+                    "start": 0.0,
+                    "end": 2.0,
+                }
+            ]
+        },
+    )
+    candidate = PlanCandidate.from_result(
+        planning_job,
+        {"ok": True, "plans": []},
+        finished_at=monotonic(),
+    )
+    try:
+        assert planning_job.snapshot.dependency_stamp.robot_route_revisions == (
+            (requester.name, 0),
+            (owner.name, 3),
+        )
+
+        owner.route_revision = 4
+        manager._synchronize_planning_revision()
+
+        assert not manager._planning_candidate_is_current(record, candidate)
+    finally:
+        manager.close()
+
+
 def test_rolling_dependency_stamp_rejects_participant_route_change() -> None:
     landmarks, edges = _graph()
     manager = FleetManagerCore(landmarks, edges, params={"fleet": {}})

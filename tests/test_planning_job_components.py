@@ -9,6 +9,7 @@ from fleet_manager.manager.tasks.planning_jobs import (
     _CoupledReplanContext,
     _CoupledReplanMember,
 )
+from fleet_manager.robot.model import FleetRobot
 
 
 def test_coupled_replan_hook_keeps_stable_signature() -> None:
@@ -53,6 +54,7 @@ def test_coupled_replan_orchestration_stays_in_focused_stages() -> None:
         "_start_async_coupled_replan",
         "_coupled_replan_context",
         "_coupled_replan_is_eligible",
+        "_coupled_replan_is_overdue",
         "_coupled_replan_yields_planner_turn",
         "_record_coupled_replan_start_failure",
         "_build_coupled_replan_requests",
@@ -109,6 +111,36 @@ def test_coupled_replan_fairness_guards_preserve_short_circuit_order() -> None:
     dispatch = Harness("dispatch", urgent=False, queued=True)
     assert not dispatch._coupled_replan_yields_planner_turn(10.0)
     assert dispatch.calls == ["prefetch"]
+
+
+def test_overdue_coupled_replan_cannot_be_starved_by_other_job_kinds() -> None:
+    instance = AsyncPlanningJobMixin.__new__(AsyncPlanningJobMixin)
+    instance._deadlock_retreat_after = lambda: 4.5
+    now = 100.0
+    robots = [
+        FleetRobot(
+            name=name,
+            current_lm=name,
+            blocked_since=now - age,
+            traffic_stall_since=now - age,
+        )
+        for name, age in (("first", 6.0), ("second", 5.0))
+    ]
+    context = _CoupledReplanContext(
+        robots=robots,
+        winner=robots[0],
+        now=now,
+        cycle_key=("first", "second"),
+    )
+
+    assert instance._coupled_replan_is_overdue(context)
+
+    robots[0].traffic_stall_since = now - 1.0
+    robots[0].blocked_since = now - 1.0
+    robots[1].traffic_stall_since = now - 2.0
+    robots[1].blocked_since = now - 2.0
+
+    assert not instance._coupled_replan_is_overdue(context)
 
 
 def test_coupled_replan_start_failure_is_idempotent() -> None:

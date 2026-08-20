@@ -1753,6 +1753,46 @@ def test_red_light_allows_in_place_turn_before_staging_clock(
     assert reason.startswith("corridor admission wait at A")
 
 
+def test_red_light_does_not_regate_owner_between_atomic_passage_regions(
+    monkeypatch,
+) -> None:
+    manager = _manager()
+    robot = _robot("physical-owner")
+    robot.route_clock = 4.0
+    manager.robots = {robot.name: robot}
+    first_region = "corridor:section-a"
+    current_region = "corridor:section-b"
+    entry = _entry(1.0, 8.0)
+    entry.update(
+        {
+            "region": first_region,
+            "regions": (first_region, current_region),
+            "passage": f"{first_region}|{current_region}",
+            "passed_staging": True,
+        }
+    )
+    monkeypatch.setattr(
+        manager,
+        "_next_controlled_corridor_entry",
+        lambda _robot: dict(entry),
+    )
+    monkeypatch.setattr(
+        manager,
+        "_controlled_regions_for_robot",
+        lambda _robot: {current_region},
+    )
+    monkeypatch.setattr(
+        manager,
+        "_controlled_corridor_has_grant",
+        lambda _robot_name, _regions: False,
+    )
+
+    # The calendar may already have released section A while retaining the
+    # physical owner in section B. That must never recreate section A's
+    # external red light inside the no-wait atomic passage.
+    assert manager._controlled_corridor_admission_reason(robot, 4.1) == ""
+
+
 def test_passing_backed_off_staging_does_not_roll_atomic_bundle_forever(
     monkeypatch,
 ) -> None:
@@ -1913,7 +1953,9 @@ def test_physical_corridor_windows_remain_bounded_across_waiting_ticks(
         ) <= 18.100001
 
 
-def test_active_exit_body_blocks_unless_trajectory_proves_it_will_clear() -> None:
+def test_active_exit_body_blocks_until_it_physically_clears(
+    monkeypatch,
+) -> None:
     manager = _manager()
     entrant = _robot("entrant")
     blocker = _robot("blocker")
@@ -1956,6 +1998,16 @@ def test_active_exit_body_blocks_unless_trajectory_proves_it_will_clear() -> Non
             "lm": "A",
         },
     ]
+    original_entry = manager._next_controlled_corridor_entry
+    monkeypatch.setattr(
+        manager,
+        "_next_controlled_corridor_entry",
+        lambda robot: (
+            None
+            if robot.name == blocker.name
+            else original_entry(robot)
+        ),
+    )
 
     assert (
         manager._controlled_corridor_downstream_blocker(
@@ -1963,7 +2015,7 @@ def test_active_exit_body_blocks_unless_trajectory_proves_it_will_clear() -> Non
             "B",
             20.0,
         )
-        == ""
+        == blocker.name
     )
 
 
@@ -2237,6 +2289,74 @@ def test_deferred_red_light_wait_is_not_promoted_to_global_replan(
     manager._controlled_corridor_blockers.clear()
     manager._controlled_corridor_passages[owner.name]["entered"] = True
     assert not manager._central_corridor_manages_wait(robot)
+
+
+def test_red_light_wait_exposes_multi_robot_exit_cycle(
+    monkeypatch,
+) -> None:
+    manager = _manager()
+    waiter = _robot("red-light-waiter")
+    owner = _robot("physical-owner")
+    exit_blocker = _robot("exit-blocker")
+    manager.robots = {
+        current.name: current
+        for current in (waiter, owner, exit_blocker)
+    }
+    manager.orders = {
+        current.active_order_id: FleetOrder(
+            order_id=current.active_order_id,
+            target_lm="B",
+            vehicle=current.name,
+            assigned_robot=current.name,
+            status="EXECUTING",
+        )
+        for current in manager.robots.values()
+    }
+    monkeypatch.setattr(
+        manager,
+        "_next_controlled_corridor_entry",
+        lambda _robot: dict(_entry(0.0, 3.0)),
+    )
+    monkeypatch.setattr(
+        manager,
+        "_controlled_regions_intersecting_footprint",
+        lambda _robot: set(),
+    )
+    monkeypatch.setattr(
+        manager,
+        "_controlled_corridor_downstream_blocker",
+        lambda _robot, _exit_lm, _exit_clock: "",
+    )
+    manager._prepare_controlled_corridor_admissions(1_000.0)
+
+    waiter.status = "WAITING"
+    waiter.last_reason = (
+        f"corridor admission wait at A for {REGION}; owner {owner.name}"
+    )
+    waiter.wait_for_robot = owner.name
+    owner.status = "WAITING"
+    owner.last_reason = f"yield to {exit_blocker.name}"
+    owner.wait_for_robot = exit_blocker.name
+    exit_blocker.status = "WAITING"
+    exit_blocker.last_reason = f"occupied by {waiter.name}"
+    exit_blocker.wait_for_robot = waiter.name
+    monkeypatch.setattr(
+        manager,
+        "_next_controlled_corridor_entry",
+        lambda current: (
+            dict(_entry(0.0, 3.0))
+            if current.name == waiter.name
+            else None
+        ),
+    )
+
+    # The signal is part of waiter -> owner -> exit blocker -> waiter. It is
+    # no longer a normal ordered queue and must remain in the wait-for graph.
+    assert not manager._central_corridor_manages_wait(waiter)
+    snapshot = manager._runtime_wait_snapshot(1_000.1)
+    assert list(snapshot.graph.cycles()) == [
+        (exit_blocker.name, waiter.name, owner.name)
+    ]
 
 
 def test_reciprocal_red_light_cycle_keeps_declared_owner_as_winner(

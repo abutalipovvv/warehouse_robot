@@ -151,12 +151,12 @@ class TrafficResourceSnapshot:
 
 @dataclass(frozen=True, slots=True)
 class PlanningDependencyStamp:
-    """Planning inputs whose owners can invalidate one rolling component.
+    """Planning inputs whose owners can invalidate one planner transaction.
 
     A queued order changes the fleet-wide revision, but it cannot invalidate
-    a continuation that was already planned for another robot.  Route
-    revisions, authored traffic ownership and world blockers can invalidate
-    it and are therefore captured explicitly.
+    a route already planned for another robot. Route revisions of requested
+    robots and reservation owners, authored traffic ownership, and world
+    blockers can invalidate it and are therefore captured explicitly.
     """
 
     map_revision: int | str | None = None

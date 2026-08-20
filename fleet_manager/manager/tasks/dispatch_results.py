@@ -13,6 +13,7 @@ from fleet_manager.robot.model import FleetRobot
 from fleet_manager.manager.planning import (
     PlanCandidate,
     PlanCommitStatus,
+    PlanningDependencyStamp,
     PlanningJob,
     PlanningJobRecord,
     PlanningJobStatus,
@@ -914,9 +915,9 @@ class DispatchResultMixin:
         if planning_job.cancellation_token.cancelled:
             return False
         if candidate.expected_revision != self.planning_revision:
-            if (
-                candidate.reason is not PlanningReason.ROLLING_CONTINUATION
-                or not self._rolling_dependency_stamp_is_current(candidate)
+            if not self._planning_dependency_stamp_is_current(
+                candidate.dependency_stamp,
+                record_event=True,
             ):
                 return False
         deadline = planning_job.deadline
@@ -930,13 +931,14 @@ class DispatchResultMixin:
             return False
         return True
 
-    def _rolling_dependency_stamp_is_current(
+    def _planning_dependency_stamp_is_current(
         self,
-        candidate: PlanCandidate,
+        stamp: PlanningDependencyStamp,
+        *,
+        record_event: bool = False,
     ) -> bool:
-        """Allow unrelated fleet revisions without weakening rolling safety."""
+        """Allow unrelated fleet revisions without weakening plan safety."""
 
-        stamp = candidate.dependency_stamp
         current_graph_revision = f"{len(self.landmarks)}:{len(self.edges)}"
         current_map_revision = (
             str(getattr(self, "map_dir", "") or "") or None
@@ -973,9 +975,10 @@ class DispatchResultMixin:
         ):
             return False
 
-        self.planning_state.record_event(
-            "planning_candidate_dependency_validated"
-        )
+        if record_event:
+            self.planning_state.record_event(
+                "planning_candidate_dependency_validated"
+            )
         return True
 
     def _reject_stale_planning_candidate(

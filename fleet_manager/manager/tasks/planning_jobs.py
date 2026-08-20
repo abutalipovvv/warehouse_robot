@@ -111,7 +111,7 @@ class AsyncPlanningJobMixin:
         )
 
     def _cancel_stale_queued_planning_jobs(self, revision: int) -> None:
-        """Avoid spending the single solver on known-stale strict snapshots."""
+        """Cancel only jobs whose captured dependencies really changed."""
 
         for record in tuple(self.planning_state.jobs.values()):
             planning_job = record.job
@@ -121,8 +121,11 @@ class AsyncPlanningJobMixin:
                     PlanningJobStatus.RUNNING,
                 }
                 or planning_job is None
-                or planning_job.reason is PlanningReason.ROLLING_CONTINUATION
                 or planning_job.snapshot.revision == revision
+                or self._planning_dependency_stamp_is_current(
+                    planning_job.snapshot.dependency_stamp,
+                    record_event=False,
+                )
             ):
                 continue
             self._planning_worker.cancel_job(planning_job.job_id)
@@ -1061,7 +1064,10 @@ class AsyncPlanningJobMixin:
             order = self._active_order_for_robot(robot)
             if order is not None and order.internal_kind == "traffic_clearance":
                 return False
-        if self._coupled_replan_yields_planner_turn(context.now):
+        if (
+            not self._coupled_replan_is_overdue(context)
+            and self._coupled_replan_yields_planner_turn(context.now)
+        ):
             return False
 
         cycle_key = context.cycle_key
@@ -1083,6 +1089,37 @@ class AsyncPlanningJobMixin:
         return (
             context.now - last_attempt
             >= self._deadlock_coupled_replan_interval()
+        )
+
+    def _coupled_replan_is_overdue(
+        self,
+        context: _CoupledReplanContext,
+    ) -> bool:
+        """Guarantee a planner turn to an old unresolved wait component.
+
+        Dispatch and rolling-prefetch work deliberately alternate under load.
+        When both queues remain non-empty, the ordinary fairness checks make
+        every possible previous job kind yield to one of them.  A deadlock
+        recovery request can then be postponed forever, so its failed-CBS or
+        evacuation fallback is never armed.  Once the component reaches the
+        bounded retreat deadline it must join the priority worker queue; the
+        worker still serializes all actual solver execution.
+        """
+
+        stalled_at = min(
+            (
+                float(
+                    robot.traffic_stall_since
+                    or robot.blocked_since
+                    or context.now
+                )
+                for robot in context.robots
+            ),
+            default=context.now,
+        )
+        return (
+            context.now - stalled_at
+            >= self._deadlock_retreat_after()
         )
 
     def _coupled_replan_yields_planner_turn(self, now: float) -> bool:

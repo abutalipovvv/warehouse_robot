@@ -124,6 +124,56 @@ def test_calendar_places_resource_windows_instead_of_whole_passages() -> None:
     assert placement == (0.0, 10.0, 1)
 
 
+def test_physical_owner_holds_future_approach_at_staging() -> None:
+    config = CorridorSchedulerConfig(
+        horizon_sec=30.0,
+        headway_sec=0.25,
+        direction_change_sec=1.0,
+    )
+    calendar = CorridorCalendar(config)
+    occupied = CorridorSlot(
+        robot_id="owner",
+        regions=(REGION,),
+        direction="west",
+        entry_time=2.0,
+        exit_time=4.0,
+        staging_lm="owner:holding",
+        exit_lm="owner:exit",
+        route_revision=1,
+        state=CorridorSlotState.COMMITTED,
+        physically_observed=True,
+    )
+    future = CorridorRequest(
+        robot_id="next",
+        regions=(REGION,),
+        direction="east",
+        earliest_entry=0.0,
+        duration_sec=10.0,
+        staging_lm="next:holding",
+        exit_lm="next:exit",
+        route_revision=1,
+        resource_windows=(
+            CorridorResourceWindow(
+                region_id=REGION,
+                entry_offset_sec=6.0,
+                exit_offset_sec=9.0,
+                direction="east",
+            ),
+        ),
+    )
+
+    placement = calendar.earliest_placement(
+        future,
+        slots=(occupied,),
+        now=0.0,
+        horizon_end=30.0,
+    )
+
+    # The ordinary nominal slot can pipeline its approach at t=0, but a live
+    # owner keeps the next robot at staging through exit + direction guard.
+    assert placement == (5.0, 15.0, 1)
+
+
 def test_builder_is_deterministic_across_request_order() -> None:
     config = CorridorSchedulerConfig(
         horizon_sec=50.0,

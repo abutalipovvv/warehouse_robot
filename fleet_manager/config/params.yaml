@@ -1,13 +1,17 @@
+strict_configuration: false
 robot_model:
   source: nav2
-  # Circumscribed radius of the 1.00 x 0.70 m Ecom body mesh.
   radius: 0.632
   footprint_segments: 4
   footprint:
-  - {x: -0.523, y: -0.3532}
-  - {x: 0.477, y: -0.3532}
-  - {x: 0.477, y: 0.3468}
-  - {x: -0.523, y: 0.3468}
+  - x: -0.523
+    y: -0.3532
+  - x: 0.477
+    y: -0.3532
+  - x: 0.477
+    y: 0.3468
+  - x: -0.523
+    y: 0.3468
   frames:
     lidar:
       x: 0.32487
@@ -31,9 +35,6 @@ robot_model:
       color: '#2f3a4a'
 navigation:
   route_speed: 1.37
-  route_acceleration: 0.6
-  simulate_rotation: true
-  turn_speed: 0.9
   footprint_lookahead: 0.65
   collision_margin: 0.04
   stop_distance: 0.18
@@ -43,6 +44,9 @@ navigation:
   curve_speed_limit: 0.25
   rejoin_speed_limit: 0.16
   hard_rejoin_speed_limit: 0.06
+  route_acceleration: 0.6
+  simulate_rotation: true
+  turn_speed: 0.9
 planner:
   nearest_lm_tolerance: 0.01
   trajectory_sample_distance: 0.03
@@ -63,16 +67,8 @@ manual:
   prediction_time: 1
   prediction_step: 0.1
 fleet:
-  # Prioritized SIPP is the fast path; CBS is only used when priority ordering
-  # cannot resolve a coupled conflict/deadlock.
-  planner_backend: hybrid
-  # Keep one full second of temporal separation in dense narrow passages.
-  # Consecutive graph edges no longer restart acceleration, so straight motion
-  # is still twice as fast as the previous stop-and-go implementation.
   reservation_time_step_sec: 1
   reservation_horizon_sec: 15
-  # Hard reservations remain short. Prepared trajectories are longer and are
-  # refilled before they enter the safety-critical part of their buffer.
   rolling_target_buffer_sec: 75
   rolling_refill_threshold_sec: 55
   rolling_urgent_threshold_sec: 30
@@ -82,222 +78,102 @@ fleet:
   rolling_refill_stagger_window_sec: 8
   rolling_normal_batch_size: 12
   planning_queue_max_size: 2
-  # Compatibility value for older configurations. New code uses the target
-  # buffer above when it is present.
-  rolling_horizon_sec: 30
-  # Accelerated motion consumes simulated route time faster while MAPF still
-  # runs in wall time. Preserve the planning budget by expanding only the
-  # committed simulation window (10 s at 1x becomes 40 s at 4x).
   rolling_horizon_scale_with_simulation_time: true
   rolling_horizon_max_sec: 120
-  # Optional discrete cap; 0 means the time horizon is authoritative.
-  rolling_horizon_steps: 0
-  # Start the next MAPF window well before the 30 s boundary. Continuations
-  # are appended atomically, so the normal case never visibly stops while the
-  # serialized planner prepares the next safe graph prefix.
-  rolling_prefetch_lead_sec: 24
-  # Simulation advances on the server independently from browser/websocket
-  # clients. Physics stays at 10 Hz so dense 50-robot collision checks leave
-  # GIL time for manual commands and websocket I/O. The browser renders at its
-  # display rate with a tightly bounded look-ahead on the committed trajectory.
-  simulation_tick_interval_sec: 0.10
-  # Fleet Manager Sim can accelerate its complete virtual clock from the web
-  # benchmark panel. Four times is the measured safe cap for CPU-heavy fleets;
-  # at 6x/8x Python MAPF cannot reliably finish between physics slices.
-  simulation_time_scale: 1.0
-  simulation_time_scale_max: 4.0
   reservation_safety_time_sec: 0.35
-  # Do not add a second soft envelope around the Ecom body. The exact oriented
-  # footprint plus navigation.collision_margin is already the runtime safety
-  # boundary; an extra 0.10 m made safe turns on neighbouring 1.20 m LMs block.
-  robot_clearance_m: 0.0
-  # Explicit graph reservation distance; exact rectangle overlap remains the
-  # final authority for spawn and continuous runtime collision checks.
-  mapf_min_robot_center_distance_m: 0.8
-  # Coarse turn-only serialization is intentionally smaller than the full
-  # circumscribed-circle diameter. Robots on neighbouring 1.20 m LMs may turn
-  # together; exact oriented footprints below still stop a genuinely unsafe
-  # pair of yaw angles before the bodies intersect.
-  mapf_rotation_center_distance_m: 0.632
-  # null derives the runtime preview from route speed, acceleration and the
-  # spatial footprint lookahead. Set seconds explicitly to tune field robots.
-  runtime_collision_lookahead_sec: null
+  robot_clearance_m: 0
   continuous_collision_step_sec: 0.1
-  # Exact next-step collision checks still run on every physics tick. The
-  # heavier full-horizon scan is refreshed independently to avoid synchronized
-  # O(robots^2) CPU spikes that make the visual stream stop and catch up.
-  runtime_collision_preflight_interval_sec: 0.50
   wait_time_sec: 1
   wait_cost: 6
-  order_dispatch_retry_sec: 0.5
-  # A robot stopped at a rolling boundary physically occupies its LM. Retry
-  # it quickly through a fair least-recently-served queue; never exponentially
-  # abandon the holder while it keeps the aisle closed.
-  rolling_boundary_retry_sec: 0.5
-  # Repeatedly impossible dense-traffic requests back off instead of pinning
-  # one Python core and starving the simulation clock.
-  order_dispatch_retry_max_sec: 4
-  # Two identical no-detour results around an unchanged parked body are
-  # conclusive. The core first asks a truly inactive blocker to move to a
-  # graph-safe low-demand pocket; if no such move exists, the failed departure
-  # sleeps until occupancy changes. Mutually commanded departures use the
-  # bounded recovery cadence below.
-  stationary_retry_quarantine_failures: 2
-  parked_clearance_relocation_enabled: true
-  parked_clearance_relocation_failures: 2
-  # Search stays local and the completed hidden maintenance order is removed
-  # from task history. Cooldown prevents a terminal robot oscillating between
-  # pockets when several queues touch the same junction.
-  parked_clearance_relocation_max_hops: 8
-  parked_clearance_waiter_escape_attempts: 3
-  parked_clearance_relocation_cooldown_sec: 12.0
-  parked_clearance_relocation_timeout_sec: 120.0
-  # Runtime MAPF is dispatched in the background. Small joint groups coordinate
-  # new orders without a fleet-wide CBS timeout.
-  dispatch_plan_budget_per_tick: 2
-  # Pairs reach a usable SIPP result much faster than four-agent CBS on dense
-  # maps. The serialized worker can therefore start the first robots
-  # immediately and keep filling the fleet.
-  # A fresh order starts as a cheap one-robot SIPP request.  Only requests
-  # which actually fail against the same stationary component are promoted to
-  # a bounded joint CBS batch.  Starting every package wave with arbitrary
-  # pairs made one difficult robot hold an unrelated peer in a 5 s timeout.
-  dispatch_joint_batch_size: 1
-  # Continuations already coordinate against committed time reservations.
-  # Planning them one at a time keeps different prediction offsets isolated
-  # and avoids unsafe sibling routes that do not reserve one another.
-  dispatch_rolling_batch_size: 1
-  # Boundary recovery starts with cheap rotating pairs. Repeated failures grow
-  # a fast prioritized-SIPP wave to the coupled stopped component; CBS remains
-  # limited to four participants.
-  rolling_prefetch_recovery_batch_size: 2
-  # Dynamic benchmark orders target distant, but still directed-reachable,
-  # graph landmarks. The final choice is random inside the configured far tail.
-  dynamic_order_min_hops: 30
-  dynamic_order_max_hops: 160
-  dynamic_order_far_fraction: 0.08
-  # Whole-route demand is a soft A* cost. It spreads equal shortest paths
-  # before the local ten-second SIPP window reaches the same central cells.
-  congestion_routing_enabled: true
-  congestion_edge_load_penalty_m: 0.55
-  congestion_opposing_load_penalty_m: 1.20
-  congestion_node_load_penalty_m: 0.15
-  congestion_tie_break_penalty_m: 0.002
-  # Dynamic admission zones are the fleet-wide traffic-flow layer. Robots wait
-  # at the last LM outside an overloaded tile; up to three compatible entrants
-  # receive a short lease while SIPP remains the exact collision authority.
-  traffic_zone_control_enabled: true
-  traffic_zone_size_m: 6.0
-  traffic_zone_demand_threshold: 6
-  traffic_zone_capacity: 3
-  traffic_zone_batch_size: 3
-  traffic_zone_entry_lookahead_sec: 3.0
-  traffic_zone_phase_sec: 2.0
-  traffic_zone_admission_lease_sec: 4.0
-  traffic_zone_starvation_sec: 5.0
-  # Wait at the graph LM first. If a saturated zone still cannot admit the
-  # robot, recompute a spatial suffix around that zone instead of waiting
-  # forever behind an optimistic temporal forecast.
-  traffic_zone_replan_after_sec: 6.0
-  replan_interval_sec: 1
-  runtime_replan_lm_tolerance_m: 0.1
-  # A new MAPF route may start only while the localized robot is at its LM.
-  # The planner never creates a straight off-graph connector to that LM.
-  start_pose_lm_tolerance_m: 0.1
-  deadlock_wait_timeout_sec: 1.0
-  # Keep following the committed route while a predicted blocker is expected
-  # to leave. After this hard bound the forecast no longer suppresses a
-  # spatial replan, so an individual robot cannot yield forever.
-  traffic_replan_after_sec: 3.0
-  # A robot with no active trajectory will not clear by waiting. Replan around
-  # its graph LM quickly, while moving peers still use the longer wait policy.
-  parked_robot_replan_after_sec: 1.0
-  deadlock_priority_lease_sec: 1.5
-  # Wait/priority ordering is cheaper and more stable than changing routes.
-  # Escalate only the coupled wait-cycle to CBS, then retreat as a last resort.
-  # Wait cycles receive a deterministic winner immediately. If that grant
-  # makes no progress, local CBS starts quickly and corridor evacuation is the
-  # bounded fallback instead of leaving the whole component WAITING.
-  deadlock_coupled_replan_after_sec: 1.5
-  deadlock_coupled_replan_interval_sec: 1.5
-  deadlock_retreat_after_sec: 4.5
-  # Debounce the same graph-stable retreat/detour across transient planner
-  # states. A real LM/order change starts a distinct recovery episode.
-  deadlock_recovery_cooldown_sec: 4.0
-  # Invalidating a retained route turns that robot into a stationary safety
-  # reservation until its replacement commits.  Keep this emergency queue
-  # bounded so many simultaneous encounters cannot freeze the whole fleet.
-  max_superseded_runtime_replans: 2
-  # A portal exit can be blocked by a short queue outside the authored
-  # corridor. Unwind only the local physical chain, one tail at a time; never
-  # turn this bounded recovery into a whole-fleet retreat.
-  deadlock_portal_queue_max_robots: 8
-  deadlock_portal_queue_lookahead_sec: 4.0
-  # Send one authoritative LM route to the robot. A positive value is an
-  # emergency compatibility limit for legacy executors; chunking makes the
-  # robot finish and re-dispatch at every boundary.
-  remote_route_chunk_lms: 0
-  remote_poll_interval_sec: 0.25
-  remote_timeout_sec: 0.8
-  remote_dispatch_lead_sec: 0.75
-  cbs_low_level_max_time: 160
-  cbs_max_high_level_nodes: 2000
-  cbs_max_planning_time_sec: 2.5
-  # Controlled corridors are an extra, local layer for genuinely narrow
-  # passages marked with the Corridor tool in Traffic Editor. Explicit
-  # controlled_region/holding_point properties remain active independently
-  # from the fleet-wide dynamic traffic zones.
   controlled_corridors_enabled: true
-  # Never turn a complete SMART graph into capacity-one corridors. Optional
-  # topology inference is kept separate for experiments; production maps use
-  # only the regions explicitly drawn by an operator.
   controlled_corridor_auto_detect: false
   controlled_corridor_min_edges: 1
-  # The central scheduler sees every authored corridor request in this rolling
-  # window. Only the short physical commit horizon is immutable; a distant
-  # tentative slot never blocks a nearer robot that can clear first.
   controlled_corridor_schedule_horizon_sec: 120
   controlled_corridor_commit_horizon_sec: 2
-  # Same-direction convoys may overlap a long authored corridor. One second
-  # keeps a complete footprint separation at the 1.37 m/s benchmark limit.
-  controlled_corridor_slot_headway_sec: 1.0
+  controlled_corridor_slot_headway_sec: 1
   controlled_corridor_direction_change_sec: 0.9
   controlled_corridor_direction_switch_cost_sec: 1.5
-  controlled_corridor_schedule_hysteresis_sec: 2.0
+  controlled_corridor_schedule_hysteresis_sec: 2
   controlled_corridor_occupancy_recheck_sec: 0.1
   controlled_corridor_priority_cost_sec: 0.05
   controlled_corridor_wait_age_cost_sec: 0.03
   controlled_corridor_starvation_sec: 8
   controlled_corridor_starvation_age_quantum_sec: 2
-  # Three robots remain the normal short-passage phase. For a long atomic
-  # no-wait passage the scheduler may build a larger same-flow convoy: changing
-  # direction must flush the complete conflicting resource window, while each
-  # follower adds only the one-second headway. The age budget below bounds the
-  # extra delay seen by an already-starved opposing queue.
   controlled_corridor_max_direction_batch: 3
   controlled_corridor_max_adaptive_direction_batch: 12
   controlled_corridor_phase_amortization_sec: 4
-  # A full 12-robot convoy costs only 11 s of headway, while reversing a long
-  # no-wait aisle can require tens of seconds to drain. Keep that phase stable
-  # instead of repeatedly paying the complete direction-change clearance.
   controlled_corridor_max_phase_extension_sec: 30
-  # Prefer a nearby external holding pocket over a direct edge that joins two
-  # no-wait corridor zones. It remains a soft A* cost for maps with no detour.
-  controlled_corridor_direct_transition_penalty_m: 4.0
-  # An unchanged stationary dependency is retried as a bounded movable group;
-  # quarantine throttles CPU but must never become a permanent scheduling ban.
-  stationary_recovery_retry_sec: 4.0
-  # CBS is a local coupled-component solver, never a 50-robot global fallback.
+  controlled_corridor_direct_transition_penalty_m: 4
+  stationary_recovery_retry_sec: 4
+  parked_clearance_relocation_enabled: true
+  parked_clearance_relocation_failures: 2
+  parked_clearance_relocation_max_hops: 8
+  parked_clearance_relocation_cooldown_sec: 12
+  parked_clearance_relocation_timeout_sec: 120
+  deadlock_recovery_cooldown_sec: 4
+  replan_interval_sec: 1
+  remote_route_chunk_lms: 0
+  cbs_low_level_max_time: 160
+  cbs_max_high_level_nodes: 2000
+  cbs_max_planning_time_sec: 2.5
+  planner_backend: hybrid
+  rolling_horizon_sec: 30
+  rolling_horizon_steps: 0
+  rolling_prefetch_lead_sec: 24
+  simulation_tick_interval_sec: 0.1
+  simulation_time_scale: 1
+  simulation_time_scale_max: 4
+  mapf_min_robot_center_distance_m: 0.8
+  mapf_rotation_center_distance_m: 0.632
+  runtime_collision_lookahead_sec: null
+  runtime_collision_preflight_interval_sec: 0.5
+  order_dispatch_retry_sec: 0.5
+  rolling_boundary_retry_sec: 0.5
+  order_dispatch_retry_max_sec: 4
+  stationary_retry_quarantine_failures: 2
+  parked_clearance_waiter_escape_attempts: 3
+  dispatch_plan_budget_per_tick: 2
+  dispatch_joint_batch_size: 1
+  dispatch_rolling_batch_size: 1
+  rolling_prefetch_recovery_batch_size: 2
+  dynamic_order_min_hops: 30
+  dynamic_order_max_hops: 160
+  dynamic_order_far_fraction: 0.08
+  congestion_routing_enabled: true
+  congestion_edge_load_penalty_m: 0.55
+  congestion_opposing_load_penalty_m: 1.2
+  congestion_node_load_penalty_m: 0.15
+  congestion_tie_break_penalty_m: 0.002
+  traffic_zone_control_enabled: true
+  traffic_zone_size_m: 6
+  traffic_zone_demand_threshold: 6
+  traffic_zone_capacity: 3
+  traffic_zone_batch_size: 3
+  traffic_zone_entry_lookahead_sec: 3
+  traffic_zone_phase_sec: 2
+  traffic_zone_admission_lease_sec: 4
+  traffic_zone_starvation_sec: 5
+  traffic_zone_replan_after_sec: 6
+  runtime_replan_lm_tolerance_m: 0.1
+  start_pose_lm_tolerance_m: 0.1
+  deadlock_wait_timeout_sec: 1
+  traffic_replan_after_sec: 3
+  parked_robot_replan_after_sec: 1
+  deadlock_priority_lease_sec: 1.5
+  deadlock_coupled_replan_after_sec: 1.5
+  deadlock_coupled_replan_interval_sec: 1.5
+  deadlock_retreat_after_sec: 4.5
+  max_superseded_runtime_replans: 2
+  deadlock_portal_queue_max_robots: 8
+  deadlock_portal_queue_lookahead_sec: 4
+  remote_poll_interval_sec: 0.25
+  remote_timeout_sec: 0.8
+  remote_dispatch_lead_sec: 0.75
   local_cbs_max_robots: 8
-  # Long-running random-order benchmarks eventually exercise many LM pairs
-  # and route speeds. Bound reusable planner caches so memory reaches a stable
-  # plateau instead of following the lifetime order count.
   traffic_graph_cache_max_entries: 16
   controlled_ticks_cache_max_entries: 32
   heuristic_cache_max_entries: 100000
   reservation_detour_horizon_sec: 8
-  # Moving robots create time reservations. They do not rewrite the committed
-  # shortest spatial route unless deadlock recovery explicitly requests it.
   reserved_edge_detour_enabled: false
   reserved_edge_hard_constraints_enabled: true
   batch_collision_horizon_sec: null

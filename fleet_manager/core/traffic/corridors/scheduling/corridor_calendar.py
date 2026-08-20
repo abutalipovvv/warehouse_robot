@@ -159,6 +159,13 @@ def _request_slot_windows_fit(
     slot: CorridorSlot,
     config: CorridorSchedulerConfig,
 ) -> bool:
+    physical_release = _request_staging_release_after_physical_slot(
+        request,
+        slot,
+        config,
+    )
+    if entry_time < physical_release - 1e-9:
+        return False
     guard = _direction_change_guard(config)
     for request_window in request.resource_windows:
         for slot_window in slot.resource_windows:
@@ -197,7 +204,11 @@ def _request_entry_after_slot(
     slot: CorridorSlot,
     config: CorridorSchedulerConfig,
 ) -> float:
-    required = float("-inf")
+    required = _request_staging_release_after_physical_slot(
+        request,
+        slot,
+        config,
+    )
     guard = _direction_change_guard(config)
     for request_window in request.resource_windows:
         slot_window = next(
@@ -229,6 +240,41 @@ def _request_entry_after_slot(
                 + guard
                 - request_window.entry_offset_sec,
             )
+    return required
+
+
+def _request_staging_release_after_physical_slot(
+    request: CorridorRequest,
+    slot: CorridorSlot,
+    config: CorridorSchedulerConfig,
+) -> float:
+    """Keep a future approach staged until a live owner clears its box."""
+    if not slot.physically_observed:
+        return float("-inf")
+    required = float("-inf")
+    guard = _direction_change_guard(config)
+    for request_window in request.resource_windows:
+        slot_window = next(
+            (
+                window
+                for window in slot.resource_windows
+                if window.region_id == request_window.region_id
+            ),
+            None,
+        )
+        if slot_window is None:
+            continue
+        clearance = (
+            config.headway_sec
+            if request_window.direction == slot_window.direction
+            else guard
+        )
+        required = max(
+            required,
+            slot.entry_time
+            + slot_window.exit_offset_sec
+            + clearance,
+        )
     return required
 
 
@@ -266,6 +312,30 @@ def _slot_windows_fit(
     config: CorridorSchedulerConfig,
 ) -> bool:
     """Compare immutable slot windows without building temporary mappings."""
+    if (
+        second.physically_observed
+        and not first.physically_observed
+        and first.entry_time
+        < _slot_staging_release_after_physical(
+            first,
+            second,
+            config,
+        )
+        - 1e-9
+    ):
+        return False
+    if (
+        first.physically_observed
+        and not second.physically_observed
+        and second.entry_time
+        < _slot_staging_release_after_physical(
+            second,
+            first,
+            config,
+        )
+        - 1e-9
+    ):
+        return False
     guard = _direction_change_guard(config)
     for first_window in first.resource_windows:
         for second_window in second.resource_windows:
@@ -297,6 +367,39 @@ def _slot_windows_fit(
                 return False
             break
     return True
+
+
+def _slot_staging_release_after_physical(
+    future: CorridorSlot,
+    physical: CorridorSlot,
+    config: CorridorSchedulerConfig,
+) -> float:
+    """Return when ``future`` may leave staging behind a live owner."""
+    required = float("-inf")
+    guard = _direction_change_guard(config)
+    for future_window in future.resource_windows:
+        physical_window = next(
+            (
+                window
+                for window in physical.resource_windows
+                if window.region_id == future_window.region_id
+            ),
+            None,
+        )
+        if physical_window is None:
+            continue
+        clearance = (
+            config.headway_sec
+            if future_window.direction == physical_window.direction
+            else guard
+        )
+        required = max(
+            required,
+            physical.entry_time
+            + physical_window.exit_offset_sec
+            + clearance,
+        )
+    return required
 
 
 def _direction_change_guard(config: CorridorSchedulerConfig) -> float:
