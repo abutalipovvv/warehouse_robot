@@ -693,6 +693,9 @@ class RosRuntimeControlMixin:
             return []
 
     def _route_payload(self, robot: dict[str, Any]) -> dict[str, Any] | None:
+        reported_route = robot.get("route")
+        if isinstance(reported_route, dict):
+            return dict(reported_route)
         target = str(robot.get("targetLm") or "").strip()
         route_id = str(robot.get("routeId") or "").strip()
         if not target and not route_id:

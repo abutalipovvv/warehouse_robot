@@ -135,6 +135,30 @@ def robot_status_from_json(payload: dict[str, Any] | None) -> robot_api_pb2.Robo
         status.linear_velocity = _float(velocity.get("linear") or velocity.get("linearVelocity") or source.get("linearVelocity"), 0.0)
         status.angular_velocity = _float(velocity.get("angular") or velocity.get("angularVelocity") or source.get("angularVelocity"), 0.0)
 
+    acceleration = source.get("acceleration") if isinstance(source.get("acceleration"), dict) else source
+    if isinstance(acceleration, dict):
+        status.linear_acceleration = _float(
+            acceleration.get("linear") or acceleration.get("linearAcceleration") or source.get("linearAcceleration"),
+            0.0,
+        )
+        status.angular_acceleration = _float(
+            acceleration.get("angular") or acceleration.get("angularAcceleration") or source.get("angularAcceleration"),
+            0.0,
+        )
+
+    route = source.get("route") if isinstance(source.get("route"), dict) else {}
+    status.route_active = bool(route.get("active", source.get("routeActive", False)))
+    status.route_paused = bool(route.get("paused", source.get("routePaused", False)))
+    route_nodes = route.get("nodes") or source.get("routeNodes") or []
+    if isinstance(route_nodes, list):
+        status.route_nodes.extend(str(node) for node in route_nodes if str(node))
+    status.final_goal_lm = str(
+        route.get("finalGoalLm")
+        or source.get("finalGoalLm")
+        or source.get("targetLm")
+        or ""
+    )
+
     battery = source.get("battery") if isinstance(source.get("battery"), dict) else source
     if isinstance(battery, dict):
         status.battery_level = _float(battery.get("level") or battery.get("batteryLevel") or source.get("batteryLevel"), 0.0)
@@ -171,6 +195,30 @@ def robot_status_to_json(status: robot_api_pb2.RobotStatus | None) -> dict[str, 
         "y": float(status.pose_y),
         "yaw": float(status.pose_yaw),
     } if connected and localization_ok else None
+    battery_payload: dict[str, Any] | None
+    if "battery" in raw and raw.get("battery") is None:
+        battery_payload = None
+    else:
+        battery_payload = {
+            "level": float(status.battery_level),
+            "voltage": float(status.battery_voltage),
+            "current": float(status.battery_current),
+            "temperature": float(status.battery_temperature),
+            "charging": bool(status.battery_charging),
+        }
+    reported_route = raw.get("route") if isinstance(raw.get("route"), dict) else {}
+    reported_acceleration = raw.get("acceleration") if isinstance(raw.get("acceleration"), dict) else {}
+    route_nodes = [str(node) for node in status.route_nodes if str(node)]
+    route_payload = {
+        **reported_route,
+        "active": bool(reported_route.get("active", status.route_active)),
+        "routeId": str(status.route_id or reported_route.get("routeId") or ""),
+        "goalLm": str(status.target_lm or reported_route.get("goalLm") or ""),
+        "finalGoalLm": str(status.final_goal_lm or reported_route.get("finalGoalLm") or status.target_lm or ""),
+        "nodes": route_nodes or list(reported_route.get("nodes") or []),
+        "progress": float(status.route_progress),
+        "paused": bool(reported_route.get("paused", status.route_paused)),
+    }
     payload: dict[str, Any] = {
         **raw,
         "robotId": status.robot_id,
@@ -190,14 +238,14 @@ def robot_status_to_json(status: robot_api_pb2.RobotStatus | None) -> dict[str, 
             "linear": float(status.linear_velocity),
             "angular": float(status.angular_velocity),
         },
-        "battery": {
-            "level": float(status.battery_level),
-            "voltage": float(status.battery_voltage),
-            "current": float(status.battery_current),
-            "temperature": float(status.battery_temperature),
-            "charging": bool(status.battery_charging),
+        "acceleration": {
+            "linear": _float(reported_acceleration.get("linear"), float(status.linear_acceleration)),
+            "angular": _float(reported_acceleration.get("angular"), float(status.angular_acceleration)),
         },
+        "battery": battery_payload,
     }
+    if route_payload["routeId"] or route_payload["goalLm"] or route_payload["nodes"]:
+        payload["route"] = route_payload
     if status.nearest_lm:
         payload.setdefault("currentLm", status.nearest_lm)
     return payload

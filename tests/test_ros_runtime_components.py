@@ -384,9 +384,13 @@ def test_status_identity_and_sidebar_payload_contract(
         "angular": -0.2,
     }
     assert status["route"] == {
+        "active": True,
         "routeId": "route-17",
         "goalLm": "LM-9",
+        "finalGoalLm": "LM-9",
         "nodes": ["LM-9"],
+        "progress": 0.375,
+        "paused": False,
         "trajectory": [],
     }
 

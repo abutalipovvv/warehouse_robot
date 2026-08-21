@@ -58,6 +58,7 @@ export const withActions = (Base) => class OperatorAppActions extends Base {
       this.robotParamsRobotId = robot.id;
       this.robotParamsLoaded = true;
       this.applyRobotParams(this.robotParams);
+      this.setRobotParamsSyncState(payload.cached ? "Cached only" : "Synced", payload.cached ? "warning" : "ok");
     } catch (error) {
       if (this.selectedRobotId !== robot.id) {
         return;
@@ -65,6 +66,7 @@ export const withActions = (Base) => class OperatorAppActions extends Base {
       this.robotParams = {};
       this.robotParamsRobotId = robot.id;
       this.robotParamsLoaded = false;
+      this.setRobotParamsSyncState("Unavailable", "error");
       if (this.fleetModelEditor) {
         this.fleetModelEditor.setModel(this.fleetModelEditor.defaultModel());
       }
@@ -234,6 +236,7 @@ export const withActions = (Base) => class OperatorAppActions extends Base {
         this.renderRobotParamsTable();
         this.syncRobotParamsJson(true);
         this.robotMessageText.textContent = `${field.label} reset to default.`;
+        this.scheduleRobotParamsSave();
       });
       valueCell.append(input, defaultText, resetButton);
       row.append(nameCell, description, valueCell);
@@ -274,7 +277,10 @@ export const withActions = (Base) => class OperatorAppActions extends Base {
     input.dataset.paramPath = field.path;
     input.dataset.paramType = field.type;
     input.addEventListener("input", () => this.handleRobotParamInput(field, input));
-    input.addEventListener("change", () => this.handleRobotParamInput(field, input));
+    input.addEventListener("change", () => {
+      this.handleRobotParamInput(field, input);
+      this.scheduleRobotParamsSave();
+    });
     return input;
   }
 
@@ -290,6 +296,33 @@ export const withActions = (Base) => class OperatorAppActions extends Base {
     }
     this.syncRobotParamsJson(true);
     this.updateRobotParamsSummary();
+    this.setRobotParamsSyncState("Local changes", "warning");
+    if (this.robotParamsSaveInFlight) {
+      this.robotParamsSaveQueued = true;
+    }
+  }
+
+  setRobotParamsSyncState(label, state = "") {
+    if (!this.robotParamsSyncText) {
+      return;
+    }
+    this.robotParamsSyncText.textContent = label;
+    this.robotParamsSyncText.dataset.state = state;
+  }
+
+  scheduleRobotParamsSave(delayMs = 450) {
+    if (this.robotParamsSaveTimer) {
+      window.clearTimeout(this.robotParamsSaveTimer);
+    }
+    const robotId = this.selectedRobot()?.id || "";
+    this.setRobotParamsSyncState("Sync pending", "warning");
+    this.robotParamsSaveTimer = window.setTimeout(() => {
+      this.robotParamsSaveTimer = null;
+      if (!robotId || this.selectedRobot()?.id !== robotId || this.robotParamsRobotId !== robotId) {
+        return;
+      }
+      this.saveRobotParams();
+    }, Math.max(0, Number(delayMs) || 0));
   }
 
   updateRobotParamsSummary(changedCount = null) {
@@ -303,9 +336,25 @@ export const withActions = (Base) => class OperatorAppActions extends Base {
       }).length
       : changedCount;
     const total = ROBOT_PARAM_SCHEMA.length;
-    this.robotParamsSummary.textContent = count
-      ? `${count} of ${total} parameters differ from default. Save writes params.yaml on the robot and applies changes immediately.`
-      : `${total} robot parameters are at default values. Save writes params.yaml on the robot and applies changes immediately.`;
+    const summary = count
+      ? `${count} of ${total} parameters differ from default. Changes are saved, applied, and read back from the robot automatically.`
+      : `${total} robot parameters are at default values. Changes are saved, applied, and read back from the robot automatically.`;
+    const navigation = this.robotParams?.navigation || {};
+    const profile = navigation.trajectory_speed_profile || {};
+    const cruise = Math.max(0, Number(navigation.route_speed) || 0);
+    const straightLimits = [cruise];
+    if (navigation.strict_edge_tracking !== false) {
+      straightLimits.push(Math.max(0, Number(navigation.strict_speed_limit) || cruise));
+    }
+    if (profile.enabled !== false) {
+      straightLimits.push(Math.max(0, Number(profile.max_forward_speed) || cruise));
+    }
+    const straightLimit = Math.min(...straightLimits.filter((value) => value > 0));
+    const curveLimit = Math.min(straightLimit, Math.max(0, Number(navigation.curve_speed_limit) || straightLimit));
+    const limits = Number.isFinite(straightLimit)
+      ? ` Effective controller caps: straight ≤ ${straightLimit.toFixed(2)} m/s, curve ≤ ${curveLimit.toFixed(2)} m/s.`
+      : "";
+    this.robotParamsSummary.textContent = `${summary}${limits}`;
   }
 
   robotParamDisplay(value) {
@@ -341,7 +390,8 @@ export const withActions = (Base) => class OperatorAppActions extends Base {
     }
     this.renderRobotParamsTable();
     this.syncRobotParamsJson(true);
-    this.robotMessageText.textContent = "Robot params reset to defaults. Press Save Robot Params to apply.";
+    this.robotMessageText.textContent = "Robot params reset to defaults. Synchronizing with robot.";
+    this.scheduleRobotParamsSave();
   }
 
   parseParamsJson(input, label, fallback = {}) {
@@ -503,19 +553,44 @@ export const withActions = (Base) => class OperatorAppActions extends Base {
       window.alert("Select a robot before saving robot params.");
       return;
     }
+    if (this.robotParamsSaveInFlight) {
+      this.robotParamsSaveQueued = true;
+      return;
+    }
+    if (this.robotParamsSaveTimer) {
+      window.clearTimeout(this.robotParamsSaveTimer);
+      this.robotParamsSaveTimer = null;
+    }
+    this.robotParamsSaveInFlight = true;
+    this.setRobotParamsSyncState("Syncing...", "syncing");
     try {
       const params = this.collectRobotParams();
       const result = await this.postJson(`/api/robots/${encodeURIComponent(robot.id)}/params`, { params });
+      if (this.selectedRobotId !== robot.id) {
+        return;
+      }
+      if (this.robotParamsSaveQueued) {
+        this.setRobotParamsSyncState("Sync pending", "warning");
+        return;
+      }
       this.robotParams = result.params || result.saved?.params || params;
       this.robotParamsRobotId = robot.id;
       this.robotParamsLoaded = true;
       this.applyRobotParams(this.robotParams);
       this.syncRobotParamsJson(true);
+      this.setRobotParamsSyncState(result.synced ? "Synced" : "Saved", result.synced ? "ok" : "warning");
       this.robotMessageText.textContent = result.warning
-        ? `Robot params saved with warning: ${result.warning}`
-        : "Robot params saved and applied.";
+        ? `Robot params synchronized with warning: ${result.warning}`
+        : "Robot params saved, applied, and verified on the robot.";
     } catch (error) {
+      this.setRobotParamsSyncState("Sync failed", "error");
       this.robotMessageText.textContent = `Save robot params failed: ${error.message || error}`;
+    } finally {
+      this.robotParamsSaveInFlight = false;
+      if (this.robotParamsSaveQueued) {
+        this.robotParamsSaveQueued = false;
+        this.scheduleRobotParamsSave(0);
+      }
     }
   }
 
@@ -525,6 +600,7 @@ export const withActions = (Base) => class OperatorAppActions extends Base {
       window.alert("Select a robot before saving Robot Model.");
       return;
     }
+    this.setRobotParamsSyncState("Syncing...", "syncing");
     try {
       const params = this.collectRobotParams();
       const result = await this.postJson(`/api/robots/${encodeURIComponent(robot.id)}/params`, { params });
@@ -533,10 +609,12 @@ export const withActions = (Base) => class OperatorAppActions extends Base {
       this.robotParamsLoaded = true;
       this.syncRobotParamsJson(true);
       this.applyRobotParams(this.robotParams);
+      this.setRobotParamsSyncState(result.synced ? "Synced" : "Saved", result.synced ? "ok" : "warning");
       this.robotMessageText.textContent = result.warning
         ? `Robot model saved with warning: ${result.warning}`
-        : "Robot model saved and applied.";
+        : "Robot model saved, applied, and verified on the robot.";
     } catch (error) {
+      this.setRobotParamsSyncState("Sync failed", "error");
       this.robotMessageText.textContent = `Save robot model failed: ${error.message || error}`;
     }
   }

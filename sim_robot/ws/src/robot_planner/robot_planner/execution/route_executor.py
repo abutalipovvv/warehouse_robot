@@ -8,10 +8,14 @@ from typing import Any, Callable, Protocol
 from ..control import (
     ArrivalMonitor,
     ArrivalParameters,
+    LqrController,
+    LqrParameters,
     PidController,
     PidParameters,
     SpeedProfileParameters,
     SpeedProfiler,
+    TrajectorySpeedParameters,
+    TrajectorySpeedProfile,
 )
 from ..math import PathProjection, TrajectoryArray, TrajectoryMath
 from ..planning import RobotTrajectoryPlanner
@@ -23,6 +27,7 @@ class RouteControlParameters:
     """Normalized parameters for one trajectory tracking control step."""
 
     route_speed: float
+    tracking_controller: str
     lookahead: float
     stop_distance: float
     angular_gain: float
@@ -59,11 +64,17 @@ class RouteControlParameters:
             planner = {}
         if not isinstance(localization, dict):
             localization = {}
+        tracking_controller = str(
+            navigation.get("tracking_controller", "pid") or "pid"
+        ).strip().lower()
+        if tracking_controller not in {"pid", "lqr"}:
+            tracking_controller = "pid"
         return cls(
             route_speed=max(
                 0.05,
                 float(navigation.get("route_speed", 0.35) or 0.35),
             ),
+            tracking_controller=tracking_controller,
             lookahead=max(
                 0.10,
                 float(navigation.get("footprint_lookahead", 0.8) or 0.8),
@@ -273,12 +284,15 @@ class RouteExecutor:
         self._control_params_payload: dict[str, Any] | None = None
         self._control_params: RouteControlParameters | None = None
         self._speed_profile_params: SpeedProfileParameters | None = None
+        self._trajectory_speed_params: TrajectorySpeedParameters | None = None
         self._arrival_params: ArrivalParameters | None = None
         self._pid = PidController(PidParameters.from_payload({}))
+        self._lqr = LqrController(LqrParameters.from_payload({}))
         self._speed_profiler = SpeedProfiler()
         self._arrival_monitor = ArrivalMonitor()
         self._trajectory_cache_key: tuple[Any, ...] | None = None
         self._trajectory_cache: TrajectoryArray | None = None
+        self._trajectory_speed_profile: TrajectorySpeedProfile | None = None
         self._odom_anchor_route_key: tuple[str, int] | None = None
         self._odom_anchor_map_pose: Pose2D | None = None
         self._odom_anchor_pose: Pose2D | None = None
@@ -346,7 +360,9 @@ class RouteExecutor:
             self._log_info(
                 f"route started: id={route.route_id} rev={route.revision} "
                 f"goal={route.goal_lm} nodes={len(route.nodes)} length={route.length:.2f}m "
-                f"tracking={'odom' if self._odom_anchor_route_key == route_key else 'map'}"
+                f"tracking={'odom' if self._odom_anchor_route_key == route_key else 'map'} "
+                f"controller={control.tracking_controller} "
+                f"speed_profile={'on' if self._trajectory_speed_parameters().enabled else 'off'}"
             )
         self._follow_route(route, pose)
 
@@ -405,7 +421,7 @@ class RouteExecutor:
                 transition.requires_stop
                 and abs(transition.next_yaw_error) > alignment_tolerance
             ):
-                self._pid.reset()
+                self._reset_path_controllers()
                 self._speed_profiler.reset()
                 angular = TrajectoryMath.clamp(
                     control.angular_gain * transition.next_yaw_error,
@@ -485,7 +501,7 @@ class RouteExecutor:
             )
             return
         if goal_position_reached and goal_yaw_reached:
-            self._pid.reset()
+            self._reset_path_controllers()
             self._speed_profiler.reset()
             self.runtime.set_state(
                 "EXECUTING_ROUTE",
@@ -522,6 +538,8 @@ class RouteExecutor:
             steering,
             control,
         )
+        planned_speed_limit = self._trajectory_speed_limit(projection.s)
+        linear = steering.drive_sign * min(abs(linear), planned_speed_limit)
         if transition is not None and transition.requires_stop:
             braking_distance = max(
                 0.0,
@@ -544,20 +562,14 @@ class RouteExecutor:
             ),
             self._speed_profile_parameters(),
         )
-        if abs(linear) > 1e-6 and self._pid.params.enabled:
-            angular = self._pid.step(
-                (
-                    steering.lateral_control_error,
-                    steering.heading_control_error,
-                ),
-                # Curvature is parameterized by positive progress along the
-                # graph edge. A backward chassis has yaw=tangent+pi, but its
-                # yaw derivative keeps the same sign as the edge tangent.
-                feedforward=abs(linear) * steering.path_curvature,
-                max_output=control.max_angular,
+        if abs(linear) > 1e-6:
+            angular = self._path_controller_step(
+                steering=steering,
+                linear=linear,
+                control=control,
             )
         else:
-            self._pid.reset()
+            self._reset_path_controllers()
         self.runtime.set_state("EXECUTING_ROUTE", message)
         if projection.edge_id != self._last_logged_edge:
             self._last_logged_edge = projection.edge_id
@@ -606,16 +618,15 @@ class RouteExecutor:
         now = monotonic()
         if now - self._last_debug_log_at >= 2.0:
             self._last_debug_log_at = now
-            terms = self._pid.last_terms
             self._log_debug(
                 f"tracking: edge={projection.edge_id} progress={progress:.1%} "
                 f"cte={steering.cross_track_error:.3f}m "
                 f"heading={math.degrees(steering.heading_control_error):.1f}deg "
                 f"curve={steering.path_curvature:.3f}/{steering.preview_curvature:.3f}m^-1 "
                 f"goal={route_progress.distance_to_goal:.4f}m "
+                f"vref={planned_speed_limit:.3f}m/s "
                 f"v={linear:.3f}m/s w={angular:.3f}rad/s "
-                f"pid=[p={terms.proportional:.3f}, i={terms.integral:.3f}, "
-                f"d={terms.derivative:.3f}, ff={terms.feedforward:.3f}]"
+                f"{self._controller_debug(control.tracking_controller)}"
             )
 
     def _route_control_parameters(self) -> RouteControlParameters:
@@ -627,8 +638,13 @@ class RouteExecutor:
             self._speed_profile_params = SpeedProfileParameters.from_payload(
                 payload
             )
+            self._trajectory_speed_params = TrajectorySpeedParameters.from_payload(
+                payload
+            )
             self._arrival_params = ArrivalParameters.from_payload(payload)
             self._pid.configure(PidParameters.from_payload(payload))
+            self._lqr.configure(LqrParameters.from_payload(payload))
+            self._trajectory_speed_profile = None
         if self._control_params is None:
             self._control_params = RouteControlParameters.from_payload(payload)
         return self._control_params
@@ -644,6 +660,72 @@ class RouteExecutor:
         if self._arrival_params is None:
             self._arrival_params = ArrivalParameters.from_payload({})
         return self._arrival_params
+
+    def _trajectory_speed_parameters(self) -> TrajectorySpeedParameters:
+        self._route_control_parameters()
+        if self._trajectory_speed_params is None:
+            self._trajectory_speed_params = TrajectorySpeedParameters.from_payload({})
+        return self._trajectory_speed_params
+
+    def _path_controller_step(
+        self,
+        *,
+        steering: RouteSteeringState,
+        linear: float,
+        control: RouteControlParameters,
+    ) -> float:
+        if control.tracking_controller == "lqr":
+            return self._lqr.step(
+                cross_track_error=steering.cross_track_error,
+                heading_error=steering.heading_control_error,
+                linear_speed=linear,
+                curvature=steering.path_curvature,
+                max_output=control.max_angular,
+                dt=self._speed_profile_parameters().control_period,
+            )
+        if self._pid.params.enabled:
+            return self._pid.step(
+                (
+                    steering.lateral_control_error,
+                    steering.heading_control_error,
+                ),
+                # Curvature grows along positive graph progress. Backward body
+                # yaw is rotated by pi, but its yaw derivative keeps this sign.
+                feedforward=abs(linear) * steering.path_curvature,
+                max_output=control.max_angular,
+            )
+        return TrajectoryMath.clamp(
+            control.angular_gain * steering.steering_error,
+            -control.max_angular,
+            control.max_angular,
+        )
+
+    def _reset_path_controllers(self) -> None:
+        self._pid.reset()
+        self._lqr.reset()
+
+    def _controller_debug(self, controller_name: str) -> str:
+        if controller_name == "lqr":
+            terms = self._lqr.last_terms
+            return (
+                "lqr=["
+                f"y={terms.lateral_feedback:.3f}, "
+                f"yaw={terms.heading_feedback:.3f}, "
+                f"ff={terms.feedforward:.3f}]"
+            )
+        terms = self._pid.last_terms
+        return (
+            "pid=["
+            f"p={terms.proportional:.3f}, i={terms.integral:.3f}, "
+            f"d={terms.derivative:.3f}, ff={terms.feedforward:.3f}]"
+        )
+
+    def _trajectory_speed_limit(self, path_distance: float) -> float:
+        if not self._trajectory_speed_parameters().enabled:
+            return self._route_control_parameters().route_speed
+        if self._trajectory_speed_profile is None:
+            return self._route_control_parameters().route_speed
+        return self._trajectory_speed_profile.speed_at(path_distance)
 
     def _trajectory_array(self, route: PlannedRobotRoute) -> TrajectoryArray:
         points = route.trajectory
@@ -664,18 +746,29 @@ class RouteExecutor:
         if self._trajectory_cache is None or cache_key != self._trajectory_cache_key:
             self._trajectory_cache = TrajectoryArray.from_route_points(points)
             self._trajectory_cache_key = cache_key
-            self._pid.reset()
+            self._trajectory_speed_profile = None
+            self._reset_path_controllers()
             self._speed_profiler.reset()
             self._arrival_monitor.reset()
+        trajectory_speed_params = self._trajectory_speed_parameters()
+        if (
+            trajectory_speed_params.enabled
+            and self._trajectory_speed_profile is None
+        ):
+            self._trajectory_speed_profile = TrajectorySpeedProfile.build(
+                self._trajectory_cache,
+                trajectory_speed_params,
+            )
         return self._trajectory_cache
 
     def _reset_tracking_state(self, *, clear_trajectory: bool = False) -> None:
-        self._pid.reset()
+        self._reset_path_controllers()
         self._speed_profiler.reset()
         self._arrival_monitor.reset()
         if clear_trajectory:
             self._trajectory_cache = None
             self._trajectory_cache_key = None
+            self._trajectory_speed_profile = None
 
     def latest_tracking_pose(self) -> Pose2D | None:
         pose = self._last_tracking_pose
@@ -945,7 +1038,7 @@ class RouteExecutor:
         )
         if not gate_time > time():
             return False
-        self._pid.reset()
+        self._reset_path_controllers()
         self._speed_profiler.reset()
         self.runtime.set_state(
             "WAITING_TRAFFIC",

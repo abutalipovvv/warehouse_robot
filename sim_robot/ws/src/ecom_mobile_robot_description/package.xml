@@ -4,7 +4,7 @@
   <version>0.1.0</version>
   <description>Ecom mobile robot description adapted to the existing ROS interface.</description>
 
-  <maintainer email="kaisar.abutlaipovv#gmail.com">kaisar.abutlaipov</maintainer>
+  <maintainer email="kaisar.abutlaipovv@gmail.com">kaisar.abutlaipov</maintainer>
   <license>Proprietary</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>

@@ -8,6 +8,8 @@ string message
 string target_lm
 string current_edge_id
 string route_id
+string[] route_nodes
+string final_goal_lm
 float32 route_progress
 float32 cross_track_error
 float32 heading_error

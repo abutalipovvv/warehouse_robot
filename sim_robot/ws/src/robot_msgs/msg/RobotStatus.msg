@@ -13,6 +13,10 @@ string target_lm
 string nearest_lm
 string current_edge_id
 string route_id
+bool route_active
+bool route_paused
+string[] route_nodes
+string final_goal_lm
 float32 route_progress
 float32 cross_track_error
 float32 heading_error
@@ -31,6 +35,8 @@ float32 pose_y
 float32 pose_yaw
 float32 linear_velocity
 float32 angular_velocity
+float32 linear_acceleration
+float32 angular_acceleration
 float32 battery_level
 float32 battery_voltage
 float32 battery_current

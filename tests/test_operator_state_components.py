@@ -419,3 +419,60 @@ def test_robot_connection_bootstrap_downloads_entire_map_library() -> None:
     assert cached == [("map-a", False), ("map-b", True)]
     assert ("active", "map-b") in saved
     assert ("params", "robot") in saved
+
+
+def test_robot_params_save_is_read_back_before_local_cache_is_updated() -> None:
+    state = OperatorAppState.__new__(OperatorAppState)
+    robot = SimpleNamespace(id="robot-1", is_grpc=True)
+    requested = {"navigation": {"route_speed": 1.37}}
+    calls: list[tuple[str, Any]] = []
+    state.get_robot = lambda robot_id: robot
+    state._is_grpc_robot_id = lambda robot_id: True
+    state._grpc_endpoint = lambda selected: "robot:50051"
+
+    class Adapter:
+        def put_params(self, endpoint: str, params: dict[str, Any]) -> dict[str, Any]:
+            calls.append(("put", params))
+            return {"ok": True, "params": params, "reloaded": True}
+
+        def get_params(self, endpoint: str) -> dict[str, Any]:
+            calls.append(("get", endpoint))
+            return {"ok": True, "params": requested}
+
+    state.grpc_adapter = Adapter()
+    state._cache_robot_params = lambda selected, params, source: calls.append(
+        ("cache", (params, source))
+    )
+
+    result = state.save_robot_params_payload("robot-1", {"params": requested})
+
+    assert result["synced"] is True
+    assert result["verified"] is True
+    assert result["params"] == requested
+    assert calls == [
+        ("put", requested),
+        ("get", "robot:50051"),
+        ("cache", (requested, "robot-verified")),
+    ]
+
+
+def test_robot_params_save_rejects_read_back_mismatch() -> None:
+    state = OperatorAppState.__new__(OperatorAppState)
+    robot = SimpleNamespace(id="robot-1", is_grpc=True)
+    cached: list[dict[str, Any]] = []
+    state.get_robot = lambda robot_id: robot
+    state._is_grpc_robot_id = lambda robot_id: True
+    state._grpc_endpoint = lambda selected: "robot:50051"
+    state.grpc_adapter = SimpleNamespace(
+        put_params=lambda endpoint, params: {"ok": True, "params": params},
+        get_params=lambda endpoint: {"ok": True, "params": {"navigation": {"route_speed": 0.2}}},
+    )
+    state._cache_robot_params = lambda selected, params, source: cached.append(params)
+
+    with pytest.raises(ValueError, match="differ"):
+        state.save_robot_params_payload(
+            "robot-1",
+            {"params": {"navigation": {"route_speed": 1.37}}},
+        )
+
+    assert cached == []

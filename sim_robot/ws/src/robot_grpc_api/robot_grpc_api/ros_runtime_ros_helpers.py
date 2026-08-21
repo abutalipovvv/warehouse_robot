@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from time import monotonic, sleep
 from typing import Any
 
@@ -69,6 +70,7 @@ class RosRuntimeMessageServiceMixin:
                 "tracking": {},
                 "pose": None,
                 "velocity": {"linear": 0.0, "angular": 0.0},
+                "acceleration": {"linear": 0.0, "angular": 0.0},
                 "battery": None,
             }
 
@@ -80,6 +82,33 @@ class RosRuntimeMessageServiceMixin:
             "yaw": float(getattr(message, "pose_yaw", 0.0)),
         } if connected and localization_ok else None
         state = self._message_state(message)
+        route_nodes = [
+            str(node)
+            for node in list(getattr(message, "route_nodes", []) or [])
+            if str(node)
+        ]
+        final_goal_lm = str(getattr(message, "final_goal_lm", "") or "")
+        route_active = bool(
+            getattr(
+                message,
+                "route_active",
+                state in {"EXECUTING_ROUTE", "MOVING", "WAITING", "PAUSED"},
+            )
+        )
+        route_id = str(getattr(message, "route_id", "") or "")
+        target_lm = str(getattr(message, "target_lm", "") or "")
+        route = None
+        if route_active or route_id or route_nodes or target_lm:
+            route = {
+                "active": route_active,
+                "routeId": route_id,
+                "goalLm": target_lm,
+                "finalGoalLm": final_goal_lm or target_lm,
+                "nodes": route_nodes or ([target_lm] if target_lm else []),
+                "progress": float(getattr(message, "route_progress", 0.0)),
+                "paused": bool(getattr(message, "route_paused", False)),
+                "trajectory": [],
+            }
         payload = {
             "robotId": str(getattr(message, "robot_id", "") or self.robot_name),
             "mapId": str(getattr(message, "map_id", "") or ""),
@@ -89,10 +118,10 @@ class RosRuntimeMessageServiceMixin:
             "statusAgeSec": float(self._status_age_sec() or 0.0),
             "state": state,
             "message": str(getattr(message, "message", "") or ""),
-            "targetLm": str(getattr(message, "target_lm", "") or ""),
+            "targetLm": target_lm,
             "nearestLm": str(getattr(message, "nearest_lm", "") or ""),
             "currentEdgeId": str(getattr(message, "current_edge_id", "") or ""),
-            "routeId": str(getattr(message, "route_id", "") or ""),
+            "routeId": route_id,
             "routeProgress": float(getattr(message, "route_progress", 0.0)),
             "tracking": {
                 "crossTrackError": float(
@@ -133,14 +162,31 @@ class RosRuntimeMessageServiceMixin:
                 "linear": float(getattr(message, "linear_velocity", 0.0)),
                 "angular": float(getattr(message, "angular_velocity", 0.0)),
             },
-            "battery": {
-                "level": float(getattr(message, "battery_level", 0.0)),
-                "voltage": float(getattr(message, "battery_voltage", 0.0)),
-                "current": float(getattr(message, "battery_current", 0.0)),
-                "temperature": float(getattr(message, "battery_temperature", 0.0)),
-                "charging": bool(getattr(message, "battery_charging", False)),
+            "acceleration": {
+                "linear": float(getattr(message, "linear_acceleration", 0.0)),
+                "angular": float(getattr(message, "angular_acceleration", 0.0)),
             },
+            "battery": self._battery_payload(message),
         }
+        if route is not None:
+            payload["route"] = route
         return payload
+
+    @staticmethod
+    def _battery_payload(message: Any) -> dict[str, float | bool] | None:
+        level = float(getattr(message, "battery_level", float("nan")))
+        if not math.isfinite(level) or level < 0.0:
+            return None
+        def finite_metric(name: str) -> float:
+            value = float(getattr(message, name, float("nan")))
+            return value if math.isfinite(value) else 0.0
+
+        return {
+            "level": level,
+            "voltage": finite_metric("battery_voltage"),
+            "current": finite_metric("battery_current"),
+            "temperature": finite_metric("battery_temperature"),
+            "charging": bool(getattr(message, "battery_charging", False)),
+        }
 
 __all__ = ["RosRuntimeMessageServiceMixin"]

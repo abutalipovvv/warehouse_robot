@@ -50,6 +50,9 @@ export class OperatorAppBase {
     this.robotParams = null;
     this.robotParamsRobotId = "";
     this.robotParamsLoaded = false;
+    this.robotParamsSaveTimer = null;
+    this.robotParamsSaveInFlight = false;
+    this.robotParamsSaveQueued = false;
     this.fleetNameEdited = false;
     this.fleetTickPending = false;
     this.mapViewMode = preferences.getString("mapViewMode", "2d");
@@ -346,10 +349,12 @@ export class OperatorAppBase {
     this.inspectorConfidenceText = document.getElementById("inspectorConfidenceText");
     this.poseText = document.getElementById("poseText");
     this.velocityText = document.getElementById("velocityText");
+    this.accelerationText = document.getElementById("accelerationText");
     this.inspectorApiText = document.getElementById("inspectorApiText");
     this.inspectorReasonText = document.getElementById("inspectorReasonText");
     this.robotMessageText = document.getElementById("robotMessageText");
     this.routeNodesText = document.getElementById("routeNodesText");
+    this.robotParamsSyncText = document.getElementById("robotParamsSyncText");
     this.robotEventsLog = document.getElementById("robotEventsLog");
 
     this.addRobotDialog = document.getElementById("addRobotDialog");

@@ -843,6 +843,7 @@ export const withFleetUi = (Base) => class OperatorAppFleetUi extends Base {
     this.setText(this.inspectorConfidenceText, details.confidence);
     this.setText(this.poseText, details.pose);
     this.setText(this.velocityText, details.velocity);
+    this.setText(this.accelerationText, details.acceleration);
     this.setText(this.inspectorApiText, details.api);
     this.setText(this.inspectorReasonText, details.reason);
   }
@@ -853,10 +854,51 @@ export const withFleetUi = (Base) => class OperatorAppFleetUi extends Base {
       : "x: -, y: -, yaw: -";
   }
 
-  formatVelocity(velocity) {
+  formatVelocity(velocity, tracking = null) {
+    if (!velocity) {
+      return "linear: -, angular: -";
+    }
+    const commanded = Number(tracking?.commandedLinear);
+    const commandText = Number.isFinite(commanded)
+      ? ` | command: ${commanded.toFixed(3)} m/s`
+      : "";
     return velocity
-      ? `v: ${Number(velocity.linear || 0).toFixed(3)}, w: ${Number(velocity.angular || 0).toFixed(3)}`
+      ? `linear: ${Number(velocity.linear || 0).toFixed(3)} m/s${commandText} | angular: ${Number(velocity.angular || 0).toFixed(3)} rad/s`
       : "v: -, w: -";
+  }
+
+  formatAcceleration(acceleration) {
+    return acceleration
+      ? `linear: ${Number(acceleration.linear || 0).toFixed(3)} m/s² | angular: ${Number(acceleration.angular || 0).toFixed(3)} rad/s²`
+      : "linear: -, angular: -";
+  }
+
+  renderRouteSequence(nodes, currentLm = "", targetLm = "") {
+    if (!this.routeNodesText) {
+      return;
+    }
+    const sequence = Array.isArray(nodes)
+      ? nodes.map((node) => String(node || "").trim()).filter(Boolean)
+      : [];
+    this.routeNodesText.replaceChildren();
+    if (!sequence.length) {
+      this.routeNodesText.textContent = "No active route.";
+      return;
+    }
+    sequence.forEach((node, index) => {
+      if (index > 0) {
+        const arrow = document.createElement("span");
+        arrow.className = "route-arrow";
+        arrow.textContent = "→";
+        this.routeNodesText.append(arrow);
+      }
+      const item = document.createElement("span");
+      item.className = "route-node";
+      item.classList.toggle("current", node === String(currentLm || ""));
+      item.classList.toggle("target", node === String(targetLm || "") || index === sequence.length - 1);
+      item.textContent = node;
+      this.routeNodesText.append(item);
+    });
   }
 
   formatProgress(value, fallback = "-") {
@@ -1232,13 +1274,14 @@ export const withFleetUi = (Base) => class OperatorAppFleetUi extends Base {
       map: robot.mapId || selected?.identity?.mapId || this.robotMapState.robotActiveMapName || "-",
       currentLm: robot.nearestLm || "-",
       localization: this.robotLocalizationLabel(robot),
-      targetLm: robot.targetLm || "-",
+      targetLm: route?.finalGoalLm || route?.goalLm || robot.targetLm || "-",
       currentEdge: robot.currentEdgeId || "-",
       progress: this.formatProgress(robot.routeProgress, "0%"),
       battery: this.formatBattery(robot),
       confidence: this.formatConfidence(robot),
       pose: this.formatPose(pose),
-      velocity: this.formatVelocity(robot.velocity),
+      velocity: this.formatVelocity(robot.velocity, robot.tracking),
+      acceleration: this.formatAcceleration(robot.acceleration),
       api: this.isRos2Robot(selected)
         ? (String(selected?.type || "").toLowerCase().includes("grpc")
           ? (selected?.baseUrl || `grpc://${selected?.host || "-"}:${selected?.port || 50051}`)
@@ -1249,9 +1292,7 @@ export const withFleetUi = (Base) => class OperatorAppFleetUi extends Base {
     this.robotMessageText.textContent = this.slamActive
       ? (this.slamMapPayload ? "2D SLAM running." : "Waiting for live SLAM map.")
       : (robot.message || (this.operatorMapPayload ? "Robot status ready." : "Pull the active robot map to display Map & Control."));
-    this.routeNodesText.textContent = route && Array.isArray(route.nodes) && route.nodes.length
-      ? route.nodes.join(" -> ")
-      : "No route planned.";
+    this.renderRouteSequence(route?.nodes, robot.nearestLm, route?.finalGoalLm || route?.goalLm || robot.targetLm);
     this.renderEvents(Array.isArray(status.events) ? status.events : []);
     this.syncModeButtons();
     this.syncManualButtons();
@@ -1282,13 +1323,14 @@ export const withFleetUi = (Base) => class OperatorAppFleetUi extends Base {
       map: robot.mapId || selected?.identity?.mapId || this.robotMapState.robotActiveMapName || "-",
       currentLm: robot.nearestLm || "-",
       localization: this.robotLocalizationLabel(robot),
-      targetLm: robot.targetLm || "-",
+      targetLm: route?.finalGoalLm || route?.goalLm || robot.targetLm || "-",
       currentEdge: robot.currentEdgeId || "-",
       progress: this.formatProgress(robot.routeProgress, "0%"),
       battery: this.formatBattery(robot),
       confidence: this.formatConfidence(robot),
       pose: this.formatPose(pose),
-      velocity: this.formatVelocity(robot.velocity),
+      velocity: this.formatVelocity(robot.velocity, robot.tracking),
+      acceleration: this.formatAcceleration(robot.acceleration),
       api: this.isRos2Robot(selected)
         ? (String(selected?.type || "").toLowerCase().includes("grpc")
           ? (selected?.baseUrl || `grpc://${selected?.host || "-"}:${selected?.port || 50051}`)
@@ -1299,9 +1341,7 @@ export const withFleetUi = (Base) => class OperatorAppFleetUi extends Base {
     this.robotMessageText.textContent = this.slamActive
       ? (this.slamMapPayload ? "2D SLAM running." : "Waiting for live SLAM map.")
       : (robot.message || (this.operatorMapPayload ? "Robot status ready." : "Pull the active robot map to display Map & Control."));
-    this.routeNodesText.textContent = route && Array.isArray(route.nodes) && route.nodes.length
-      ? route.nodes.join(" -> ")
-      : "No route planned.";
+    this.renderRouteSequence(route?.nodes, robot.nearestLm, route?.finalGoalLm || route?.goalLm || robot.targetLm);
     this.syncModeButtons();
     this.syncManualButtons();
     if (!this.babylonMapFailed && !this.slamActive) {
@@ -1362,7 +1402,8 @@ export const withFleetUi = (Base) => class OperatorAppFleetUi extends Base {
       battery: this.formatBattery(remoteStatus),
       confidence: this.formatConfidence(remoteStatus),
       pose: this.formatPose(selectedFleetRobot?.pose),
-      velocity: this.formatVelocity(remoteStatus.velocity),
+      velocity: this.formatVelocity(remoteStatus.velocity, remoteStatus.tracking),
+      acceleration: this.formatAcceleration(remoteStatus.acceleration),
       api: routeMeta,
       reason: selectedFleetRobot
         ? (selectedFleetRobot.remoteError || remoteStatus.message || selectedFleetRobot.reason || selectedFleetRobot.routeNote || "-")
@@ -1371,9 +1412,7 @@ export const withFleetUi = (Base) => class OperatorAppFleetUi extends Base {
     this.robotMessageText.textContent = robots.length
       ? `Fleet Manager is supervising ${robots.length} robot(s).`
       : (mode === "robots" ? "Add a robot IP. LM is read from robot status." : "Add a simulation robot from a start LM.");
-    this.routeNodesText.textContent = selectedFleetRobot && Array.isArray(selectedFleetRobot.planNodes) && selectedFleetRobot.planNodes.length
-      ? selectedFleetRobot.planNodes.join(" -> ")
-      : "No active fleet route.";
+    this.renderRouteSequence(selectedFleetRobot?.planNodes, selectedFleetRobot?.currentLm, selectedFleetRobot?.targetLm);
 
     this.renderFleetControls(robots);
     this.renderFleetQueue();
@@ -1435,15 +1474,14 @@ export const withFleetUi = (Base) => class OperatorAppFleetUi extends Base {
       battery: this.formatBattery(remoteStatus),
       confidence: this.formatConfidence(remoteStatus),
       pose: this.formatPose(selectedFleetRobot?.pose),
-      velocity: this.formatVelocity(remoteStatus.velocity),
+      velocity: this.formatVelocity(remoteStatus.velocity, remoteStatus.tracking),
+      acceleration: this.formatAcceleration(remoteStatus.acceleration),
       api: routeMeta,
       reason: selectedFleetRobot
         ? (selectedFleetRobot.remoteError || remoteStatus.message || selectedFleetRobot.reason || selectedFleetRobot.routeNote || "-")
         : `mode: ${mode}`,
     });
-    this.routeNodesText.textContent = selectedFleetRobot && Array.isArray(selectedFleetRobot.planNodes) && selectedFleetRobot.planNodes.length
-      ? selectedFleetRobot.planNodes.join(" -> ")
-      : "No active fleet route.";
+    this.renderRouteSequence(selectedFleetRobot?.planNodes, selectedFleetRobot?.currentLm, selectedFleetRobot?.targetLm);
     this.renderFleetRobotList(robots);
     this.renderFleetQueue();
     this.renderFleetPlanDebug();

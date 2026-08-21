@@ -53,7 +53,7 @@ navigation:
   rejoin_speed_limit: 0.16
   hard_rejoin_speed_limit: 0.06
   strict_edge_tracking: true
-  strict_speed_limit: 0.4
+  strict_speed_limit: 0.8
   edge_transition_tolerance: 0.04
   drive_alignment_angle_deg: 12
   lateral_error_gain: 3
@@ -63,14 +63,39 @@ navigation:
   goal_precision_speed_limit: 0.08
   goal_precision_min_speed: 0.01
   goal_precision_linear_gain: 1.2
+  tracking_controller: pid
   tracking_pid:
     enabled: true
-    kp: [2.2, 2.2]
-    ki: [0.04, 0.01]
-    kd: [0.06, 0.03]
-    integral_limit: [0.35, 0.35]
+    kp:
+    - 2.2
+    - 2.2
+    ki:
+    - 0.04
+    - 0.01
+    kd:
+    - 0.06
+    - 0.03
+    integral_limit:
+    - 0.35
+    - 0.35
     derivative_filter_alpha: 0.25
-    curvature_feedforward_gain: 1.0
+    curvature_feedforward_gain: 1
+  tracking_lqr:
+    q_lateral: 5
+    q_heading: 2.5
+    r_angular: 1
+    min_model_speed: 0.08
+    speed_resolution: 0.02
+    riccati_iterations: 80
+    riccati_tolerance: 1.0e-09
+    curvature_feedforward_gain: 1
+  trajectory_speed_profile:
+    enabled: true
+    max_forward_speed: 0.8
+    max_backward_speed: 0.3
+    max_lateral_acceleration: 0.2
+    max_jerk: 1.5
+    jerk_smoothing_iterations: 3
 planner:
   nearest_lm_tolerance: 0.05
   trajectory_sample_distance: 0.01

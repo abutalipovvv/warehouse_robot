@@ -319,7 +319,10 @@
                 </div>
               </section>
               <section id="robotParamsPanel" class="panel-block robot-params-panel hidden">
-                <div class="block-title">Robot Params</div>
+                <div class="robot-params-title-row">
+                  <div class="block-title">Robot Params</div>
+                  <span id="robotParamsSyncText" class="params-sync-state" data-state="">Not loaded</span>
+                </div>
                 <div id="robotParamsSummary" class="robot-params-summary"></div>
                 <div id="robotParamsTable" class="robot-params-table"></div>
                 <textarea id="robotParamsJsonInput" class="params-json-input hidden" spellcheck="false"></textarea>
@@ -420,7 +423,7 @@
                       <strong id="inspectorModeText">-</strong>
                     </div>
                     <div>
-                      <span>Status</span>
+                      <span>General Status</span>
                       <strong id="robotStateText">-</strong>
                     </div>
                     <div>
@@ -456,7 +459,7 @@
                       <strong id="localizationText">-</strong>
                     </div>
                     <div>
-                      <span>Target</span>
+                      <span>Destination LM</span>
                       <strong id="targetLmText">-</strong>
                     </div>
                     <div>
@@ -476,12 +479,16 @@
                       <strong id="inspectorConfidenceText">-</strong>
                     </div>
                     <div class="wide">
-                      <span>Pose</span>
+                      <span>Coordinates</span>
                       <strong id="poseText">x: -, y: -, yaw: -</strong>
                     </div>
-                    <div class="wide optional-status">
-                      <span>Velocity</span>
+                    <div class="wide">
+                      <span>Speed</span>
                       <strong id="velocityText">v: -, w: -</strong>
+                    </div>
+                    <div class="wide">
+                      <span>Acceleration</span>
+                      <strong id="accelerationText">a: -, alpha: -</strong>
                     </div>
                     <div class="wide optional-status">
                       <span>API / Route</span>
@@ -495,7 +502,7 @@
                 </section>
 
                 <section class="panel-block">
-                  <div class="block-title">Active Route</div>
+                  <div class="block-title">Current Route · LM Sequence</div>
                   <div id="routeNodesText" class="route-sequence">No route planned.</div>
                 </section>
               </aside>

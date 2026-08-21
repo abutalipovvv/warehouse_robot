@@ -9,6 +9,7 @@ from nav_msgs.msg import Odometry
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
 from rclpy.time import Time
+from sensor_msgs.msg import BatteryState
 from tf2_ros import Buffer, TransformException, TransformListener
 
 from robot_msgs.msg import ExecutorState, RobotStatus
@@ -29,6 +30,13 @@ ODOM_QOS = QoSProfile(
     durability=DurabilityPolicy.VOLATILE,
 )
 
+BMS_QOS = QoSProfile(
+    history=HistoryPolicy.KEEP_LAST,
+    depth=10,
+    reliability=ReliabilityPolicy.BEST_EFFORT,
+    durability=DurabilityPolicy.VOLATILE,
+)
+
 
 def quaternion_to_yaw(x: float, y: float, z: float, w: float) -> float:
     siny_cosp = 2.0 * ((w * z) + (x * y))
@@ -45,6 +53,7 @@ class RobotStatusNode(Node):
         amcl_topic: str,
         odom_topic: str,
         cmd_vel_topic: str,
+        battery_topic: str,
         status_topic: str,
         executor_status_topic: str,
         load_map_service_name: str,
@@ -61,6 +70,10 @@ class RobotStatusNode(Node):
         self._pose_updated_at: float | None = None
         self._last_tf_pose_at: float | None = None
         self._velocity = {"linear": 0.0, "angular": 0.0}
+        self._acceleration = {"linear": 0.0, "angular": 0.0}
+        self._velocity_updated_at: float | None = None
+        self._battery: dict[str, float | bool] | None = None
+        self._battery_updated_at: float | None = None
         self._last_localization_fix_at: float | None = None
         self._last_manual_cmd_at: float | None = None
         self._executor_state = self._default_executor_state()
@@ -71,6 +84,7 @@ class RobotStatusNode(Node):
         self.create_subscription(PoseWithCovarianceStamped, amcl_topic, self._on_amcl_pose, AMCL_QOS)
         self.create_subscription(Odometry, odom_topic, self._on_odom, ODOM_QOS)
         self.create_subscription(Twist, cmd_vel_topic, self._on_cmd_vel, 20)
+        self.create_subscription(BatteryState, battery_topic, self._on_battery, BMS_QOS)
         self.create_subscription(ExecutorState, executor_status_topic, self._on_executor_state, 20)
         self.create_service(LoadRobotMap, load_map_service_name, self._handle_load_map)
         self.create_timer(0.03, self._publish_status)
@@ -88,11 +102,55 @@ class RobotStatusNode(Node):
         self._update_pose_from_tf()
 
     def _on_odom(self, message: Odometry) -> None:
-        self._velocity = {
+        now = monotonic()
+        velocity = {
             "linear": float(message.twist.twist.linear.x),
             "angular": float(message.twist.twist.angular.z),
         }
+        if self._velocity_updated_at is not None:
+            elapsed = now - self._velocity_updated_at
+            if 0.001 <= elapsed <= 1.0:
+                smoothing = 0.35
+                linear = (velocity["linear"] - self._velocity["linear"]) / elapsed
+                angular = (velocity["angular"] - self._velocity["angular"]) / elapsed
+                self._acceleration = {
+                    "linear": ((1.0 - smoothing) * self._acceleration["linear"]) + (smoothing * linear),
+                    "angular": ((1.0 - smoothing) * self._acceleration["angular"]) + (smoothing * angular),
+                }
+        self._velocity = velocity
+        self._velocity_updated_at = now
         self._update_pose_from_tf()
+
+    def _on_battery(self, message: BatteryState) -> None:
+        percentage = float(message.percentage)
+        voltage = float(message.voltage)
+        current = float(message.current)
+        temperature = float(message.temperature)
+        if not math.isfinite(temperature):
+            cell_temperatures = [
+                float(value)
+                for value in message.cell_temperature
+                if math.isfinite(float(value))
+            ]
+            temperature = (
+                sum(cell_temperatures) / len(cell_temperatures)
+                if cell_temperatures
+                else float("nan")
+            )
+        if not math.isfinite(percentage) or percentage < 0.0:
+            percentage = float("nan")
+        charging_states = {
+            BatteryState.POWER_SUPPLY_STATUS_CHARGING,
+            BatteryState.POWER_SUPPLY_STATUS_FULL,
+        }
+        self._battery = {
+            "level": percentage,
+            "voltage": voltage,
+            "current": current,
+            "temperature": temperature,
+            "charging": int(message.power_supply_status) in charging_states,
+        }
+        self._battery_updated_at = monotonic()
 
     def _on_cmd_vel(self, message: Twist) -> None:
         linear = float(message.linear.x)
@@ -117,6 +175,8 @@ class RobotStatusNode(Node):
             "targetLm": str(message.target_lm or ""),
             "currentEdgeId": str(message.current_edge_id or ""),
             "routeId": str(message.route_id or ""),
+            "routeNodes": [str(node) for node in message.route_nodes if str(node)],
+            "finalGoalLm": str(message.final_goal_lm or ""),
             "routeProgress": float(message.route_progress),
             "tracking": {
                 "crossTrackError": float(
@@ -265,6 +325,10 @@ class RobotStatusNode(Node):
         status.nearest_lm = nearest_name
         status.current_edge_id = str(executor_state.get("currentEdgeId") or "")
         status.route_id = str(executor_state.get("routeId") or "")
+        status.route_active = route_active
+        status.route_paused = route_paused
+        status.route_nodes = list(executor_state.get("routeNodes") or [])
+        status.final_goal_lm = str(executor_state.get("finalGoalLm") or "")
         status.route_progress = float(executor_state.get("routeProgress", 0.0) or 0.0)
         tracking = (
             executor_state.get("tracking")
@@ -309,6 +373,22 @@ class RobotStatusNode(Node):
             status.pose_yaw = float(pose["yaw"])
         status.linear_velocity = float(self._velocity.get("linear", 0.0) or 0.0)
         status.angular_velocity = float(self._velocity.get("angular", 0.0) or 0.0)
+        status.linear_acceleration = float(self._acceleration.get("linear", 0.0) or 0.0)
+        status.angular_acceleration = float(self._acceleration.get("angular", 0.0) or 0.0)
+        battery = self._battery
+        if self._battery_updated_at is None or monotonic() - self._battery_updated_at > 10.0:
+            battery = None
+        if battery is None:
+            status.battery_level = float("nan")
+            status.battery_voltage = float("nan")
+            status.battery_current = float("nan")
+            status.battery_temperature = float("nan")
+        else:
+            status.battery_level = float(battery["level"])
+            status.battery_voltage = float(battery["voltage"])
+            status.battery_current = float(battery["current"])
+            status.battery_temperature = float(battery["temperature"])
+            status.battery_charging = bool(battery["charging"])
         self.status_pub.publish(status)
         if localization_ok != self._last_reported_localization_ok:
             self._last_reported_localization_ok = localization_ok
@@ -334,6 +414,8 @@ class RobotStatusNode(Node):
             "targetLm": "",
             "currentEdgeId": "",
             "routeId": "",
+            "routeNodes": [],
+            "finalGoalLm": "",
             "routeProgress": 0.0,
             "tracking": {},
         }

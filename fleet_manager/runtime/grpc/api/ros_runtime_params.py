@@ -16,6 +16,8 @@ NAV2_RUNTIME_PARAMETERS: tuple[tuple[str, str, str], ...] = (
     ("nav2.amcl.min_particles", "/amcl/set_parameters", "min_particles"),
     ("nav2.amcl.max_particles", "/amcl/set_parameters", "max_particles"),
     ("nav2.controller_server.controller_frequency", "/controller_server/set_parameters", "controller_frequency"),
+    ("nav2.controller_server.xy_goal_tolerance", "/controller_server/set_parameters", "general_goal_checker.xy_goal_tolerance"),
+    ("nav2.controller_server.yaw_goal_tolerance", "/controller_server/set_parameters", "general_goal_checker.yaw_goal_tolerance"),
     ("nav2.controller_server.follow_path.vx_max", "/controller_server/set_parameters", "FollowPath.vx_max"),
     ("nav2.controller_server.follow_path.vx_min", "/controller_server/set_parameters", "FollowPath.vx_min"),
     ("nav2.controller_server.follow_path.wz_max", "/controller_server/set_parameters", "FollowPath.wz_max"),
@@ -70,22 +72,25 @@ class RosRuntimeParametersMixin:
             self.params_path,
             yaml.safe_dump(params_payload, allow_unicode=True, sort_keys=False),
         )
+        saved_payload = yaml.safe_load(self.params_path.read_text(encoding="utf-8"))
+        if saved_payload != params_payload:
+            raise ValueError("params verification failed after atomic write")
         warnings = []
         reloaded = False
         if reload_runtime:
+            # Route/status nodes hot-reload params.yaml. Reloading the map just
+            # to apply parameters would unnecessarily reset localization.
+            reloaded = True
             try:
                 reloaded = self._apply_nav2_runtime_params(params_payload, previous_payload=previous_payload) or reloaded
             except Exception as exc:
                 warnings.append(f"Nav2 runtime apply failed: {exc}")
-            try:
-                reloaded = self._reload_route_status_params() or reloaded
-            except Exception as exc:
-                warnings.append(f"route/status reload failed: {exc}")
         return {
             "ok": True,
-            "params": params_payload,
+            "params": saved_payload,
             "path": str(self.params_path),
             "reloaded": reloaded,
+            "verified": True,
             "warning": "; ".join(warnings),
         }
 

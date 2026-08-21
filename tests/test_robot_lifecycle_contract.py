@@ -84,7 +84,7 @@ def test_status_roundtrip_preserves_lifecycle_fields_in_raw_json() -> None:
     assert decoded["localizationConfirmed"] is False
 
 
-def test_operator_seize_stops_previous_autonomous_route_without_force() -> None:
+def test_operator_seize_forces_takeover_and_stops_previous_route() -> None:
     state = OperatorAppState.__new__(OperatorAppState)
     adapter = _TakeoverAdapter()
     state.grpc_adapter = adapter
@@ -103,7 +103,7 @@ def test_operator_seize_stops_previous_autonomous_route_without_force() -> None:
     assert payload["navigationStopped"] is True
     assert payload["status"]["robot"]["state"] == "IDLE"
     assert adapter.calls == [
-        ("acquire", "grpc://127.0.0.1:50051", "operator-app", False),
+        ("acquire", "grpc://127.0.0.1:50051", "operator-app", True),
         ("stop", "grpc://127.0.0.1:50051", "operator-app"),
     ]
 
@@ -113,12 +113,12 @@ def test_operator_ui_uses_exclusive_control_and_graph_safe_fleet_pose() -> None:
     styles = (OPERATOR_STATIC_ROOT / "styles.css").read_text(encoding="utf-8")
     index_html = (OPERATOR_STATIC_ROOT / "index.html").read_text(encoding="utf-8")
 
-    assert 'acquireRobotControl(false, true)' in app_js
+    assert 'acquireRobotControl(true, true)' in app_js
     assert 'stopNavigation: true' in app_js
     assert '? this.releaseFleetRobotControl()' in app_js
     assert ': this.acquireFleetRobotControl()' in app_js
     assert '? this.releaseRobotControl()' in app_js
-    assert ': this.acquireRobotControl(false, true)' in app_js
+    assert ': this.acquireRobotControl(true, true)' in app_js
     assert 'this.fleetApiPath("/robots/control/acquire")' in app_js
     assert 'this.fleetApiPath("/robots/control/release")' in app_js
     assert 'remoteStatus === "object"' in app_js
@@ -129,7 +129,7 @@ def test_operator_ui_uses_exclusive_control_and_graph_safe_fleet_pose() -> None:
     assert 'classList.toggle("control-state-owned", ownsControl)' in app_js
     assert 'classList.toggle("control-state-free", !control.ownerId)' in app_js
     assert "this.controlToggleButton.disabled = mappingActive;" in app_js
-    assert "Release it there before seizing here." in app_js
+    assert "Click to take control." in app_js
     assert "#controlToggleButton.control-state-owned" in styles
     assert "#controlToggleButton.control-state-free" in styles
     assert 'Navigation blocked. Press Seize Control first.' in app_js

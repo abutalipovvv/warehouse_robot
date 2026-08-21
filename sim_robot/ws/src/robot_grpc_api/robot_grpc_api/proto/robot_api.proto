@@ -83,6 +83,12 @@ message RobotStatus {
   float battery_temperature = 21;
   bool battery_charging = 22;
   string raw_json = 23;
+  double linear_acceleration = 24;
+  double angular_acceleration = 25;
+  bool route_active = 26;
+  bool route_paused = 27;
+  repeated string route_nodes = 28;
+  string final_goal_lm = 29;
 }
 
 message StatusResponse {

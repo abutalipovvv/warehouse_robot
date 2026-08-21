@@ -194,6 +194,7 @@ DEFAULT_ROUTE_PARAMS: dict[str, Any] = {
         "goal_precision_speed_limit": 0.08,
         "goal_precision_min_speed": 0.01,
         "goal_precision_linear_gain": 1.20,
+        "tracking_controller": "pid",
         "tracking_pid": {
             "enabled": True,
             "kp": [2.20, 2.20],
@@ -204,6 +205,24 @@ DEFAULT_ROUTE_PARAMS: dict[str, Any] = {
             "dt_min": 0.005,
             "dt_max": 0.20,
             "curvature_feedforward_gain": 1.0,
+        },
+        "tracking_lqr": {
+            "q_lateral": 5.0,
+            "q_heading": 2.5,
+            "r_angular": 1.0,
+            "min_model_speed": 0.08,
+            "speed_resolution": 0.02,
+            "riccati_iterations": 80,
+            "riccati_tolerance": 1.0e-9,
+            "curvature_feedforward_gain": 1.0,
+        },
+        "trajectory_speed_profile": {
+            "enabled": True,
+            "max_forward_speed": 0.40,
+            "max_backward_speed": 0.30,
+            "max_lateral_acceleration": 0.20,
+            "max_jerk": 1.50,
+            "jerk_smoothing_iterations": 3,
         },
     },
     "planner": {

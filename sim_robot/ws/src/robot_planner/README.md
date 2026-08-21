@@ -7,7 +7,7 @@ coordination; it consumes either a goal LM or an already coordinated LM route.
 
 ```text
 robot_planner/
-├── control/       PID feedback and controller parameters
+├── control/       PID/LQR feedback and trajectory speed profiles
 ├── execution/     route state machine and velocity command policy
 ├── math/          NumPy trajectory geometry and projections
 ├── planning/      current-pose/LM route construction
@@ -34,8 +34,9 @@ modules are intentionally not kept.
    the active graph edge and enforces LM boundaries, traffic time gates, and
    motion-direction changes. The anchor is kept between consecutive route
    chunks and reset when the map or `/initialpose` changes.
-5. `PidController` combines lateral and heading error with curvature
-   feed-forward and publishes differential-drive `(linear.x, angular.z)`.
+5. The selected `PidController` or `LqrController` combines lateral and
+   heading error with curvature feed-forward and publishes differential-drive
+   `(linear.x, angular.z)`. PID remains the default controller.
 
 ## MAPF contract
 
@@ -87,10 +88,19 @@ to interpolate continuously between samples.
 
 ## Speed and precise arrival
 
-`SpeedProfiler` applies acceleration limiting, curvature/error caps, a braking
-envelope and a dedicated final-approach speed below
-`planner.precision_start_distance`. `stop_distance` starts braking but is not
-the arrival tolerance.
+`TrajectorySpeedProfile` first builds a NumPy velocity envelope for the whole
+route. It combines forward/backward limits, curvature, lateral acceleration,
+angular reserve, acceleration/deceleration passes and discrete jerk smoothing.
+This makes the robot brake before a Bezier curve rather than only after it has
+entered the curve.
+
+`SpeedProfiler` then applies the live acceleration limit, tracking-error caps
+and a dedicated final-approach speed below `planner.precision_start_distance`.
+`stop_distance` starts braking but is not the arrival tolerance.
+
+Set `navigation.tracking_controller` to `pid` or `lqr`. Controller parameters
+live in `tracking_pid` and `tracking_lqr`; changing the mode does not change LM
+planning, active-edge projection or traffic gates.
 
 Arrival requires all of the following for several consecutive control cycles:
 
@@ -110,5 +120,5 @@ is `/cmd_vel`. A route is allowed to finish only when both position and final
 yaw are stable within configured tolerances. `/robot_executor_state` and the
 gRPC status `tracking` object expose current/max/mean cross-track error, heading
 and goal errors, commanded velocity, and arrival stability counters. INFO logs
-report lifecycle events and edge changes; detailed PID terms stay at DEBUG
-level.
+report lifecycle events and edge changes; detailed PID/LQR terms and the
+precomputed speed reference stay at DEBUG level.

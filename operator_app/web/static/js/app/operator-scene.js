@@ -851,19 +851,15 @@ export const withSceneNavigation = (Base) => class OperatorAppSceneNavigation ex
       this.resumeRouteButton.disabled = mappingActive || !paused;
     }
     if (this.controlToggleButton) {
-      // Keep a foreign-owned control visible and clickable. Acquire remains
-      // non-forcing, so the robot rejects an actual takeover, but the click
-      // now reports the owner instead of looking like an ignored button. It
-      // also recovers immediately when only the displayed status was stale.
+      // Explicit Seize transfers ownership. Motion and navigation commands
+      // never acquire control implicitly.
       this.controlToggleButton.disabled = mappingActive;
       this.controlToggleButton.classList.toggle("control-state-owned", ownsControl);
       this.controlToggleButton.classList.toggle("control-state-free", !control.ownerId);
       this.controlToggleButton.classList.toggle("control-state-foreign", foreignControl);
-      this.controlToggleButton.textContent = foreignControl
-        ? `Controlled by ${control.ownerName || control.ownerId}`
-        : (ownsControl ? "Release Control" : "Seize Control");
+      this.controlToggleButton.textContent = ownsControl ? "Release Control" : "Seize Control";
       this.controlToggleButton.title = foreignControl
-        ? `Control belongs to ${control.ownerName || control.ownerId}. Release it there before seizing here.`
+        ? `Currently controlled by ${control.ownerName || control.ownerId}. Click to take control.`
         : "";
     }
     if (!relocateArmed) {
@@ -993,7 +989,7 @@ export const withSceneNavigation = (Base) => class OperatorAppSceneNavigation ex
     }
     return ownsControl
       ? this.releaseRobotControl()
-      : this.acquireRobotControl(false, true);
+      : this.acquireRobotControl(true, true);
   }
 
   async acquireRobotControl(force = false, announce = true) {

@@ -21,10 +21,14 @@ if str(ROBOT_PLANNER_SRC) not in sys.path:
 from robot_planner.control import (
     ArrivalMonitor,
     ArrivalParameters,
+    LqrController,
+    LqrParameters,
     PidController,
     PidParameters,
     SpeedProfileParameters,
     SpeedProfiler,
+    TrajectorySpeedParameters,
+    TrajectorySpeedProfile,
 )
 from robot_planner.execution import (
     RouteControlParameters,
@@ -277,6 +281,82 @@ def test_speed_profiler_slows_to_millimetre_goal_without_speed_floor() -> None:
     assert profiler.step(0.5, 0.005, params) == pytest.approx(0.0)
 
 
+def test_trajectory_speed_profile_brakes_before_curve_and_goal() -> None:
+    points = [
+        RoutePoint(float(x), 0.0, 0.0, "A->B")
+        for x in np.linspace(0.0, 1.0, 101)
+    ]
+    points.extend(
+        RoutePoint(
+            1.0 + 0.5 * math.sin(angle),
+            0.5 - 0.5 * math.cos(angle),
+            angle,
+            "B->C",
+        )
+        for angle in np.linspace(0.01, math.pi / 2.0, 157)
+    )
+    trajectory = TrajectoryArray.from_route_points(points)
+    params = TrajectorySpeedParameters.from_payload(
+        {
+            "navigation": {
+                "route_speed": 1.0,
+                "strict_speed_limit": 1.0,
+                "max_linear_acceleration": 0.5,
+                "max_linear_deceleration": 0.8,
+                "curve_speed_limit": 0.3,
+                "trajectory_speed_profile": {
+                    "max_forward_speed": 1.0,
+                    "max_backward_speed": 0.4,
+                    "max_lateral_acceleration": 0.2,
+                    "max_jerk": 1.5,
+                },
+            }
+        }
+    )
+
+    profile = TrajectorySpeedProfile.build(trajectory, params)
+
+    assert profile.speed_at(0.2) == pytest.approx(1.0)
+    assert profile.speed_at(0.8) < 0.65
+    assert profile.speed_at(1.2) <= 0.3
+    assert profile.speed_at(trajectory.length) == pytest.approx(0.0)
+    assert float(profile.acceleration.max()) <= 0.5 + 1e-9
+    assert float(profile.acceleration.min()) >= -0.8 - 1e-9
+    assert not profile.speed_limits.flags.writeable
+
+
+def test_trajectory_speed_profile_has_separate_backward_limit() -> None:
+    trajectory = TrajectoryArray.from_route_points(
+        [
+            RoutePoint(
+                index * 0.1,
+                0.0,
+                math.pi,
+                "A->B",
+                motion_direction="backward",
+            )
+            for index in range(21)
+        ]
+    )
+    params = TrajectorySpeedParameters.from_payload(
+        {
+            "navigation": {
+                "route_speed": 1.0,
+                "strict_speed_limit": 1.0,
+                "trajectory_speed_profile": {
+                    "max_forward_speed": 0.8,
+                    "max_backward_speed": 0.3,
+                },
+            }
+        }
+    )
+
+    profile = TrajectorySpeedProfile.build(trajectory, params)
+
+    assert profile.speed_at(0.0) == pytest.approx(0.3)
+    assert float(profile.speed_limits.max()) <= 0.3
+
+
 def test_arrival_requires_five_stationary_precision_cycles() -> None:
     params = ArrivalParameters.from_payload(
         {
@@ -322,13 +402,16 @@ def test_arrival_requires_five_stationary_precision_cycles() -> None:
     ("motion_direction", "start_yaw"),
     (("forward", 0.0), ("backward", math.pi)),
 )
+@pytest.mark.parametrize("tracking_controller", ("pid", "lqr"))
 def test_executor_arrives_within_five_millimetres(
     motion_direction: str,
     start_yaw: float,
+    tracking_controller: str,
 ) -> None:
     payload = {
         "navigation": {
             "route_speed": 0.5,
+            "tracking_controller": tracking_controller,
             "strict_speed_limit": 0.5,
             "control_period": 0.05,
             "max_linear_acceleration": 0.5,
@@ -595,6 +678,117 @@ def test_pid_anti_windup_does_not_integrate_into_saturation() -> None:
 
     assert output == pytest.approx(0.5)
     assert controller.last_terms.integral == pytest.approx(0.0)
+
+
+def test_lqr_uses_lateral_heading_and_curvature_terms() -> None:
+    controller = LqrController(LqrParameters.from_payload({}))
+
+    lateral_output = controller.step(
+        cross_track_error=0.2,
+        heading_error=0.0,
+        linear_speed=0.3,
+        curvature=0.0,
+        max_output=1.0,
+        dt=0.05,
+    )
+    heading_output = controller.step(
+        cross_track_error=0.0,
+        heading_error=0.2,
+        linear_speed=0.3,
+        curvature=0.0,
+        max_output=1.0,
+        dt=0.05,
+    )
+    feedforward_output = controller.step(
+        cross_track_error=0.0,
+        heading_error=0.0,
+        linear_speed=0.3,
+        curvature=1.0,
+        max_output=1.0,
+        dt=0.05,
+    )
+
+    assert lateral_output < 0.0
+    assert heading_output > 0.0
+    assert feedforward_output == pytest.approx(0.3)
+
+
+@pytest.mark.parametrize(
+    ("motion_direction", "start_yaw"),
+    (("forward", 0.0), ("backward", math.pi)),
+)
+def test_lqr_tracking_controller_returns_robot_to_straight_path(
+    motion_direction: str,
+    start_yaw: float,
+) -> None:
+    payload = {
+        "navigation": {
+            "route_speed": 0.30,
+            "tracking_controller": "lqr",
+            "max_angular_speed": 0.9,
+        },
+        "planner": {"on_route_tolerance": 0.12},
+    }
+    control = RouteControlParameters.from_payload(payload)
+    controller = LqrController(LqrParameters.from_payload(payload))
+    trajectory = TrajectoryArray.from_route_points(
+        [
+            RoutePoint(
+                index * 0.05,
+                0.0,
+                start_yaw,
+                "A->B",
+                motion_direction=motion_direction,
+            )
+            for index in range(121)
+        ]
+    )
+    executor = object.__new__(RouteExecutor)
+    route = type("Route", (), {"goal_lm": "B"})()
+    pose = Pose2D(x=0.0, y=0.25, yaw=start_yaw)
+    hint_index = 0
+    dt = 0.05
+
+    for _ in range(300):
+        projection = trajectory.project((pose.x, pose.y), hint_index)
+        hint_index = projection.index
+        steering = executor._route_steering_state_array(
+            trajectory,
+            pose,
+            projection,
+            hint_index,
+            trajectory.length,
+            control,
+        )
+        linear, angular, _ = executor._route_drive_command(
+            route,
+            RouteProgress(
+                distance_to_goal=math.hypot(6.0 - pose.x, pose.y),
+                final_yaw_error=0.0,
+                remaining_distance=trajectory.length - projection.s,
+            ),
+            steering,
+            control,
+        )
+        if abs(linear) > 1e-6:
+            angular = controller.step(
+                cross_track_error=steering.cross_track_error,
+                heading_error=steering.heading_control_error,
+                linear_speed=linear,
+                curvature=steering.path_curvature,
+                max_output=control.max_angular,
+                dt=dt,
+            )
+        else:
+            controller.reset()
+        pose.x += linear * math.cos(pose.yaw) * dt
+        pose.y += linear * math.sin(pose.yaw) * dt
+        pose.yaw = TrajectoryMath.normalize_angle(pose.yaw + angular * dt)
+
+    assert control.tracking_controller == "lqr"
+    assert pose.x > 2.5
+    assert abs(pose.y) < 0.005
+    assert abs(TrajectoryMath.normalize_angle(pose.yaw - start_yaw)) < 0.005
 
 
 def test_pid_tracking_controller_returns_robot_to_straight_path() -> None:
@@ -1036,7 +1230,10 @@ def test_edge_curvature_does_not_leak_into_previous_straight_edge() -> None:
     assert np.max(np.abs(trajectory.curvature[3:])) > 0.1
 
 
-def test_strict_tracking_follows_curve_without_cutting_inside() -> None:
+@pytest.mark.parametrize("tracking_controller", ("pid", "lqr"))
+def test_strict_tracking_follows_curve_without_cutting_inside(
+    tracking_controller: str,
+) -> None:
     trajectory = TrajectoryArray.from_route_points(
         [
             RoutePoint(
@@ -1051,6 +1248,7 @@ def test_strict_tracking_follows_curve_without_cutting_inside() -> None:
     payload = {
         "navigation": {
             "route_speed": 0.4,
+            "tracking_controller": tracking_controller,
             "curve_speed_limit": 0.25,
             "footprint_lookahead": 0.65,
             "max_angular_speed": 0.9,
@@ -1059,7 +1257,8 @@ def test_strict_tracking_follows_curve_without_cutting_inside() -> None:
         "planner": {"on_route_tolerance": 0.1},
     }
     control = RouteControlParameters.from_payload(payload)
-    controller = PidController(PidParameters.from_payload(payload))
+    pid = PidController(PidParameters.from_payload(payload))
+    lqr = LqrController(LqrParameters.from_payload(payload))
     executor = object.__new__(RouteExecutor)
     route = type("Route", (), {"goal_lm": "B"})()
     pose = Pose2D(x=0.0, y=0.0, yaw=0.0)
@@ -1093,12 +1292,25 @@ def test_strict_tracking_follows_curve_without_cutting_inside() -> None:
             steering,
             control,
         )
-        angular = controller.step(
-            (steering.lateral_control_error, steering.heading_control_error),
-            feedforward=abs(linear) * steering.path_curvature,
-            max_output=control.max_angular,
-            dt=dt,
-        )
+        if tracking_controller == "lqr":
+            angular = lqr.step(
+                cross_track_error=steering.cross_track_error,
+                heading_error=steering.heading_control_error,
+                linear_speed=linear,
+                curvature=steering.path_curvature,
+                max_output=control.max_angular,
+                dt=dt,
+            )
+        else:
+            angular = pid.step(
+                (
+                    steering.lateral_control_error,
+                    steering.heading_control_error,
+                ),
+                feedforward=abs(linear) * steering.path_curvature,
+                max_output=control.max_angular,
+                dt=dt,
+            )
         pose.x += linear * math.cos(pose.yaw) * dt
         pose.y += linear * math.sin(pose.yaw) * dt
         pose.yaw = math.atan2(

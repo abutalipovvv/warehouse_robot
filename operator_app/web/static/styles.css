@@ -2188,7 +2188,7 @@ body[data-fleet-page="fleet"] #driveActionGroup .robot-action-grid button {
 }
 
 .inspector-grid .wide {
-  grid-column: auto;
+  grid-column: 1 / -1;
 }
 
 .inspector-grid .optional-status {
@@ -2219,8 +2219,65 @@ body[data-fleet-page="fleet"] #driveActionGroup .robot-action-grid button {
 }
 
 .route-sequence {
-  max-height: 4.8rem;
-  overflow: hidden;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3rem;
+  max-height: 9rem;
+  overflow: auto;
+}
+
+.route-node {
+  color: var(--text);
+  background: var(--panel-soft);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.2rem 0.46rem;
+  font-weight: 750;
+}
+
+.route-node.current {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
+}
+
+.route-node.target {
+  color: var(--success);
+  border-color: color-mix(in srgb, var(--success) 55%, var(--border));
+}
+
+.route-arrow {
+  color: var(--muted);
+}
+
+.robot-params-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
+
+.params-sync-state {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 800;
+  padding: 0.22rem 0.5rem;
+}
+
+.params-sync-state[data-state="ok"] {
+  color: var(--success);
+  border-color: color-mix(in srgb, var(--success) 55%, var(--border));
+}
+
+.params-sync-state[data-state="warning"],
+.params-sync-state[data-state="syncing"] {
+  color: var(--warning);
+}
+
+.params-sync-state[data-state="error"] {
+  color: var(--danger);
 }
 
 .event-log {

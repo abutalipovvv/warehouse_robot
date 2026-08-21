@@ -8071,7 +8071,7 @@ def test_fleet_commands_require_explicit_control_acquire() -> None:
     assert adapter.acquire_calls == []
 
 
-def test_fleet_control_acquire_and_release_use_non_forced_lease() -> None:
+def test_fleet_control_acquire_forces_safe_takeover_and_release_is_owner_only() -> None:
     manager = _remote_manager()
     adapter = _RemoteControlAdapter()
     manager.remote_adapter = adapter
@@ -8090,10 +8090,11 @@ def test_fleet_control_acquire_and_release_use_non_forced_lease() -> None:
             "endpoint": "grpc://robot1:50051",
             "owner_id": FLEET_CONTROL_OWNER_ID,
             "owner_name": "Fleet Manager",
-            "force": False,
+            "force": True,
             "lease_ms": 0,
         }
     ]
+    assert adapter.stop_calls[-1]["owner_id"] == FLEET_CONTROL_OWNER_ID
     assert acquired["robot"]["remoteStatus"]["controlOwner"] == FLEET_CONTROL_OWNER_ID
 
     released = manager.release_robot_control({"name": "r1"})
@@ -8109,7 +8110,7 @@ def test_fleet_control_acquire_and_release_use_non_forced_lease() -> None:
     assert released["robot"]["remoteStatus"]["controlOwner"] == ""
 
 
-def test_fleet_control_never_steals_operator_lease() -> None:
+def test_fleet_control_seize_transfers_operator_lease() -> None:
     manager = _remote_manager()
     adapter = _RemoteControlAdapter(
         owner_id="operator-app",
@@ -8124,11 +8125,12 @@ def test_fleet_control_never_steals_operator_lease() -> None:
     )
     manager.robots[robot.name] = robot
 
-    with pytest.raises(ValueError, match="cannot seize control.*Operator App"):
-        manager.acquire_robot_control({"name": "r1"})
+    acquired = manager.acquire_robot_control({"name": "r1"})
 
-    assert adapter.owner_id == "operator-app"
-    assert adapter.acquire_calls[0]["force"] is False
+    assert adapter.owner_id == FLEET_CONTROL_OWNER_ID
+    assert adapter.acquire_calls[0]["force"] is True
+    assert adapter.stop_calls[-1]["owner_id"] == FLEET_CONTROL_OWNER_ID
+    assert acquired["robot"]["remoteStatus"]["controlOwner"] == FLEET_CONTROL_OWNER_ID
 
 
 def test_far_order_selects_a_reachable_prefix_before_time_aware_mapf() -> None:
@@ -15303,7 +15305,7 @@ class _RemoteControlAdapter:
     def acquire_control(self, endpoint: str, **kwargs) -> dict[str, object]:
         self.acquire_calls.append({"endpoint": endpoint, **kwargs})
         requested_owner = str(kwargs.get("owner_id") or "")
-        if self.owner_id and self.owner_id != requested_owner:
+        if self.owner_id and self.owner_id != requested_owner and not kwargs.get("force"):
             raise ValueError(f"control is owned by {self.owner_name or self.owner_id}")
         self.owner_id = requested_owner
         self.owner_name = str(kwargs.get("owner_name") or requested_owner)

@@ -195,9 +195,7 @@ class RobotControlProxyMixin:
                     endpoint,
                     owner_id=OPERATOR_CONTROL_OWNER_ID,
                     owner_name=OPERATOR_CONTROL_OWNER_NAME,
-                    # Ownership is exclusive. The Operator App must release
-                    # Fleet Manager control through its owner, not steal it.
-                    force=False,
+                    force=bool(payload.get("force")),
                     lease_ms=int(payload.get("leaseMs", payload.get("lease_ms", 0)) or 0),
                 )
                 if bool(payload.get("stopNavigation") or payload.get("stop_navigation")):

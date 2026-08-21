@@ -71,7 +71,7 @@ class FleetManagerRemoteControlMixin:
 
     @runtime_command
     def acquire_robot_control(self, payload: dict[str, Any]) -> dict[str, Any]:
-        """Seize a free robot for Fleet Manager without stealing ownership."""
+        """Transfer robot control to Fleet Manager and stop previous motion."""
 
         robot = self._require_remote_robot(payload)
         try:
@@ -79,10 +79,19 @@ class FleetManagerRemoteControlMixin:
                 robot.base_url,
                 owner_id=FLEET_CONTROL_OWNER_ID,
                 owner_name=FLEET_CONTROL_OWNER_NAME,
-                force=False,
+                force=True,
                 lease_ms=0,
             )
             self._apply_control_command_status(robot, response)
+
+            # Seize is an explicit ownership transfer. Stop any command left
+            # by the previous owner before Fleet Manager starts controlling
+            # the robot.
+            stopped = self.remote_adapter.stop(
+                robot.base_url,
+                owner_id=FLEET_CONTROL_OWNER_ID,
+            )
+            self._apply_control_command_status(robot, stopped)
             robot.remote_online = True
             robot.remote_error = ""
         except Exception as exc:

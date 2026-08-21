@@ -24,11 +24,15 @@ _LAZY_EXPORTS = {
     "RobotTrajectoryPlanner": ("planning", "RobotTrajectoryPlanner"),
     "RouteExecutor": ("execution", "RouteExecutor"),
     "RobotRouteNode": ("route_node", "RobotRouteNode"),
+    "LqrController": ("control", "LqrController"),
+    "LqrParameters": ("control", "LqrParameters"),
     "PidController": ("control", "PidController"),
     "PidParameters": ("control", "PidParameters"),
     "PathProjection": ("math", "PathProjection"),
     "TrajectoryArray": ("math", "TrajectoryArray"),
     "TrajectoryMath": ("math", "TrajectoryMath"),
+    "TrajectorySpeedParameters": ("control", "TrajectorySpeedParameters"),
+    "TrajectorySpeedProfile": ("control", "TrajectorySpeedProfile"),
 }
 
 
@@ -45,6 +49,8 @@ __all__ = [
     "DEFAULT_PARAMS_PATH",
     "DEFAULT_ROUTE_PARAMS",
     "LmRoutePlanner",
+    "LqrController",
+    "LqrParameters",
     "PidController",
     "PidParameters",
     "PathProjection",
@@ -57,6 +63,8 @@ __all__ = [
     "RoutePoint",
     "TrajectoryArray",
     "TrajectoryMath",
+    "TrajectorySpeedParameters",
+    "TrajectorySpeedProfile",
     "WarehouseMapLoader",
     "build_editable_map_bundle_payload",
     "build_editable_map_payload",

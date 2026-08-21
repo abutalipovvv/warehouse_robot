@@ -72,11 +72,20 @@ class RobotMapSyncMixin:
         if self._is_grpc_robot_id(robot_id):
             robot = self.get_robot(robot_id)
             params = payload.get("params") if isinstance(payload.get("params"), dict) else payload
-            result = self.grpc_adapter.put_params(self._grpc_endpoint(robot), params)
+            endpoint = self._grpc_endpoint(robot)
+            result = self.grpc_adapter.put_params(endpoint, params)
             if not isinstance(result, dict):
                 result = {"ok": True}
-            saved_params = result.get("params") if isinstance(result.get("params"), dict) else params
-            result["cache"] = self._cache_robot_params(robot, saved_params, source="operator")
+            confirmed = self.grpc_adapter.get_params(endpoint)
+            confirmed_params = confirmed.get("params") if isinstance(confirmed, dict) else None
+            if not isinstance(confirmed_params, dict):
+                raise ValueError("robot did not return params during save verification")
+            if confirmed_params != params:
+                raise ValueError("robot params differ from the values sent by Operator")
+            result["params"] = confirmed_params
+            result["synced"] = True
+            result["verified"] = True
+            result["cache"] = self._cache_robot_params(robot, confirmed_params, source="robot-verified")
             result["robotId"] = robot_id
             return result
         raise ValueError("unsupported robot transport; use grpc")

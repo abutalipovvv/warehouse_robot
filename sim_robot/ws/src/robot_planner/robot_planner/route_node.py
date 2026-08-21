@@ -357,6 +357,15 @@ class RobotRouteNode(Node):
         message.target_lm = str(snapshot.get("targetLm") or "")
         message.current_edge_id = str(snapshot.get("currentEdgeId") or "")
         message.route_id = str(route.get("routeId") or "") if isinstance(route, dict) else ""
+        route_nodes = []
+        if isinstance(route, dict):
+            route_nodes = route.get("fullNodes") or route.get("nodes") or []
+        message.route_nodes = [str(node) for node in route_nodes if str(node)]
+        message.final_goal_lm = (
+            str(route.get("finalGoalLm") or route.get("goalLm") or "")
+            if isinstance(route, dict)
+            else ""
+        )
         message.route_progress = float(snapshot.get("routeProgress", 0.0) or 0.0)
         message.cross_track_error = float(
             tracking.get("crossTrackError", 0.0) or 0.0

@@ -186,6 +186,7 @@ EXPECTED_COMPONENT_METHODS = {
         "_service_available",
         "_call_service",
         "_message_to_robot_payload",
+        "_battery_payload",
     },
 }
 
@@ -354,6 +355,51 @@ def _status_message(**overrides: Any) -> SimpleNamespace:
     return SimpleNamespace(**values)
 
 
+def test_status_payload_exposes_route_acceleration_and_battery(
+    runtime: RosRobotRuntime,
+) -> None:
+    message = _status_message(
+        state="EXECUTING_ROUTE",
+        target_lm="LM-3",
+        route_id="route-3",
+        route_active=True,
+        route_paused=False,
+        route_nodes=["LM-1", "LM-2", "LM-3"],
+        final_goal_lm="LM-3",
+        route_progress=0.5,
+        linear_velocity=0.22,
+        angular_velocity=0.1,
+        linear_acceleration=0.4,
+        angular_acceleration=-0.2,
+        battery_level=0.75,
+        battery_voltage=52.0,
+        battery_current=-5.0,
+        battery_temperature=30.0,
+        battery_charging=False,
+    )
+
+    robot = runtime._message_to_robot_payload(message)
+
+    assert robot["acceleration"] == {"linear": 0.4, "angular": -0.2}
+    assert robot["battery"] == {
+        "level": 0.75,
+        "voltage": 52.0,
+        "current": -5.0,
+        "temperature": 30.0,
+        "charging": False,
+    }
+    assert robot["route"] == {
+        "active": True,
+        "routeId": "route-3",
+        "goalLm": "LM-3",
+        "finalGoalLm": "LM-3",
+        "nodes": ["LM-1", "LM-2", "LM-3"],
+        "progress": 0.5,
+        "paused": False,
+        "trajectory": [],
+    }
+
+
 def test_explicit_mapf_route_is_forwarded_without_replanning(runtime: RosRobotRuntime) -> None:
     payload = {
         "protocol": "lm_route",
@@ -390,7 +436,7 @@ def test_facade_composes_seven_disjoint_local_capabilities() -> None:
         assert actual == expected
         assert owned.isdisjoint(actual)
         owned.update(actual)
-    assert len(owned) == 109
+    assert len(owned) == 110
     assert _defined_methods(RosRobotRuntime) == set()
     assert not any(
         "fleet_manager" in value.__module__

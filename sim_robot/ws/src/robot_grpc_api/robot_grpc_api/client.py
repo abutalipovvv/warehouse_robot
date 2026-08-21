@@ -662,6 +662,17 @@ class GrpcRobotClient:
         return payload
 
     def _route_payload(self, robot: dict[str, Any]) -> dict[str, Any]:
+        reported_route = robot.get("route")
+        if isinstance(reported_route, dict):
+            route = dict(reported_route)
+            route.setdefault(
+                "active",
+                str(robot.get("state") or "").upper() in {"EXECUTING_ROUTE", "MOVING", "WAITING", "PAUSED"},
+            )
+            route.setdefault("routeId", str(robot.get("routeId") or ""))
+            route.setdefault("targetLm", str(route.get("finalGoalLm") or robot.get("targetLm") or ""))
+            route.setdefault("progress", float(robot.get("routeProgress") or 0.0))
+            return route
         return {
             "active": str(robot.get("state") or "").upper() in {"EXECUTING_ROUTE", "MOVING", "WAITING"},
             "routeId": str(robot.get("routeId") or ""),
