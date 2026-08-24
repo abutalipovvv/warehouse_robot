@@ -20,8 +20,8 @@ source /opt/ros/jazzy/setup.bash
 ```
 
 The root `pytest.ini` limits discovery to `tests/test_*.py`. This is
-intentional: build, install, and source artifacts inside `sim_robot/ws` are ROS
-packages, not part of root pytest discovery.
+intentional: build and install artifacts inside the three `robot` overlays are
+ROS packages, not part of root pytest discovery.
 
 ## Fast feedback
 

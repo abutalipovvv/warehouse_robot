@@ -13,6 +13,7 @@ from ..navigation.planner import LmRoutePlanner
 DEFAULT_ROUTE_CATALOG_MAX_PAIRS = 20000
 EDITABLE_MAP_SIGNATURE_VERSION = 2
 BUNDLE_EXCLUDED_FILES = {".operator_meta.json"}
+SIGNATURE_EXCLUDED_DIRECTORIES = {"scene3d"}
 DERIVED_TRAFFIC_PROPERTY = "_traffic_zone_derived"
 DERIVED_TRAFFIC_KEYS = (
     "controlled_region",
@@ -205,6 +206,15 @@ def _content_manifest(map_dir: Path) -> list[dict[str, Any]]:
     for path in sorted(root.rglob("*")):
         if not path.is_file() or path.name in BUNDLE_EXCLUDED_FILES:
             continue
+        relative = path.relative_to(root)
+        if (
+            relative.parts
+            and (
+                relative.parts[0] in SIGNATURE_EXCLUDED_DIRECTORIES
+                or relative.parts[0].startswith(".scene3d.")
+            )
+        ):
+            continue
         if path.is_symlink():
             raise ValueError(f"map bundle cannot contain symbolic links: {path}")
         digest = hashlib.sha256()
@@ -213,7 +223,7 @@ def _content_manifest(map_dir: Path) -> list[dict[str, Any]]:
                 digest.update(chunk)
         manifest.append(
             {
-                "path": str(path.relative_to(root)).replace("\\", "/"),
+                "path": str(relative).replace("\\", "/"),
                 "size": path.stat().st_size,
                 "sha256": digest.hexdigest(),
             }

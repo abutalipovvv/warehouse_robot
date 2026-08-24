@@ -20,6 +20,12 @@ class RobotMapRoute(NamedTuple):
     argument: str = ""
 
 
+class SceneAssetRoute(NamedTuple):
+    manager_id: str
+    source_digest: str
+    relative_path: str
+
+
 FLEET_ACTIONS: dict[tuple[str, ...], str] = {
     (): "identity",
     ("identity",): "identity",
@@ -104,6 +110,23 @@ def parse_fleet_route(parsed: ParseResult) -> FleetRoute | None:
             unquote(parts[2]).strip(),
         )
     return None
+
+
+def parse_scene_asset_route(
+    parsed: ParseResult,
+) -> SceneAssetRoute | None:
+    base_and_manager = _fleet_base(parsed.path)
+    if base_and_manager is None:
+        return None
+    base, manager_id = base_and_manager
+    parts = _parts(parsed.path.removeprefix(base))
+    if len(parts) != 4 or parts[:2] != ("scene3d", "assets"):
+        return None
+    digest = unquote(parts[2]).strip()
+    relative = unquote(parts[3]).strip()
+    if not digest or not relative:
+        return None
+    return SceneAssetRoute(manager_id, digest, relative)
 
 
 def parse_robot_map_route(parsed: ParseResult) -> RobotMapRoute | None:

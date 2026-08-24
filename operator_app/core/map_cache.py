@@ -18,6 +18,8 @@ from fleet_manager.core.mapping.maps.map_exchange import (
 from fleet_manager.core.mapping.maps.map_writer import save_editable_map
 from fleet_manager.storage import atomic_write_json
 
+from .map_scene_assets import ensure_map_scene_assets
+
 
 def default_maps_cache_root() -> Path:
     override = os.environ.get("WAREHOUSE_OPERATOR_MAP_CACHE", "").strip()
@@ -118,6 +120,7 @@ class MapCache:
                 "lastSyncAt": utc_now(),
             },
         )
+        ensure_map_scene_assets(map_dir)
         if activate:
             self.set_active_map(robot_id, map_name)
         return self._map_info(robot_id, map_name)
@@ -132,7 +135,7 @@ class MapCache:
         map_name = str(payload.get("mapName") or "").strip()
         if not map_name:
             raise ValueError("local bundle mapName is required")
-        self._restore_bundle_atomically(
+        map_dir = self._restore_bundle_atomically(
             robot_id,
             map_name,
             payload,
@@ -144,6 +147,7 @@ class MapCache:
                 "lastSyncAt": "",
             },
         )
+        ensure_map_scene_assets(map_dir)
         if activate:
             self.set_active_map(robot_id, map_name)
         return self._map_info(robot_id, map_name)
@@ -179,6 +183,7 @@ class MapCache:
                 "lastSyncAt": str(base_meta.get("lastSyncAt") or ""),
             },
         )
+        ensure_map_scene_assets(loaded_map.map_dir)
         if activate:
             self.set_active_map(robot_id, loaded_map.map_dir.stem.replace(".smap", ""))
         return self._map_info(robot_id, loaded_map.map_dir.stem.replace(".smap", ""))

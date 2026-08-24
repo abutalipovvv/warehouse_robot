@@ -31,14 +31,25 @@ class MapSceneBuilder:
     maximum_wall_rectangles: int = 1500
     target_wall_grid_cells: int = 180_000
     _cached_payload: dict[str, Any] | None = None
+    _cached_light_payload: dict[str, Any] | None = None
 
     @property
     def map_dir(self) -> Path:
         return self.loaded_map.map_dir.resolve()
 
-    def build(self, *, wall_height: float = 1.8) -> dict[str, Any]:
-        if self._cached_payload is not None:
-            return self._cached_payload
+    def build(
+        self,
+        *,
+        wall_height: float = 1.8,
+        include_walls: bool = True,
+    ) -> dict[str, Any]:
+        cached = (
+            self._cached_payload
+            if include_walls
+            else self._cached_light_payload
+        )
+        if cached is not None:
+            return cached
 
         metadata = self.loaded_map.map_metadata
         payload = {
@@ -58,7 +69,11 @@ class MapSceneBuilder:
                 "maxX": metadata.width * metadata.resolution,
                 "maxZ": metadata.height * metadata.resolution,
             },
-            "walls": self.wall_rectangles(wall_height=wall_height),
+            "walls": (
+                self.wall_rectangles(wall_height=wall_height)
+                if include_walls
+                else []
+            ),
             "wallHeight": wall_height,
             "lms": [
                 self.loaded_map.landmarks[name].to_dict()
@@ -66,7 +81,10 @@ class MapSceneBuilder:
             ],
             "edges": [edge.to_dict() for edge in self.loaded_map.edges],
         }
-        self._cached_payload = payload
+        if include_walls:
+            self._cached_payload = payload
+        else:
+            self._cached_light_payload = payload
         return payload
 
     def wall_rectangles(

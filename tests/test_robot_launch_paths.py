@@ -5,7 +5,8 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-LAUNCH_FILE = ROOT / "sim_robot" / "ws" / "src" / "launch" / "launch" / "launch.py"
+DRIVER_ROOT = ROOT / "robot" / "robot_driver"
+LAUNCH_FILE = DRIVER_ROOT / "src" / "launch" / "launch" / "launch.py"
 
 
 def _launch_module():
@@ -18,7 +19,9 @@ def _launch_module():
 
 def test_installed_robot_launch_defaults_stay_inside_workspace(monkeypatch) -> None:
     module = _launch_module()
-    installed_share = ROOT / "install" / "robot_launch" / "share" / "robot_launch"
+    installed_share = (
+        DRIVER_ROOT / "install" / "robot_launch" / "share" / "robot_launch"
+    )
     monkeypatch.setattr(
         module,
         "get_package_share_directory",
@@ -28,12 +31,14 @@ def test_installed_robot_launch_defaults_stay_inside_workspace(monkeypatch) -> N
     project_root = module._project_root()
     maps_root = module._maps_root(project_root)
 
-    assert project_root == ROOT
-    assert maps_root == ROOT / "sim_robot" / "ws" / "src" / "robot_map_manager" / "maps_out"
-    assert module._params_path(project_root) == ROOT / "sim_robot" / "ws" / "src" / "params.yaml"
+    assert project_root == DRIVER_ROOT
+    assert maps_root == DRIVER_ROOT / "src" / "robot_map_manager" / "maps_out"
+    assert module._params_path(project_root) == (
+        DRIVER_ROOT / "src" / "params" / "params.yaml"
+    )
     assert module._default_active_map_dir(maps_root).is_dir()
     assert module._map_state_file(maps_root) == (
-        ROOT / "sim_robot" / "ws" / "src" / "robot_map_manager" / ".active_map.json"
+        DRIVER_ROOT / "src" / "robot_map_manager" / ".active_map.json"
     )
 
 

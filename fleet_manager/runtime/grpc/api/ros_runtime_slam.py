@@ -90,6 +90,8 @@ class RosRuntimeSlamMixin:
                 "mapDir": "",
             }
             state = dict(self._slam_state)
+        self._publish_twist(0.0, 0.0)
+        self._publish_motion_mode("SLAM", "2D SLAM started")
         return {"ok": True, "state": state}
 
     def slam_state_payload(self) -> dict[str, Any]:
@@ -210,6 +212,7 @@ class RosRuntimeSlamMixin:
                     }
                 )
                 state = dict(self._slam_state)
+            self._publish_motion_mode("IDLE", "2D SLAM finished")
             return {
                 "ok": True,
                 "state": state,
@@ -238,6 +241,7 @@ class RosRuntimeSlamMixin:
                 }
             )
             state = dict(self._slam_state)
+        self._publish_motion_mode("IDLE", "2D SLAM canceled")
         return {"ok": True, "state": state}
 
     def _set_slam_progress(self, progress: int, message: str) -> None:

@@ -1,0 +1,41 @@
+repositories:
+  src/navigation2:
+    type: git
+    url: https://github.com/ros-navigation/navigation2.git
+    version: f4108e5b1c2bce804a1aa0c7be6673a8eb4a1501
+  src/geographic_info:
+    type: git
+    url: https://github.com/ros-geographic-info/geographic_info.git
+    version: f70b81a438172cd7a066dc1b18314d70e0eb6389
+  src/rcl_interfaces:
+    type: git
+    url: https://github.com/ros2/rcl_interfaces.git
+    version: 7aa3caf43377ea6ad615bc1040832e2c7566bfbe
+  src/test_interface_files:
+    type: git
+    url: https://github.com/ros2/test_interface_files.git
+    version: 1c92e082fe14f90b772d308d113e510ad2c79fb9
+  src/ament_lint:
+    type: git
+    url: https://github.com/ament/ament_lint.git
+    version: 9121ac787058642730206a52daba614f9c86b0fb
+  src/backward_ros:
+    type: git
+    url: https://github.com/pal-robotics/backward_ros.git
+    version: 3c71c9f184223f885459ad67a223eb36a5ca347f
+  src/behaviortree_cpp:
+    type: git
+    url: https://github.com/BehaviorTree/BehaviorTree.CPP.git
+    version: c88a9f429a421b312599a07fa8902524b09bf90a
+  src/bond_core:
+    type: git
+    url: https://github.com/ros/bond_core.git
+    version: 44cc20e678f80f8279d2344045e2193540f3988c
+  src/diagnostics:
+    type: git
+    url: https://github.com/ros/diagnostics.git
+    version: ed64dc9c3b9d048b1699cf81692e6b0e3926c3ac
+  src/xacro:
+    type: git
+    url: https://github.com/ros/xacro.git
+    version: da4b3849f8320903d625250089f67f0632be86f2

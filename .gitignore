@@ -9,17 +9,12 @@ __pycache__/
 build/
 install/
 log/
-robot/build/
-robot/install/
-robot/log/
 
 .DS_Store
 *.swp
 *.swo
 
-robot/.active_map.json
-sim_robot/.active_map.json
-sim_robot/ws/src/robot_map_manager/.active_map.json
+/robot/robot_driver/src/robot_map_manager/.active_map.json
 operator_app/operator_data/
 var/operator_app/
 var/fleet_sim_benchmarks/

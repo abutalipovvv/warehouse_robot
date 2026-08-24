@@ -15,6 +15,7 @@ from fleet_manager.runtime.grpc.manager import FleetManagerROS
 from fleet_manager.runtime.simulation.manager import FleetManagerSim
 
 from .map_scene import MapSceneBuilder
+from .map_scene_assets import MapSceneAssetBuilder
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -180,6 +181,8 @@ class FleetContextService:
         owner.maps_root = owner.map_dir.parent
         owner._active_map_signature = active_map_signature
         owner._scene_builder = MapSceneBuilder(loaded_map)
+        owner._scene_asset_builder = MapSceneAssetBuilder(owner._scene_builder)
+        owner._scene_asset_manifest = owner._scene_asset_builder.ensure()
         owner._scene3d_cache = None
         owner.manager = manager
         previous_close = getattr(

@@ -131,7 +131,7 @@ locks in the 10 Hz control path.
 The same rule applies to ROS runtime code. The canonical server runtime under
 `fleet_manager/runtime/grpc/api` is split into lifecycle, control, maps, SLAM,
 parameters and ROS helpers. The independently deployable
-`sim_robot/ws/src/robot_grpc_api` package has the same local component
+`robot/robot_driver/src/robot_grpc_api` package has the same local component
 boundaries and intentionally does not import `fleet_manager`.
 
 ## Runtime ownership
@@ -154,7 +154,9 @@ Application shutdown follows the reverse ownership order:
 - Runtime workspaces: `var/operator_app` (ignored by Git).
 - Benchmark samples: `var/fleet_sim_benchmarks` and `var/rds_benchmarks`
   (ignored by Git).
-- Robot ROS build products: `sim_robot/ws/{build,install,log}` (ignored).
+- Third-party ROS overlay: `robot/ros2_libs/{build,install,log}` (ignored).
+- Common robot overlay: `robot/robot_driver/{build,install,log}` (ignored).
+- Simulation overlay: `robot/simulation/{build,install,log}` (ignored).
 - Independently deployed robot packages share durable map/parameter writes and
   PGM parsing through `robot_planner.route_core.atomic_storage` and
   `robot_planner.route_core.pgm`.

@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "algorithmVersion": "merged-wall-matrix-v1",
+  "sourceDigest": "34702d7d7f62881a3596f30e6ba458e74a3a29e01d4b9a78750c2fd017202fda",
+  "coordinateFrame": "map_top_left",
+  "wallHeight": 1.8,
+  "walls": {
+    "path": "walls.f32",
+    "encoding": "float32-le-matrix4",
+    "count": 34,
+    "stride": 1,
+    "size": 2176,
+    "sha256": "2ea807d0d483f50b736b48f06793c18974f4a4ca637f67a4eb113bdfcc292bd6"
+  },
+  "floor": {
+    "path": "floor.png",
+    "width": 390,
+    "height": 330,
+    "size": 545,
+    "sha256": "ef0cefefe11af6f03b26432286a8a36b668fdb9a235e18145c3aa9d240a9ce0d"
+  }
+}

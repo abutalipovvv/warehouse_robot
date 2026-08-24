@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import math
 from time import monotonic, sleep
 from typing import Any
@@ -16,6 +17,19 @@ class RosRuntimeMessageServiceMixin:
         message.linear.x = float(linear)
         message.angular.z = float(angular)
         self._cmd_vel_pub.publish(message)
+
+    def _publish_motion_mode(self, mode: str, reason: str = "") -> None:
+        if self._motion_mode_pub is None or self._string_type is None:
+            return
+        message = self._string_type()
+        message.data = json.dumps(
+            {
+                "mode": str(mode or "IDLE").strip().upper(),
+                "reason": str(reason or ""),
+            },
+            separators=(",", ":"),
+        )
+        self._motion_mode_pub.publish(message)
 
     def _publish_go_to_lm(self, data: str) -> None:
         if self._go_to_lm_pub is None or self._string_type is None:

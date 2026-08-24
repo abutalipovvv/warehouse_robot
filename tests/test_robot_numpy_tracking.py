@@ -10,8 +10,8 @@ import pytest
 
 ROBOT_PLANNER_SRC = (
     Path(__file__).resolve().parents[1]
-    / "sim_robot"
-    / "ws"
+    / "robot"
+    / "robot_driver"
     / "src"
     / "robot_planner"
 )
@@ -115,7 +115,7 @@ def test_reference_map_lm280_to_lm131_is_not_flattened_to_line() -> None:
         / "robot_map_manager"
         / "maps_out"
         / "22.05.26_smap.smap",
-        workspace_src / "params.yaml",
+        workspace_src / "params" / "params.yaml",
     )
     start = planner.loaded_map.landmarks["LM280"]
     route = planner.plan_from_pose(
@@ -149,7 +149,7 @@ def test_mapf_contract_keeps_geometry_and_control_robot_local() -> None:
         / "robot_map_manager"
         / "maps_out"
         / "22.05.26_smap.smap",
-        workspace_src / "params.yaml",
+        workspace_src / "params" / "params.yaml",
     )
     start = planner.loaded_map.landmarks["LM280"]
     payload = {
@@ -206,7 +206,7 @@ def test_mapf_contract_rejects_inconsistent_goal_and_direction() -> None:
         / "robot_map_manager"
         / "maps_out"
         / "22.05.26_smap.smap",
-        workspace_src / "params.yaml",
+        workspace_src / "params" / "params.yaml",
     )
     start = planner.loaded_map.landmarks["LM280"]
     with pytest.raises(ValueError, match="motion direction mismatch"):
@@ -236,7 +236,7 @@ def test_mapf_contract_never_connects_to_start_lm_with_a_straight_shortcut() -> 
         / "robot_map_manager"
         / "maps_out"
         / "22.05.26_smap.smap",
-        workspace_src / "params.yaml",
+        workspace_src / "params" / "params.yaml",
     )
 
     with pytest.raises(ValueError, match="strict LM route rejected"):

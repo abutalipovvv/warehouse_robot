@@ -274,9 +274,50 @@ class FleetMapService:
         owner = self.owner
         if isinstance(owner._scene3d_cache, dict):
             return owner._scene3d_cache
-        payload = owner._scene_builder.build()
+        manifest = owner._scene_asset_builder.ensure()
+        owner._scene_asset_manifest = manifest
+        digest = str(manifest.get("sourceDigest") or "")
+        api_base = (
+            "/api/fleet-manager-sim"
+            if owner.manager_id == "__fleet_manager_sim__"
+            else "/api/fleet-manager"
+        )
+        asset_base = f"{api_base}/scene3d/assets/{digest}"
+        payload = owner._scene_builder.build(include_walls=False)
+        floor = dict(payload.get("floor") or {})
+        floor_asset = manifest.get("floor")
+        walls_asset = manifest.get("walls")
+        if isinstance(floor_asset, dict):
+            floor["imageDataUrl"] = (
+                f"{asset_base}/{floor_asset.get('path')}"
+            )
+        payload["floor"] = floor
+        payload["wallAsset"] = {
+            **(walls_asset if isinstance(walls_asset, dict) else {}),
+            "url": (
+                f"{asset_base}/{walls_asset.get('path')}"
+                if isinstance(walls_asset, dict)
+                else ""
+            ),
+            "sourceDigest": digest,
+        }
+        payload["sceneAsset"] = {
+            "schemaVersion": int(manifest.get("schemaVersion") or 0),
+            "algorithmVersion": str(manifest.get("algorithmVersion") or ""),
+            "sourceDigest": digest,
+        }
         owner._scene3d_cache = payload
         return payload
+
+    def scene3d_asset_path(
+        self,
+        source_digest: str,
+        relative_path: str,
+    ) -> Path:
+        return self.owner._scene_asset_builder.resolve_asset(
+            source_digest,
+            relative_path,
+        )
 
     def _wall_rectangles_from_pgm(
         self,

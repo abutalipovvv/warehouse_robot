@@ -165,11 +165,11 @@ python3 -m operator_app.benchmarking.operator_fleet_refactor_guard \
 
 Канонический gRPC/ROS runtime разделён на lifecycle, control, maps, SLAM,
 parameters и ROS helpers. Роботный пакет
-`sim_robot/ws/src/robot_grpc_api` имеет такие же локальные компоненты, но не
+`robot/robot_driver/src/robot_grpc_api` имеет такие же локальные компоненты, но не
 зависит от исходников Fleet Manager и может разворачиваться отдельно.
 
 Локальный контур движения робота находится в
-`sim_robot/ws/src/robot_planner/robot_planner/executor.py`. Его лучше читать
+`robot/robot_driver/src/robot_planner/robot_planner`. Его лучше читать
 сверху вниз через математические модели `RouteControlParameters`,
 `RouteProgress` и `RouteSteeringState`: projection пути, reservation gate,
 проверка arrival, steering errors и итоговая velocity command. Параметры

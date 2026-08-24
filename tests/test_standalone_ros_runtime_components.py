@@ -16,10 +16,10 @@ import yaml
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 ROBOT_API_ROOT = (
-    PROJECT_ROOT / "sim_robot" / "ws" / "src" / "robot_grpc_api"
+    PROJECT_ROOT / "robot" / "robot_driver" / "src" / "robot_grpc_api"
 )
 ROBOT_PLANNER_ROOT = (
-    PROJECT_ROOT / "sim_robot" / "ws" / "src" / "robot_planner"
+    PROJECT_ROOT / "robot" / "robot_driver" / "src" / "robot_planner"
 )
 for source_root in (ROBOT_API_ROOT, ROBOT_PLANNER_ROOT):
     if str(source_root) not in sys.path:
@@ -182,6 +182,7 @@ EXPECTED_COMPONENT_METHODS = {
     },
     RosRuntimeMessageServiceMixin: {
         "_publish_twist",
+        "_publish_motion_mode",
         "_publish_go_to_lm",
         "_service_available",
         "_call_service",
@@ -198,6 +199,8 @@ EXPECTED_STATE_KEYS = [
     "namespace",
     "status_topic",
     "cmd_vel_topic",
+    "driver_cmd_vel_topic",
+    "motion_mode_topic",
     "odom_topic",
     "initial_pose_topic",
     "scan_topic",
@@ -264,6 +267,7 @@ EXPECTED_STATE_KEYS = [
     "_executor",
     "_thread",
     "_cmd_vel_pub",
+    "_motion_mode_pub",
     "_initial_pose_pub",
     "_go_to_lm_pub",
     "_plan_route_client",
@@ -436,7 +440,7 @@ def test_facade_composes_seven_disjoint_local_capabilities() -> None:
         assert actual == expected
         assert owned.isdisjoint(actual)
         owned.update(actual)
-    assert len(owned) == 110
+    assert len(owned) == 111
     assert _defined_methods(RosRobotRuntime) == set()
     assert not any(
         "fleet_manager" in value.__module__

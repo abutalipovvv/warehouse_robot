@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import signal
 import time
 
@@ -17,8 +18,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--robot-id", default="robot1")
     parser.add_argument("--robot-name", default="")
     parser.add_argument("--namespace", default="")
+    parser.add_argument("--domain-id", type=int, default=_domain_id_from_environment())
     parser.add_argument("--status-topic", default="/robot_status")
-    parser.add_argument("--cmd-vel-topic", default="/cmd_vel")
+    parser.add_argument("--cmd-vel-topic", default="motion/teleop_cmd_vel")
+    parser.add_argument("--driver-cmd-vel-topic", default="cmd_vel")
+    parser.add_argument("--motion-mode-topic", default="motion/mode")
     parser.add_argument("--initial-pose-topic", default="/initialpose")
     parser.add_argument("--scan-topic", default="/scan")
     parser.add_argument("--go-to-lm-topic", default="/go_to_lm")
@@ -42,14 +46,30 @@ def parse_args() -> argparse.Namespace:
     return args
 
 
+def _domain_id_from_environment() -> int | None:
+    raw = os.environ.get("ROS_DOMAIN_ID", "").strip()
+    if not raw:
+        return None
+    try:
+        domain_id = int(raw)
+    except ValueError as exc:
+        raise ValueError(f"ROS_DOMAIN_ID must be an integer, got {raw!r}") from exc
+    if not 0 <= domain_id <= 232:
+        raise ValueError("ROS_DOMAIN_ID must be between 0 and 232")
+    return domain_id
+
+
 def main() -> None:
     args = parse_args()
     runtime = RosRobotRuntime(
         robot_id=args.robot_id,
         robot_name=args.robot_name or args.robot_id,
+        domain_id=args.domain_id,
         namespace=args.namespace,
         status_topic=args.status_topic,
         cmd_vel_topic=args.cmd_vel_topic,
+        driver_cmd_vel_topic=args.driver_cmd_vel_topic,
+        motion_mode_topic=args.motion_mode_topic,
         initial_pose_topic=args.initial_pose_topic,
         scan_topic=args.scan_topic,
         go_to_lm_topic=args.go_to_lm_topic,

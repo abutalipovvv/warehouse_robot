@@ -1027,13 +1027,14 @@ export class OperatorScene3D {
 
     const floor = payload?.floor || {};
     const walls = Array.isArray(payload?.walls) ? payload.walls : [];
+    const wallAsset = payload?.wallAsset || {};
     this.bounds = {
       width: Math.max(1, Number(floor.width || 1)),
       depth: Math.max(1, Number(floor.depth || 1)),
     };
     this.currentFloor = floor;
     this.currentWallHeight = Math.max(0.05, Number(payload?.wallHeight || 1.8));
-    this.serverWallsAvailable = walls.length > 0;
+    this.serverWallsAvailable = walls.length > 0 || Boolean(wallAsset.url);
     this.lms = Array.isArray(payload?.lms) ? payload.lms : [];
     const preserveView = Boolean(
       options.preserveView
@@ -1058,7 +1059,9 @@ export class OperatorScene3D {
     this.applyFloorCanvas();
     this.addWalls(walls);
     this.occupancyWallBuildComplete = walls.length > 0;
-    if (this.viewMode === "3d" && !walls.length) {
+    if (wallAsset.url && !walls.length) {
+      this.loadPrebuiltWalls(wallAsset, this.occupancyWallBuildGeneration);
+    } else if (this.viewMode === "3d" && !walls.length) {
       this.ensureOccupancyWalls();
     }
     this.addEdges(Array.isArray(payload?.edges) ? payload.edges : []);
@@ -1141,17 +1144,6 @@ export class OperatorScene3D {
     if (!walls.length) {
       return;
     }
-    const mesh = B.MeshBuilder.CreateBox("warehouse-walls", { size: 1 }, this.scene);
-    // One opaque StandardMaterial is considerably cheaper than evaluating a
-    // transparent PBR shader for every wall face on every animated frame.
-    const material = new B.StandardMaterial("warehouse-wall-material", this.scene);
-    material.diffuseColor = toColor3(COLORS.wall);
-    material.specularColor = B.Color3.Black();
-    material.alpha = 1;
-    material.backFaceCulling = true;
-    mesh.material = material;
-    mesh.parent = this.staticRoot;
-    mesh.isPickable = false;
     const matrices = new Float32Array(walls.length * 16);
     walls.forEach((wall, index) => {
       const height = Math.max(0.05, Number(wall.height || 1.8));
@@ -1167,6 +1159,28 @@ export class OperatorScene3D {
       matrices[offset + 14] = Number(wall.z || 0);
       matrices[offset + 15] = 1;
     });
+    this.addWallMatrices(
+      matrices,
+      walls.length,
+      Number(walls[0]?.stride || 1),
+    );
+  }
+
+  addWallMatrices(matrices, count, stride = 1) {
+    if (!count || matrices.length !== count * 16) {
+      return;
+    }
+    const mesh = B.MeshBuilder.CreateBox("warehouse-walls", { size: 1 }, this.scene);
+    // One opaque StandardMaterial is considerably cheaper than evaluating a
+    // transparent PBR shader for every wall face on every animated frame.
+    const material = new B.StandardMaterial("warehouse-wall-material", this.scene);
+    material.diffuseColor = toColor3(COLORS.wall);
+    material.specularColor = B.Color3.Black();
+    material.alpha = 1;
+    material.backFaceCulling = true;
+    mesh.material = material;
+    mesh.parent = this.staticRoot;
+    mesh.isPickable = false;
     mesh.thinInstanceSetBuffer("matrix", matrices, 16, true);
     mesh.thinInstanceRefreshBoundingInfo(true);
     mesh.freezeWorldMatrix();
@@ -1174,9 +1188,58 @@ export class OperatorScene3D {
     material.freeze();
     this.wallMaterial = material;
     this.wallMesh = mesh;
-    this.container.dataset.occupancyWalls = String(walls.length);
-    this.container.dataset.occupancyWallStride = String(walls[0]?.stride || 1);
+    this.container.dataset.occupancyWalls = String(count);
+    this.container.dataset.occupancyWallStride = String(stride || 1);
     mesh.setEnabled(this.viewMode === "3d");
+  }
+
+  async loadPrebuiltWalls(asset, generation) {
+    const url = String(asset?.url || "");
+    const count = Math.max(0, Number(asset?.count || 0));
+    if (!url || !count) {
+      this.occupancyWallBuildComplete = true;
+      return;
+    }
+    this.occupancyWallBuildPending = true;
+    this.container.dataset.occupancyWalls = "loading";
+    try {
+      const response = await fetch(url, { cache: "force-cache" });
+      if (!response.ok) {
+        throw new Error(`wall asset request failed: HTTP ${response.status}`);
+      }
+      const buffer = await response.arrayBuffer();
+      if (buffer.byteLength !== count * 16 * 4) {
+        throw new Error(
+          `wall asset size mismatch: expected ${count * 16 * 4}, got ${buffer.byteLength}`,
+        );
+      }
+      if (
+        this.disposed
+        || generation !== this.occupancyWallBuildGeneration
+      ) {
+        return;
+      }
+      this.addWallMatrices(
+        new Float32Array(buffer),
+        count,
+        Number(asset?.stride || 1),
+      );
+      this.occupancyWallBuildComplete = true;
+      this.requestRender();
+    } catch (error) {
+      if (generation === this.occupancyWallBuildGeneration) {
+        this.serverWallsAvailable = false;
+        this.occupancyWallBuildComplete = false;
+        console.warn("Could not load prebuilt 3D wall asset.", error);
+        if (this.viewMode === "3d") {
+          window.setTimeout(() => this.ensureOccupancyWalls(), 0);
+        }
+      }
+    } finally {
+      if (generation === this.occupancyWallBuildGeneration) {
+        this.occupancyWallBuildPending = false;
+      }
+    }
   }
 
   async ensureOccupancyWalls() {

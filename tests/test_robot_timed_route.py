@@ -8,8 +8,8 @@ import pytest
 
 ROBOT_PLANNER_SRC = (
     Path(__file__).resolve().parents[1]
-    / "sim_robot"
-    / "ws"
+    / "robot"
+    / "robot_driver"
     / "src"
     / "robot_planner"
 )

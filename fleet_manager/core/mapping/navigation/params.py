@@ -81,8 +81,21 @@ def _resolve_nav2_params_path(robot_model: dict[str, Any], params_path: Path) ->
         candidate = Path(str(raw_path)).expanduser()
         candidates.append(candidate if candidate.is_absolute() else params_path.parent / candidate)
     for parent in (params_path.parent, *params_path.parents):
-        candidates.append(parent / "nav2" / "config" / "nav2_params.yaml")
-        candidates.append(parent / "robot" / "ws" / "src" / "nav2" / "config" / "nav2_params.yaml")
+        candidates.append(
+            parent
+            / "warehouse_nav2_bringup"
+            / "config"
+            / "nav2_params.yaml"
+        )
+        candidates.append(
+            parent
+            / "sim_robot"
+            / "ws"
+            / "src"
+            / "warehouse_nav2_bringup"
+            / "config"
+            / "nav2_params.yaml"
+        )
     for candidate in candidates:
         resolved = candidate.resolve()
         if resolved.is_file():

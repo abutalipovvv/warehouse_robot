@@ -1,0 +1,2 @@
+robot/ros2_libs/src/** linguist-vendored -whitespace
+robot/simulation/src/Stage/** linguist-vendored -whitespace

@@ -13,11 +13,13 @@ from operator_app.web.routes import (
     ROBOT_MAP_ACTIONS,
     FleetRoute,
     RobotMapRoute,
+    SceneAssetRoute,
     parse_fleet_route,
     parse_robot_map_route,
     parse_robot_params_route,
     parse_robot_proxy_route,
     parse_robot_slam_route,
+    parse_scene_asset_route,
 )
 
 
@@ -46,6 +48,23 @@ def test_simulation_and_dynamic_fleet_map_routes() -> None:
     assert parse_fleet_route(
         urlparse("/api/fleet-manager/maps/local/My%20Map")
     ) == FleetRoute(FLEET_MANAGER_ID, "maps_local_get", "My Map")
+
+
+def test_scene_asset_routes_are_versioned_per_manager() -> None:
+    assert parse_scene_asset_route(
+        urlparse(
+            "/api/fleet-manager/scene3d/assets/abc123/walls.f32"
+        )
+    ) == SceneAssetRoute(FLEET_MANAGER_ID, "abc123", "walls.f32")
+    assert parse_scene_asset_route(
+        urlparse(
+            "/api/fleet-manager-sim/scene3d/assets/def456/floor.png"
+        )
+    ) == SceneAssetRoute(
+        FLEET_MANAGER_SIM_ID,
+        "def456",
+        "floor.png",
+    )
 
 
 @pytest.mark.parametrize(

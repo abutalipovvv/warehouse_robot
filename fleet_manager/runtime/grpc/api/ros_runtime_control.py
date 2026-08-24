@@ -27,7 +27,9 @@ class RosRuntimeControlMixin:
             "domainId": self.domain_id,
             "namespace": self.namespace,
             "statusTopic": self.status_topic,
-            "cmdVelTopic": self.cmd_vel_topic,
+            "cmdVelTopic": self.driver_cmd_vel_topic,
+            "teleopCmdVelTopic": self.cmd_vel_topic,
+            "motionModeTopic": self.motion_mode_topic,
             "initialPoseTopic": self.initial_pose_topic,
             "scanTopic": self.scan_topic,
             "goToLmTopic": self.go_to_lm_topic,
@@ -90,11 +92,13 @@ class RosRuntimeControlMixin:
     def teleop(self, *, linear: float, angular: float, timeout_ms: int = 350, owner_id: str = "") -> dict[str, Any]:
         del timeout_ms
         self._ensure_control_owner(owner_id, action="manual control")
+        self._publish_motion_mode("TELEOP", "manual control")
         self._publish_twist(linear, angular)
         return {"ok": True, "linear": float(linear), "angular": float(angular)}
 
     def teleop_stop(self) -> dict[str, Any]:
         self._publish_twist(0.0, 0.0)
+        self._publish_motion_mode("IDLE", "manual control stopped")
         return {"ok": True}
 
     def laser_scan_payload(self, *, topic: str = "/scan", include_intensities: bool = False) -> dict[str, Any]:
@@ -139,6 +143,7 @@ class RosRuntimeControlMixin:
             self.cancel_route(owner_id=owner_id)
         except Exception:
             self._publish_go_to_lm("cancel")
+        self._publish_motion_mode("IDLE", "stop requested")
         return {"ok": True}
 
     def cancel_route(self, *, owner_id: str = "") -> dict[str, Any]:
@@ -152,13 +157,16 @@ class RosRuntimeControlMixin:
         else:
             self._publish_go_to_lm("cancel")
         self._navigation_paused = False
+        self._publish_motion_mode("IDLE", "route canceled")
         return {"ok": True}
 
     def execute_route(self, payload: dict[str, Any]) -> dict[str, Any]:
         self._ensure_control_owner(str(payload.get("ownerId") or payload.get("owner_id") or ""), action="execute route")
         goal_pose = self._goal_pose_payload(payload)
         if goal_pose is not None:
-            return self._execute_pose_route(goal_pose, payload)
+            result = self._execute_pose_route(goal_pose, payload)
+            self._publish_motion_mode("ROUTE", "pose route accepted")
+            return result
 
         if self._execute_route_client is not None and self._service_available(self._execute_route_client, 0.05):
             route_payload = self._route_payload_from_request(payload)
@@ -168,6 +176,7 @@ class RosRuntimeControlMixin:
             if not bool(response.ok):
                 raise ValueError(str(response.error or "route execute failed"))
             self._navigation_paused = False
+            self._publish_motion_mode("ROUTE", "route accepted")
             return {"ok": True, "route": route_payload}
 
         goal_lm = str(
@@ -186,6 +195,7 @@ class RosRuntimeControlMixin:
             command["source_id"] = source_lm
         self._publish_go_to_lm(json.dumps(command, ensure_ascii=False))
         self._navigation_paused = False
+        self._publish_motion_mode("ROUTE", "LM route accepted")
         route = {
             "routeId": f"ros2-{goal_lm}",
             "goalLm": goal_lm,
@@ -226,6 +236,9 @@ class RosRuntimeControlMixin:
             self._control_owner_name = ""
             self._control_acquired_at = None
             self._control_lease_ms = 0
+        if self._cmd_vel_pub is not None and self._twist_type is not None:
+            self._publish_twist(0.0, 0.0)
+        self._publish_motion_mode("IDLE", "control released")
         return {"ok": True, "control": self._control_state_payload()}
 
     def relocate(

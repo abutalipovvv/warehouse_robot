@@ -30,7 +30,9 @@ class RosRuntimeLifecycleMixin:
         domain_id: int | None = None,
         namespace: str = "",
         status_topic: str = "/robot_status",
-        cmd_vel_topic: str = "/cmd_vel",
+        cmd_vel_topic: str = "motion/teleop_cmd_vel",
+        driver_cmd_vel_topic: str = "cmd_vel",
+        motion_mode_topic: str = "motion/mode",
         initial_pose_topic: str = "/initialpose",
         scan_topic: str = "/scan",
         go_to_lm_topic: str = "/go_to_lm",
@@ -58,6 +60,8 @@ class RosRuntimeLifecycleMixin:
         self.namespace = namespace.strip().strip("/")
         self.status_topic = self._topic(status_topic)
         self.cmd_vel_topic = self._topic(cmd_vel_topic)
+        self.driver_cmd_vel_topic = self._topic(driver_cmd_vel_topic)
+        self.motion_mode_topic = self._topic(motion_mode_topic)
         self.initial_pose_topic = self._topic(initial_pose_topic)
         self.scan_topic = self._topic(scan_topic)
         self.go_to_lm_topic = self._topic(go_to_lm_topic)
@@ -109,6 +113,7 @@ class RosRuntimeLifecycleMixin:
         self._executor = None
         self._thread: threading.Thread | None = None
         self._cmd_vel_pub = None
+        self._motion_mode_pub = None
         self._initial_pose_pub = None
         self._go_to_lm_pub = None
         self._plan_route_client = None
@@ -155,23 +160,33 @@ class RosRuntimeLifecycleMixin:
 
     def _default_slam_params_file(self) -> Path:
         for parent in Path(__file__).resolve().parents:
-            candidate = parent / "slam_toolbox" / "config" / "mapper_params_online_async.yaml"
+            candidate = (
+                parent
+                / "robot"
+                / "ros2_libs"
+                / "src"
+                / "slam_toolbox"
+                / "config"
+                / "mapper_params_online_async.yaml"
+            )
             if candidate.is_file():
                 return candidate.resolve()
-            candidate = parent / "src" / "slam_toolbox" / "config" / "mapper_params_online_async.yaml"
-            if candidate.is_file():
-                return candidate.resolve()
-        return Path("sim_robot/ws/src/slam_toolbox/config/mapper_params_online_async.yaml").resolve()
+        return Path("robot/ros2_libs/src/slam_toolbox/config/mapper_params_online_async.yaml").resolve()
 
     def _default_slam_launch_file(self) -> Path:
         for parent in Path(__file__).resolve().parents:
-            candidate = parent / "slam_toolbox" / "launch" / "online_async_launch.py"
+            candidate = (
+                parent
+                / "robot"
+                / "ros2_libs"
+                / "src"
+                / "slam_toolbox"
+                / "launch"
+                / "online_async_launch.py"
+            )
             if candidate.is_file():
                 return candidate.resolve()
-            candidate = parent / "src" / "slam_toolbox" / "launch" / "online_async_launch.py"
-            if candidate.is_file():
-                return candidate.resolve()
-        return Path("sim_robot/ws/src/slam_toolbox/launch/online_async_launch.py").resolve()
+        return Path("robot/ros2_libs/src/slam_toolbox/launch/online_async_launch.py").resolve()
 
     def close(self) -> None:
         self._stop_slam_process()
@@ -237,6 +252,11 @@ class RosRuntimeLifecycleMixin:
             node_name = f"robot_api_ros_runtime_{_clean_node_suffix(self.robot_id)}"
             node = Node(node_name, context=context)
             self._cmd_vel_pub = node.create_publisher(Twist, self.cmd_vel_topic, 10)
+            self._motion_mode_pub = node.create_publisher(
+                String,
+                self.motion_mode_topic,
+                10,
+            )
             self._initial_pose_pub = node.create_publisher(PoseWithCovarianceStamped, self.initial_pose_topic, 10)
             self._go_to_lm_pub = node.create_publisher(String, self.go_to_lm_topic, 10)
             self._plan_route_client = node.create_client(PlanRoute, self.plan_service_name)

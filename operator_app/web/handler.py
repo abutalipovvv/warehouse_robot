@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import mimetypes
 from http.server import SimpleHTTPRequestHandler
 from urllib.parse import parse_qs, unquote, urlparse
 
@@ -15,6 +16,7 @@ from .routes import (
     parse_robot_params_route,
     parse_robot_proxy_route,
     parse_robot_slam_route,
+    parse_scene_asset_route,
 )
 from .socket_handlers import OperatorWebSocketHandlerMixin
 
@@ -92,6 +94,10 @@ class OperatorRequestHandler(
             if path == "/api/fleet/orders" or path == "/orders":
                 self._handle_fleet_manager_get("orders", "")
                 return
+            scene_asset = parse_scene_asset_route(parsed)
+            if scene_asset is not None:
+                self._handle_scene3d_asset(*scene_asset)
+                return
             fleet_target = self._parse_fleet_manager_api(parsed)
             if fleet_target is not None:
                 manager_id, action, arg = fleet_target
@@ -126,6 +132,40 @@ class OperatorRequestHandler(
     def _should_probe_robots(self, parsed) -> bool:
         raw = str(parse_qs(parsed.query).get("probe", ["1"])[0] or "1").strip().lower()
         return raw not in {"0", "false", "no", "off"}
+
+    def _handle_scene3d_asset(
+        self,
+        manager_id: str,
+        source_digest: str,
+        relative_path: str,
+    ) -> None:
+        try:
+            path = self._require_state().fleet_scene3d_asset_path(
+                manager_id,
+                source_digest,
+                relative_path,
+            )
+        except ValueError as exc:
+            self._send_error_json(404, str(exc))
+            return
+        etag = f'"{source_digest}-{path.name}"'
+        if self.headers.get("If-None-Match", "").strip() == etag:
+            self.send_response(304)
+            self.send_header("ETag", etag)
+            self.send_header("Cache-Control", "public, max-age=31536000, immutable")
+            self.end_headers()
+            return
+        content = path.read_bytes()
+        content_type = mimetypes.guess_type(path.name)[0]
+        if path.suffix == ".f32":
+            content_type = "application/octet-stream"
+        self.send_response(200)
+        self.send_header("Content-Type", content_type or "application/octet-stream")
+        self.send_header("Content-Length", str(len(content)))
+        self.send_header("ETag", etag)
+        self.send_header("Cache-Control", "public, max-age=31536000, immutable")
+        self.end_headers()
+        self.wfile.write(content)
 
 
     def do_POST(self) -> None:

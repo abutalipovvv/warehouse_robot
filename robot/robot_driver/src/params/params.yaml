@@ -1,0 +1,179 @@
+robot_model:
+  source: nav2
+  radius: 0.632
+  footprint_segments: 4
+  footprint:
+  - x: -0.523
+    y: -0.353
+  - x: 0.477
+    y: -0.353
+  - x: 0.477
+    y: 0.347
+  - x: -0.523
+    y: 0.347
+  frames:
+    lidar:
+      x: 0.325
+      y: 0.249
+      label: LiDAR
+      color: '#1f6feb'
+    imu:
+      x: 0
+      y: 0
+      label: IMU
+      color: '#d95521'
+    wheel_left:
+      x: -0.043
+      y: 0.323
+      label: WL
+      color: '#2f3a4a'
+    wheel_right:
+      x: -0.043
+      y: -0.328
+      label: WR
+      color: '#2f3a4a'
+navigation:
+  odom_tracking_enabled: true
+  control_period: 0.05
+  route_speed: 1
+  max_linear_acceleration: 0.5
+  max_linear_deceleration: 0.8
+  footprint_lookahead: 0.65
+  collision_margin: 0.04
+  stop_distance: 0.05
+  angular_gain: 2.2
+  max_angular_speed: 0.9
+  rotate_in_place_angle_deg: 32
+  curve_speed_limit: 0.22
+  curve_heading_threshold_deg: 5
+  curve_curvature_threshold: 0.05
+  curve_preview_distance: 0.25
+  curve_angular_reserve: 0.35
+  curve_min_speed: 0.08
+  rejoin_speed_limit: 0.16
+  hard_rejoin_speed_limit: 0.06
+  strict_edge_tracking: true
+  strict_speed_limit: 0.8
+  edge_transition_tolerance: 0.04
+  drive_alignment_angle_deg: 12
+  lateral_error_gain: 3
+  rejoin_lateral_error_gain: 1.5
+  precision_lateral_tolerance: 0.02
+  precision_speed_limit: 0.18
+  goal_precision_speed_limit: 0.08
+  goal_precision_min_speed: 0.01
+  goal_precision_linear_gain: 1.2
+  tracking_controller: pid
+  tracking_pid:
+    enabled: true
+    kp:
+    - 2.2
+    - 2.2
+    ki:
+    - 0.04
+    - 0.01
+    kd:
+    - 0.06
+    - 0.03
+    integral_limit:
+    - 0.35
+    - 0.35
+    derivative_filter_alpha: 0.25
+    curvature_feedforward_gain: 1
+  tracking_lqr:
+    q_lateral: 5
+    q_heading: 2.5
+    r_angular: 1
+    min_model_speed: 0.08
+    speed_resolution: 0.02
+    riccati_iterations: 80
+    riccati_tolerance: 1.0e-09
+    curvature_feedforward_gain: 1
+  trajectory_speed_profile:
+    enabled: true
+    max_forward_speed: 0.8
+    max_backward_speed: 0.3
+    max_lateral_acceleration: 0.2
+    max_jerk: 1.5
+    jerk_smoothing_iterations: 3
+planner:
+  nearest_lm_tolerance: 0.05
+  trajectory_sample_distance: 0.01
+  on_route_tolerance: 0.1
+  precision_start_distance: 0.1
+localization:
+  pose_source: AMCL + IMU-aided odom
+  localization_timeout: 0.5
+  amcl_correction_timeout: 5
+  allowed_lateral_error: 0.02
+  allowed_yaw_error_deg: 1
+  goal_position_tolerance: 0.005
+  goal_linear_velocity_tolerance: 0.01
+  goal_angular_velocity_tolerance: 0.03
+  arrival_stable_cycles: 5
+  accept_stale_pose_when_stationary: true
+  stationary_linear_velocity_epsilon: 0.02
+  stationary_angular_velocity_epsilon: 0.05
+manual:
+  linear_speed: 1.3
+  angular_speed: 1.8
+  prediction_time: 1
+  prediction_step: 0.1
+motion_gateway:
+  publish_rate_hz: 50
+  max_forward_speed: 1.5
+  max_backward_speed: 1.3
+  max_angular_speed: 1.8
+  route_timeout_sec: 0.25
+  teleop_timeout_sec: 0.45
+  nav2_timeout_sec: 0.3
+nav2:
+  amcl:
+    alpha1: 0.01
+    alpha2: 0.005
+    alpha3: 0.01
+    alpha4: 0.005
+    alpha5: 0.005
+    update_min_d: 0.02
+    update_min_a: 0.02
+    transform_tolerance: 0.5
+    min_particles: 800
+    max_particles: 3000
+    max_beams: 180
+    sigma_hit: 0.12
+  controller_server:
+    controller_frequency: 20
+    xy_goal_tolerance: 0.05
+    yaw_goal_tolerance: 0.05
+    follow_path:
+      vx_max: 0.5
+      vx_min: -0.35
+      wz_max: 1.9
+  local_costmap:
+    robot_radius: 0.632
+    footprint:
+    - x: -0.523
+      y: -0.3532
+    - x: 0.477
+      y: -0.3532
+    - x: 0.477
+      y: 0.3468
+    - x: -0.523
+      y: 0.3468
+    inflation_radius: 0.7
+    cost_scaling_factor: 3
+  global_costmap:
+    robot_radius: 0.632
+    footprint:
+    - x: -0.523
+      y: -0.3532
+    - x: 0.477
+      y: -0.3532
+    - x: 0.477
+      y: 0.3468
+    - x: -0.523
+      y: 0.3468
+    inflation_radius: 0.7
+  velocity_smoother:
+    max_velocity_x: 0.5
+    max_velocity_theta: 2

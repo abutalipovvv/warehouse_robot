@@ -1,0 +1,18 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>robot_map_manager</name>
+  <version>0.0.0</version>
+  <description>Map lifecycle manager for warehouse robot runtime.</description>
+  <maintainer email="kaisar.abutalipovv@gmail.com">ros</maintainer>
+  <license>TODO: License declaration</license>
+
+  <depend>nav2_msgs</depend>
+  <depend>rclpy</depend>
+  <depend>robot_msgs</depend>
+  <depend>robot_planner</depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

@@ -128,6 +128,7 @@ EXPECTED_COMPONENT_METHODS = {
     },
     RosRuntimeMessageServiceMixin: {
         "_publish_twist",
+        "_publish_motion_mode",
         "_publish_go_to_lm",
         "_service_available",
         "_call_service",
@@ -143,6 +144,8 @@ EXPECTED_STATE_KEYS = [
     "namespace",
     "status_topic",
     "cmd_vel_topic",
+    "driver_cmd_vel_topic",
+    "motion_mode_topic",
     "initial_pose_topic",
     "scan_topic",
     "go_to_lm_topic",
@@ -194,6 +197,7 @@ EXPECTED_STATE_KEYS = [
     "_executor",
     "_thread",
     "_cmd_vel_pub",
+    "_motion_mode_pub",
     "_initial_pose_pub",
     "_go_to_lm_pub",
     "_plan_route_client",
@@ -317,7 +321,7 @@ def test_facade_composes_six_disjoint_capabilities() -> None:
         assert actual == expected
         assert owned.isdisjoint(actual)
         owned.update(actual)
-    assert len(owned) == 80
+    assert len(owned) == 81
     assert _defined_methods(RosRobotRuntime) == set()
 
 

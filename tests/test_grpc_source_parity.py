@@ -9,8 +9,8 @@ ROOT = Path(__file__).resolve().parents[1]
 SERVER_API = ROOT / "fleet_manager" / "runtime" / "grpc" / "api"
 ROBOT_API = (
     ROOT
-    / "sim_robot"
-    / "ws"
+    / "robot"
+    / "robot_driver"
     / "src"
     / "robot_grpc_api"
     / "robot_grpc_api"

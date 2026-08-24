@@ -78,6 +78,8 @@ class OperatorFleetManager:
         self.map_dir = self.resolve_map_dir(map_dir)
         self.maps_root = self.map_dir.parent
         self._scene3d_cache: dict[str, Any] | None = None
+        self._scene_asset_builder = None
+        self._scene_asset_manifest: dict[str, Any] = {}
         self._map_service = FleetMapService(self)
         self._manual_control = FleetManualControlService(self)
         self._snapshot_service = FleetSnapshotService(self)
@@ -130,6 +132,16 @@ class OperatorFleetManager:
 
     def scene3d_payload(self) -> dict[str, Any]:
         return self._map_service.scene3d_payload()
+
+    def scene3d_asset_path(
+        self,
+        source_digest: str,
+        relative_path: str,
+    ) -> Path:
+        return self._map_service.scene3d_asset_path(
+            source_digest,
+            relative_path,
+        )
 
     def maps_active_payload(self) -> dict[str, Any]:
         return self._map_service.maps_active_payload()

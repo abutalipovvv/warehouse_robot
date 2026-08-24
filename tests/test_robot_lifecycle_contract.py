@@ -60,7 +60,7 @@ def test_robot_api_disables_grpc_port_reuse_for_single_control_owner() -> None:
 
     standalone_server = (
         PROJECT_ROOT
-        / "sim_robot/ws/src/robot_grpc_api/robot_grpc_api/server.py"
+        / "robot/robot_driver/src/robot_grpc_api/robot_grpc_api/server.py"
     ).read_text(encoding="utf-8")
     assert '("grpc.so_reuseport", 0)' in standalone_server
 

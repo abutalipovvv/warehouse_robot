@@ -9,10 +9,15 @@ import yaml
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DESCRIPTION_ROOT = (
-    PROJECT_ROOT / "sim_robot" / "ws" / "src" / "ecom_mobile_robot_description"
+    PROJECT_ROOT
+    / "robot"
+    / "robot_driver"
+    / "src"
+    / "ecom_mobile_robot_description"
 )
 DESCRIPTION = DESCRIPTION_ROOT / "urdf" / "ecom_stage.urdf.xacro"
-STAGE_ROOT = PROJECT_ROOT / "sim_robot" / "ws" / "src" / "stage_ros2"
+STAGE_ROOT = PROJECT_ROOT / "robot" / "simulation" / "src" / "stage_ros2"
+ROBOT_DRIVER_SRC = PROJECT_ROOT / "robot" / "robot_driver" / "src"
 OPERATOR_STATIC_ROOT = PROJECT_ROOT / "operator_app" / "web" / "static"
 
 
@@ -84,7 +89,7 @@ def test_ecom_dimensions_are_used_by_urdf_stage_nav2_and_planner() -> None:
     assert "hokuyolaser(pose [ 0.32487 0.24906 0.048 0 ])" in stage_model
 
     params = yaml.safe_load(
-        (PROJECT_ROOT / "sim_robot" / "ws" / "src" / "params.yaml").read_text(
+        (ROBOT_DRIVER_SRC / "params" / "params.yaml").read_text(
             encoding="utf-8"
         )
     )
@@ -109,10 +114,10 @@ def test_ecom_dimensions_are_used_by_urdf_stage_nav2_and_planner() -> None:
     nav2 = yaml.safe_load(
         (
             PROJECT_ROOT
-            / "sim_robot"
-            / "ws"
+            / "robot"
+            / "robot_driver"
             / "src"
-            / "nav2"
+            / "warehouse_nav2_bringup"
             / "config"
             / "nav2_params.yaml"
         ).read_text(encoding="utf-8")
@@ -147,10 +152,10 @@ def test_stage_launch_uses_ecom_description_and_keeps_stage_hardware_contract() 
     nav2 = yaml.safe_load(
         (
             PROJECT_ROOT
-            / "sim_robot"
-            / "ws"
+            / "robot"
+            / "robot_driver"
             / "src"
-            / "nav2"
+            / "warehouse_nav2_bringup"
             / "config"
             / "nav2_params.yaml"
         ).read_text(encoding="utf-8")
@@ -287,8 +292,8 @@ def test_stage_launch_uses_ecom_description_and_keeps_stage_hardware_contract() 
 
     legacy_launch = (
         PROJECT_ROOT
-        / "sim_robot"
-        / "ws"
+        / "robot"
+        / "robot_driver"
         / "src"
         / "trp1_description"
         / "launch"

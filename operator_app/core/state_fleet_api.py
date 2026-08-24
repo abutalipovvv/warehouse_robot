@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 from .fleet_manager import FLEET_MANAGER_ID, FLEET_MANAGER_SIM_ID
@@ -15,6 +16,21 @@ class FleetApiRoutingMixin:
         return self._execute_fleet_command(
             FLEET_MANAGER_ID,
             self.fleet_manager.params_payload,
+        )
+
+    def fleet_scene3d_asset_path(
+        self,
+        manager_id: str,
+        source_digest: str,
+        relative_path: str,
+    ) -> Path:
+        manager = self._fleet_manager_for_id(manager_id)
+        return self._execute_fleet_command(
+            manager_id,
+            lambda: manager.scene3d_asset_path(
+                source_digest,
+                relative_path,
+            ),
         )
 
     def save_fleet_params_payload(self, payload: dict[str, Any]) -> dict[str, Any]:

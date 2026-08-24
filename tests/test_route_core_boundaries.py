@@ -5,7 +5,9 @@ import sys
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
-ROBOT_PLANNER_SRC = ROOT / "sim_robot" / "ws" / "src" / "robot_planner"
+ROBOT_PLANNER_SRC = (
+    ROOT / "robot" / "robot_driver" / "src" / "robot_planner"
+)
 if str(ROBOT_PLANNER_SRC) not in sys.path:
     sys.path.insert(0, str(ROBOT_PLANNER_SRC))
 
@@ -29,7 +31,9 @@ def test_contextual_default_params_paths_are_separate() -> None:
     from robot_planner.route_core import DEFAULT_PARAMS_PATH as robot_params_path
 
     assert fleet_params_path == ROOT / "fleet_manager" / "config" / "params.yaml"
-    assert robot_params_path == ROOT / "sim_robot" / "ws" / "src" / "params.yaml"
+    assert robot_params_path == (
+        ROOT / "robot" / "robot_driver" / "src" / "params" / "params.yaml"
+    )
 
 
 def test_fleet_and_robot_params_keep_separate_defaults() -> None:
