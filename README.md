@@ -117,6 +117,19 @@ separate overlays. Rebuild only the layer whose sources changed:
 
 The build does not require `rosdep install`.
 
+For Ubuntu 24.04 x86-64 with ROS 2 Jazzy, the stable library and simulation
+overlays are also stored as compressed prebuilt artifacts. A fresh compatible
+machine can restore them without compiling those two layers:
+
+```bash
+./robot/tools/restore_prebuilt.sh
+./robot/tools/build_robot_driver.sh
+source robot/setup.bash
+```
+
+Prebuilt overlays are ABI-specific. ARM64 or another Ubuntu/ROS release needs
+its own bundle; see `robot/prebuilt/README.md`.
+
 ## Run Simulator
 
 ```bash
