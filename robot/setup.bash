@@ -10,7 +10,7 @@ for required_setup in \
   "${ROBOT_ROOT}/robot_driver/install/local_setup.bash"; do
   if [[ ! -f "${required_setup}" ]]; then
     echo "Required robot overlay is missing: ${required_setup}" >&2
-    echo "Run robot/tools/restore_prebuilt.sh and robot/tools/build_robot_driver.sh." >&2
+    echo "Run robot/tools/package_prebuilt.sh, then build robot/robot_driver with colcon." >&2
     unset ROBOT_ROOT required_setup
     return 1
   fi

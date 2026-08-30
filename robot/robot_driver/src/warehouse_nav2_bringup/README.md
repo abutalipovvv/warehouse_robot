@@ -24,6 +24,9 @@ With `ros-jazzy-desktop` and the explicitly listed Ubuntu build libraries
 installed, build the local dependency closure required by this bringup:
 
 ```bash
-./robot/tools/build_ros2_libs.sh
-./robot/tools/build_robot_driver.sh --packages-up-to warehouse_nav2_bringup
+source /opt/ros/jazzy/setup.bash
+source robot/ros2_libs/install/local_setup.bash
+cd robot/robot_driver
+colcon build --packages-up-to warehouse_nav2_bringup \
+  --cmake-args -DCMAKE_BUILD_TYPE=Release
 ```

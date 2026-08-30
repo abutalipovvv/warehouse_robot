@@ -8,8 +8,13 @@ Restore the bundle matching the current operating system, architecture and ROS
 distribution:
 
 ```bash
-./robot/tools/restore_prebuilt.sh
-./robot/tools/build_robot_driver.sh
+./robot/tools/package_prebuilt.sh
+
+source /opt/ros/jazzy/setup.bash
+source robot/ros2_libs/install/local_setup.bash
+cd robot/robot_driver
+colcon build --cmake-args -DCMAKE_BUILD_TYPE=Release
+cd ../..
 source robot/setup.bash
 ```
 
@@ -20,10 +25,13 @@ artifacts must not be used on ARM64 or another Ubuntu/ROS release.
 After intentionally rebuilding the stable overlays, refresh their artifacts:
 
 ```bash
-./robot/tools/package_prebuilt.sh
+./robot/tools/package_prebuilt.sh create
 git add robot/prebuilt
 ```
 
-Generated colcon metadata contains build-time absolute paths. The restore
+The `create` command refuses CMake caches that were not built with
+`-DCMAKE_BUILD_TYPE=Release`.
+
+Generated colcon metadata contains build-time absolute paths. The extraction
 script rewrites text metadata for the checkout's actual location. Absolute
 source paths embedded in ELF debug strings are harmless and are left intact.

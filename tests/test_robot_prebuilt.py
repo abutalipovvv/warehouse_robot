@@ -24,6 +24,16 @@ def test_prebuilt_bundle_matches_supported_platform() -> None:
     assert (bundle / "SHA256SUMS").is_file()
 
 
+def test_single_prebuilt_script_extracts_by_default_and_checks_release() -> None:
+    script = (ROOT / "robot" / "tools" / "package_prebuilt.sh").read_text(
+        encoding="utf-8"
+    )
+    assert 'command="${1:-extract}"' in script
+    assert "extract_archives" in script
+    assert "CMAKE_BUILD_TYPE:STRING=Release" in script
+    assert not (ROOT / "robot" / "tools" / "restore_prebuilt.sh").exists()
+
+
 def test_relocator_rewrites_metadata_but_not_binary_payloads(
     tmp_path: Path,
 ) -> None:

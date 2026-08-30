@@ -1,8 +1,14 @@
 # Physical robot identity
 
-Each physical robot must have one persistent identity file. Copy
-`robot.env.example` to `/etc/warehouse-robot/robot.env`, assign a fleet-unique
-`ROBOT_ID` and `ROS_DOMAIN_ID`, and use an underscore-only `ROS_NAMESPACE`.
+By default, both real and simulation launch files derive a robot identity from
+the active Wi-Fi IPv4 address (or the default-route Ethernet address). The last
+octet becomes both the robot suffix and DDS domain: `192.168.1.6` becomes
+`ROBOT_ID=robot6` and `ROS_DOMAIN_ID=6`.
+
+Use a persistent identity file only when the network-derived value is not
+suitable. Copy `robot.env.example` to `/etc/warehouse-robot/robot.env`, assign a
+fleet-unique `ROBOT_ID` and `ROS_DOMAIN_ID`, and use an underscore-only
+`ROS_NAMESPACE`.
 
 Use `cyclonedds.localhost.xml` when all ROS nodes and sensor drivers run on one
 computer. Use `cyclonedds.robot_lan.xml` when DDS must connect several
@@ -18,5 +24,5 @@ python3 robot/tools/validate_robot_identity.py \
   --env-file /etc/warehouse-robot/robot.env
 ```
 
-Simulation does not set `WAREHOUSE_REQUIRE_IDENTITY`; it keeps one DDS domain
-and separates simulated robots using ROS namespaces and frame prefixes.
+Explicit environment values or `robot_id:=... ros_domain_id:=...` launch
+arguments override automatic detection.

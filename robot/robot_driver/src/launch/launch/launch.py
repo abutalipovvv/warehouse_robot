@@ -6,7 +6,13 @@ import re
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, OpaqueFunction
+from launch.actions import (
+    DeclareLaunchArgument,
+    LogInfo,
+    OpaqueFunction,
+    SetEnvironmentVariable,
+    SetLaunchConfiguration,
+)
 from launch.substitutions import EnvironmentVariable, LaunchConfiguration
 from launch_ros.actions import Node
 
@@ -135,7 +141,9 @@ def _validate_robot_identity(context):
     namespace = str(
         LaunchConfiguration("robot_namespace").perform(context)
     ).strip().strip("/")
-    domain_raw = os.environ.get("ROS_DOMAIN_ID", "").strip()
+    domain_raw = str(
+        LaunchConfiguration("ros_domain_id").perform(context)
+    ).strip()
     if not re.fullmatch(r"[A-Za-z][A-Za-z0-9_-]{1,63}", robot_id):
         raise RuntimeError(
             "ROBOT_ID must start with a letter and contain 2-64 letters, "
@@ -166,6 +174,31 @@ def _validate_robot_identity(context):
     return []
 
 
+def _configure_network_identity(context):
+    from robot_grpc_api.network_identity import resolve_network_identity
+
+    identity = resolve_network_identity(
+        LaunchConfiguration("robot_id").perform(context),
+        LaunchConfiguration("ros_domain_id").perform(context),
+    )
+    actions = [
+        SetLaunchConfiguration("robot_id", identity.robot_id),
+        SetLaunchConfiguration("ros_domain_id", str(identity.domain_id)),
+        SetEnvironmentVariable("ROS_DOMAIN_ID", str(identity.domain_id)),
+    ]
+    if identity.interface != "explicit":
+        actions.append(
+            LogInfo(
+                msg=(
+                    f"[identity] {identity.interface}={identity.ipv4} "
+                    f"ROBOT_ID={identity.robot_id} "
+                    f"ROS_DOMAIN_ID={identity.domain_id}"
+                )
+            )
+        )
+    return actions
+
+
 def generate_launch_description() -> LaunchDescription:
     project_root = _project_root()
     maps_root = _maps_root(project_root)
@@ -183,7 +216,14 @@ def generate_launch_description() -> LaunchDescription:
         DeclareLaunchArgument("params", default_value=default_params),
         DeclareLaunchArgument(
             "robot_id",
-            default_value=EnvironmentVariable("ROBOT_ID", default_value="robot1"),
+            default_value=EnvironmentVariable("ROBOT_ID", default_value="auto"),
+        ),
+        DeclareLaunchArgument(
+            "ros_domain_id",
+            default_value=EnvironmentVariable(
+                "ROS_DOMAIN_ID",
+                default_value="auto",
+            ),
         ),
         DeclareLaunchArgument(
             "robot_namespace",
@@ -432,6 +472,7 @@ def generate_launch_description() -> LaunchDescription:
     return LaunchDescription(
         arguments
         + [
+            OpaqueFunction(function=_configure_network_identity),
             OpaqueFunction(function=_validate_robot_identity),
             motion_gateway_node,
             status_node,

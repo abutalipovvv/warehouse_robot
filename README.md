@@ -103,47 +103,49 @@ the opaque `rosdep install` step and does not install binary Nav2 packages:
 ./robot/tools/install_ubuntu_build_dependencies.sh
 ```
 
-Build the pinned libraries once, then build the common runtime and simulator as
-separate overlays. Every script builds CMake packages in `Release` mode.
-Rebuild only the layer whose sources changed:
-
-```bash
-./robot/tools/build_ros2_libs.sh
-./robot/tools/build_robot_driver.sh
-./robot/tools/build_simulation.sh
-
-# Or build all three in dependency order:
-./robot/tools/build_all.sh
-```
-
-The build does not require `rosdep install`.
-
 For Ubuntu 24.04 x86-64 with ROS 2 Jazzy, the stable library and simulation
 overlays are also stored as compressed prebuilt artifacts. A fresh compatible
 machine can restore them without compiling those two layers:
 
 ```bash
-./robot/tools/restore_prebuilt.sh
-./robot/tools/build_robot_driver.sh
+./robot/tools/package_prebuilt.sh
+
+# robot_driver intentionally remains a local/manual build:
+source /opt/ros/jazzy/setup.bash
+source robot/ros2_libs/install/local_setup.bash
+cd robot/robot_driver
+colcon build --cmake-args -DCMAKE_BUILD_TYPE=Release
+cd ../..
 source robot/setup.bash
 ```
 
 Prebuilt overlays are ABI-specific. ARM64 or another Ubuntu/ROS release needs
 its own bundle; see `robot/prebuilt/README.md`.
 
-## Run Simulator
+When intentionally rebuilding the stable overlays, use Release mode exactly:
 
-The launcher activates all overlays itself and opens the Stage GUI together
-with the robot runtime:
+```bash
+cd robot/ros2_libs
+colcon build --cmake-args -DCMAKE_BUILD_TYPE=Release
+
+cd ../simulation
+source /opt/ros/jazzy/setup.bash
+source ../ros2_libs/install/local_setup.bash
+source ../robot_driver/install/local_setup.bash
+colcon build --cmake-args -DCMAKE_BUILD_TYPE=Release
+```
+
+The build does not require `rosdep install`.
+
+## Run Simulator
 
 ```bash
 cd ~/warehouse_robot
-./robot/tools/run_simulation.sh
+source robot/setup.bash
+ros2 launch stage_ros2 simulation.launch.py
 ```
 
-Launch arguments can be passed through, for example
-`./robot/tools/run_simulation.sh robot_api_port:=50052`. For a headless run,
-use `stage_enable_gui:=false`.
+For a headless run, add `stage_enable_gui:=false`.
 
 If needed, start Nav2/AMCL in a separate terminal:
 
@@ -175,10 +177,12 @@ Useful launch overrides:
 ros2 launch robot_launch launch.py map_dir:=/path/to/map.smap params:=/path/to/params.yaml
 ```
 
-For a physical robot, provision a persistent identity from
-`robot/config/robot.env.example` and validate it with
-`robot/tools/validate_robot_identity.py`. Fleet communication remains
-gRPC; the robot's DDS domain is isolated from other robots.
+Both launch commands derive identity from the active Wi-Fi IPv4 address, with
+the default-route Ethernet interface as fallback. For example,
+`192.168.1.6` becomes `ROBOT_ID=robot6` and `ROS_DOMAIN_ID=6`. This gives gRPC
+a unique robot identity and isolates each robot's DDS topics. Explicit
+`robot_id:=... ros_domain_id:=...` launch arguments override auto-detection.
+Fleet communication remains gRPC rather than shared DDS.
 
 ## Motion ownership
 
