@@ -104,7 +104,8 @@ the opaque `rosdep install` step and does not install binary Nav2 packages:
 ```
 
 Build the pinned libraries once, then build the common runtime and simulator as
-separate overlays. Rebuild only the layer whose sources changed:
+separate overlays. Every script builds CMake packages in `Release` mode.
+Rebuild only the layer whose sources changed:
 
 ```bash
 ./robot/tools/build_ros2_libs.sh
@@ -132,11 +133,17 @@ its own bundle; see `robot/prebuilt/README.md`.
 
 ## Run Simulator
 
+The launcher activates all overlays itself and opens the Stage GUI together
+with the robot runtime:
+
 ```bash
 cd ~/warehouse_robot
-source robot/setup.bash
-ros2 launch stage_ros2 simulation.launch.py
+./robot/tools/run_simulation.sh
 ```
+
+Launch arguments can be passed through, for example
+`./robot/tools/run_simulation.sh robot_api_port:=50052`. For a headless run,
+use `stage_enable_gui:=false`.
 
 If needed, start Nav2/AMCL in a separate terminal:
 

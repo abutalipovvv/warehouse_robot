@@ -24,4 +24,7 @@ source "${DRIVER_SETUP}"
 set -u
 
 cd "${ROBOT_ROOT}/simulation"
-colcon build --symlink-install "$@"
+colcon build \
+  --symlink-install \
+  --cmake-args -DCMAKE_BUILD_TYPE=Release \
+  "$@"

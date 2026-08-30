@@ -19,4 +19,5 @@ mapfile -t LOCAL_PACKAGES < <(colcon list --names-only)
 colcon build \
   --symlink-install \
   --allow-overriding "${LOCAL_PACKAGES[@]}" \
+  --cmake-args -DCMAKE_BUILD_TYPE=Release \
   "$@"
