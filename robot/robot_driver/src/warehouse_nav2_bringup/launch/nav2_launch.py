@@ -91,6 +91,9 @@ def generate_launch_description() -> LaunchDescription:
         "autostart": LaunchConfiguration("autostart"),
         "params_file": LaunchConfiguration("params_file"),
         "log_level": LaunchConfiguration("log_level"),
+        "initial_pose_x": LaunchConfiguration("initial_pose_x"),
+        "initial_pose_y": LaunchConfiguration("initial_pose_y"),
+        "initial_pose_yaw": LaunchConfiguration("initial_pose_yaw"),
     }
 
     return LaunchDescription(
@@ -103,6 +106,12 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument("enable_rviz", default_value="true"),
             DeclareLaunchArgument("log_level", default_value="warn"),
             DeclareLaunchArgument("params_file", default_value=params_file),
+            DeclareLaunchArgument("initial_pose_x", default_value="-4.902"),
+            DeclareLaunchArgument("initial_pose_y", default_value="1.362"),
+            DeclareLaunchArgument(
+                "initial_pose_yaw",
+                default_value="3.141592653589793",
+            ),
             DeclareLaunchArgument(
                 "nav2_cmd_vel_topic",
                 default_value="motion/nav2_cmd_vel",

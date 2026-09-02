@@ -12,4 +12,6 @@ paths:
 
 fleet:
   params_path: ../../fleet_manager/config/params.yaml
-  map_dir: ../../fleet_manager/map_data/maps_out/22.05.26_smap.smap
+  # Empty map_dir makes the Operator App load the exact SMAP used by Stage.
+  fleet_config: ../../robot/simulation/src/stage_ros2/config/fleet.yaml
+  map_dir: ""

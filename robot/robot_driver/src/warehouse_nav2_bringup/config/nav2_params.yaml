@@ -228,13 +228,9 @@ local_costmap:
         mark_threshold: 0
         observation_sources: scan
         scan:
-          # A relative topic will be appended to the parent of the local_costmap namespace.
-          # For example:
-          #   * User chosen namespace is `tb4`.
-          #   * User chosen topic is `scan`.
-          #   * Topic will be remapped to `/tb4/scan` without `local_costmap`.
-          #   * Use global topic `/scan` if you do not wish the node namespace to apply
-          topic: scan
+          # Each robot is isolated by ROS_DOMAIN_ID, not by a ROS namespace.
+          # Use the one merged front+rear scan published in that robot's domain.
+          topic: /scan
           max_obstacle_height: 2.0
           clearing: true
           marking: true
@@ -267,13 +263,9 @@ global_costmap:
         enabled: true
         observation_sources: scan
         scan:
-          # A relative topic will be appended to the parent of the global_costmap namespace.
-          # For example:
-          #   * User chosen namespace is `tb4`.
-          #   * User chosen topic is `scan`.
-          #   * Topic will be remapped to `/tb4/scan` without `global_costmap`.
-          #   * Use global topic `/scan` if you do not wish the node namespace to apply
-          topic: scan
+          # Each robot is isolated by ROS_DOMAIN_ID, not by a ROS namespace.
+          # Use the one merged front+rear scan published in that robot's domain.
+          topic: /scan
           max_obstacle_height: 2.0
           clearing: true
           marking: true

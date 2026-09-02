@@ -37,9 +37,13 @@ void StageNode::Vehicle::Camera::init(bool add_id_to_topic)
     frame_id += std::to_string(id());
   }
 
-  pub_image = vehicle->node()->create_publisher<sensor_msgs::msg::Image>(topic_name_image, 10);
-  pub_camera = vehicle->node()->create_publisher<sensor_msgs::msg::CameraInfo>(topic_name_camera_info, 10);
-  pub_depth = vehicle->node()->create_publisher<sensor_msgs::msg::Image>(topic_name_depth, 10);
+  pub_image = vehicle->ros_node()->create_publisher<sensor_msgs::msg::Image>(
+      topic_name_image, 10);
+  pub_camera =
+      vehicle->ros_node()->create_publisher<sensor_msgs::msg::CameraInfo>(
+          topic_name_camera_info, 10);
+  pub_depth = vehicle->ros_node()->create_publisher<sensor_msgs::msg::Image>(
+      topic_name_depth, 10);
   initialized_ = true;
 }
 bool StageNode::Vehicle::Camera::prepare_msg_image()

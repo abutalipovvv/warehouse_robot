@@ -23,7 +23,7 @@ FLEET_ROOT = PROJECT_ROOT / "fleet_manager"
 FLEET_MAP_DATA_ROOT = FLEET_ROOT / "map_data"
 FLEET_MAPS_OUT_ROOT = FLEET_MAP_DATA_ROOT / "maps_out"
 DEFAULT_FLEET_MAP_DIR = (
-    FLEET_MAPS_OUT_ROOT / "22.05.26_smap.smap"
+    FLEET_MAPS_OUT_ROOT / "benchmark_open_kiva.smap"
 )
 DEFAULT_FLEET_SIM_MAP_DIR = (
     FLEET_MAPS_OUT_ROOT / "benchmark_open_kiva.smap"

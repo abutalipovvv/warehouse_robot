@@ -1175,6 +1175,7 @@ export const withActions = (Base) => class OperatorAppActions extends Base {
       this.fleetNameEdited = false;
       if (mode === "robots") {
         this.fleetRobotApiInput.value = "";
+        this.robotMessageText.textContent = `${addedName || "Robot"} added. Press Seize Control, then select an LM or map pose.`;
       } else {
         this.fleetRobotNameInput.value = this.nextFleetRobotName(Array.isArray(this.currentStatus?.robots) ? this.currentStatus.robots : []);
       }

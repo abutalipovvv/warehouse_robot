@@ -51,6 +51,118 @@ def test_operator_state_facade_composes_focused_capabilities() -> None:
     )
 
 
+def test_fleet_active_map_replaces_a_clean_stale_operator_selection() -> None:
+    state = OperatorAppState.__new__(OperatorAppState)
+    pulled: list[str] = []
+    saved: list[tuple[str, str, bool]] = []
+
+    class Manager:
+        def maps_active_payload(self) -> dict[str, Any]:
+            return {"mapName": "runtime-map", "signature": "runtime-signature"}
+
+        def pull_map_payload(self, map_name: str) -> dict[str, Any]:
+            pulled.append(map_name)
+            if map_name == "runtime-map":
+                return {
+                    "mapName": "runtime-map",
+                    "signature": "runtime-signature",
+                    "map": {"name": "runtime-map"},
+                }
+            return {
+                "mapName": "old-map",
+                "signature": "old-signature",
+                "map": {"name": "old-map"},
+            }
+
+    class Cache:
+        active = "old-map"
+        payload: dict[str, Any] = {
+            "mapName": "old-map",
+            "sourceMapName": "old-map",
+            "signature": "old-signature",
+            "map": {"name": "old-map"},
+            "hasLocalChanges": False,
+        }
+
+        def active_map_name(self, manager_id: str) -> str:
+            return self.active
+
+        def load_active_map(self, manager_id: str) -> dict[str, Any]:
+            return dict(self.payload)
+
+        def save_pulled_map(
+            self,
+            manager_id: str,
+            bundle: dict[str, Any],
+            *,
+            activate: bool,
+        ) -> None:
+            saved.append((manager_id, bundle["mapName"], activate))
+            self.active = bundle["mapName"]
+            self.payload = {
+                **bundle,
+                "sourceMapName": bundle["mapName"],
+                "hasLocalChanges": False,
+            }
+
+    state._fleet_manager_for_id = lambda manager_id: Manager()
+    state.map_cache = Cache()
+
+    result = state.fleet_local_active_map_payload()
+
+    assert result["activeMapName"] == "runtime-map"
+    assert result["robotActiveMapName"] == "runtime-map"
+    assert result["map"] == {"name": "runtime-map"}
+    assert result["syncState"] == "synchronized"
+    assert saved == [(FLEET_MANAGER_ID, "runtime-map", True)]
+    assert pulled == ["runtime-map", "runtime-map"]
+
+
+def test_fleet_active_map_preserves_an_edited_local_selection() -> None:
+    state = OperatorAppState.__new__(OperatorAppState)
+    saved: list[str] = []
+
+    class Manager:
+        def maps_active_payload(self) -> dict[str, Any]:
+            return {"mapName": "runtime-map", "signature": "runtime-signature"}
+
+        def pull_map_payload(self, map_name: str) -> dict[str, Any]:
+            assert map_name == "draft-map"
+            return {"mapName": "draft-map", "signature": "stored-signature"}
+
+    class Cache:
+        def active_map_name(self, manager_id: str) -> str:
+            return "draft-map"
+
+        def load_active_map(self, manager_id: str) -> dict[str, Any]:
+            return {
+                "mapName": "draft-map",
+                "sourceMapName": "draft-map",
+                "signature": "edited-signature",
+                "map": {"name": "draft-map"},
+                "hasLocalChanges": True,
+            }
+
+        def save_pulled_map(
+            self,
+            manager_id: str,
+            bundle: dict[str, Any],
+            *,
+            activate: bool,
+        ) -> None:
+            saved.append(bundle["mapName"])
+
+    state._fleet_manager_for_id = lambda manager_id: Manager()
+    state.map_cache = Cache()
+
+    result = state.fleet_local_active_map_payload()
+
+    assert result["activeMapName"] == "draft-map"
+    assert result["hasLocalChanges"] is True
+    assert result["syncState"] == "local_changes"
+    assert saved == []
+
+
 def test_fleet_lock_selector_is_per_manager_and_keeps_legacy_fallback() -> None:
     state = OperatorAppState.__new__(OperatorAppState)
     real_lock = RLock()

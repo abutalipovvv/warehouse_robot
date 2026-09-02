@@ -4,6 +4,11 @@ This directory stores compressed, platform-specific `install` prefixes for
 third-party ROS libraries and the Stage simulator. It intentionally does not
 store `build` or `log` directories.
 
+`container-runtime.tar.zst` is the matching Ubuntu Noble runtime rootfs used
+by `Dockerfile.robot-stack`. It contains the non-base shared libraries and
+Python modules required by the prebuilt ROS overlay, so image builds do not
+run `apt-get` and remain usable offline once the base image is present.
+
 Restore the bundle matching the current operating system, architecture and ROS
 distribution:
 
@@ -30,7 +35,8 @@ git add robot/prebuilt
 ```
 
 The `create` command refuses CMake caches that were not built with
-`-DCMAKE_BUILD_TYPE=Release`.
+`-DCMAKE_BUILD_TYPE=Release`. If `container-runtime.tar.zst` is present, its
+checksum is preserved in `SHA256SUMS` alongside both overlay archives.
 
 Generated colcon metadata contains build-time absolute paths. The extraction
 script rewrites text metadata for the checkout's actual location. Absolute

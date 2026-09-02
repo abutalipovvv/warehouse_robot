@@ -54,6 +54,27 @@ def test_server_and_robot_use_the_same_full_map_signature(tmp_path: Path) -> Non
     assert server["signature"] == robot["signature"]
 
 
+def test_robot_skips_quadratic_route_catalog_for_large_fleet_map() -> None:
+    map_dir = (
+        Path(__file__).resolve().parents[1]
+        / "fleet_manager"
+        / "map_data"
+        / "maps_out"
+        / "benchmark_open_kiva.smap"
+    )
+
+    payload = build_robot_map_payload(map_dir)
+
+    assert payload["routes"] == {}
+    assert payload["routesMeta"] == {
+        "skipped": True,
+        "reason": "too_many_landmark_pairs",
+        "landmarks": 1188,
+        "pairs": 1188 * 1187,
+        "maxPairs": 20000,
+    }
+
+
 def test_operator_cache_rejects_corrupted_pull_without_losing_current_map(
     tmp_path: Path,
 ) -> None:

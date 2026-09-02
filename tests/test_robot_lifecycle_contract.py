@@ -133,6 +133,12 @@ def test_operator_ui_uses_exclusive_control_and_graph_safe_fleet_pose() -> None:
     assert "#controlToggleButton.control-state-owned" in styles
     assert "#controlToggleButton.control-state-free" in styles
     assert 'Navigation blocked. Press Seize Control first.' in app_js
+    assert 'Navigation is blocked until Fleet Manager owns the robot.' in app_js
+    assert 'Order ${orderStatus.toLowerCase()}, not dispatched:' in app_js
+    assert 'Press Seize Control, then select an LM or map pose.' in app_js
+    assert 'this.pendingFleetAction = "navigate";' in app_js
+    assert 'Fleet Manager control acquired. Select an LM or map pose.' in app_js
+    assert "this.fleetControlNavigationHydrated = new Set();" in app_js
     assert 'body[data-fleet-page="fleet"] #driveActionGroup' in styles
     assert 'async startFleetPoseNavigation(world)' in app_js
     assert 'await this.startFleetNavigation(nearest.landmark.name' in app_js

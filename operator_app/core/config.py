@@ -57,7 +57,7 @@ class OperatorAppConfig:
             static_dir=_path(paths.get("static_dir"), base_dir, config.static_dir),
             open_browser=_bool(server.get("open_browser"), config.open_browser),
             fleet_params_path=_path(fleet.get("params_path"), base_dir, config.fleet_params_path),
-            fleet_map_dir=_path(fleet.get("map_dir"), base_dir, config.fleet_map_dir),
+            fleet_map_dir=_fleet_map_dir(fleet, base_dir, config.fleet_map_dir),
         )
 
     def with_overrides(
@@ -104,6 +104,24 @@ def _path(value: Any, base_dir: Path, default: Path) -> Path:
     if not path.is_absolute():
         path = base_dir / path
     return path
+
+
+def _fleet_map_dir(fleet: dict[str, Any], base_dir: Path, default: Path) -> Path:
+    """Resolve Operator App's map from the same fleet YAML used by Stage."""
+    if str(fleet.get("map_dir") or "").strip():
+        return _path(fleet.get("map_dir"), base_dir, default)
+    raw_config = str(fleet.get("fleet_config") or "").strip()
+    if not raw_config:
+        return default.expanduser()
+    fleet_config_path = _path(raw_config, base_dir, base_dir / raw_config).resolve()
+    payload = _load_yaml(fleet_config_path)
+    raw_smap = str(payload.get("smap") or "").strip()
+    if not raw_smap:
+        raise ValueError(f"fleet config has no smap path: {fleet_config_path}")
+    smap_path = Path(raw_smap).expanduser()
+    if not smap_path.is_absolute():
+        smap_path = fleet_config_path.parent / smap_path
+    return smap_path.resolve()
 
 
 def _int(value: Any, default: int) -> int:

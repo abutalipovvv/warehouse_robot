@@ -1,0 +1,44 @@
+# Generated fleet world template. fleet_stage.launch.py replaces the @...@
+# tokens from the canonical SMAP and writes a temporary .world file for Stage.
+
+include "@TRP1_INCLUDE@"
+
+resolution 0.02
+interval_sim 100
+
+define floorplan model
+(
+  color "gray30"
+  # Keep the geometry identical to the PGM used by Nav2. In particular, do
+  # not add a Stage-only boundary around a free map.
+  boundary 0
+  gui_nose 0
+  gui_grid 0
+  # Draw the exact bitmap extent in FLTK without adding collision geometry.
+  gui_outline 1
+  gripper_return 0
+  fiducial_return 0
+  laser_return 1
+)
+
+window
+(
+  size [ @WINDOW_WIDTH@ @WINDOW_HEIGHT@ ]
+  scale @WINDOW_SCALE@
+  center [ @MAP_CENTER_X@ @MAP_CENTER_Y@ ]
+  rotate [ 0 0 ]
+  # Four 360-degree scan fans otherwise obscure a completely free white map.
+  # This only changes visualization; LaserScan publication stays enabled.
+  show_data 0
+)
+
+floorplan
+(
+  name "@WORLD_NAME@"
+  bitmap "@MAP_BITMAP@"
+  size [ @MAP_WIDTH@ @MAP_HEIGHT@ 2.000000 ]
+  pose [ @MAP_CENTER_X@ @MAP_CENTER_Y@ 0.000000 @MAP_ORIGIN_YAW_DEG@ ]
+  gui_move 0
+)
+
+@ROBOT_MODELS@

@@ -8,11 +8,14 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include <signal.h>
+#include <map>
 #include <mutex>
 #include <random>
+#include <thread>
 
 // roscpp
 #include <rclcpp/rclcpp.hpp>
+#include <rclcpp/executors/single_threaded_executor.hpp>
 #include <std_srvs/srv/empty.hpp>
 #include <geometry_msgs/msg/twist.hpp>
 #include <sensor_msgs/msg/laser_scan.hpp>
@@ -110,6 +113,13 @@ private:
     std::string name_;     /// used for the ros publisher
     StageNode * node_;
     Stg::World * world_;
+    rclcpp::Context::SharedPtr ros_context_;
+    rclcpp::Node::SharedPtr ros_node_;
+    rclcpp::executors::SingleThreadedExecutor::SharedPtr ros_executor_;
+    std::thread ros_executor_thread_;
+    rclcpp::Publisher<rosgraph_msgs::msg::Clock>::SharedPtr clock_pub_;
+    rclcpp::Service<std_srvs::srv::Empty>::SharedPtr srv_reset_;
+    rclcpp::Service<std_srvs::srv::Empty>::SharedPtr srv_reset_odom_;
     rclcpp::Time time_last_cmd_received_;
     rclcpp::Time timeout_cmd_;        /// if no command is received befor the vehicle is stopped
     // Last time we saved global position (for velocity calculation).
@@ -145,22 +155,32 @@ private:
 
     double sample_noise(double stddev);
     void ensure_imu_initialized();
+    void init_ros_domain(size_t domain_id);
+    void shutdown_ros_domain();
 
 public:
     Vehicle(size_t id, const Stg::Pose & pose, const std::string & name, StageNode * node);
+    ~Vehicle();
 
     void soft_reset();
     void reset_odom();
     size_t id() const;
     const std::string & name() const;
     const std::string & name_space() const;
-    void init(bool use_topic_prefixes, bool use_one_tf_tree);
+    void init(
+      bool use_topic_prefixes, bool use_one_tf_tree,
+      const size_t * domain_id = nullptr);
     void callback_cmd(const geometry_msgs::msg::Twist::SharedPtr msg);
     void publish_msg();
     void publish_tf();
+    void publish_clock(const rosgraph_msgs::msg::Clock & message);
     void check_watchdog_timeout();
     StageNode *node(){
       return node_;
+    }
+    rclcpp::Node * ros_node()
+    {
+      return ros_node_ ? ros_node_.get() : node_;
     }
 
     // stage related models
@@ -180,7 +200,7 @@ public:
 
   /// vector to hold the simulated vehicles with ros interfaces
   std::vector<std::shared_ptr<Vehicle>> vehicles_;
-
+  std::map<std::string, size_t> robot_domain_map_;
 
   bool isDepthCanonical_;                  /// ROS parameter
   bool enforce_prefixes_;                  /// ROS parameter
@@ -195,6 +215,7 @@ public:
   std::string frame_id_imu_name_;          /// ROS parameter
   bool publish_imu_;                       /// ROS parameter
   bool use_imu_for_odom_yaw_;              /// ROS parameter
+  std::string robot_domain_map_config_;    /// ROS parameter
   double imu_yaw_noise_stddev_;            /// ROS parameter
   double imu_angular_velocity_noise_stddev_;   /// ROS parameter
   double imu_linear_acceleration_noise_stddev_;   /// ROS parameter
@@ -216,6 +237,8 @@ public:
 
   /// called on every simulation interation
   static int callback_update_stage_world(Stg::World * world, StageNode * node);
+
+  void parse_robot_domain_map();
 
 public:
   ~StageNode();

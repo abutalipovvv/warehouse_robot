@@ -79,10 +79,14 @@ create_archives() {
 
   (
     cd "${PREBUILT_DIR}"
-    sha256sum \
-      ros2_libs-install.tar.zst \
-      simulation-install.tar.zst \
-      > SHA256SUMS
+    artifacts=(
+      ros2_libs-install.tar.zst
+      simulation-install.tar.zst
+    )
+    if [[ -f container-runtime.tar.zst ]]; then
+      artifacts=(container-runtime.tar.zst "${artifacts[@]}")
+    fi
+    sha256sum "${artifacts[@]}" > SHA256SUMS
   )
   echo "Prebuilt Release overlays packaged in ${PREBUILT_DIR}"
 }

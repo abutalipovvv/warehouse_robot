@@ -56,8 +56,8 @@
       <material name="ecom_wheel"/>
     </visual>
 
-    <!-- Stage publishes a single 360-degree scan from the physical front
-         scanner location. Both scanner housings remain visible. -->
+    <!-- Stage simulates two diagonal-opposite 270-degree scanners and merges
+         them into one 360-degree /scan in the unchanged front laser frame. -->
     <visual name="front_lidar_housing">
       <origin xyz="0.32487 0.24906 0.218" rpy="0 0 0"/>
       <geometry>

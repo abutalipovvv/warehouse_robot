@@ -1,8 +1,10 @@
+#include <stage_ros2/robot_domain_map.hpp>
 #include <stage_ros2/stage_node.hpp>
 
 #include <chrono>
-#include <memory>
 #include <filesystem>
+#include <memory>
+#include <set>
 
 StageNode::StageNode(rclcpp::NodeOptions options)
 : Node("stage_ros2", options), base_watchdog_timeout_(0, 0)
@@ -70,6 +72,14 @@ void StageNode::declare_parameters()
     "on true the simulated odom yaw is stabilized with imu heading and gyro";
   this->declare_parameter<bool>("use_imu_for_odom_yaw", true, param_desc_use_imu_for_odom_yaw);
 
+  auto param_desc_robot_domain_map = rcl_interfaces::msg::ParameterDescriptor{};
+  param_desc_robot_domain_map.description =
+      "Comma-separated Stage model/robot_id to ROS domain mapping, for example "
+      "robot11=11,robot12=12. Each mapped robot publishes unprefixed topics in "
+      "its own domain.";
+  this->declare_parameter<std::string>("robot_domain_map", "",
+                                       param_desc_robot_domain_map);
+
   auto param_desc_world_file = rcl_interfaces::msg::ParameterDescriptor{};
   param_desc_world_file.description = "USE model names!";
   this->declare_parameter<std::string>("world_file", "cave.world", param_desc_world_file);
@@ -130,6 +140,8 @@ void StageNode::update_parameters()
   this->get_parameter("publish_ground_truth", this->publish_ground_truth_);
   this->get_parameter("publish_imu", this->publish_imu_);
   this->get_parameter("use_imu_for_odom_yaw", this->use_imu_for_odom_yaw_);
+  this->get_parameter("robot_domain_map", this->robot_domain_map_config_);
+  parse_robot_domain_map();
   this->get_parameter("frame_id_odom", this->frame_id_odom_name_);
   this->get_parameter("frame_id_world", this->frame_id_world_name_);
   this->get_parameter("frame_id_base_link", this->frame_id_base_link_name_);
@@ -160,6 +172,12 @@ void StageNode::update_parameters()
   using namespace std::chrono_literals;
   timer_update_parameter_ =
     this->create_wall_timer(1000ms, std::bind(&StageNode::callback_update_parameters, this));
+}
+
+void StageNode::parse_robot_domain_map()
+{
+  robot_domain_map_ =
+    stage_ros2::parse_robot_domain_map(robot_domain_map_config_);
 }
 
 void StageNode::callback_update_parameters()
@@ -274,7 +292,13 @@ int StageNode::callback_update_stage_world(Stg::World * world, StageNode * node)
   }
   rosgraph_msgs::msg::Clock clock_msg;
   clock_msg.clock = node->sim_time_;
-  node->clock_pub_->publish(clock_msg);
+  if (node->robot_domain_map_.empty()) {
+    node->clock_pub_->publish(clock_msg);
+  } else {
+    for (const auto & vehicle : node->vehicles_) {
+      vehicle->publish_clock(clock_msg);
+    }
+  }
   return 0;
 }
 
@@ -330,24 +354,72 @@ void StageNode::init(int argc, char ** argv)
 // topics, similar to Player .cfg files.
 int StageNode::SubscribeModels()
 {
-  for (std::shared_ptr<Vehicle> vehicle: this->vehicles_) {
-    // init topics and use the stage models names if there are more than one vehicle in the world
-    bool use_topic_prefix = this->enforce_prefixes_ || (vehicles_.size() > 1); // a prefixes are enforced
-    vehicle->init(use_topic_prefix, this->one_tf_tree_);
+  if (!robot_domain_map_.empty()) {
+    std::set<std::string> world_robot_ids;
+    for (const auto & vehicle : vehicles_) {
+      world_robot_ids.emplace(vehicle->name());
+      if (robot_domain_map_.count(vehicle->name()) == 0) {
+        RCLCPP_ERROR(
+          this->get_logger(),
+          "Stage model '%s' is missing from robot_domain_map",
+          vehicle->name().c_str());
+        return -1;
+      }
+    }
+    for (const auto & mapping : robot_domain_map_) {
+      if (world_robot_ids.count(mapping.first) == 0) {
+        RCLCPP_ERROR(
+          this->get_logger(),
+          "robot_domain_map contains '%s', but the world has no Stage model with that name",
+          mapping.first.c_str());
+        return -1;
+      }
+    }
+    if (enforce_prefixes_ || one_tf_tree_) {
+      RCLCPP_WARN(
+        this->get_logger(),
+        "robot_domain_map uses isolated ROS domains; enforce_prefixes and one_tf_tree are ignored");
+    }
   }
 
-  // create the clock publisher
-  clock_pub_ = this->create_publisher<rosgraph_msgs::msg::Clock>("/clock", 10);
+  for (std::shared_ptr<Vehicle> vehicle: this->vehicles_) {
+    if (robot_domain_map_.empty()) {
+      // Legacy mode: Stage model names prefix topics when the world has
+      // multiple vehicles.
+      const bool use_topic_prefix = this->enforce_prefixes_ || (vehicles_.size() > 1);
+      vehicle->init(use_topic_prefix, this->one_tf_tree_);
+    } else {
+      const size_t domain_id = robot_domain_map_.at(vehicle->name());
+      vehicle->init(false, false, &domain_id);
+      RCLCPP_INFO(
+        this->get_logger(),
+        "Robot '%s': ROS_DOMAIN_ID=%zu, topics=/cmd_vel,/scan,/odom,/imu,/tf",
+        vehicle->name().c_str(), domain_id);
+    }
+  }
 
-  // advertising reset service
+  // Legacy mode has one clock in the Stage node's domain. Domain-isolated
+  // vehicles create their own /clock publisher in Vehicle::init_ros_domain().
+  if (robot_domain_map_.empty()) {
+    clock_pub_ = this->create_publisher<rosgraph_msgs::msg::Clock>("/clock", 10);
+  }
+
+  // In domain-isolated mode each robot has its own /reset_* services. Keep
+  // whole-world administration under /stage so it cannot collide with a
+  // robot service if the Stage supervisor shares that robot's ROS domain.
+  const std::string reset_positions_service =
+    robot_domain_map_.empty() ? "reset_positions" : "/stage/reset_positions";
+  const std::string reset_odom_service =
+    robot_domain_map_.empty() ? "reset_odom" : "/stage/reset_odom";
+
   srv_reset_ = this->create_service<std_srvs::srv::Empty>(
-    "reset_positions",
+    reset_positions_service,
     [this](const std_srvs::srv::Empty::Request::SharedPtr request,
     std_srvs::srv::Empty::Response::SharedPtr response)
     {this->cb_reset_srv(request, response);});
 
   srv_reset_odom_ = this->create_service<std_srvs::srv::Empty>(
-    "reset_odom",
+    reset_odom_service,
     [this](const std_srvs::srv::Empty::Request::SharedPtr request,
     std_srvs::srv::Empty::Response::SharedPtr response)
     {this->cb_reset_odom_srv(request, response);});

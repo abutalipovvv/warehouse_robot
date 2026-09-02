@@ -1,0 +1,16 @@
+.git
+var
+operator_app
+fleet_manager
+robot/config
+robot/ros2_libs
+robot/simulation/build
+robot/simulation/install
+robot/simulation/log
+robot/robot_driver/build
+robot/robot_driver/install
+robot/robot_driver/log
+robot/prebuilt/*/simulation-install.tar.zst
+robot/prebuilt/*/python-grpc-runtime.tar.zst
+**/__pycache__
+**/*.pyc

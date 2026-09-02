@@ -1,0 +1,46 @@
+FROM ros:jazzy-ros-base-noble
+
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+
+ARG PREBUILT_PLATFORM=ubuntu-24.04-x86_64-ros-jazzy
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONDONTWRITEBYTECODE=1 \
+    RMW_IMPLEMENTATION=rmw_cyclonedds_cpp \
+    ROS_AUTOMATIC_DISCOVERY_RANGE=SUBNET \
+    ROS_NAMESPACE="" \
+    ROS_LOG_DIR=/var/lib/warehouse_robot/log
+
+WORKDIR /opt/warehouse_robot
+
+# Runtime libraries and the stable ROS overlay are prepared once on the host.
+# Docker ADD extracts both zstd-compressed tar archives without using apt.
+ADD robot/prebuilt/${PREBUILT_PLATFORM}/container-runtime.tar.zst /
+ADD robot/prebuilt/${PREBUILT_PLATFORM}/ros2_libs-install.tar.zst \
+    /opt/warehouse_robot/robot/ros2_libs/
+COPY robot/prebuilt/${PREBUILT_PLATFORM}/ros2_libs-build-prefix.txt /tmp/
+COPY robot/tools/relocate_prebuilt.py /tmp/relocate_prebuilt.py
+
+RUN python3 /tmp/relocate_prebuilt.py \
+      --root /opt/warehouse_robot/robot/ros2_libs/install \
+      --from-prefix "$(</tmp/ros2_libs-build-prefix.txt)" \
+      --to-prefix /opt/warehouse_robot/robot/ros2_libs/install \
+    && python3 -c "import google.protobuf, grpc, yaml" \
+    && rm /tmp/relocate_prebuilt.py /tmp/ros2_libs-build-prefix.txt
+
+# Only the application stack is rebuilt for this image.
+COPY robot/robot_driver/ /opt/warehouse_robot/robot/robot_driver/
+
+RUN set +u \
+    && source /opt/ros/jazzy/setup.bash \
+    && source /opt/warehouse_robot/robot/ros2_libs/install/local_setup.bash \
+    && set -u \
+    && cd /opt/warehouse_robot/robot/robot_driver \
+    && colcon build \
+      --symlink-install \
+      --cmake-args -DCMAKE_BUILD_TYPE=Release \
+    && test -f install/local_setup.bash
+
+WORKDIR /opt/warehouse_robot/robot/robot_driver
+
+CMD ["/bin/bash"]

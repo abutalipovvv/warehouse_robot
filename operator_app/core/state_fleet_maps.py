@@ -19,14 +19,49 @@ class FleetMapSyncMixin:
 
     def fleet_local_active_map_payload(self, manager_id: str = FLEET_MANAGER_ID) -> dict[str, Any]:
         manager = self._fleet_manager_for_id(manager_id)
-        active_name = self.map_cache.active_map_name(manager_id)
-        active_payload = self.map_cache.load_active_map(manager_id)
         robot_active = manager.maps_active_payload()
         robot_active_name = str(robot_active.get("mapName") or "").strip()
         robot_active_signature = str(robot_active.get("signature") or "").strip()
+        active_name = self.map_cache.active_map_name(manager_id)
+        active_payload = self.map_cache.load_active_map(manager_id)
+        bootstrap_error = ""
+
+        # A Fleet Manager session must open on the map that is actually active
+        # in its runtime.  Keep an edited local draft selected, but replace a
+        # missing or clean stale selection with the canonical runtime bundle.
+        # The previous cached map is not deleted and can still be opened later.
+        local_name = (
+            str(active_payload.get("mapName") or active_name).strip()
+            if isinstance(active_payload, dict)
+            else ""
+        )
+        has_cached_changes = (
+            bool(active_payload.get("hasLocalChanges"))
+            if isinstance(active_payload, dict)
+            else False
+        )
+        should_activate_runtime_map = bool(
+            robot_active_name
+            and robot_active_name != local_name
+            and not has_cached_changes
+        )
+        if should_activate_runtime_map:
+            try:
+                runtime_bundle = manager.pull_map_payload(robot_active_name)
+                bundle_signature = str(runtime_bundle.get("signature") or "").strip()
+                if robot_active_signature and bundle_signature != robot_active_signature:
+                    raise ValueError(
+                        "Fleet Manager runtime map signature does not match its stored bundle"
+                    )
+                self.map_cache.save_pulled_map(manager_id, runtime_bundle, activate=True)
+                active_name = self.map_cache.active_map_name(manager_id)
+                active_payload = self.map_cache.load_active_map(manager_id)
+            except Exception as exc:
+                bootstrap_error = str(exc)
+
         stored_signature = ""
         remote_verified = False
-        remote_error = ""
+        remote_error = bootstrap_error
         if isinstance(active_payload, dict):
             local_name = str(active_payload.get("mapName") or active_name).strip()
             local_signature = str(active_payload.get("signature") or "").strip()

@@ -17,6 +17,7 @@
   <depend>robot_map_manager</depend>
   <depend>robot_grpc_api</depend>
   <depend>warehouse_nav2_bringup</depend>
+  <exec_depend>ecom_mobile_robot_description</exec_depend>
 
 
   <test_depend>ament_lint_auto</test_depend>

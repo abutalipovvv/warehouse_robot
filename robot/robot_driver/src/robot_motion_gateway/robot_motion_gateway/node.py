@@ -233,7 +233,8 @@ def main() -> None:
     except KeyboardInterrupt:
         pass
     finally:
-        node.stop()
+        if rclpy.ok():
+            node.stop()
         node.destroy_node()
         if rclpy.ok():
             rclpy.shutdown()

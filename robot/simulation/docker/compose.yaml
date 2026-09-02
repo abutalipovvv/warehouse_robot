@@ -1,0 +1,133 @@
+name: warehouse-simulation
+
+x-robot-environment: &robot-environment
+  ROS_NAMESPACE: ""
+  RMW_IMPLEMENTATION: rmw_cyclonedds_cpp
+  ROS_AUTOMATIC_DISCOVERY_RANGE: SUBNET
+  ROBOT_API_PORT: "50051"
+  MAP_DIR: /maps/22.05.26_smap.smap
+  MAP_YAML: /maps/22.05.26_smap.smap/22.05.26_smap.yaml
+  MAPS_ROOT: /maps
+  STATE_FILE: /var/lib/warehouse_robot/state/active_map.json
+  NAV2_PROFILE: navigation
+  FAKE_BMS: "true"
+
+x-robot-stack: &robot-stack
+  image: warehouse-robot-stack:jazzy
+  build:
+    context: ../../..
+    dockerfile: robot/simulation/docker/Dockerfile.robot-stack
+  network_mode: host
+  ipc: host
+  init: true
+  stop_grace_period: 30s
+  restart: unless-stopped
+  command:
+    - /bin/bash
+    - -lc
+    - |
+      set -Eeuo pipefail
+      mkdir -p /var/lib/warehouse_robot/log /var/lib/warehouse_robot/state
+      unset ROS_LOCALHOST_ONLY
+      set +u
+      source /opt/ros/jazzy/setup.bash
+      source /opt/warehouse_robot/robot/ros2_libs/install/local_setup.bash
+      source /opt/warehouse_robot/robot/robot_driver/install/local_setup.bash
+      set -u
+      exec ros2 launch robot_launch container.launch.py
+  healthcheck:
+    test:
+      - CMD
+      - python3
+      - -c
+      - >-
+        import os,socket;
+        socket.create_connection((os.environ['ROBOT_API_HOST'],
+        int(os.environ['ROBOT_API_PORT'])), timeout=1).close()
+    interval: 10s
+    timeout: 2s
+    retries: 12
+    start_period: 45s
+
+services:
+  robot11:
+    <<: *robot-stack
+    container_name: warehouse-robot11
+    labels:
+      warehouse_robot.role: robot-stack
+      warehouse_robot.robot_id: robot11
+    environment:
+      <<: *robot-environment
+      ROBOT_ID: robot11
+      ROS_DOMAIN_ID: "11"
+      ROBOT_API_HOST: 127.0.0.11
+      INITIAL_POSE_X: "-4.902"
+      INITIAL_POSE_Y: "1.362"
+      INITIAL_POSE_YAW: "3.141592653589793"
+    volumes:
+      - ../../../fleet_manager/map_data/maps_out:/maps:ro
+      - robot11-state:/var/lib/warehouse_robot
+
+  robot12:
+    <<: *robot-stack
+    container_name: warehouse-robot12
+    labels:
+      warehouse_robot.role: robot-stack
+      warehouse_robot.robot_id: robot12
+    environment:
+      <<: *robot-environment
+      ROBOT_ID: robot12
+      ROS_DOMAIN_ID: "12"
+      ROBOT_API_HOST: 127.0.0.12
+      INITIAL_POSE_X: "-2.024"
+      INITIAL_POSE_Y: "1.353"
+      INITIAL_POSE_YAW: "3.141592653589793"
+    volumes:
+      - ../../../fleet_manager/map_data/maps_out:/maps:ro
+      - robot12-state:/var/lib/warehouse_robot
+
+  robot13:
+    <<: *robot-stack
+    container_name: warehouse-robot13
+    labels:
+      warehouse_robot.role: robot-stack
+      warehouse_robot.robot_id: robot13
+    environment:
+      <<: *robot-environment
+      ROBOT_ID: robot13
+      ROS_DOMAIN_ID: "13"
+      ROBOT_API_HOST: 127.0.0.13
+      INITIAL_POSE_X: "0.919"
+      INITIAL_POSE_Y: "1.346"
+      INITIAL_POSE_YAW: "3.141592653589793"
+    volumes:
+      - ../../../fleet_manager/map_data/maps_out:/maps:ro
+      - robot13-state:/var/lib/warehouse_robot
+
+  robot14:
+    <<: *robot-stack
+    container_name: warehouse-robot14
+    labels:
+      warehouse_robot.role: robot-stack
+      warehouse_robot.robot_id: robot14
+    environment:
+      <<: *robot-environment
+      ROBOT_ID: robot14
+      ROS_DOMAIN_ID: "14"
+      ROBOT_API_HOST: 127.0.0.14
+      INITIAL_POSE_X: "3.797"
+      INITIAL_POSE_Y: "1.338"
+      INITIAL_POSE_YAW: "3.141592653589793"
+    volumes:
+      - ../../../fleet_manager/map_data/maps_out:/maps:ro
+      - robot14-state:/var/lib/warehouse_robot
+
+volumes:
+  robot11-state:
+    name: warehouse-robot11-state
+  robot12-state:
+    name: warehouse-robot12-state
+  robot13-state:
+    name: warehouse-robot13-state
+  robot14-state:
+    name: warehouse-robot14-state

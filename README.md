@@ -159,6 +159,95 @@ Use `profile:=navigation` only when the Nav2 `NavigateToPose` stack is needed.
 Its velocity output is routed to `motion/nav2_cmd_vel`, never directly to the
 driver.
 
+## Run Stage with one container per robot
+
+Edit `robot/simulation/src/stage_ros2/config/fleet.yaml`. The top-level `smap`
+is the only map source: Stage generates its floorplan from that SMAP's ROS YAML
+and PGM, while every robot's Nav2 and `robot_driver` receive the same SMAP.
+Robots are spawned by LM from `LMs.yaml`, not by duplicated coordinates.
+
+```yaml
+world: 22.05.26_smap
+smap: ../../../../../fleet_manager/map_data/maps_out/22.05.26_smap.smap
+
+robots:
+  - robot_id: robot11
+    ros_domain_id: 11
+    ip: 127.0.0.11
+    grpc_port: 50051
+    lm: LM91
+    yaw: 180.0
+    color: LightSteelBlue
+```
+
+Build the shared Jazzy runtime image once:
+
+```bash
+cd ~/warehouse_robot
+docker compose -f robot/simulation/docker/compose.yaml build
+```
+
+The Dockerfile extracts the ROS runtime from `robot/prebuilt`, copies
+`robot/robot_driver`, and builds only that workspace with `--symlink-install`.
+It does not install packages through APT and does not mount the source tree at
+runtime.
+
+Start only the shared Stage process on the host:
+
+```bash
+source robot/setup.bash
+export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+ros2 launch stage_ros2 fleet_stage.launch.py enable_gui:=true
+```
+
+Then start each complete `robot_driver` + Nav2 stack in its own container:
+
+```bash
+docker compose -f robot/simulation/docker/compose.yaml up -d robot11
+docker compose -f robot/simulation/docker/compose.yaml up -d robot12
+docker compose -f robot/simulation/docker/compose.yaml up -d robot13
+docker compose -f robot/simulation/docker/compose.yaml up -d robot14
+```
+
+Or start all four explicit services with one command:
+
+```bash
+docker compose -f robot/simulation/docker/compose.yaml up -d
+```
+
+Each service is exactly one complete robot container; no ROS robot stack is
+started natively on the host. Host networking lets CycloneDDS communicate with
+the shared Stage process. Robot identity remains IP-based (`127.0.0.11`,
+`.12`, ...) and every container can bind the same gRPC port `50051`. ROS
+namespaces remain empty; `ROS_DOMAIN_ID` isolates `/scan`, `/odom`, `/cmd_vel`,
+`/tf` and `/clock`.
+
+Useful container commands:
+
+```bash
+docker compose -f robot/simulation/docker/compose.yaml ps
+docker compose -f robot/simulation/docker/compose.yaml logs -f robot11
+docker compose -f robot/simulation/docker/compose.yaml stop robot11
+docker compose -f robot/simulation/docker/compose.yaml down
+```
+
+The SMAP directory is the only read-only host mount. Per-robot state and logs
+are kept in separate named Docker volumes and survive `docker compose down`.
+
+Start Operator App separately:
+
+```bash
+python3 serve_operator.py --open
+```
+
+Its default config reads the SMAP from the same `fleet.yaml`. In Fleet Manager,
+add each robot manually using the YAML IP and port; for example
+`127.0.0.11:50051`. ROS remains internal to each robot domain, while Fleet
+Manager communicates with robots only through gRPC/IP.
+
+The old native `fleet.launch.py` and Fleet Manager-owned `--mode
+ros-simulation` workflow are intentionally not available.
+
 ## Run Robot Stack
 
 This starts the motion gateway, status, route execution, map manager, and

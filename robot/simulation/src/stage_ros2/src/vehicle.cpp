@@ -1,10 +1,12 @@
 #include <stage_ros2/stage_node.hpp>
 
-#include <chrono>
 #include <algorithm>
+#include <cctype>
+#include <chrono>
 #include <cmath>
-#include <memory>
 #include <filesystem>
+#include <memory>
+#include <stdexcept>
 
 #define TOPIC_TF "tf"
 #define TOPIC_TF_STATIC "tf_static"
@@ -34,6 +36,81 @@ StageNode::Vehicle::Vehicle(
       imu_odom_y_(0.0),
       imu_odom_yaw_(0.0)
 {
+}
+
+StageNode::Vehicle::~Vehicle()
+{
+  shutdown_ros_domain();
+}
+
+void StageNode::Vehicle::init_ros_domain(size_t domain_id)
+{
+  rclcpp::InitOptions init_options;
+  init_options.set_domain_id(domain_id);
+  init_options.auto_initialize_logging(false);
+  ros_context_ = std::make_shared<rclcpp::Context>();
+  ros_context_->init(0, nullptr, init_options);
+
+  std::string node_name = "stage_" + name_;
+  std::replace_if(
+    node_name.begin(), node_name.end(),
+    [](unsigned char character) {
+      return !std::isalnum(character) && character != '_';
+    },
+    '_');
+
+  rclcpp::NodeOptions node_options;
+  node_options.context(ros_context_);
+  node_options.use_global_arguments(false);
+  node_options.start_parameter_services(false);
+  node_options.start_parameter_event_publisher(false);
+  node_options.enable_rosout(false);
+  ros_node_ = std::make_shared<rclcpp::Node>(node_name, node_options);
+
+  rclcpp::ExecutorOptions executor_options;
+  executor_options.context = ros_context_;
+  ros_executor_ = std::make_shared<rclcpp::executors::SingleThreadedExecutor>(
+    executor_options);
+  ros_executor_->add_node(ros_node_);
+
+  clock_pub_ = ros_node_->create_publisher<rosgraph_msgs::msg::Clock>("/clock", 10);
+  srv_reset_ = ros_node_->create_service<std_srvs::srv::Empty>(
+    "/reset_positions",
+    [this](const std_srvs::srv::Empty::Request::SharedPtr,
+    std_srvs::srv::Empty::Response::SharedPtr) {
+      std::scoped_lock lock(node_->msg_lock);
+      soft_reset();
+    });
+  srv_reset_odom_ = ros_node_->create_service<std_srvs::srv::Empty>(
+    "/reset_odom",
+    [this](const std_srvs::srv::Empty::Request::SharedPtr,
+    std_srvs::srv::Empty::Response::SharedPtr) {
+      std::scoped_lock lock(node_->msg_lock);
+      reset_odom();
+    });
+
+  ros_executor_thread_ = std::thread([this]() {
+      try {
+        ros_executor_->spin();
+      } catch (const std::exception & exception) {
+        RCLCPP_ERROR(
+          node_->get_logger(), "ROS executor for '%s' stopped: %s",
+          name_.c_str(), exception.what());
+      }
+    });
+}
+
+void StageNode::Vehicle::shutdown_ros_domain()
+{
+  if (ros_executor_) {
+    ros_executor_->cancel();
+  }
+  if (ros_context_ && ros_context_->is_valid()) {
+    ros_context_->shutdown("Stage vehicle shutdown");
+  }
+  if (ros_executor_thread_.joinable()) {
+    ros_executor_thread_.join();
+  }
 }
 
 double StageNode::Vehicle::sample_noise(double stddev)
@@ -110,10 +187,15 @@ const std::string &StageNode::Vehicle::name() const
   return name_;
 }
 
-void StageNode::Vehicle::init(bool use_topic_prefixes, bool use_one_tf_tree)
+void StageNode::Vehicle::init(
+  bool use_topic_prefixes, bool use_one_tf_tree, const size_t * domain_id)
 {
   if (initialized_)
     return;
+
+  if (domain_id != nullptr) {
+    init_ros_domain(*domain_id);
+  }
 
   time_last_pose_update_ = rclcpp::Time(0, 0);
   time_last_cmd_received_ = rclcpp::Time(0, 0);
@@ -145,19 +227,22 @@ void StageNode::Vehicle::init(bool use_topic_prefixes, bool use_one_tf_tree)
   topic_name_imu_ = topic_name_space_ + TOPIC_IMU;
   topic_name_cmd_ = topic_name_space_ + TOPIC_CMD_VEL;
 
-  tf_static_broadcaster_ = std::make_shared<stage_ros2::StaticTransformBroadcaster>(node_, topic_name_tf_static_.c_str());
-  tf_broadcaster_ = std::make_shared<stage_ros2::TransformBroadcaster>(node_, topic_name_tf_.c_str());
+  tf_static_broadcaster_ = std::make_shared<stage_ros2::StaticTransformBroadcaster>(
+    ros_node(), topic_name_tf_static_.c_str());
+  tf_broadcaster_ = std::make_shared<stage_ros2::TransformBroadcaster>(
+    ros_node(), topic_name_tf_.c_str());
 
-  pub_odom_ = node_->create_publisher<nav_msgs::msg::Odometry>(topic_name_odom_, 10);
-  pub_ground_truth_ =
-      node_->create_publisher<nav_msgs::msg::Odometry>(topic_name_ground_truth_, 10);
+  pub_odom_ = ros_node()->create_publisher<nav_msgs::msg::Odometry>(
+    topic_name_odom_, 10);
+  pub_ground_truth_ = ros_node()->create_publisher<nav_msgs::msg::Odometry>(
+    topic_name_ground_truth_, 10);
   if (node_->publish_imu_) {
-    pub_imu_ = node_->create_publisher<sensor_msgs::msg::Imu>(topic_name_imu_, 10);
+    pub_imu_ = ros_node()->create_publisher<sensor_msgs::msg::Imu>(
+      topic_name_imu_, 10);
   }
-  sub_cmd_ =
-      node_->create_subscription<geometry_msgs::msg::Twist>(
-          topic_name_cmd_, 10,
-          std::bind(&StageNode::Vehicle::callback_cmd, this, _1));
+  sub_cmd_ = ros_node()->create_subscription<geometry_msgs::msg::Twist>(
+    topic_name_cmd_, 10,
+    std::bind(&StageNode::Vehicle::callback_cmd, this, _1));
 
   positionmodel->Subscribe();
   // Stage initializes est_pose from the model, but the IMU heading offset
@@ -175,6 +260,14 @@ void StageNode::Vehicle::init(bool use_topic_prefixes, bool use_one_tf_tree)
     camera->init(rangers_.size() > 1);
   }
   initialized_ = true;
+}
+
+void StageNode::Vehicle::publish_clock(
+  const rosgraph_msgs::msg::Clock & message)
+{
+  if (clock_pub_ && ros_context_ && ros_context_->is_valid()) {
+    clock_pub_->publish(message);
+  }
 }
 
 void StageNode::Vehicle::publish_msg()

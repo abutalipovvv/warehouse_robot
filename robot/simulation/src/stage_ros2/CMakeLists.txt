@@ -12,6 +12,7 @@ if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
 endif()
 
 find_package(ament_cmake REQUIRED)
+find_package(ament_cmake_python REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(rclcpp_components REQUIRED)
 find_package(sensor_msgs REQUIRED)
@@ -29,8 +30,11 @@ include_directories(
   ${STAGE_INCLUDE_DIRS}
 )
 
+ament_python_install_package(${PROJECT_NAME})
+
 add_library(stage_node SHARED
-            src/stage_node.cpp src/vehicle.cpp src/ranger.cpp src/camera.cpp)
+            src/stage_node.cpp src/robot_domain_map.cpp src/laser_scan_merger.cpp src/vehicle.cpp
+            src/ranger.cpp src/camera.cpp)
 target_compile_definitions(stage_node PRIVATE "STAGE_ROS2_PACKAGE_DLL")
 ament_target_dependencies(stage_node rclcpp rclcpp_components
 sensor_msgs geometry_msgs nav_msgs std_msgs tf2 tf2_ros std_srvs tf2_geometry_msgs)
@@ -56,8 +60,13 @@ install(
   launch
   world
   config
+  res
   DESTINATION
     share/${PROJECT_NAME}/)
+
+install(
+  DIRECTORY include/
+  DESTINATION include)
 
 install(TARGETS
   stage_node
@@ -70,7 +79,23 @@ install(TARGETS
   DESTINATION lib/${PROJECT_NAME})
 
 if(BUILD_TESTING)
+  find_package(ament_cmake_gtest REQUIRED)
+  find_package(ament_cmake_pytest REQUIRED)
   find_package(ament_lint_auto REQUIRED)
+  ament_add_gtest(
+    test_robot_domain_map
+    test/test_robot_domain_map.cpp
+    src/robot_domain_map.cpp)
+  target_include_directories(test_robot_domain_map PRIVATE include)
+  ament_add_gtest(
+    test_laser_scan_merger
+    test/test_laser_scan_merger.cpp
+    src/laser_scan_merger.cpp)
+  target_include_directories(test_laser_scan_merger PRIVATE include)
+  ament_add_pytest_test(
+    test_fleet_world
+    test/test_fleet_world.py
+    APPEND_ENV PYTHONPATH=${CMAKE_CURRENT_SOURCE_DIR})
   # the following line skips the linter which checks for copyrights
   # comment the line when a copyright and license is added to all source files
   set(ament_cmake_copyright_FOUND TRUE)

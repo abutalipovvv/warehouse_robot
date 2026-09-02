@@ -1,0 +1,35 @@
+world: 22.05.26_smap
+smap: ../../../../../fleet_manager/map_data/maps_out/22.05.26_smap.smap
+
+robots:
+  - robot_id: robot11
+    ros_domain_id: 11
+    ip: 127.0.0.11
+    grpc_port: 50051
+    lm: LM91
+    yaw: 180.0
+    color: LightSteelBlue
+
+  - robot_id: robot12
+    ros_domain_id: 12
+    ip: 127.0.0.12
+    grpc_port: 50051
+    lm: LM101
+    yaw: 180.0
+    color: PaleGreen3
+
+  - robot_id: robot13
+    ros_domain_id: 13
+    ip: 127.0.0.13
+    grpc_port: 50051
+    lm: LM111
+    yaw: 180.0
+    color: LightGoldenrod2
+
+  - robot_id: robot14
+    ros_domain_id: 14
+    ip: 127.0.0.14
+    grpc_port: 50051
+    lm: LM121
+    yaw: 180.0
+    color: LightGoldenrod2

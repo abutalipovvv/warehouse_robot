@@ -21,6 +21,7 @@ setup(
     tests_require=["pytest"],
     entry_points={
         "console_scripts": [
+            "fake_bms_publisher=robot_status.fake_bms:main",
             "status_node=robot_status.main:main",
         ],
     },

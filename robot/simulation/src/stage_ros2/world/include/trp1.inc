@@ -1,13 +1,25 @@
 define hokuyolaser ranger
 (
-  sensor(       
-    # laser-specific properties
-    # wide-area simulator LiDAR: full 360 deg coverage, 40 m range
+  # Front scanner. The ranger model itself stays at the historical front
+  # scanner pose, so the public ROS frame remains "laser" in that location.
+  sensor(
     pose [ 0 0 0 0 ]
     size [ 0.07 0.07 0.05 ]
     range [ 0.0  40.0 ]
-    fov 360.0
-    samples 361
+    fov 270.0
+    samples 271
+    color_rgba [ 0 0 1 0.15 ]
+  )
+
+  # Rear scanner: diagonal opposite of the front scanner and rotated 180 deg.
+  # stage_ros2 projects both physical scans into the front "laser" frame and
+  # publishes one 360-degree /scan for Nav2 and robot_driver.
+  sensor(
+    pose [ -0.74011 -0.50011 0 180 ]
+    size [ 0.07 0.07 0.05 ]
+    range [ 0.0  40.0 ]
+    fov 270.0
+    samples 271
     color_rgba [ 0 0 1 0.15 ]
   )
   model
@@ -45,8 +57,8 @@ define trp1_no_sonar trp1_base
   # Ecom mesh bounds: x [-0.523, 0.477], y [-0.3532, 0.3468].
   # Keep the historical Stage model name so topics and namespaces do not
   # change, but use the physical Ecom collision footprint.
-  # The lower shell is 0.17 m high. The separate upper deck overlaps it by
-  # 1 cm and brings the simplified visual to 0.205 m overall.
+  # The lower shell is 0.17 m high. The separate upper shell overlaps it by
+  # 1 cm and brings the lidar-visible body to 0.27 m overall.
   size [1.00 0.70 0.17]
   # The block points already contain the measured CAD offset from base_link.
   origin [0.0 0.0 0.0 0.0]
@@ -80,17 +92,18 @@ define trp1_no_sonar trp1_base
     z [0 0.17]
   )
 
-  # Upper deck and recessed drive wheels make the Stage view recognizable
-  # without loading the high-poly mesh.
+  # Upper shell and recessed drive wheels make the Stage view recognizable
+  # without loading the high-poly mesh. The shell reaches z=0.27 m, above the
+  # unchanged lidar ray plane at z=0.243 m, so other robots see it reliably.
   model
   (
-    # Stage stacks children on the parent's top surface. -0.01 puts this deck
-    # at z=0.16 instead of adding the parent height a second time.
+    # Stage stacks children on the parent's 0.17 m top surface. -0.01 starts
+    # this shell at z=0.16 m; its 0.11 m height ends at z=0.27 m.
     pose [0 0 -0.01 0]
-    size [0.76 0.50 0.045]
+    size [0.76 0.50 0.11]
     color "SlateGray3"
     obstacle_return 0
-    ranger_return 0
+    ranger_return 0.5
     gui_nose 0
     block
     (
@@ -105,7 +118,7 @@ define trp1_no_sonar trp1_base
       point[7] [ 0.275  0.265]
       point[8] [-0.360  0.265]
       point[9] [-0.420  0.220]
-      z [0 0.045]
+      z [0 0.11]
     )
   )
 
@@ -131,13 +144,20 @@ define trp1_no_sonar trp1_base
 
 define trp1_with_laser trp1_no_sonar
 (
-  # Preserve the existing frame name "laser", but put its simulated scan at
-  # the physical front Ecom lidar. Parent height 0.17 + 0.048 = 0.218 m.
+  # Preserve the existing frame name and exact front lidar pose. Parent height
+  # 0.17 + 0.048 = 0.218 m; sensor ray plane is unchanged at z=0.243 m.
   hokuyolaser(pose [ 0.32487 0.24906 0.048 0 ])
 
   model
   (
     pose [ 0.32487 0.24906 0.048 0.0 ]
+    size [ 0.0674 0.0674 0.042 ]
+    color "DimGray"
+  )
+
+  model
+  (
+    pose [ -0.41524 -0.25105 0.048 180.0 ]
     size [ 0.0674 0.0674 0.042 ]
     color "DimGray"
   )

@@ -22,5 +22,10 @@ drive:
   simulated_mass: 100.0
 sensors:
   lidar_frame: laser
+  # lidar_pose is retained as the public merged scan origin for compatibility.
   lidar_pose: {x: 0.32487, y: 0.24906, z: 0.218, yaw: 0.0}
+  lidar_front_pose: {x: 0.32487, y: 0.24906, z: 0.218, yaw: 0.0}
+  lidar_rear_pose: {x: -0.41524, y: -0.25105, z: 0.218, yaw: 3.141592653589793}
+  lidar_fov_degrees: 270.0
+  merged_scan_topic: /scan
   imu_frame: imu_link

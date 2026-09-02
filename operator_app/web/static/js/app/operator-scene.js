@@ -811,28 +811,47 @@ export const withSceneNavigation = (Base) => class OperatorAppSceneNavigation ex
 
   syncModeButtons() {
     const isFleet = this.isFleetManager();
+    const robot = isFleet
+      ? (this.selectedFleetRobot() || {})
+      : (this.currentStatus && this.currentStatus.robot ? this.currentStatus.robot : {});
+    const control = this.robotControlPayload(robot);
+    const expectedOwnerId = isFleet ? "fleet-manager" : "operator-app";
+    const ownsControl = control.ownerId === expectedOwnerId;
+    const foreignControl = Boolean(control.ownerId) && !ownsControl;
+    const fleetControlRequired = isFleet && this.isFleetRobotsMode();
+    const controlledRobotName = String(robot.name || "").trim();
+    if (
+      fleetControlRequired
+      && ownsControl
+      && controlledRobotName
+      && !this.fleetControlNavigationHydrated.has(controlledRobotName)
+    ) {
+      this.fleetControlNavigationHydrated.add(controlledRobotName);
+      if (!this.navigateMode && !this.relocateMode) {
+        this.navigateMode = true;
+        this.pendingFleetAction = "navigate";
+        this.pendingFleetRobotName = controlledRobotName;
+      }
+    }
     const navigateArmed = this.navigateMode && (!isFleet || this.pendingFleetAction === "navigate");
     const queueArmed = this.navigateMode && isFleet && this.pendingFleetAction === "queue";
     const spawnArmed = this.navigateMode && isFleet && this.pendingFleetAction === "spawn";
     const relocateArmed = this.relocateMode && !isFleet;
     this.operatorScene3d?.classList.toggle("target-armed", navigateArmed || queueArmed || spawnArmed);
     this.scene3d?.setTargetArmed(this.scene3dTargetArmed());
-    const robot = isFleet
-      ? (this.selectedFleetRobot() || {})
-      : (this.currentStatus && this.currentStatus.robot ? this.currentStatus.robot : {});
     const routeState = String(robot.state || "").toUpperCase();
     const routeActive = Boolean(robot.targetLm || robot.routeId || routeState === "EXECUTING_ROUTE" || routeState === "PAUSED");
     const paused = this.robotNavigationPaused(robot);
     const mappingActive = !isFleet && this.slamActive;
-    const control = this.robotControlPayload(robot);
-    const expectedOwnerId = isFleet ? "fleet-manager" : "operator-app";
-    const ownsControl = control.ownerId === expectedOwnerId;
-    const foreignControl = Boolean(control.ownerId) && !ownsControl;
-    const fleetControlRequired = isFleet && this.isFleetRobotsMode();
     const idleText = this.navigateButtonIdleText();
     this.navigateRobotButton.classList.toggle("primary", !navigateArmed);
     this.navigateRobotButton.classList.toggle("danger", navigateArmed);
     this.navigateRobotButton.disabled = relocateArmed || mappingActive || (fleetControlRequired && !ownsControl);
+    this.navigateRobotButton.title = fleetControlRequired && !ownsControl
+      ? (foreignControl
+          ? `Navigation is blocked: ${control.ownerName || control.ownerId} owns the robot. Use Seize Control to take over.`
+          : "Navigation is blocked until Fleet Manager owns the robot. Press Seize Control first.")
+      : "";
     this.navigateRobotButton.textContent = navigateArmed
       ? (this.pendingFleetRobotName
           ? `${this.fleetNavigateUsesPose() ? "Select Pose" : "Select LM"}: ${this.pendingFleetRobotName}`
@@ -1025,8 +1044,15 @@ export const withSceneNavigation = (Base) => class OperatorAppSceneNavigation ex
         name: robot.name,
       });
       this.currentStatus = result.state || await this.getJson(this.fleetApiPath("/state"));
+      this.navigateMode = true;
+      this.relocateMode = false;
+      this.pendingFleetAction = "navigate";
+      this.pendingFleetRobotName = robot.name;
+      this.fleetControlNavigationHydrated.add(robot.name);
       this.renderFleetStateImmediately();
-      this.robotMessageText.textContent = `${robot.name}: Fleet Manager control acquired.`;
+      this.syncModeButtons();
+      this.drawLandmarks();
+      this.robotMessageText.textContent = `${robot.name}: Fleet Manager control acquired. Select an LM or map pose.`;
       return true;
     } catch (error) {
       this.robotMessageText.textContent = `Seize control failed: ${error.message || error}`;
@@ -1048,6 +1074,11 @@ export const withSceneNavigation = (Base) => class OperatorAppSceneNavigation ex
         name: robot.name,
       });
       this.currentStatus = result.state || await this.getJson(this.fleetApiPath("/state"));
+      this.navigateMode = false;
+      this.relocateMode = false;
+      this.pendingFleetAction = "";
+      this.pendingFleetRobotName = "";
+      this.fleetControlNavigationHydrated.delete(robot.name);
       this.renderFleetStateImmediately();
       this.robotMessageText.textContent = `${robot.name}: Fleet Manager control released.`;
     } catch (error) {
@@ -1152,6 +1183,15 @@ export const withSceneNavigation = (Base) => class OperatorAppSceneNavigation ex
       this.robotMessageText.textContent = "Add or select a fleet robot first.";
       return;
     }
+    if (this.isFleetRobotsMode()) {
+      const control = this.robotControlPayload(robot);
+      if (control.ownerId !== "fleet-manager") {
+        this.robotMessageText.textContent = control.ownerId
+          ? `Navigation blocked: ${control.ownerName || control.ownerId} owns ${robot.name}. Press Seize Control to take over.`
+          : `Navigation blocked: press Seize Control for ${robot.name} first.`;
+        return;
+      }
+    }
     this.navigateMode = false;
     this.relocateMode = false;
     this.pendingFleetAction = "";
@@ -1175,6 +1215,13 @@ export const withSceneNavigation = (Base) => class OperatorAppSceneNavigation ex
       this.fleetSelectionCleared = false;
       window.localStorage.setItem("operator:selectedFleetRobotName", this.selectedFleetRobotName);
       this.renderFleetStateImmediately();
+      const order = result?.order || {};
+      const orderStatus = String(order.status || "").toUpperCase();
+      const orderError = String(order.error || "").trim();
+      if (orderError && ["QUEUED", "PAUSED", "BLOCKED"].includes(orderStatus)) {
+        this.robotMessageText.textContent = `Order ${orderStatus.toLowerCase()}, not dispatched: ${orderError}`;
+        return;
+      }
       const requestedPose = options.requestedPose;
       this.robotMessageText.textContent = requestedPose
         ? `Order sent: ${robot.name} -> pose x ${requestedPose.x.toFixed(3)}, y ${requestedPose.y.toFixed(3)}; graph target ${goalLm} (${Number(options.snapDistance || 0).toFixed(2)} m snap).`

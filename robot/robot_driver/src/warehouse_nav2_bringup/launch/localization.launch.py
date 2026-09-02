@@ -21,6 +21,15 @@ def generate_launch_description() -> LaunchDescription:
         param_rewrites={
             "use_sim_time": use_sim_time,
             "yaml_filename": map_yaml,
+            "amcl.ros__parameters.initial_pose.x": LaunchConfiguration(
+                "initial_pose_x"
+            ),
+            "amcl.ros__parameters.initial_pose.y": LaunchConfiguration(
+                "initial_pose_y"
+            ),
+            "amcl.ros__parameters.initial_pose.yaw": LaunchConfiguration(
+                "initial_pose_yaw"
+            ),
         },
         convert_types=True,
     )
@@ -44,6 +53,12 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument("use_sim_time", default_value="true"),
             DeclareLaunchArgument("autostart", default_value="true"),
             DeclareLaunchArgument("params_file"),
+            DeclareLaunchArgument("initial_pose_x", default_value="-4.902"),
+            DeclareLaunchArgument("initial_pose_y", default_value="1.362"),
+            DeclareLaunchArgument(
+                "initial_pose_yaw",
+                default_value="3.141592653589793",
+            ),
             DeclareLaunchArgument("log_level", default_value="warn"),
             Node(
                 package="nav2_map_server",

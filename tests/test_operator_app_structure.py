@@ -1,7 +1,11 @@
 import ast
 from pathlib import Path
 
-from operator_app.core.config import DEFAULT_CONFIG_PATH, DEFAULT_STATIC_DIR
+from operator_app.core.config import (
+    DEFAULT_CONFIG_PATH,
+    DEFAULT_STATIC_DIR,
+    OperatorAppConfig,
+)
 from operator_app.core.map_cache import default_maps_cache_root
 from operator_app.core.workspace import default_operator_data_root
 
@@ -9,6 +13,14 @@ from operator_app.core.workspace import default_operator_data_root
 ROOT = Path(__file__).resolve().parents[1]
 OPERATOR_ROOT = ROOT / "operator_app"
 STATIC_ROOT = OPERATOR_ROOT / "web" / "static"
+
+
+def test_default_operator_map_comes_from_shared_fleet_yaml() -> None:
+    config = OperatorAppConfig.load()
+
+    assert config.fleet_map_dir == ROOT.joinpath(
+        "fleet_manager", "map_data", "maps_out", "22.05.26_smap.smap"
+    )
 
 
 def test_operator_app_has_compact_source_and_runtime_layout() -> None:

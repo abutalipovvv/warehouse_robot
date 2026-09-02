@@ -39,6 +39,7 @@ export class OperatorAppBase {
     this.relocateMode = false;
     this.pendingFleetAction = "";
     this.pendingFleetRobotName = "";
+    this.fleetControlNavigationHydrated = new Set();
     this.fleetQueue = [];
     this.fleetQueueSequence = 0;
     this.fleetBenchmarkRunId = 0;
